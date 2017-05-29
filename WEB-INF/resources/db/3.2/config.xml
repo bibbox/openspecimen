@@ -51,7 +51,7 @@
       call add_cfg_prop(
         'common', 'deploy_env',
         'deploy_env', 'deploy_env_desc',
-        'STRING', 'TEST'
+        'STRING', 'BIBBOX'
       );
     </sql>
   </changeSet>
