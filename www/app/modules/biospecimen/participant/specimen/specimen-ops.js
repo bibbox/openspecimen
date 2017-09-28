@@ -18,7 +18,7 @@ angular.module('os.biospecimen.specimen')
       if ($injector.has('spmnReqCfgUtil')) {
         $injector.get('spmnReqCfgUtil').isReqBasedDistOrShippingEnabled().then(
           function(result) {
-            scope.reqBasedDistOrShip = result;
+            scope.reqBasedDistOrShip.value = (result.value == 'true');
           }
         );
       }
@@ -90,6 +90,21 @@ angular.module('os.biospecimen.specimen')
 
         scope.addEvent = function() {
           gotoView('bulk-add-event', {}, 'no_specimens_to_add_event');
+        }
+
+        scope.retrieveSpecimens = function() {
+          var selectedSpmns = scope.specimens();
+          if (!selectedSpmns || selectedSpmns.length == 0) {
+            Alerts.error('specimen_list.no_specimens_to_retrieve');
+            return;
+          }
+
+          var spmnsToUpdate = selectedSpmns.map(function(spmn) { return {id: spmn.id, storageLocation: {}}; });
+          Specimen.bulkUpdate(spmnsToUpdate).then(
+            function(updatedSpmns) {
+              scope.initList();
+            }
+          );
         }
       }
     };

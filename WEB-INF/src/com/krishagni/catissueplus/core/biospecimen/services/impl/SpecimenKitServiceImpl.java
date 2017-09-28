@@ -16,10 +16,11 @@ import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
 import com.krishagni.catissueplus.core.biospecimen.repository.SpecimenKitListCriteria;
 import com.krishagni.catissueplus.core.biospecimen.services.SpecimenKitService;
 import com.krishagni.catissueplus.core.common.PlusTransactional;
+import com.krishagni.catissueplus.core.common.access.AccessCtrlMgr;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
 import com.krishagni.catissueplus.core.common.events.ResponseEvent;
-import com.krishagni.catissueplus.core.common.service.ObjectStateParamsResolver;
+import com.krishagni.catissueplus.core.common.service.ObjectAccessor;
 import com.krishagni.catissueplus.core.common.util.ConfigUtil;
 import com.krishagni.catissueplus.core.common.util.MessageUtil;
 import com.krishagni.catissueplus.core.common.util.Utility;
@@ -31,7 +32,7 @@ import com.krishagni.catissueplus.core.de.services.QueryService;
 import com.krishagni.catissueplus.core.de.services.SavedQueryErrorCode;
 import edu.common.dynamicextensions.query.WideRowMode;
 
-public class SpecimenKitServiceImpl implements SpecimenKitService, ObjectStateParamsResolver {
+public class SpecimenKitServiceImpl implements SpecimenKitService, ObjectAccessor {
 	private static final String KIT_QUERY_REPORT_SETTING = "specimen_kit_export_report";
 
 	private DaoFactory daoFactory;
@@ -142,17 +143,27 @@ public class SpecimenKitServiceImpl implements SpecimenKitService, ObjectStatePa
 
 	@Override
 	public String getObjectName() {
-		return "specimenKit";
+		return SpecimenKit.getEntityName();
 	}
 
 	@Override
 	@PlusTransactional
-	public Map<String, Object> resolve(String key, Object value) {
+	public Map<String, Object> resolveUrl(String key, Object value) {
 		if (key.equals("id")) {
 			value = Long.valueOf(value.toString());
 		}
 
 		return daoFactory.getSpecimenKitDao().getCpIds(key, value);
+	}
+
+	@Override
+	public String getAuditTable() {
+		return "OS_SPECIMEN_KITS_AUD";
+	}
+
+	@Override
+	public void ensureReadAllowed(Long id) {
+		//TODO: handle access control for kit
 	}
 
 	private SpecimenKit getKit(Long kitId) {

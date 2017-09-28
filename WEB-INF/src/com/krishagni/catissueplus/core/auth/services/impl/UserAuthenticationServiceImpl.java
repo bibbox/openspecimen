@@ -2,6 +2,7 @@
 package com.krishagni.catissueplus.core.auth.services.impl;
 
 import java.util.Calendar;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -14,6 +15,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 import com.krishagni.catissueplus.core.administrative.domain.User;
+import com.krishagni.catissueplus.core.administrative.domain.UserEvent;
 import com.krishagni.catissueplus.core.audit.domain.UserApiCallLog;
 import com.krishagni.catissueplus.core.audit.services.AuditService;
 import com.krishagni.catissueplus.core.auth.AuthConfig;
@@ -26,18 +28,26 @@ import com.krishagni.catissueplus.core.auth.services.AuthenticationService;
 import com.krishagni.catissueplus.core.auth.services.UserAuthenticationService;
 import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
 import com.krishagni.catissueplus.core.common.PlusTransactional;
+import com.krishagni.catissueplus.core.common.domain.Notification;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
 import com.krishagni.catissueplus.core.common.events.ResponseEvent;
 import com.krishagni.catissueplus.core.common.events.UserSummary;
+import com.krishagni.catissueplus.core.common.service.impl.EventPublisher;
 import com.krishagni.catissueplus.core.common.util.AuthUtil;
+import com.krishagni.catissueplus.core.common.util.ConfigUtil;
+import com.krishagni.catissueplus.core.common.util.EmailUtil;
+import com.krishagni.catissueplus.core.common.util.MessageUtil;
+import com.krishagni.catissueplus.core.common.util.NotifUtil;
 import com.krishagni.catissueplus.core.common.util.Status;
 
 public class UserAuthenticationServiceImpl implements UserAuthenticationService {
+	private static final String ACCOUNT_LOCKED_NOTIF_TMPL = "account_locked_notification";
+
 	private DaoFactory daoFactory;
 	
 	private AuditService auditService;
-	
+
 	public void setDaoFactory(DaoFactory daoFactory) {
 		this.daoFactory = daoFactory;
 	}
@@ -53,11 +63,14 @@ public class UserAuthenticationServiceImpl implements UserAuthenticationService 
 		User user = null;
 		try {
 			user = daoFactory.getUserDao().getUser(loginDetail.getLoginName(), loginDetail.getDomainName());
-			
 			if (user == null) {
 				throw OpenSpecimenException.userError(AuthErrorCode.INVALID_CREDENTIALS);
 			}
-			
+
+			if (!user.isAdmin() && isSystemLockedDown()) {
+				throw OpenSpecimenException.userError(AuthErrorCode.SYSTEM_LOCKDOWN);
+			}
+
 			if (user.getActivityStatus().equals(Status.ACTIVITY_STATUS_LOCKED.getStatus())) {
 				throw OpenSpecimenException.userError(AuthErrorCode.USER_LOCKED);
 			}
@@ -71,9 +84,17 @@ public class UserAuthenticationServiceImpl implements UserAuthenticationService 
 			}
 			
 			AuthenticationService authService = user.getAuthDomain().getAuthProviderInstance();
-			authService.authenticate(loginDetail.getLoginName(), loginDetail.getPassword());
-			
-			Map<String, Object> authDetail = new HashMap<String, Object>();
+			authService.authenticate(loginDetail);
+
+			//
+			// publish auth data for anyone to do extra checks
+			//
+			Map<String, Object> authEventData = new HashMap<>();
+			authEventData.put("loginDetail", loginDetail);
+			authEventData.put("user", user);
+			EventPublisher.getInstance().publish(UserEvent.XTRA_AUTH, authEventData);
+
+			Map<String, Object> authDetail = new HashMap<>();
 			authDetail.put("user", user);
 			
 			String authToken = generateToken(user, loginDetail);
@@ -103,10 +124,14 @@ public class UserAuthenticationServiceImpl implements UserAuthenticationService 
 			if (authToken == null) {
 				throw OpenSpecimenException.userError(AuthErrorCode.INVALID_TOKEN);
 			}
-			
+
 			User user = authToken.getUser();
 			long timeSinceLastApiCall = auditService.getTimeSinceLastApiCall(user.getId(), token);
 			int tokenInactiveInterval = AuthConfig.getInstance().getTokenInactiveIntervalInMinutes();
+			if (!user.isAdmin() && isSystemLockedDown()) {
+				throw OpenSpecimenException.userError(AuthErrorCode.SYSTEM_LOCKDOWN);
+			}
+
 			if (timeSinceLastApiCall > tokenInactiveInterval) {
 				daoFactory.getAuthDao().deleteAuthToken(authToken);
 				throw OpenSpecimenException.userError(AuthErrorCode.TOKEN_EXPIRED);
@@ -178,6 +203,8 @@ public class UserAuthenticationServiceImpl implements UserAuthenticationService 
 		insertApiCallLog(loginDetail, user, loginAuditLog);
 		return AuthUtil.encodeToken(token);
 	}
+
+
 	
 	private LoginAuditLog insertLoginAudit(User user, String ipAddress, boolean loginSuccessful) {
 		LoginAuditLog loginAuditLog = new LoginAuditLog();
@@ -207,6 +234,7 @@ public class UserAuthenticationServiceImpl implements UserAuthenticationService 
 		}
 		
 		user.setActivityStatus(Status.ACTIVITY_STATUS_LOCKED.getStatus());
+		notifyUserAccountLocked(user, failedLoginAttempts);
 	}
 	
 	private void insertApiCallLog(LoginDetail loginDetail, User user, LoginAuditLog loginAuditLog) {
@@ -219,5 +247,44 @@ public class UserAuthenticationServiceImpl implements UserAuthenticationService 
 		userAuditLog.setCallEndTime(Calendar.getInstance().getTime());
 		userAuditLog.setLoginAuditLog(loginAuditLog);
 		auditService.insertApiCallLog(userAuditLog);
+	}
+
+	private boolean isSystemLockedDown() {
+		return ConfigUtil.getInstance().getBoolSetting("administrative", "system_lockdown", false);
+	}
+
+	private void notifyUserAccountLocked(User lockedUser, int failedLoginAttempts) {
+		String[] subjParams = {lockedUser.getFirstName(), lockedUser.getLastName()};
+
+		Map<String, Object> emailProps = new HashMap<>();
+		emailProps.put("lockedUser", lockedUser);
+		emailProps.put("failedLoginAttempts", failedLoginAttempts);
+		emailProps.put("$subject", subjParams);
+		emailProps.put("ccAdmin", false);
+
+		List<User> rcpts = daoFactory.getUserDao().getSuperAndInstituteAdmins(lockedUser.getInstitute().getName());
+		if (!rcpts.contains(lockedUser)) {
+			rcpts.add(lockedUser);
+		}
+
+		for (User rcpt : rcpts) {
+			emailProps.put("user", rcpt);
+			EmailUtil.getInstance().sendEmail(ACCOUNT_LOCKED_NOTIF_TMPL, new String[] {rcpt.getEmailAddress()}, null, emailProps);
+		}
+
+
+		//
+		// remove the user who is locked as they can't see the UI notification
+		//
+		rcpts.remove(lockedUser);
+
+		Notification notif = new Notification();
+		notif.setEntityId(lockedUser.getId());
+		notif.setEntityType(User.getEntityName());
+		notif.setCreatedBy(daoFactory.getUserDao().getSystemUser());
+		notif.setCreationTime(Calendar.getInstance().getTime());
+		notif.setOperation("UPDATE");
+		notif.setMessage(MessageUtil.getInstance().getMessage(ACCOUNT_LOCKED_NOTIF_TMPL + "_subj", subjParams));
+		NotifUtil.getInstance().notify(notif, Collections.singletonMap("user-overview", rcpts));
 	}
 }

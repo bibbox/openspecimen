@@ -13,11 +13,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.function.Supplier;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.apache.commons.collections.CollectionUtils;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.factory.InitializingBean;
@@ -28,6 +28,7 @@ import com.krishagni.catissueplus.core.administrative.domain.StorageContainerPos
 import com.krishagni.catissueplus.core.administrative.domain.factory.StorageContainerErrorCode;
 import com.krishagni.catissueplus.core.administrative.domain.factory.StorageContainerFactory;
 import com.krishagni.catissueplus.core.administrative.events.AssignPositionsOp;
+import com.krishagni.catissueplus.core.administrative.events.ContainerCriteria;
 import com.krishagni.catissueplus.core.administrative.events.ContainerHierarchyDetail;
 import com.krishagni.catissueplus.core.administrative.events.ContainerQueryCriteria;
 import com.krishagni.catissueplus.core.administrative.events.ContainerReplicationDetail;
@@ -41,6 +42,7 @@ import com.krishagni.catissueplus.core.administrative.events.TenantDetail;
 import com.krishagni.catissueplus.core.administrative.events.VacantPositionsOp;
 import com.krishagni.catissueplus.core.administrative.repository.StorageContainerListCriteria;
 import com.krishagni.catissueplus.core.administrative.services.ContainerMapExporter;
+import com.krishagni.catissueplus.core.administrative.services.ContainerSelectionRule;
 import com.krishagni.catissueplus.core.administrative.services.ContainerSelectionStrategy;
 import com.krishagni.catissueplus.core.administrative.services.ContainerSelectionStrategyFactory;
 import com.krishagni.catissueplus.core.administrative.services.ScheduledTaskManager;
@@ -65,7 +67,7 @@ import com.krishagni.catissueplus.core.common.events.ExportedFileDetail;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
 import com.krishagni.catissueplus.core.common.events.ResponseEvent;
 import com.krishagni.catissueplus.core.common.service.LabelGenerator;
-import com.krishagni.catissueplus.core.common.service.ObjectStateParamsResolver;
+import com.krishagni.catissueplus.core.common.service.ObjectAccessor;
 import com.krishagni.catissueplus.core.common.util.AuthUtil;
 import com.krishagni.catissueplus.core.common.util.ConfigUtil;
 import com.krishagni.catissueplus.core.common.util.MessageUtil;
@@ -76,12 +78,13 @@ import com.krishagni.catissueplus.core.de.events.ExecuteQueryEventOp;
 import com.krishagni.catissueplus.core.de.events.QueryDataExportResult;
 import com.krishagni.catissueplus.core.de.services.QueryService;
 import com.krishagni.catissueplus.core.de.services.SavedQueryErrorCode;
+import com.krishagni.catissueplus.core.exporter.domain.ExportJob;
 import com.krishagni.catissueplus.core.exporter.services.ExportService;
 import com.krishagni.rbac.common.errors.RbacErrorCode;
 
 import edu.common.dynamicextensions.query.WideRowMode;
 
-public class StorageContainerServiceImpl implements StorageContainerService, ObjectStateParamsResolver, InitializingBean {
+public class StorageContainerServiceImpl implements StorageContainerService, ObjectAccessor, InitializingBean {
 	private static final Log logger = LogFactory.getLog(StorageContainerServiceImpl.class);
 
 	private DaoFactory daoFactory;
@@ -218,21 +221,23 @@ public class StorageContainerServiceImpl implements StorageContainerService, Obj
 	@Override
 	@PlusTransactional
 	public ResponseEvent<List<SpecimenInfo>> getSpecimens(RequestEvent<SpecimenListCriteria> req) {
-		SpecimenListCriteria crit = req.getPayload();
-		StorageContainer container = getContainer(crit.ancestorContainerId(), null);
-
+		StorageContainer container = getContainer(req.getPayload().ancestorContainerId(), null);
 		AccessCtrlMgr.getInstance().ensureReadContainerRights(container);
-		Set<Pair<Long, Long>> siteCps = AccessCtrlMgr.getInstance().getReadAccessContainerSiteCps();
-		if (siteCps != null) {
-			List<Pair<Long, Long>> contSiteCps = siteCps.stream()
-				.filter(siteCp -> siteCp.first().equals(container.getSite().getId()))
-				.collect(Collectors.toList());
-
-			crit.siteCps(contSiteCps);
-		}
+		SpecimenListCriteria crit = addSiteCpRestrictions(req.getPayload(), container);
 
 		List<Specimen> specimens = daoFactory.getStorageContainerDao().getSpecimens(crit, !container.isDimensionless());
 		return ResponseEvent.response(SpecimenInfo.from(specimens));
+	}
+
+	@Override
+	@PlusTransactional
+	public ResponseEvent<Long> getSpecimensCount(RequestEvent<SpecimenListCriteria> req) {
+		StorageContainer container = getContainer(req.getPayload().ancestorContainerId(), null);
+		AccessCtrlMgr.getInstance().ensureReadContainerRights(container);
+		SpecimenListCriteria crit = addSiteCpRestrictions(req.getPayload(), container);
+
+		Long count = daoFactory.getStorageContainerDao().getSpecimensCount(crit);
+		return ResponseEvent.response(count);
 	}
 
 	@Override
@@ -358,24 +363,22 @@ public class StorageContainerServiceImpl implements StorageContainerService, Obj
 	}
 	
 	@Override
-	@PlusTransactional
-	public ResponseEvent<List<StorageContainerSummary>> deleteStorageContainers(RequestEvent<BulkDeleteEntityOp> req) {
+	public ResponseEvent<Map<String, Integer>> deleteStorageContainers(RequestEvent<BulkDeleteEntityOp> req) {
 		try {
-			Set<Long> containerIds = req.getPayload().getIds();
-			List<StorageContainer> containers = daoFactory.getStorageContainerDao().getByIds(containerIds);
-			if (containerIds.size() != containers.size()) {
-				containers.forEach(container -> containerIds.remove(container.getId()));
-				throw OpenSpecimenException.userError(StorageContainerErrorCode.NOT_FOUND, containerIds, containerIds.size());
-			}
-
-			List<StorageContainer> ancestors = getAncestors(containers);
-			ancestors.forEach(AccessCtrlMgr.getInstance()::ensureDeleteContainerRights);
-			ancestors.forEach(StorageContainer::delete);
+			BulkDeleteEntityOp op = req.getPayload();
+			Set<Long> containerIds = op.getIds();
+			List<StorageContainer> ancestors = getAccessibleAncestors(containerIds);
+			int clearedSpmnCount = ancestors.stream()
+				.mapToInt(c -> deleteContainerHierarchy(c, op.isForceDelete()))
+				.sum();
 
 			//
 			// returning summary of all containers given by user instead of only ancestor containers
 			//
-			return ResponseEvent.response(StorageContainerSummary.from(containers));
+			Map<String, Integer> result = new HashMap<>();
+			result.put(StorageContainer.getEntityName(), op.getIds().size());
+			result.put(Specimen.getEntityName(), clearedSpmnCount);
+			return ResponseEvent.response(result);
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
 		} catch (Exception e) {
@@ -390,7 +393,8 @@ public class StorageContainerServiceImpl implements StorageContainerService, Obj
 			ContainerReplicationDetail replDetail = req.getPayload();
 			StorageContainer srcContainer = getContainer(
 					replDetail.getSourceContainerId(), 
-					replDetail.getSourceContainerName(), 
+					replDetail.getSourceContainerName(),
+					null,
 					StorageContainerErrorCode.SRC_ID_OR_NAME_REQ);
 			
 			for (DestinationDetail dest : replDetail.getDestinations()) {
@@ -415,6 +419,11 @@ public class StorageContainerServiceImpl implements StorageContainerService, Obj
 			StorageContainer container = containerFactory.createStorageContainer("dummyName", input);
 			AccessCtrlMgr.getInstance().ensureCreateContainerRights(container);
 			container.validateRestrictions();
+
+			StorageContainer parentContainer = container.getParentContainer();
+			if (parentContainer != null && !parentContainer.hasFreePositionsForReservation(input.getNumOfContainers())) {
+				return ResponseEvent.userError(StorageContainerErrorCode.NO_FREE_SPACE, parentContainer.getName());
+			}
 
 			boolean setCapacity = true;
 			for (int i = 1; i <= input.getNumOfContainers(); i++) {
@@ -503,7 +512,7 @@ public class StorageContainerServiceImpl implements StorageContainerService, Obj
 
 			ContainerSelectionStrategy strategy = selectionStrategyFactory.getStrategy(cp.getContainerSelectionStrategy());
 			if (strategy == null) {
-				throw OpenSpecimenException.userError(CpErrorCode.INV_CONT_SEL_STRATEGY, cp.getContainerSelectionStrategy());
+				throw OpenSpecimenException.userError(StorageContainerErrorCode.INV_CONT_SEL_STRATEGY, cp.getContainerSelectionStrategy());
 			}
 
 			Set<Pair<Long, Long>> allowedSiteCps = AccessCtrlMgr.getInstance().getReadAccessContainerSiteCps(cpId);
@@ -517,21 +526,29 @@ public class StorageContainerServiceImpl implements StorageContainerService, Obj
 			}
 
 			List<StorageContainerPosition> reservedPositions = new ArrayList<>();
-			for (TenantDetail detail : op.getTenants()) {
-				detail.setCpId(cpId);
-				detail.setSiteCps(reqSiteCps);
+			for (ContainerCriteria criteria : op.getCriteria()) {
+				criteria.siteCps(reqSiteCps);
+
+				if (StringUtils.isNotBlank(criteria.ruleName())) {
+					ContainerSelectionRule rule = selectionStrategyFactory.getRule(criteria.ruleName());
+					if (rule == null) {
+						throw OpenSpecimenException.userError(StorageContainerErrorCode.INV_CONT_SEL_RULE, criteria.ruleName());
+					}
+
+					criteria.rule(rule);
+				}
 
 				boolean allAllocated = false;
 				while (!allAllocated) {
 					long t2 = System.currentTimeMillis();
-					StorageContainer container = strategy.getContainer(detail, cp.getAliquotsInSameContainer());
+					StorageContainer container = strategy.getContainer(criteria, cp.getAliquotsInSameContainer());
 					if (container == null) {
 						ResponseEvent<List<StorageLocationSummary>> resp = new ResponseEvent<>(Collections.emptyList());
 						resp.setRollback(true);
 						return resp;
 					}
 
-					int numPositions = detail.getNumOfAliquots();
+					int numPositions = criteria.minFreePositions();
 					if (numPositions <= 0) {
 						numPositions = 1;
 					}
@@ -555,7 +572,7 @@ public class StorageContainerServiceImpl implements StorageContainerService, Obj
 					if (numPositions == 0) {
 						allAllocated = true;
 					} else {
-						detail.setNumOfAliquots(numPositions);
+						criteria.minFreePositions(numPositions);
 					}
 
 					System.err.println("***** Allocation time: " + (System.currentTimeMillis() - t2) + " ms");
@@ -618,13 +635,8 @@ public class StorageContainerServiceImpl implements StorageContainerService, Obj
 		try {
 			StorageContainer container = getContainer(req.getPayload());
 			AccessCtrlMgr.getInstance().ensureReadContainerRights(container);
-
-			if (container.isDimensionless()) {
-				return ResponseEvent.response(Collections.emptyList());
-			} else {
-				return ResponseEvent.response(daoFactory.getStorageContainerDao()
+			return ResponseEvent.response(daoFactory.getStorageContainerDao()
 					.getChildContainers(container.getId(), container.getNoOfColumns()));
-			}
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
 		} catch (Exception e) {
@@ -708,17 +720,28 @@ public class StorageContainerServiceImpl implements StorageContainerService, Obj
 
 	@Override
 	public String getObjectName() {
-		return "container";
+		return StorageContainer.getEntityName();
 	}
 
 	@Override
 	@PlusTransactional
-	public Map<String, Object> resolve(String key, Object value) {
+	public Map<String, Object> resolveUrl(String key, Object value) {
 		if (key.equals("id")) {
 			value = Long.valueOf(value.toString());
 		}
 
 		return daoFactory.getStorageContainerDao().getContainerIds(key, value);
+	}
+
+	@Override
+	public String getAuditTable() {
+		return "OS_STORAGE_CONTAINERS_AUD";
+	}
+
+	@Override
+	public void ensureReadAllowed(Long objectId) {
+		StorageContainer container = getContainer(objectId, null);
+		AccessCtrlMgr.getInstance().ensureReadContainerRights(container);
 	}
 
 	@Override
@@ -807,31 +830,42 @@ public class StorageContainerServiceImpl implements StorageContainerService, Obj
 	}
 
 	private StorageContainer getContainer(ContainerQueryCriteria crit) {
-		return getContainer(crit.getId(), crit.getName());
+		return getContainer(crit.getId(), crit.getName(), crit.getBarcode());
 	}
-	
+
 	private StorageContainer getContainer(Long id, String name) {
-		return getContainer(id, name, StorageContainerErrorCode.ID_OR_NAME_REQ);
+		return getContainer(id, name, null);
 	}
 	
-	private StorageContainer getContainer(Long id, String name, ErrorCode requiredErrCode) {
-		OpenSpecimenException ose = new OpenSpecimenException(ErrorType.USER_ERROR);
+	private StorageContainer getContainer(Long id, String name, String barcode) {
+		return getContainer(id, name, barcode, StorageContainerErrorCode.ID_NAME_OR_BARCODE_REQ);
+	}
+	
+	private StorageContainer getContainer(Long id, String name, String barcode, ErrorCode requiredErrCode) {
 		StorageContainer container = null;
+		Object key = null;
+
 		if (id != null) {
 			container = daoFactory.getStorageContainerDao().getById(id);
-			if (container == null) {
-				ose.addError(StorageContainerErrorCode.NOT_FOUND, id);
+			key = id;
+		} else {
+			if (StringUtils.isNotBlank(name)) {
+				container = daoFactory.getStorageContainerDao().getByName(name);
+				key = name;
 			}
-		} else if (StringUtils.isNotBlank(name)) {
-			container = daoFactory.getStorageContainerDao().getByName(name);
-			if (container == null) {
-				ose.addError(StorageContainerErrorCode.NOT_FOUND, name);
+
+			if (container == null && StringUtils.isNotBlank(barcode)) {
+				container = daoFactory.getStorageContainerDao().getByBarcode(barcode);
+				key = barcode;
 			}
-		} else if (requiredErrCode != null) {
-			ose.addError(requiredErrCode);
 		}
-		
-		ose.checkAndThrow();
+
+		if (key == null) {
+			throw OpenSpecimenException.userError(requiredErrCode);
+		} else if (container == null) {
+			throw OpenSpecimenException.userError(StorageContainerErrorCode.NOT_FOUND, key, 1);
+		}
+
 		return container;
 	}
 
@@ -960,6 +994,19 @@ public class StorageContainerServiceImpl implements StorageContainerService, Obj
 			pos.getOccupyingEntityName()
 		);
 	}
+
+	private SpecimenListCriteria addSiteCpRestrictions(SpecimenListCriteria crit, StorageContainer container) {
+		Set<Pair<Long, Long>> siteCps = AccessCtrlMgr.getInstance().getReadAccessContainerSiteCps();
+		if (siteCps != null) {
+			List<Pair<Long, Long>> contSiteCps = siteCps.stream()
+				.filter(siteCp -> siteCp.first().equals(container.getSite().getId()))
+				.collect(Collectors.toList());
+
+			crit.siteCps(contSiteCps);
+		}
+
+		return crit;
+	}
 	
 	private StorageContainerPosition createChildContainerPosition(
 			StorageContainer container, 
@@ -1028,6 +1075,19 @@ public class StorageContainerServiceImpl implements StorageContainerService, Obj
 		}
 	}
 
+	@PlusTransactional
+	private List<StorageContainer> getAccessibleAncestors(Set<Long> containerIds) {
+		List<StorageContainer> containers = daoFactory.getStorageContainerDao().getByIds(containerIds);
+		if (containerIds.size() != containers.size()) {
+			containers.forEach(container -> containerIds.remove(container.getId()));
+			throw OpenSpecimenException.userError(StorageContainerErrorCode.NOT_FOUND, containerIds, containerIds.size());
+		}
+
+		List<StorageContainer> ancestors = getAncestors(containers);
+		ancestors.forEach(AccessCtrlMgr.getInstance()::ensureDeleteContainerRights);
+		return ancestors;
+	}
+
 	private List<StorageContainer> getAncestors(List<StorageContainer> containers) {
 		Set<Long> descContIds = containers.stream()
 			.flatMap(c -> c.getDescendentContainers().stream().filter(d -> !d.equals(c)))
@@ -1037,6 +1097,76 @@ public class StorageContainerServiceImpl implements StorageContainerService, Obj
 		return containers.stream()
 			.filter(c -> !descContIds.contains(c.getId()))
 			.collect(Collectors.toList());
+	}
+
+
+	private int deleteContainerHierarchy(StorageContainer container, boolean vacateSpmns) {
+		if (!vacateSpmns) {
+			raiseErrorIfNotEmpty(container);
+		}
+
+		int clearedSpmns = 0;
+		boolean endOfContainers = false;
+		while (!endOfContainers) {
+			List<Long> leafContainers = getLeafContainerIds(container);
+			clearedSpmns += leafContainers.stream().mapToInt(cid -> deleteContainer(cid, vacateSpmns)).sum();
+			endOfContainers = (leafContainers.isEmpty());
+		}
+
+		return clearedSpmns;
+	}
+
+	@PlusTransactional
+	private void raiseErrorIfNotEmpty(StorageContainer container) {
+		int storedSpmns = daoFactory.getStorageContainerDao().getSpecimensCount(container.getId());
+		if (storedSpmns > 0) {
+			throw OpenSpecimenException.userError(StorageContainerErrorCode.REF_ENTITY_FOUND, container.getName());
+		}
+	}
+
+	@PlusTransactional
+	private List<Long> getLeafContainerIds(StorageContainer container) {
+		return daoFactory.getStorageContainerDao().getLeafContainerIds(container.getId(), 0, 100);
+	}
+
+	private int deleteContainer(Long containerId, boolean vacateSpmns) {
+		int spmns = 0;
+		if (vacateSpmns) {
+			spmns = vacateSpecimens(containerId);
+		}
+
+		deleteContainer(containerId);
+		return spmns;
+	}
+
+	private int vacateSpecimens(Long containerId) {
+		boolean endOfSpmns = false;
+		int startAt = 0, maxSpmns = 100, totalSpmns = 0;
+		SpecimenListCriteria crit = new SpecimenListCriteria()
+				.ancestorContainerId(containerId)
+				.startAt(startAt)
+				.maxResults(maxSpmns);
+
+		while(!endOfSpmns) {
+			int count = vacateSpecimensBatch(crit);
+			totalSpmns += count;
+			endOfSpmns = (count < maxSpmns);
+		}
+
+		return totalSpmns;
+	}
+
+	@PlusTransactional
+	private int vacateSpecimensBatch(SpecimenListCriteria crit) {
+		List<Specimen> specimens = daoFactory.getStorageContainerDao().getSpecimens(crit, false);
+		specimens.forEach(s -> s.updatePosition(null));
+		return specimens.size();
+	}
+
+	@PlusTransactional
+	private void deleteContainer(Long containerId) {
+		StorageContainer container = daoFactory.getStorageContainerDao().getById(containerId); // refresh from DB
+		container.delete(false);
 	}
 
 	private void generateName(StorageContainer container) {
@@ -1127,8 +1257,10 @@ public class StorageContainerServiceImpl implements StorageContainerService, Obj
 		});
 	}
 
-	private Supplier<List<? extends Object>> getContainersGenerator() {
-		return new Supplier<List<? extends Object>>() {
+	private Function<ExportJob, List<? extends Object>> getContainersGenerator() {
+		return new Function<ExportJob, List<? extends Object>>() {
+			private boolean loadTopLevelContainers = true;
+
 			private boolean endOfContainers;
 
 			private int startAt;
@@ -1140,19 +1272,22 @@ public class StorageContainerServiceImpl implements StorageContainerService, Obj
 			private List<StorageContainerDetail> topLevelContainers = new ArrayList<>();
 
 			@Override
-			public List<StorageContainerDetail> get() {
+			public List<StorageContainerDetail> apply(ExportJob job) {
 				if (endOfContainers) {
 					return Collections.emptyList();
 				}
 
 				if (topLevelContainers.isEmpty()) {
 					if (topLevelCrit == null) {
-						topLevelCrit = new StorageContainerListCriteria().topLevelContainers(true);
+						topLevelCrit = new StorageContainerListCriteria().topLevelContainers(true).ids(job.getRecordIds());
 						addContainerListCriteria(topLevelCrit);
 					}
 
-					topLevelContainers = getContainers(topLevelCrit.startAt(startAt));
-					startAt += topLevelContainers.size();
+					if (loadTopLevelContainers) {
+						topLevelContainers = getContainers(topLevelCrit.startAt(startAt));
+						startAt += topLevelContainers.size();
+						loadTopLevelContainers = CollectionUtils.isEmpty(job.getRecordIds());
+					}
 				}
 
 				if (topLevelContainers.isEmpty()) {

@@ -1,27 +1,33 @@
 package com.krishagni.catissueplus.core.common.domain;
 
+import java.lang.reflect.Field;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import org.apache.commons.beanutils.BeanUtils;
+import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang.StringUtils;
 import org.springframework.context.MessageSource;
 import org.springframework.security.web.util.matcher.IpAddressMatcher;
+import org.springframework.util.ReflectionUtils;
 
 import com.krishagni.catissueplus.core.administrative.domain.User;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
+import com.krishagni.catissueplus.core.common.util.MessageUtil;
 
-public class LabelPrintRule {
+public abstract class LabelPrintRule {
 	public enum CmdFileFmt {
 		CSV("csv"),
 		KEY_VALUE("key-value");
 
 		private String fmt;
 
-		private CmdFileFmt(String fmt) {
+		CmdFileFmt(String fmt) {
 			this.fmt = fmt;
 		}
 
@@ -39,8 +45,10 @@ public class LabelPrintRule {
 	private String labelType;
 	
 	private IpAddressMatcher ipAddressMatcher;
-	
-	private String userLogin;
+
+	private String domainName;
+
+	private List<String> users = new ArrayList<>();
 	
 	private String printerName;
 	
@@ -50,8 +58,6 @@ public class LabelPrintRule {
 
 	private List<LabelTmplToken> dataTokens = new ArrayList<LabelTmplToken>();
 	
-	private MessageSource messageSource;
-
 	private CmdFileFmt cmdFileFmt = CmdFileFmt.KEY_VALUE;
 
 	public String getLabelType() {
@@ -70,12 +76,25 @@ public class LabelPrintRule {
 		this.ipAddressMatcher = ipAddressMatcher;
 	}
 
-	public String getUserLogin() {
-		return userLogin;
+	public String getDomainName() {
+		return domainName;
+	}
+
+	public void setDomainName(String domainName) {
+		this.domainName = domainName;
 	}
 
 	public void setUserLogin(String userLogin) {
-		this.userLogin = userLogin;
+		users = new ArrayList<>();
+		users.add(userLogin);
+	}
+
+	public List<String> getUsers() {
+		return users;
+	}
+
+	public void setUsers(List<String> users) {
+		this.users = users;
 	}
 
 	public String getPrinterName() {
@@ -110,14 +129,6 @@ public class LabelPrintRule {
 		this.dataTokens = dataTokens;
 	}
 
-	public MessageSource getMessageSource() {
-		return messageSource;
-	}
-
-	public void setMessageSource(MessageSource messageSource) {
-		this.messageSource = messageSource;
-	}
-	
 	public CmdFileFmt getCmdFileFmt() {
 		return cmdFileFmt;
 	}
@@ -134,7 +145,7 @@ public class LabelPrintRule {
 	}
 
 	public boolean isApplicableFor(User user, String ipAddr) {
-		if (!isWildCard(userLogin) && !user.getLoginName().equals(userLogin)) {
+		if (CollectionUtils.isNotEmpty(users) && !users.contains(user.getLoginName())) {
 			return false;
 		}
 		
@@ -176,20 +187,64 @@ public class LabelPrintRule {
 		StringBuilder result = new StringBuilder();
 		result.append("label design = ").append(getLabelDesign())
 			.append(", label type = ").append(getLabelType())
-			.append(", user = ").append(getUserLogin())
+			.append(", user = ").append(getUsers().stream().collect(Collectors.joining(",")))
 			.append(", printer = ").append(getPrinterName());
 
 		String tokens = getDataTokens().stream()
-			.map(token -> getMessageStr(token.getName()))
+			.map(token -> token.getName())
 			.collect(Collectors.joining(";"));
 		result.append(", tokens = ").append(tokens);
 		return result.toString();
 	}
+
+	public Map<String, String> toDefMap() {
+		try {
+			Map<String, String> rule = new HashMap<>();
+			rule.put("labelType", getLabelType());
+			rule.put("ipAddressMatcher", getIpAddressRange(getIpAddressMatcher()));
+			rule.put("domainName", getDomainName());
+			rule.put("users", getUsers().stream().collect(Collectors.joining(",")));
+			rule.put("printerName", getPrinterName());
+			rule.put("cmdFilesDir", getCmdFilesDir());
+			rule.put("labelDesign", getLabelDesign());
+			rule.put("dataTokens", getTokenNames());
+			rule.put("cmdFileFmt", getCmdFileFmt().fmt);
+			rule.putAll(getDefMap());
+			return rule;
+		} catch (Exception e) {
+			throw new RuntimeException("Error in creating map from print rule ", e);
+		}
+	}
+
+	protected abstract Map<String, String> getDefMap();
+
 	protected boolean isWildCard(String str) {
-		return StringUtils.isNotBlank(str) && str.trim().equals("*");
+		return StringUtils.isBlank(str) || str.trim().equals("*");
 	}
 
 	private String getMessageStr(String name) {
-		return messageSource.getMessage("print_" + name, null, Locale.getDefault());
+		return MessageUtil.getInstance().getMessage("print_" + name, null);
+	}
+
+	private String getTokenNames() {
+		return dataTokens.stream().map(LabelTmplToken::getName).collect(Collectors.joining(","));
+	}
+
+	private String getIpAddressRange(IpAddressMatcher ipRange) {
+		if (ipRange == null) {
+			return null;
+		}
+
+		String address = getFieldValue(ipAddressMatcher, "requiredAddress").toString();
+		address = address.substring(address.indexOf("/") + 1);
+
+		int maskBits = getFieldValue(ipAddressMatcher, "nMaskBits");
+		return address + "/" + maskBits;
+	}
+
+	private <T> T getFieldValue(Object obj, String fieldName) {
+		Field field = ReflectionUtils.findField(obj.getClass(), fieldName);
+		field.setAccessible(true);
+		return (T)ReflectionUtils.getField(field, obj);
 	}
 }

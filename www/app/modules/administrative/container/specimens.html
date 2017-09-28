@@ -1,4 +1,8 @@
 <div class="os-detail-sublist">
+  <div class="os-page-header-actions">
+    <os-list-pager opts="lctx.pagerOpts"></os-list-pager>
+  </div>
+
   <div class="os-page-commands">
     <div class="left">
       <os-specimen-ops specimens="getSelectedSpecimens()" init-list="loadSpecimens()"></os-specimen-ops>
@@ -38,7 +42,7 @@
           <th class="col">
             <span translate="specimens.description">Description</span>
           </th>
-          <th class="col" ng-if="!ctx.dimless">
+          <th class="col">
             <span translate="specimens.container">Container</span>
           </th>
         </tr>
@@ -62,7 +66,7 @@
           <td class="col">
             <os-specimen-desc specimen="spmn" detailed="true"></os-specimen-desc>
           </td>
-          <td class="col" ng-if="!ctx.dimless">
+          <td class="col">
             <span>{{spmn.storageLocation.name}}</span>
           </td>
         </tr>
@@ -98,13 +102,20 @@
           os-md-input placeholder="{{'specimens.ppid' | translate}}">
       </div>
 
-      <div class="form-group">
-        <os-select list="lctx.cps" display-prop="shortTitle" select-prop="id" ng-model="lctx.filterOpts.cpId"
-          os-md-input refresh="loadCps" placeholder="{{'specimens.cp' | translate}}">
-        </os-select>
+      <div class="form-group" ng-switch on="ctx.container.calcAllowedCollectionProtocols.length > 0">
+        <span ng-switch-when="true">
+          <os-select list="ctx.container.calcAllowedCollectionProtocols"
+            ng-model="lctx.filterOpts.cpShortTitle" os-md-input placeholder="{{'specimens.cp' | translate}}">
+          </os-select>
+        </span>
+        <span ng-switch-when="false">
+          <os-select list="lctx.cps" display-prop="shortTitle" select-prop="id"
+            ng-model="lctx.filterOpts.cpId" os-md-input refresh="loadCps" placeholder="{{'specimens.cp' | translate}}">
+          </os-select>
+        </span>
       </div>
 
-      <div class="form-group" ng-if="!ctx.dimless">
+      <div class="form-group">
         <os-select list="lctx.containers" display-prop="name" select-prop="name" ng-model="lctx.filterOpts.container"
           os-md-input refresh="loadContainers" placeholder="{{'specimens.container' | translate}}">
         </os-select>

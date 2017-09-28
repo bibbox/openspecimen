@@ -43,7 +43,7 @@ angular.module('os.biospecimen.participant',
             return CollectionProtocol.getById($stateParams.cpId);
           },
 
-          cpViewCtx: function(cp, AuthorizationService) {
+          cpViewCtx: function(cp, currentUser, AuthorizationService) {
             return {
               participantImportAllowed: AuthorizationService.isAllowed({
                 resource: 'ParticipantPhi',
@@ -55,7 +55,11 @@ angular.module('os.biospecimen.participant',
                 resource: 'VisitAndSpecimen',
                 operations: ['Bulk Import'],
                 cp: cp.shortTitle
-              })
+              }),
+
+              participantExportAllowed: (currentUser.admin || currentUser.instituteAdmin),
+
+              visitSpecimenExportAllowed: (currentUser.admin || currentUser.instituteAdmin)
             }
           },
 
@@ -111,10 +115,12 @@ angular.module('os.biospecimen.participant',
       })
       .state('cp-list-view-root', {
         templateUrl: 'modules/biospecimen/participant/list-view.html',
-        controller: function($scope, cp, defSopDoc, defSopUrl, spmnListCfg, Alerts) {
+        controller: function($scope, cp, cpViewCtx, defSopDoc, defSopUrl, spmnListCfg, Alerts) {
           var ctx = $scope.listViewCtx = {
             sopDocDownloadUrl: cp.getSopDocDownloadUrl(),
-            spmnListCfg: spmnListCfg
+            spmnListCfg: spmnListCfg,
+            showImport: (cpViewCtx.visitSpecimenImportAllowed || (!cp.specimenCentric && cpViewCtx.participantImportAllowed)),
+            showExport: (cpViewCtx.visitSpecimenExportAllowed || (!cp.specimenCentric && cpViewCtx.participantExportAllowed))
           };
 
           ctx.sopDoc = cp.sopDocumentName;
@@ -173,7 +179,7 @@ angular.module('os.biospecimen.participant',
         abstract: true
       })
       .state('participant-list', {
-        url: '/participants',
+        url: '/participants?filters',
         templateUrl: 'modules/biospecimen/participant/list.html',
         controller: 'ParticipantListCtrl',
         resolve: {
@@ -190,9 +196,22 @@ angular.module('os.biospecimen.participant',
         parent: 'cp-list-view-root'
       })
       .state('cp-specimens', {
-        url: '/specimens',
+        url: '/specimens?filters',
         templateUrl: 'modules/biospecimen/participant/specimens-list.html',
         controller: 'SpecimensListViewCtrl',
+        resolve: {
+          sdeConfigured: function($injector, cp, CpConfigSvc) {
+            if (!$injector.has('sdeFieldsSvc')) {
+              return false;
+            }
+
+            return CpConfigSvc.getWorkflowData(cp.id, 'sde').then(
+              function(data) {
+                return !!data.singlePatientSamples;
+              }
+            );
+          }
+        },
         metaInfo: {
           button: {
             icon: 'fa-flask',
@@ -256,6 +275,39 @@ angular.module('os.biospecimen.participant',
         },
         parent: 'cp-view'
       })
+      .state('export-cp-objs', {
+        url: '/export-cp-objs',
+        templateUrl: 'modules/common/export/add.html',
+        controller: 'AddEditExportJobCtrl',
+        resolve: {
+          allowedEntityTypes: function(cp, cpViewCtx) {
+            var entityTypes = [];
+            if (!cp.specimenCentric && cpViewCtx.participantExportAllowed) {
+              entityTypes = entityTypes.concat(['CommonParticipant', 'Participant']);
+            }
+
+            if (!cp.specimenCentric && cpViewCtx.visitSpecimenExportAllowed) {
+              entityTypes.push('SpecimenCollectionGroup');
+            }
+
+            if (cpViewCtx.visitSpecimenExportAllowed) {
+              entityTypes.push('Specimen');
+              entityTypes.push('SpecimenEvent');
+            }
+
+            return entityTypes;
+          },
+
+          forms: function(cp, allowedEntityTypes) {
+            return allowedEntityTypes.length > 0 ? cp.getForms(allowedEntityTypes) : [];
+          },
+
+          exportDetail: function(cp, allowedEntityTypes, forms, ExportUtil) {
+            return ExportUtil.getExportDetail(cp, allowedEntityTypes, forms);
+          }
+        },
+        parent: 'cp-view'
+      })
       .state('participant-root', {
         url: '/participants/:cprId',
         template: '<div ui-view></div>',
@@ -268,7 +320,10 @@ angular.module('os.biospecimen.participant',
             var participant = new Participant({source: 'OpenSpecimen'});
             return new CollectionProtocolRegistration({
               cpId: cp.id, cpShortTitle: cp.shortTitle,
-              registrationDate: new Date(), participant: participant
+              registrationDate: new Date(), participant: participant,
+              specimenLabelFmt: cp.specimenLabelFmt,
+              derivativeLabelFmt: cp.derivativeLabelFmt,
+              aliquotLabelFmt: cp.aliquotLabelFmt
             });
           },
 
@@ -294,6 +349,30 @@ angular.module('os.biospecimen.participant',
 
           hasDict: function(hasSde, sysDict, cpDict) {
             return hasSde && (cpDict.length > 0 || sysDict.length > 0);
+          },
+
+          sysLookupFields: function(CpConfigSvc) {
+            return CpConfigSvc.getWorkflowData(-1, 'participantLookup', []);
+          },
+
+          lookupFieldsCfg: function(hasSde, twoStepReg, sysLookupFields, cpDict) {
+            var configured = true;
+            if (!hasSde) {
+              return {configured: twoStepReg, fields: []};
+            }
+
+            var cprFields = cpDict.filter(function(field) { return field.name.indexOf('cpr.') == 0; });
+            var lookupFields = cprFields.filter(function(field) { return field.participantLookup == true; });
+            if (lookupFields.length == 0) {
+              configured = false;
+              lookupFields = cprFields;
+            }
+
+            if (lookupFields.length > 0) {
+              return {configured: configured, fields: lookupFields};
+            }
+
+            return {configured: sysLookupFields.length > 0, fields: sysLookupFields};
           },
 
           hasFieldsFn: function($injector, hasDict, sysDict, cpDict) {
@@ -350,10 +429,21 @@ angular.module('os.biospecimen.participant',
                 return setting.value == 'true';
               }
             );
-          }, 
+          },
           lockedFields: function(cpr, CpConfigSvc) {
             var participant = cpr.participant || {};
             return CpConfigSvc.getLockedParticipantFields(participant.source || 'OpenSpecimen');
+          },
+          firstCpEvent: function(cp, cpr, CollectionProtocolEvent) {
+            if (!!cpr.id) {
+              return null;
+            }
+
+            return CollectionProtocolEvent.listFor(cp.id).then(
+              function(events) {
+                return events.length > 0 ? events[0] : null;
+              }
+            );
           }
         },
         parent: 'participant-root'
@@ -395,6 +485,15 @@ angular.module('os.biospecimen.participant',
               return '<div ng-include src="\'' + tmpls[0] + '\'"></div>';
             }
           );
+        },
+        resolve: {
+          storePhi: function(SettingUtil) {
+            return SettingUtil.getSetting('biospecimen', 'store_phi').then(
+              function(setting) {
+                return setting.value == 'true';
+              }
+            );
+          }
         },
         controller: 'ParticipantOverviewCtrl',
         parent: 'participant-detail'
@@ -449,14 +548,14 @@ angular.module('os.biospecimen.participant',
             //
             return $stateParams.visitId ? null : cpr.getLatestVisit();
           },
-          customFieldGroups: function($stateParams, hasSde, cp, CpConfigSvc) {
+          spmnCollFields: function($stateParams, hasSde, cp, CpConfigSvc) {
             if (!hasSde) {
-              return [];
+              return {};
             }
 
             return CpConfigSvc.getWorkflowData(cp.id, 'specimenCollection').then(
               function(data) {
-                return (data && data.fieldGroups) || [];
+                return data || {};
               }
             );
           },

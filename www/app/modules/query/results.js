@@ -146,7 +146,9 @@ angular.module('os.query.results', ['os.query.models'])
       $scope.resultsCtx.error = false;
 
       currResults = {};
-      QueryExecutor.getRecords(undefined, qc.selectedCp.id, getAql(true, true), qc.wideRowMode || 'DEEP').then(
+
+      var outputIsoFmt = (qc.reporting.type != 'crosstab');
+      QueryExecutor.getRecords(qc.id, qc.selectedCp.id, getAql(true, true), qc.wideRowMode || 'DEEP', outputIsoFmt).then(
         function(result) {
           currResults = result;
           $scope.resultsCtx.waitingForRecords = false;
@@ -319,7 +321,7 @@ angular.module('os.query.results', ['os.query.models'])
       var counters = $scope.resultsCtx.counters;
       counters.waiting = true;
       counters.error = false;
-      QueryExecutor.getCount(undefined, qc.selectedCp.id, aql).then(
+      QueryExecutor.getCount(qc.id, qc.selectedCp.id, aql).then(
         function(result) {
           counters.waiting = false;
           angular.extend(counters, result);
@@ -431,15 +433,18 @@ angular.module('os.query.results', ['os.query.models'])
                            '</div>';
           }
 
+          var isDateColumn = (result.columnTypes[idx] == 'DATE');
           colDefs.push({
-            field: "col" + idx,
-            instance: columnInstance(columnLabel).instance,
-            displayName: columnLabel,
-            minWidth: width < 100 ? 100 : width,
+            field:        "col" + idx,
+            instance:     columnInstance(columnLabel).instance,
+            displayName:  columnLabel,
+            minWidth:     width < 100 ? 100 : width,
             headerCellTemplate: 'modules/query/column-filter.html',
             cellTemplate: !!cellTemplate ? cellTemplate : undefined,
-            showSummary: showColSummary,
-            summary: summaryRow[idx]
+            showSummary:  showColSummary,
+            summary:      summaryRow[idx],
+            sortFn:       isDateColumn ? QueryUtil.sortDatesFn : undefined,
+            cellFilter:   isDateColumn ? "date: global.dateTimeFmt" : undefined
           });
         }
       );
@@ -576,7 +581,7 @@ angular.module('os.query.results', ['os.query.models'])
       var qc = $scope.queryCtx;
 
       var alert = Alerts.info('queries.export_initiated', {}, false);  
-      QueryExecutor.exportQueryResultsData(qc.id, qc.selectedCp.id, getAql(false), 'DEEP').then(
+      QueryExecutor.exportQueryResultsData(qc.id, qc.selectedCp.id, getAql(false), qc.wideRowMode || 'DEEP').then(
         function(result) {
           Alerts.remove(alert);
           if (result.completed) {

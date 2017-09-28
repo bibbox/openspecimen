@@ -3,6 +3,7 @@ package com.krishagni.catissueplus.core.biospecimen.domain;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Collection;
 import java.util.Collections;
@@ -20,11 +21,13 @@ import org.springframework.beans.factory.annotation.Configurable;
 import org.springframework.beans.factory.annotation.Qualifier;
 
 import com.krishagni.catissueplus.core.administrative.domain.DistributionOrderItem;
+import com.krishagni.catissueplus.core.administrative.domain.DistributionProtocol;
 import com.krishagni.catissueplus.core.administrative.domain.StorageContainer;
 import com.krishagni.catissueplus.core.administrative.domain.StorageContainerPosition;
 import com.krishagni.catissueplus.core.administrative.domain.User;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.SpecimenErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.SpecimenReturnEvent;
+import com.krishagni.catissueplus.core.biospecimen.domain.factory.VisitErrorCode;
 import com.krishagni.catissueplus.core.common.access.AccessCtrlMgr;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.DependentEntityDetail;
@@ -33,6 +36,7 @@ import com.krishagni.catissueplus.core.common.util.AuthUtil;
 import com.krishagni.catissueplus.core.common.util.NumUtil;
 import com.krishagni.catissueplus.core.common.util.Status;
 import com.krishagni.catissueplus.core.common.util.Utility;
+import com.krishagni.catissueplus.core.de.services.impl.FormUtil;
 
 @Configurable
 @Audited
@@ -510,6 +514,10 @@ public class Specimen extends BaseExtensionEntity {
 		this.specimenListItems = specimenListItems;
 	}
 
+	public Set<DistributionProtocol> getDistributionProtocols() {
+		return getCollectionProtocol().getDistributionProtocols();
+	}
+
 	public LabelGenerator getLabelGenerator() {
 		return labelGenerator;
 	}
@@ -607,6 +615,7 @@ public class Specimen extends BaseExtensionEntity {
 		setLabel(Utility.getDisabledValue(getLabel(), 255));
 		setBarcode(Utility.getDisabledValue(getBarcode(), 255));
 		setActivityStatus(Status.ACTIVITY_STATUS_DISABLED.getStatus());
+		FormUtil.getInstance().deleteRecords(getCpId(), Arrays.asList("Specimen", "SpecimenEvent", "SpecimenExtension"), getId());
 	}
 	
 	public static boolean isCollected(String status) {
@@ -674,10 +683,10 @@ public class Specimen extends BaseExtensionEntity {
 		setInitialQuantity(specimen.getInitialQuantity());
 		setAvailableQuantity(specimen.getAvailableQuantity());
 
-		updatePosition(specimen.getPosition());
 		updateEvent(getCollectionEvent(), specimen.getCollectionEvent());
 		updateEvent(getReceivedEvent(), specimen.getReceivedEvent());
 		updateCollectionStatus(specimen.getCollectionStatus());
+		updatePosition(specimen.getPosition());
 
 		if (isCollected()) {
 			if (isPrimary()) {
@@ -744,7 +753,7 @@ public class Specimen extends BaseExtensionEntity {
 		
 		if (isMissed(collectionStatus)) {
 			if (!getVisit().isCompleted() && !getVisit().isMissed()) {
-				throw OpenSpecimenException.userError(SpecimenErrorCode.COMPL_OR_MISSED_VISIT_REQ);
+				throw OpenSpecimenException.userError(VisitErrorCode.COMPL_OR_MISSED_VISIT_REQ);
 			} else if (getParentSpecimen() != null && !getParentSpecimen().isCollected() && !getParentSpecimen().isMissed()) {
 				throw OpenSpecimenException.userError(SpecimenErrorCode.COLL_OR_MISSED_PARENT_REQ);
 			} else {
@@ -753,7 +762,7 @@ public class Specimen extends BaseExtensionEntity {
 			}
 		} else if (isPending(collectionStatus)) {
 			if (!getVisit().isCompleted() && !getVisit().isPending()) {
-				throw OpenSpecimenException.userError(SpecimenErrorCode.COMPL_OR_PENDING_VISIT_REQ);
+				throw OpenSpecimenException.userError(VisitErrorCode.COMPL_OR_PENDING_VISIT_REQ);
 			} else if (getParentSpecimen() != null && !getParentSpecimen().isCollected() && !getParentSpecimen().isPending()) {
 				throw OpenSpecimenException.userError(SpecimenErrorCode.COLL_OR_PENDING_PARENT_REQ);
 			} else {
@@ -761,7 +770,7 @@ public class Specimen extends BaseExtensionEntity {
 			}
 		} else if (isCollected(collectionStatus)) {
 			if (!getVisit().isCompleted()) {
-				throw OpenSpecimenException.userError(SpecimenErrorCode.COMPL_VISIT_REQ);
+				throw OpenSpecimenException.userError(VisitErrorCode.COMPL_VISIT_REQ);
 			} else if (getParentSpecimen() != null && !getParentSpecimen().isCollected()) {
 				throw OpenSpecimenException.userError(SpecimenErrorCode.COLL_PARENT_REQ);
 			} else {
@@ -775,7 +784,7 @@ public class Specimen extends BaseExtensionEntity {
 	}
 		
 	public void distribute(DistributionOrderItem item) {
-		if (!isAvailable() || !isCollected()) {
+		if (!isCollected() || isClosed()) {
 			throw OpenSpecimenException.userError(SpecimenErrorCode.NOT_AVAILABLE_FOR_DIST, getLabel());
 		}
 		
@@ -1016,6 +1025,10 @@ public class Specimen extends BaseExtensionEntity {
 	}
 	
 	public void updatePosition(StorageContainerPosition newPosition, Date time) {
+		if (!isCollected()) {
+			return;
+		}
+
 		if (newPosition != null) {
 			StorageContainer container = newPosition.getContainer();
 			if (container == null || (!container.isDimensionless() && !newPosition.isSpecified())) {

@@ -67,10 +67,22 @@ angular.module('os.biospecimen.common')
       valuesQ.then(function(types) { scope.types = types; });
 
       scope.onTypeSelect = function(type) {
+        type = type || {specimenClass: '', type: ''};
         angular.extend(scope.specimen, type);
       }
 
       SpecimenTypeUtil.setClass(formCtrl, [scope.specimen], scope.options);
+
+      scope.$watch('specimen.type',
+        function(newVal, oldVal) {
+          if (newVal == oldVal) {
+            return;
+          }
+
+          scope.model = {value: newVal};
+          SpecimenTypeUtil.setClass(formCtrl, [scope.specimen], scope.options);
+        }
+      );
     }
 
     return {

@@ -269,7 +269,7 @@
             <caption>#getMessage("specimen_spec_position_container_name")</caption>
             <column>CONTAINER_NAME</column>
             <maxLength>255</maxLength>
-            <recordUrl>#/object-state-params-resolver?stateName=container-detail.locations&amp;objectName=container&amp;key=name&amp;value={{$value}}</recordUrl>
+            <recordUrl>#/object-state-params-resolver?stateName=container-detail.locations&amp;objectName=storage_container&amp;key=name&amp;value={{$value}}</recordUrl>
           </textField>              
 
           <textField>
@@ -333,7 +333,7 @@
                 <caption>#getMessage("specimen_spec_position_container_root_name")</caption>
                 <column>FREEZER</column>
                 <maxLength>255</maxLength>
-                <recordUrl>#/object-state-params-resolver?stateName=container-detail.overview&amp;objectName=container&amp;key=name&amp;value={{$value}}</recordUrl>
+                <recordUrl>#/object-state-params-resolver?stateName=container-detail.overview&amp;objectName=storage_container&amp;key=name&amp;value={{$value}}</recordUrl>
               </textField>
             </row>
           </subForm>
@@ -371,18 +371,24 @@
         <foreignKey>SPECIMEN_ID</foreignKey>
         <parentKey>IDENTIFIER</parentKey>
         <row>
-          <textField>
+          <dropDown>
             <name>collContainer</name>
             <udn>collContainer</udn>
             <caption>#getMessage("specimen_collection_container")</caption>
             <column>COLL_CONTAINER</column>
-          </textField>
-          <textField>
+            <options>
+              <sql>select distinct coll_container from os_spmn_coll_recv_details_view order by coll_container</sql>
+            </options>
+          </dropDown>
+          <dropDown>
             <name>collProcedure</name>
             <udn>collProcedure</udn>
             <caption>#getMessage("specimen_collection_procedure")</caption>
             <column>COLL_PROCEDURE</column>
-          </textField>
+            <options>
+              <sql>select distinct coll_procedure from os_spmn_coll_recv_details_view order by coll_procedure</sql>
+            </options>
+          </dropDown>
           <userField>
             <name>collector</name>
             <udn>collector</udn>
@@ -395,12 +401,15 @@
             <caption>#getMessage("specimen_collection_date")</caption>
             <column>COLL_TIME</column>
           </datePicker>
-          <textField>
+          <dropDown>
             <name>recvQuality</name>
             <udn>recvQuality</udn>
             <caption>#getMessage("specimen_received_quality")</caption>
             <column>RECV_QUALITY</column>
-          </textField>
+            <options>
+              <sql>select distinct recv_quality from os_spmn_coll_recv_details_view order by recv_quality</sql>
+            </options>
+          </dropDown>
           <userField>
             <name>receiver</name>
             <udn>receiver</udn>
@@ -443,13 +452,22 @@
               </userField>    
             </row>
             <row>
+              <siteField>
+                <name>primarySite</name>
+                <udn>primarySite</udn>
+                <caption>#getMessage("specimen_collector_primary_site")</caption>
+                <column>PRIMARY_SITE_ID</column>
+                <recordUrl>#/object-state-params-resolver?stateName=site-detail.overview&amp;objectName=site&amp;key=name&amp;value={{$value}}</recordUrl>
+              </siteField>
+            </row>
+            <row>
               <dropDown>
                 <name>institute</name>
                 <udn>institute</udn>
                 <caption>#getMessage("specimen_collector_institute")</caption>
                 <column>INSTITUTE_NAME</column>
                 <options>
-                  <sql>select distinct INSTITUTE_NAME from USER_VIEW</sql>
+                  <sql>select distinct institute_name from user_view order by institute_name</sql>
                 </options>
               </dropDown>
             </row>
@@ -501,9 +519,7 @@
         <foreignKey>SPECIMEN_ID</foreignKey>
         <parentKey>IDENTIFIER</parentKey>
         <options>
-          <sql>
-            select value from catissue_permissible_value where public_id = 'specimen_biohazard' order by value
-          </sql>
+          <sql>select value from catissue_permissible_value where public_id = 'specimen_biohazard' order by value</sql>
         </options>
       </listBox>
     </row>

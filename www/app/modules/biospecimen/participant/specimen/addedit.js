@@ -2,9 +2,7 @@
 angular.module('os.biospecimen.specimen.addedit', [])
   .controller('AddEditSpecimenCtrl', function(
     $scope, $state, cp, cpr, visit, specimen, extensionCtxt, hasDict,
-    reservedPosition, Container, PvManager, Util, ExtensionsUtil) {
-
-    var autoAllocator;
+    Specimen, Container, CollectSpecimensSvc, PvManager, Util, ExtensionsUtil) {
 
     function init() {
       var currSpecimen = $scope.currSpecimen = angular.copy(specimen);
@@ -24,12 +22,6 @@ angular.module('os.biospecimen.specimen.addedit', [])
         }
 
         currSpecimen.availableQty = currSpecimen.initialQty;
-      }
-
-      if (!!reservedPosition) {
-        currSpecimen.storageLocation = reservedPosition;
-      } else if (!currSpecimen.storageLocation) {
-        currSpecimen.storageLocation = {};
       }
 
       if (!currSpecimen.labelFmt) {
@@ -68,7 +60,9 @@ angular.module('os.biospecimen.specimen.addedit', [])
 
       $scope.spmnCtx = {
         obj: {specimen: $scope.currSpecimen, cp: cp}, inObjs: ['specimen'], exObjs: exObjs,
-        isVirtual: specimen.showVirtual()
+        isVirtual: specimen.showVirtual(),
+        manualSpecLabelReq: !!currSpecimen.label || !currSpecimen.labelFmt || cp.manualSpecLabelEnabled,
+        mode: 'single'
       }
 
       $scope.deFormCtrl = {};
@@ -77,9 +71,6 @@ angular.module('os.biospecimen.specimen.addedit', [])
       if (!hasDict) {
         loadPvs();
       }
-
-      autoAllocator = enableAutoAllocator();
-      $scope.$on('$destroy', cancelReservation);
     }
 
     function loadPvs() {
@@ -87,48 +78,46 @@ angular.module('os.biospecimen.specimen.addedit', [])
       $scope.specimenStatuses = PvManager.getPvs('specimen-status');
     };
 
-    function enableAutoAllocator() {
-      if (!reservedPosition || $scope.currSpecimen.lineage == 'Aliquot') {
-        return undefined;
-      }
-
-      return $scope.$watch('currSpecimen.type',
-        function(newType, oldType) {
-          if (newType == oldType) {
-            return;
-          }
-
-          var spmn = $scope.currSpecimen;
-          var resvToCancel = spmn.storageLocation.reservationId;
-          Container.reservePositionForSpecimen(cp.id, spmn, resvToCancel).then(
-            function(position) {
-              spmn.storageLocation = position;
-            }
-          );
+    function saveSpecimen() {
+      $scope.currSpecimen.$saveOrUpdate().then(
+        function(result) {
+          angular.extend($scope.specimen, result);
+          var params = {specimenId: result.id, cprId: result.cprId, visitId: result.visitId, srId: result.reqId};
+          $state.go('specimen-detail.overview', params);
         }
       );
     }
 
-    function cancelReservation() {
-      var loc = $scope.currSpecimen.storageLocation;
-      if (!loc || !loc.reservationId) {
-        return;
+    function getSpecimensToSave(specimen) {
+      var labels = [], numOfSpecimens = specimen.numOfSpecimens;
+      if (!numOfSpecimens) {
+        labels = Util.splitStr(specimen.labels, /,|\t|\n/);
+        numOfSpecimens = labels.length;
       }
 
-      Container.cancelReservation(loc.reservationId).then(
-        function() {
-          $scope.currSpecimen.storageLocation = {};
-          if (autoAllocator) {
-            autoAllocator();
-            autoAllocator = undefined;
-          }
+      specimen.status = 'Pending';
+      delete specimen.numOfSpecimens;
+      delete specimen.labels;
+
+      // Create multiple specimens
+      var specimensToSave = [];
+      for (var i = 0; i < numOfSpecimens; ++i) {
+        var toSave = angular.copy(specimen);
+        if (labels.length > 0) {
+          toSave.label = labels[i];
         }
-      );
+
+        specimensToSave.push(toSave);
+      }
+
+      return specimensToSave;
     }
 
-    $scope.cancelReservation = cancelReservation;
+    function getState() {
+      return {state: $state.get('visit-detail.overview'), params: {visitId: visit.id}};
+    };
 
-    $scope.saveSpecimen = function() {
+    $scope.save = function() {
       var formCtrl = $scope.deFormCtrl.ctrl;
       if (formCtrl && !formCtrl.validate()) {
         return;
@@ -138,13 +127,25 @@ angular.module('os.biospecimen.specimen.addedit', [])
          $scope.currSpecimen.extensionDetail = formCtrl.getFormData();
       }
 
-      $scope.currSpecimen.$saveOrUpdate().then(
-        function(result) {
-          angular.extend($scope.specimen, result);
-          var params = {specimenId: result.id, cprId: result.cprId, visitId: result.visitId, srId: result.reqId};
-          $state.go('specimen-detail.overview', params);
-        }
-      );
+      if ($scope.spmnCtx.mode == 'single') {
+        saveSpecimen();
+      } else if ($scope.spmnCtx.mode == 'multiple') {
+        var opts = {showCollVisitDetails: false};
+        var specimensToSave = getSpecimensToSave($scope.currSpecimen);
+        Specimen.save(specimensToSave).then(
+          function(specimens) {
+            angular.forEach(specimens,
+              function(spmn) {
+                spmn.selected = true;
+                spmn.collectionEvent = $scope.currSpecimen.collectionEvent;
+                spmn.receivedEvent = $scope.currSpecimen.receivedEvent;
+              }
+            );
+
+            CollectSpecimensSvc.collect(getState(), visit, specimens, opts);
+          }
+        );
+      }
     }
 
     init();

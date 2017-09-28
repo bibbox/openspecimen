@@ -12,6 +12,7 @@ import java.util.stream.Collectors;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.hibernate.envers.Audited;
+import org.hibernate.envers.NotAudited;
 
 import com.krishagni.catissueplus.core.administrative.domain.factory.ShipmentErrorCode;
 import com.krishagni.catissueplus.core.administrative.domain.factory.SpecimenRequestErrorCode;
@@ -23,6 +24,8 @@ import com.krishagni.catissueplus.core.common.util.Utility;
 
 @Audited
 public class Shipment extends BaseEntity {
+	private static final String ENTITY_NAME = "shipment";
+
 	public enum Status {
 		PENDING("Pending"),
 
@@ -90,6 +93,10 @@ public class Shipment extends BaseEntity {
 	private Set<User> notifyUsers = new HashSet<User>();
 
 	private SpecimenRequest request;
+
+	public static String getEntityName() {
+		return ENTITY_NAME;
+	}
 	
 	public String getName() {
 		return name;
@@ -219,6 +226,7 @@ public class Shipment extends BaseEntity {
 		this.notifyUsers = notifyUsers;
 	}
 
+	@NotAudited
 	public SpecimenRequest getRequest() {
 		return request;
 	}

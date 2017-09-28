@@ -6,7 +6,7 @@ import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collection;
-import java.util.Date;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -41,6 +41,7 @@ import com.krishagni.catissueplus.core.administrative.repository.UserDao;
 import com.krishagni.catissueplus.core.common.PlusTransactional;
 import com.krishagni.catissueplus.core.common.access.AccessCtrlMgr;
 import com.krishagni.catissueplus.core.common.access.AccessCtrlMgr.ParticipantReadAccess;
+import com.krishagni.catissueplus.core.common.domain.Notification;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
 import com.krishagni.catissueplus.core.common.events.ResponseEvent;
@@ -51,6 +52,8 @@ import com.krishagni.catissueplus.core.common.service.EmailService;
 import com.krishagni.catissueplus.core.common.service.TemplateService;
 import com.krishagni.catissueplus.core.common.util.AuthUtil;
 import com.krishagni.catissueplus.core.common.util.ConfigUtil;
+import com.krishagni.catissueplus.core.common.util.MessageUtil;
+import com.krishagni.catissueplus.core.common.util.NotifUtil;
 import com.krishagni.catissueplus.core.common.util.Utility;
 import com.krishagni.catissueplus.core.de.domain.AqlBuilder;
 import com.krishagni.catissueplus.core.de.domain.Filter;
@@ -67,7 +70,6 @@ import com.krishagni.catissueplus.core.de.events.ListQueryAuditLogsCriteria;
 import com.krishagni.catissueplus.core.de.events.ListSavedQueriesCriteria;
 import com.krishagni.catissueplus.core.de.events.QueryAuditLogDetail;
 import com.krishagni.catissueplus.core.de.events.QueryAuditLogSummary;
-import com.krishagni.catissueplus.core.de.events.QueryAuditLogsList;
 import com.krishagni.catissueplus.core.de.events.QueryDataExportResult;
 import com.krishagni.catissueplus.core.de.events.QueryExecResult;
 import com.krishagni.catissueplus.core.de.events.QueryFolderDetails;
@@ -78,7 +80,6 @@ import com.krishagni.catissueplus.core.de.events.SavedQuerySummary;
 import com.krishagni.catissueplus.core.de.events.ShareQueryFolderOp;
 import com.krishagni.catissueplus.core.de.events.UpdateFolderQueriesOp;
 import com.krishagni.catissueplus.core.de.repository.DaoFactory;
-import com.krishagni.catissueplus.core.de.repository.QueryAuditLogDao;
 import com.krishagni.catissueplus.core.de.repository.SavedQueryDao;
 import com.krishagni.catissueplus.core.de.services.QueryService;
 import com.krishagni.catissueplus.core.de.services.SavedQueryErrorCode;
@@ -191,10 +192,7 @@ public class QueryServiceImpl implements QueryService {
 
 			Long userId = AuthUtil.getCurrentUser().getId();
 			List<SavedQuerySummary> queries = daoFactory.getSavedQueryDao().getQueries(
-							userId, 
-							crit.startAt(),
-							crit.maxResults(),
-							crit.query());
+				userId, crit.startAt(), crit.maxResults(), crit.query());
 			
 			Long count = null;
 			if (crit.countReq()) {
@@ -229,8 +227,13 @@ public class QueryServiceImpl implements QueryService {
 			SavedQueryDetail queryDetail = req.getPayload();
 			queryDetail.setId(null);
 
+			WideRowMode mode = WideRowMode.DEEP;
+			if (StringUtils.isNotBlank(queryDetail.getWideRowMode())) {
+				mode = WideRowMode.valueOf(queryDetail.getWideRowMode());
+			}
+
 			Query.createQuery()
-				.wideRowMode(WideRowMode.DEEP)
+				.wideRowMode(mode)
 				.ic(true)
 				.dateFormat(ConfigUtil.getInstance().getDeDateFmt())
 				.timeFormat(ConfigUtil.getInstance().getTimeFmt())
@@ -331,10 +334,12 @@ public class QueryServiceImpl implements QueryService {
 			if (opDetail.getIndexOf() != null && !opDetail.getIndexOf().isEmpty()) {
 				indices = queryResult.getColumnIndices(opDetail.getIndexOf());
 			}
-			
+
 			return ResponseEvent.response(
 				new QueryExecResult()
+					.setColumnMetadata(queryResult.getColumnMetadata())
 					.setColumnLabels(queryResult.getColumnLabels())
+					.setColumnTypes(queryResult.getColumnTypes())
 					.setColumnUrls(queryResult.getColumnUrls())
 					.setRows(queryResult.getStringifiedRows())
 					.setDbRowsCount(queryResult.getDbRowsCount())
@@ -500,7 +505,7 @@ public class QueryServiceImpl implements QueryService {
 			daoFactory.getQueryFolderDao().saveOrUpdate(queryFolder);
 			
 			if (!queryFolder.getSharedWith().isEmpty()) {
-				sendFolderSharedEmail(queryFolder.getOwner(), queryFolder, queryFolder.getSharedWith());
+				notifyFolderShared(queryFolder.getOwner(), queryFolder, queryFolder.getSharedWith());
 			}			
 			return ResponseEvent.response(QueryFolderDetails.from(queryFolder));
 		} catch (OpenSpecimenException ose) {
@@ -542,7 +547,7 @@ public class QueryServiceImpl implements QueryService {
 			daoFactory.getQueryFolderDao().saveOrUpdate(existing);
 			
 			if (!newUsers.isEmpty()) {
-				sendFolderSharedEmail(user, queryFolder, newUsers);
+				notifyFolderShared(user, existing, newUsers);
 			}
 			return ResponseEvent.response(QueryFolderDetails.from(existing));			
 		} catch (OpenSpecimenException ose) {
@@ -708,7 +713,7 @@ public class QueryServiceImpl implements QueryService {
 				.collect(Collectors.toList());
 
 			if (newUsers != null && !newUsers.isEmpty()) {
-				sendFolderSharedEmail(user, queryFolder, newUsers);
+				notifyFolderShared(user, queryFolder, newUsers);
 			}
 			
 			return ResponseEvent.response(result);
@@ -716,50 +721,41 @@ public class QueryServiceImpl implements QueryService {
 			return ResponseEvent.serverError(e);
 		}
 	}
-	
-    @Override
-    @PlusTransactional
-    public ResponseEvent<QueryAuditLogsList> getAuditLogs(RequestEvent<ListQueryAuditLogsCriteria> req){
-		try {			
-			Long userId = AuthUtil.getCurrentUser().getId();
-			
-			ListQueryAuditLogsCriteria crit = req.getPayload();
-			Long savedQueryId = crit.savedQueryId();
-			int startAt = crit.startAt() < 0 ? 0 : crit.startAt();
-			int maxRecs = crit.maxResults() < 0 ? 0 : crit.maxResults();
 
-			QueryAuditLogDao logDao = daoFactory.getQueryAuditLogDao();
-			List<QueryAuditLogSummary> auditLogs = null;
-			Long count = null;
-			if (savedQueryId == null || savedQueryId == -1) {
-				if (!AuthUtil.isAdmin()) {
-					return ResponseEvent.userError(SavedQueryErrorCode.OP_NOT_ALLOWED);
-				}
-				
-				switch (crit.type()) {
-					case ALL:
-						auditLogs = logDao.getAuditLogs(startAt, maxRecs);
-						if (crit.countReq()) {
-							count = logDao.getAuditLogsCount();
-						}
-						break;
-						
-					case LAST_24:
-						Calendar cal = Calendar.getInstance();
-						cal.add(Calendar.DAY_OF_MONTH, -1);
-						Date intervalSt = cal.getTime();						
-						Date intervalEnd = Calendar.getInstance().getTime();
-						auditLogs = logDao.getAuditLogs(intervalSt, intervalEnd, startAt, maxRecs);
-						if (crit.countReq()) {
-							count = logDao.getAuditLogsCount(intervalSt, intervalEnd);
-						}						
-						break;
-				}
-			} else {
-				auditLogs = logDao.getAuditLogs(savedQueryId, userId, startAt, maxRecs);
+	@Override
+	@PlusTransactional
+	public ResponseEvent<Long> getAuditLogsCount(RequestEvent<ListQueryAuditLogsCriteria> req) {
+		try {
+			ListQueryAuditLogsCriteria crit = req.getPayload();
+			if (!AuthUtil.isAdmin() && !AuthUtil.isInstituteAdmin()) {
+				crit.userId(AuthUtil.getCurrentUser().getId());
+			} else if (AuthUtil.isInstituteAdmin()) {
+				crit.instituteId(AuthUtil.getCurrentUserInstitute().getId());
 			}
-			
-			return ResponseEvent.response(QueryAuditLogsList.create(auditLogs, count));
+
+			return ResponseEvent.response(daoFactory.getQueryAuditLogDao().getLogsCount(crit));
+		} catch (OpenSpecimenException ose) {
+			return ResponseEvent.error(ose);
+		} catch (Exception e) {
+			return ResponseEvent.serverError(e);
+		}
+	}
+
+	@Override
+    @PlusTransactional
+    public ResponseEvent<List<QueryAuditLogSummary>> getAuditLogs(RequestEvent<ListQueryAuditLogsCriteria> req){
+		try {
+			ListQueryAuditLogsCriteria crit = req.getPayload();
+			if (!AuthUtil.isAdmin() && !AuthUtil.isInstituteAdmin()) {
+				crit.userId(AuthUtil.getCurrentUser().getId());
+			} else if (AuthUtil.isInstituteAdmin()) {
+				crit.instituteId(AuthUtil.getCurrentUserInstitute().getId());
+			}
+
+			List<QueryAuditLog> logs = daoFactory.getQueryAuditLogDao().getLogs(crit);
+			return ResponseEvent.response(QueryAuditLogSummary.from(logs));
+		} catch (OpenSpecimenException ose) {
+			return ResponseEvent.error(ose);
 		} catch (Exception e) {
 			return ResponseEvent.serverError(e);
 		}
@@ -770,8 +766,14 @@ public class QueryServiceImpl implements QueryService {
     public ResponseEvent<QueryAuditLogDetail> getAuditLog(RequestEvent<Long> req) {
 		try {
 			Long auditLogId = req.getPayload();
-			QueryAuditLog queryAuditLog = daoFactory.getQueryAuditLogDao().getAuditLog(auditLogId);
-			return ResponseEvent.response(QueryAuditLogDetail.from(queryAuditLog));
+			QueryAuditLog log = daoFactory.getQueryAuditLogDao().getById(auditLogId);
+			if (log == null) {
+				return ResponseEvent.userError(SavedQueryErrorCode.AUDIT_LOG_NOT_FOUND, auditLogId);
+			}
+
+			return ResponseEvent.response(QueryAuditLogDetail.from(log));
+		} catch (OpenSpecimenException ose) {
+			return ResponseEvent.error(ose);
 		} catch (Exception e) {
 			return ResponseEvent.serverError(e);
 		}
@@ -829,7 +831,7 @@ public class QueryServiceImpl implements QueryService {
 					try {
 						QueryResponse resp = exporter.export(fout, query, getResultScreener(query));
 						insertAuditLog(user, opDetail, resp);
-						sendEmail();
+						notifyExportCompleted();
 					} catch (Exception e) {
 						logger.error("Error exporting query data", e);
 						throw OpenSpecimenException.serverError(e);
@@ -840,7 +842,7 @@ public class QueryServiceImpl implements QueryService {
 					return true;
 				}
 
-				private void sendEmail() {
+				private void notifyExportCompleted() {
 					try {
 						User user = userDao.getById(AuthUtil.getCurrentUser().getId());
 						if (user.isSysUser()) {
@@ -853,6 +855,7 @@ public class QueryServiceImpl implements QueryService {
 							savedQuery = daoFactory.getSavedQueryDao().getQuery(queryId);
 						}
 						sendQueryDataExportedEmail(user, savedQuery, filename);
+						notifyQueryDataExported(user, savedQuery, filename);
 					} catch (Exception e) {
 						logger.error("Error sending email with query exported data", e);
 					}
@@ -928,6 +931,7 @@ public class QueryServiceImpl implements QueryService {
 		savedQuery.setLastUpdatedBy(AuthUtil.getCurrentUser());
 		savedQuery.setLastUpdated(Calendar.getInstance().getTime());
 		savedQuery.setReporting(detail.getReporting());
+		savedQuery.setWideRowMode(detail.getWideRowMode());
 		return savedQuery;
 	}
 
@@ -950,6 +954,7 @@ public class QueryServiceImpl implements QueryService {
 		Query query = Query.createQuery()
 			.wideRowMode(WideRowMode.valueOf(op.getWideRowMode()))
 			.ic(true)
+			.outputIsoDateTime(op.isOutputIsoDateTime())
 			.dateFormat(ConfigUtil.getInstance().getDeDateFmt())
 			.timeFormat(ConfigUtil.getInstance().getTimeFmt());
 		query.compile(rootForm, op.getAql());
@@ -1060,8 +1065,14 @@ public class QueryServiceImpl implements QueryService {
 	}
 
 	private void insertAuditLog(User user, ExecuteQueryEventOp opDetail, QueryResponse resp) {
+		SavedQuery query = null;
+		if (opDetail.getSavedQueryId() != null) {
+			query = new SavedQuery();
+			query.setId(opDetail.getSavedQueryId());
+		}
+
 		QueryAuditLog auditLog = new QueryAuditLog();
-		auditLog.setQueryId(opDetail.getSavedQueryId());
+		auditLog.setQuery(query);
 		auditLog.setRunBy(user);
 		auditLog.setTimeOfExecution(resp.getTimeOfExecution());
 		auditLog.setTimeToFinish(resp.getExecutionTime());
@@ -1177,7 +1188,7 @@ public class QueryServiceImpl implements QueryService {
 	
 	private void sendQueryDataExportedEmail(User user, SavedQuery query, String filename) {
 		String title = query != null ? query.getTitle() : "Unsaved query";
-		Map<String, Object> props = new HashMap<String, Object>();
+		Map<String, Object> props = new HashMap<>();
 		props.put("user", user);
 		props.put("query", query);
 		props.put("filename", filename);
@@ -1186,17 +1197,51 @@ public class QueryServiceImpl implements QueryService {
 		
 		emailService.sendEmail(QUERY_DATA_EXPORTED_EMAIL_TMPL, new String[] {user.getEmailAddress()}, props);
 	}
+
+	private void notifyQueryDataExported(User user, SavedQuery query, String filename) {
+		String[] params = {query != null ? query.getTitle() : "Unsaved query"};
+		String msg = MessageUtil.getInstance().getMessage(QUERY_DATA_EXPORTED_EMAIL_TMPL + "_subj", params);
+
+		Notification notif = new Notification();
+		notif.setEntityId(query != null ? query.getId() : -1L);
+		notif.setEntityType("query");
+		notif.setOperation("EXPORT");
+		notif.setCreatedBy(AuthUtil.getCurrentUser());
+		notif.setCreationTime(Calendar.getInstance().getTime());
+		notif.setMessage(msg);
+
+		String url = ConfigUtil.getInstance().getAppUrl() + "/rest/ng/query/export?fileId=" + filename;
+		NotifUtil.getInstance().notify(notif, Collections.singletonMap(url, Collections.singleton(user)));
+	}
 	
-	private void sendFolderSharedEmail(User user, QueryFolder folder, Collection<User> sharedUsers) {
-		Map<String, Object> props = new HashMap<String, Object>();
-		props.put("user", user);
+	private void notifyFolderShared(User sharedBy, QueryFolder folder, Collection<User> sharedUsers) {
+		String[] subjParams = {folder.getName()};
+
+		//
+		// Step 1: Send email notifications
+		//
+		Map<String, Object> props = new HashMap<>();
+		props.put("user", sharedBy);
 		props.put("folder", folder);
 		props.put("appUrl", ConfigUtil.getInstance().getAppUrl());
+		props.put("$subject", subjParams);
 		
 		for (User sharedWith : sharedUsers) {
 			props.put("sharedWith", sharedWith);
 			emailService.sendEmail(SHARE_QUERY_FOLDER_EMAIL_TMPL, new String[] {sharedWith.getEmailAddress()}, props);
-		}		
+		}
+
+		//
+		// Step 2: Add UI notifications
+		//
+		Notification notif = new Notification();
+		notif.setOperation("UPDATE");
+		notif.setEntityType(QueryFolder.getEntityName());
+		notif.setEntityId(folder.getId());
+		notif.setCreationTime(Calendar.getInstance().getTime());
+		notif.setCreatedBy(AuthUtil.getCurrentUser());
+		notif.setMessage(MessageUtil.getInstance().getMessage(SHARE_QUERY_FOLDER_EMAIL_TMPL + "_subj", subjParams));
+		NotifUtil.getInstance().notify(notif, Collections.singletonMap("folder-queries", sharedUsers));
 	}
 
 	private FacetDetail getFacetDetail(Long cpId, String facet, String restriction, String searchTerm) {

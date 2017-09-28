@@ -5,19 +5,26 @@ import java.io.File;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.Collection;
 import java.util.function.Predicate;
 
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
 
+import com.krishagni.catissueplus.core.administrative.domain.Institute;
+import com.krishagni.catissueplus.core.administrative.domain.User;
+import com.krishagni.catissueplus.core.administrative.domain.DpDistributionSite;
 import com.krishagni.catissueplus.core.administrative.domain.DistributionProtocol;
 import com.krishagni.catissueplus.core.administrative.domain.DpConsentTier;
 import com.krishagni.catissueplus.core.administrative.domain.DpRequirement;
+import com.krishagni.catissueplus.core.administrative.domain.Site;
 import com.krishagni.catissueplus.core.administrative.domain.factory.DistributionProtocolErrorCode;
 import com.krishagni.catissueplus.core.administrative.domain.factory.DistributionProtocolFactory;
 import com.krishagni.catissueplus.core.administrative.domain.factory.DpRequirementErrorCode;
@@ -30,10 +37,13 @@ import com.krishagni.catissueplus.core.administrative.events.DpRequirementDetail
 import com.krishagni.catissueplus.core.administrative.events.DprStat;
 import com.krishagni.catissueplus.core.administrative.repository.DpListCriteria;
 import com.krishagni.catissueplus.core.administrative.repository.DpRequirementDao;
+import com.krishagni.catissueplus.core.administrative.repository.UserListCriteria;
 import com.krishagni.catissueplus.core.administrative.services.DistributionProtocolService;
+import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
 import com.krishagni.catissueplus.core.biospecimen.domain.ConsentStatement;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.ConsentStatementErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
+import com.krishagni.catissueplus.core.common.domain.Notification;
 import com.krishagni.catissueplus.core.common.PlusTransactional;
 import com.krishagni.catissueplus.core.common.access.AccessCtrlMgr;
 import com.krishagni.catissueplus.core.common.errors.ActivityStatusErrorCode;
@@ -44,17 +54,20 @@ import com.krishagni.catissueplus.core.common.events.DependentEntityDetail;
 import com.krishagni.catissueplus.core.common.events.EntityQueryCriteria;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
 import com.krishagni.catissueplus.core.common.events.ResponseEvent;
-import com.krishagni.catissueplus.core.common.service.ObjectStateParamsResolver;
+import com.krishagni.catissueplus.core.common.service.ObjectAccessor;
 import com.krishagni.catissueplus.core.common.util.AuthUtil;
 import com.krishagni.catissueplus.core.common.util.CsvFileWriter;
 import com.krishagni.catissueplus.core.common.util.CsvWriter;
 import com.krishagni.catissueplus.core.common.util.MessageUtil;
 import com.krishagni.catissueplus.core.common.util.Status;
 import com.krishagni.catissueplus.core.common.util.Utility;
+import com.krishagni.catissueplus.core.common.util.EmailUtil;
+import com.krishagni.catissueplus.core.common.util.NotifUtil;
 import com.krishagni.catissueplus.core.de.services.FormService;
 import com.krishagni.rbac.common.errors.RbacErrorCode;
+import org.springframework.beans.BeanUtils;
 
-public class DistributionProtocolServiceImpl implements DistributionProtocolService, ObjectStateParamsResolver {
+public class DistributionProtocolServiceImpl implements DistributionProtocolService, ObjectAccessor {
 	
 	private static final Map<String, String> attrDisplayKeys = new HashMap<String, String>() {
 		{
@@ -97,6 +110,10 @@ public class DistributionProtocolServiceImpl implements DistributionProtocolServ
 	public ResponseEvent<List<DistributionProtocolDetail>> getDistributionProtocols(RequestEvent<DpListCriteria> req) {
 		try {
 			DpListCriteria crit = addDpListCriteria(req.getPayload());
+			if (crit == null) {
+				return ResponseEvent.response(Collections.emptyList());
+			}
+
 			List<DistributionProtocol> dps = daoFactory.getDistributionProtocolDao().getDistributionProtocols(crit);
 			List<DistributionProtocolDetail> result = DistributionProtocolDetail.from(dps);
 			
@@ -117,6 +134,10 @@ public class DistributionProtocolServiceImpl implements DistributionProtocolServ
 	public ResponseEvent<Long> getDistributionProtocolsCount(RequestEvent<DpListCriteria> req) {
 		try {
 			DpListCriteria crit = addDpListCriteria(req.getPayload());
+			if (crit == null) {
+				return ResponseEvent.response(0L);
+			}
+
 			return ResponseEvent.response(daoFactory.getDistributionProtocolDao().getDistributionProtocolsCount(crit));
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
@@ -151,6 +172,7 @@ public class DistributionProtocolServiceImpl implements DistributionProtocolServ
 			
 			daoFactory.getDistributionProtocolDao().saveOrUpdate(dp);
 			dp.addOrUpdateExtension();
+			notifyOnDpCreate(dp);
 			return ResponseEvent.response(DistributionProtocolDetail.from(dp));
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
@@ -171,9 +193,11 @@ public class DistributionProtocolServiceImpl implements DistributionProtocolServ
 			AccessCtrlMgr.getInstance().ensureCreateUpdateDpRights(dp);
 			ensureUniqueConstraints(dp, existing);
 			ensurePiCoordNotSame(dp);
-			
+
+			notifyOnDpUpdate(existing, dp);
 			existing.update(dp);
 			daoFactory.getDistributionProtocolDao().saveOrUpdate(existing);
+
 			existing.addOrUpdateExtension();
 			return ResponseEvent.response(DistributionProtocolDetail.from(existing));
 		} catch (OpenSpecimenException ose) {
@@ -210,7 +234,8 @@ public class DistributionProtocolServiceImpl implements DistributionProtocolServ
 			}
 
 			dps.forEach(AccessCtrlMgr.getInstance()::ensureDeleteDpRights);
-			dps.forEach(DistributionProtocol::delete);
+			dps.forEach(dp -> deleteDistributionProtocol(dp));
+
 			return ResponseEvent.response(DistributionProtocolDetail.from(dps));
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
@@ -237,7 +262,7 @@ public class DistributionProtocolServiceImpl implements DistributionProtocolServ
 			
 			if (status.equals(Status.ACTIVITY_STATUS_DISABLED.getStatus())) {
 				AccessCtrlMgr.getInstance().ensureDeleteDpRights(existing);
-				existing.delete();
+				deleteDistributionProtocol(existing);
 			} else {
 				AccessCtrlMgr.getInstance().ensureCreateUpdateDpRights(existing);
 				existing.setActivityStatus(status);
@@ -250,7 +275,6 @@ public class DistributionProtocolServiceImpl implements DistributionProtocolServ
 		} catch (Exception e) {
 			return ResponseEvent.serverError(e);
 		}
-		
 	}
 	
 	@Override
@@ -439,19 +463,30 @@ public class DistributionProtocolServiceImpl implements DistributionProtocolServ
 
 	@Override
 	public String getObjectName() {
-		return "distributionProtocol";
+		return DistributionProtocol.getEntityName();
 	}
 
 	@Override
 	@PlusTransactional
-	public Map<String, Object> resolve(String key, Object value) {
+	public Map<String, Object> resolveUrl(String key, Object value) {
 		if (key.equals("id")) {
 			value = Long.valueOf(value.toString());
 		}
 
 		return daoFactory.getDistributionProtocolDao().getDpIds(key, value);
 	}
-	
+
+	@Override
+	public String getAuditTable() {
+		return "CAT_DISTRIBUTION_PROTOCOL_AUD";
+	}
+
+	@Override
+	public void ensureReadAllowed(Long id) {
+		DistributionProtocol dp = getDistributionProtocol(id);
+		AccessCtrlMgr.getInstance().ensureReadDpRights(dp);
+	}
+
 	@Override
 	@PlusTransactional
 	public ResponseEvent<List<DpConsentTierDetail>> getConsentTiers(RequestEvent<EntityQueryCriteria> req) {
@@ -533,12 +568,36 @@ public class DistributionProtocolServiceImpl implements DistributionProtocolServ
 		if (siteIds != null && CollectionUtils.isEmpty(siteIds)) {
 			throw OpenSpecimenException.userError(RbacErrorCode.ACCESS_DENIED);
 		}
-		
+
+		if (StringUtils.isNotBlank(crit.cpShortTitle())) {
+			CollectionProtocol cp = daoFactory.getCollectionProtocolDao().getCpByShortTitle(crit.cpShortTitle());
+			if (cp == null) {
+				return null;
+			}
+
+			Set<Long> cpSiteIds = Utility.collect(cp.getSites(), "site.id", true);
+			if (siteIds != null) {
+				siteIds = new HashSet<>(CollectionUtils.intersection(siteIds, cpSiteIds));
+				if (siteIds.isEmpty()) {
+					return null;
+				}
+			} else {
+				siteIds = cpSiteIds;
+			}
+		}
+
 		if (siteIds != null) {
 			crit.siteIds(siteIds);
 		}
 		
 		return crit;
+	}
+
+	private void deleteDistributionProtocol(DistributionProtocol dp) {
+		DistributionProtocol deletedDp = new DistributionProtocol();
+		BeanUtils.copyProperties(dp, deletedDp);
+		dp.delete();
+		notifyOnDpDelete(deletedDp);
 	}
 
 	private void ensureSpecimenPropertyPresent(DpRequirement dpr, OpenSpecimenException ose) {
@@ -753,4 +812,166 @@ public class DistributionProtocolServiceImpl implements DistributionProtocolServ
 			throw OpenSpecimenException.userError(DistributionProtocolErrorCode.DUP_CONSENT, tier.getStatement().getCode(), dp.getShortTitle());
 		}
 	}
+
+	private void notifyOnDpCreate(DistributionProtocol dp) {
+		notifyDpRoleUpdated(dp, "ADD", "CREATE");
+	}
+
+	private void notifyOnDpUpdate(DistributionProtocol existingDp, DistributionProtocol newDp) {
+		notifyDpRoleUpdated(existingDp, newDp, "UPDATE");
+	}
+
+	private void notifyOnDpDelete(DistributionProtocol dp) {
+		notifyDpRoleUpdated(dp, "REMOVE", "DELETE");
+	}
+
+	private void notifyDpRoleUpdated(DistributionProtocol dp, String roleOp, String dpOp) {
+		Map<String, Object> emailProps = getEmailProps(dp);
+
+		notifyDpRoleUpdated(Collections.singletonList(dp.getPrincipalInvestigator()), dp, emailProps, null, roleOp, dpOp, N_USER, N_DP_PI);
+		notifyDpRoleUpdated(dp.getCoordinators(), dp, emailProps, null, roleOp, dpOp, N_USER, N_DP_COORD);
+		notifyDpRoleUpdated(getInstituteAdmins(dp.getInstitute()), dp, emailProps, dp.getInstitute().getName(),
+			roleOp, dpOp, N_INST_ADMIN, N_DP_RECV_SITE);
+
+		notifyRecvSiteAdmins(dp.getDefReceivingSite(), dp, emailProps, roleOp, dpOp);
+		notifyDistSiteAdmins(dp.getDistributingSites(), dp, emailProps, roleOp, dpOp);
+	}
+
+	private void notifyDpRoleUpdated(DistributionProtocol existingDp, DistributionProtocol newDp, String op) {
+		Map<String, Object> emailProps = getEmailProps(newDp);
+
+		if (!existingDp.getPrincipalInvestigator().equals(newDp.getPrincipalInvestigator())) {
+			notifyDpRoleUpdated(Collections.singletonList(existingDp.getPrincipalInvestigator()), newDp, emailProps, null, "REMOVE", op, N_USER, N_DP_PI);
+			notifyDpRoleUpdated(Collections.singletonList(newDp.getPrincipalInvestigator()), newDp, emailProps, null, "ADD", op,  N_USER, N_DP_PI);
+		}
+
+		Collection<User> removedCoordinators = CollectionUtils.subtract(existingDp.getCoordinators(), newDp.getCoordinators());
+		Collection<User> addedCoordinators = CollectionUtils.subtract(newDp.getCoordinators(), existingDp.getCoordinators());
+		notifyDpRoleUpdated(removedCoordinators, newDp, emailProps, null, "REMOVE", op, N_USER, N_DP_COORD);
+		notifyDpRoleUpdated(addedCoordinators, newDp, emailProps, null, "ADD", op, N_USER, N_DP_COORD);
+
+		if (existingDp.getInstitute() != newDp.getInstitute()) {
+			notifyDpRoleUpdated(getInstituteAdmins(existingDp.getInstitute()), newDp, emailProps,
+				existingDp.getInstitute().getName(), "REMOVE", op,  N_INST_ADMIN, N_DP_RECV_SITE);
+			notifyDpRoleUpdated(getInstituteAdmins(newDp.getInstitute()), newDp, emailProps,
+				newDp.getInstitute().getName(), "ADD", op, N_INST_ADMIN, N_DP_RECV_SITE);
+		}
+
+		if (existingDp.getDefReceivingSite() != newDp.getDefReceivingSite()) {
+			notifyRecvSiteAdmins(existingDp.getDefReceivingSite(), newDp, emailProps, "REMOVE", op);
+			notifyRecvSiteAdmins(newDp.getDefReceivingSite(), newDp, emailProps, "ADD", op);
+		}
+
+		Collection<DpDistributionSite> removedDistSites = CollectionUtils.subtract(existingDp.getDistributingSites(), newDp.getDistributingSites());
+		Collection<DpDistributionSite> addedDistSites = CollectionUtils.subtract(newDp.getDistributingSites(), existingDp.getDistributingSites());
+		notifyDistSiteAdmins(removedDistSites, newDp, emailProps, "REMOVE", op);
+		notifyDistSiteAdmins(addedDistSites, newDp, emailProps, "ADD", op);
+	}
+
+	private Map<String, Object> getEmailProps(DistributionProtocol dp) {
+		Map<String, Object> emailProps = new HashMap<>();
+		emailProps.put("dp", dp);
+		emailProps.put("ccAdmin", false);
+		emailProps.put("instituteSitesMap", DpDistributionSite.getInstituteSitesMap(dp.getDistributingSites()));
+		return emailProps;
+	}
+
+	private void notifyDpRoleUpdated(
+		Collection<User> notifyUsers,
+		DistributionProtocol dp,
+		Map<String, Object> props,
+		String instSiteName,
+		String roleOp,
+		String dpOp,
+		int notifRcptType,     // 0: user, 1: site, 2: institute
+		int roleChoice) {     // for users -  1: PI / 2: Coordinator, for others - 1: distributing / 2: receiving
+
+		if (CollectionUtils.isEmpty(notifyUsers)) {
+			return;
+		}
+
+		String notifMessage = getNotifMsg(dp.getShortTitle(), instSiteName, roleOp, dpOp, notifRcptType, roleChoice);
+		props.put("emailText", notifMessage);
+		for (User rcpt : notifyUsers) {
+			props.put("rcpt", rcpt);
+			EmailUtil.getInstance().sendEmail(ROLE_UPDATED_EMAIL_TMPL, new String[] {rcpt.getEmailAddress()}, null, props);
+		}
+
+		Notification notif = new Notification();
+		notif.setEntityType(DistributionProtocol.getEntityName());
+		notif.setEntityId(dp.getId());
+		notif.setOperation("UPDATE");
+		notif.setCreatedBy(AuthUtil.getCurrentUser());
+		notif.setCreationTime(Calendar.getInstance().getTime());
+		notif.setMessage(notifMessage);
+		NotifUtil.getInstance().notify(notif, Collections.singletonMap("dp-overview", notifyUsers));
+	}
+
+	private String getNotifMsg(String shortTitle, String instSiteName, String roleOp, String dpOp, int notifRcptType, int roleChoice) {
+		String msgKey;
+		Object[] params;
+
+		if (dpOp == "DELETE") {
+			if (notifRcptType == N_USER) {
+				msgKey = "dp_delete_user_notif";
+				params = new Object[] { shortTitle, roleChoice};
+			} else {
+				msgKey = "dp_delete_site_inst_notif";
+				params = new Object[] {shortTitle, notifRcptType, instSiteName, roleChoice};
+			}
+		} else {
+			if (notifRcptType == N_USER) {
+				msgKey = "dp_user_notif_role_" + roleOp.toLowerCase();
+				params = new Object[] { roleChoice, shortTitle};
+			} else {
+				msgKey = "dp_site_inst_notif_" + roleOp.toLowerCase();
+				params = new Object[] {notifRcptType, instSiteName, roleChoice, shortTitle};
+			}
+		}
+
+		return MessageUtil.getInstance().getMessage(msgKey, params);
+	}
+
+	private List<User> getInstituteAdmins(Institute institute) {
+		return daoFactory.getUserDao().getUsers(
+			new UserListCriteria()
+				.instituteName(institute.getName())
+				.type("INSTITUTE")
+				.activityStatus("Active")
+		);
+	}
+
+	private void notifyRecvSiteAdmins(Site recvSite, DistributionProtocol dp, Map<String, Object> emailProps, String roleOp, String dpOp) {
+		if (recvSite != null) {
+			notifyDpRoleUpdated(recvSite.getCoordinators(), dp, emailProps, recvSite.getName(), roleOp, dpOp, N_SITE_ADMIN, N_DP_RECV_SITE);
+		}
+	}
+
+	private void notifyDistSiteAdmins(Collection<DpDistributionSite> distSites, DistributionProtocol dp,
+		Map<String, Object> emailProps, String roleOp, String dpOp) {
+
+		for (DpDistributionSite distSite : distSites) {
+			if (distSite.getSite() != null) {
+				notifyDpRoleUpdated(distSite.getSite().getCoordinators(), dp, emailProps, distSite.getSite().getName(),
+					roleOp, dpOp, N_SITE_ADMIN, N_DP_DIST_SITE);
+			}
+		}
+	}
+
+	private static final String ROLE_UPDATED_EMAIL_TMPL = "users_dp_role_updated";
+
+	private static final int N_USER = 0;
+
+	private static final int N_SITE_ADMIN = 1;
+
+	private static final int N_INST_ADMIN = 2;
+
+	private static final int N_DP_PI = 1;
+
+	private static final int N_DP_COORD = 2;
+
+	private static final int N_DP_DIST_SITE = 1;
+
+	private static final int N_DP_RECV_SITE = 2;
+
 }

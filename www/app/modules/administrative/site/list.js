@@ -1,16 +1,41 @@
 angular.module('os.administrative.site.list', ['os.administrative.models'])
-  .controller('SiteListCtrl', function($scope, $state, Site, Util, DeleteUtil, ListPagerOpts, CheckList) {
+  .controller('SiteListCtrl', function($scope, $state, currentUser,
+    Institute, Site, Util, DeleteUtil, ListPagerOpts, CheckList) {
 
     var pagerOpts;
+    var defInstitutes;
 
     function init() {
       pagerOpts = $scope.pagerOpts = new ListPagerOpts({listSizeGetter: getSitesCount});
-      $scope.siteFilterOpts = {includeStats: true, maxResults: pagerOpts.recordsPerPage + 1};
+      $scope.siteFilterOpts = Util.filterOpts({includeStats: true, maxResults: pagerOpts.recordsPerPage + 1});
       $scope.ctx = {
-        exportDetail: {objectType: 'site'}
+        exportDetail: {objectType: 'site'},
+        institutes: []
       };
+
+      loadInstitutes();
       loadSites($scope.siteFilterOpts);
       Util.filter($scope, 'siteFilterOpts', loadSites);
+    }
+
+    function loadInstitutes(searchString) {
+      if (!currentUser.admin) {
+        return;
+      }
+
+      if (defInstitutes && defInstitutes.length < 100) {
+        return;
+      }
+
+      Institute.query({name : searchString}).then(
+        function(institutes) {
+          $scope.ctx.institutes = institutes;
+
+          if (!searchString) {
+            defInstitutes = institutes;
+          }
+        }
+      );
     }
 
     function loadSites(filterOpts) {
@@ -31,6 +56,8 @@ angular.module('os.administrative.site.list', ['os.administrative.models'])
       return Site.getCount($scope.siteFilterOpts);
     }
 
+    $scope.loadInstitutes = loadInstitutes;
+
     $scope.showSiteOverview = function(site) {
       $state.go('site-detail.overview', {siteId: site.id});
     };
@@ -41,7 +68,9 @@ angular.module('os.administrative.site.list', ['os.administrative.models'])
       var opts = {
         confirmDelete:  'site.delete_sites',
         successMessage: 'site.sites_deleted',
-        onBulkDeletion: loadSites
+        onBulkDeletion: function() {
+          loadSites($scope.siteFilterOpts);
+        }
       }
 
       DeleteUtil.bulkDelete({bulkDelete: Site.bulkDelete}, getSiteIds(sites), opts);

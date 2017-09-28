@@ -16,6 +16,7 @@ import org.hibernate.envers.AuditTable;
 import org.hibernate.envers.Audited;
 import org.hibernate.envers.NotAudited;
 
+import com.krishagni.catissueplus.core.administrative.domain.DistributionProtocol;
 import com.krishagni.catissueplus.core.administrative.domain.Site;
 import com.krishagni.catissueplus.core.administrative.domain.StorageContainer;
 import com.krishagni.catissueplus.core.administrative.domain.User;
@@ -26,6 +27,7 @@ import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.DependentEntityDetail;
 import com.krishagni.catissueplus.core.common.util.Status;
 import com.krishagni.catissueplus.core.common.util.Utility;
+import com.krishagni.catissueplus.core.de.services.impl.FormUtil;
 
 @Audited
 @AuditTable(value="CAT_COLLECTION_PROTOCOL_AUD")
@@ -33,20 +35,25 @@ public class CollectionProtocol extends BaseExtensionEntity {
 	public enum SpecimenLabelPrePrintMode {
 		ON_REGISTRATION,
 		ON_VISIT,
-		NONE;
+		NONE
 	}
 
 	public enum SpecimenLabelAutoPrintMode {
 		PRE_PRINT,
 		ON_COLLECTION,
-		NONE;
+		NONE
 	}
 
 
 	public enum VisitNamePrintMode {
 		PRE_PRINT,
 		ON_COMPLETION,
-		NONE;
+		NONE
+	}
+
+	public enum VisitCollectionMode {
+		PRIMARY_SPMNS,
+		ALL_SPMNS
 	}
 
 	public static final String EXTN = "CollectionProtocolExtension";
@@ -78,6 +85,8 @@ public class CollectionProtocol extends BaseExtensionEntity {
 	private String sopDocumentUrl;
 
 	private String sopDocumentName;
+
+	private Boolean storeSprEnabled;
 
 	private Boolean extractSprText;
 
@@ -111,6 +120,8 @@ public class CollectionProtocol extends BaseExtensionEntity {
 
 	private Boolean aliquotsInSameContainer;
 
+	private VisitCollectionMode visitCollectionMode = VisitCollectionMode.ALL_SPMNS;
+
 	private VisitNamePrintMode visitNamePrintMode = VisitNamePrintMode.NONE;
 
 	private Integer visitNamePrintCopies;
@@ -132,7 +143,9 @@ public class CollectionProtocol extends BaseExtensionEntity {
 	private Set<StorageContainer> storageContainers = new HashSet<StorageContainer>();
 	
 	private Set<CollectionProtocolRegistration> collectionProtocolRegistrations = new HashSet<CollectionProtocolRegistration>();
-	
+
+	private Set<DistributionProtocol> distributionProtocols = new HashSet<>();
+
 	public static String getEntityName() {
 		return ENTITY_NAME;
 	}
@@ -223,6 +236,14 @@ public class CollectionProtocol extends BaseExtensionEntity {
 
 	public void setSopDocumentName(String sopDocumentName) {
 		this.sopDocumentName = sopDocumentName;
+	}
+
+	public Boolean getStoreSprEnabled() {
+		return storeSprEnabled;
+	}
+
+	public void setStoreSprEnabled(Boolean storeSprEnabled) {
+		this.storeSprEnabled = storeSprEnabled;
 	}
 
 	public Boolean getExtractSprText() {
@@ -358,6 +379,14 @@ public class CollectionProtocol extends BaseExtensionEntity {
 		this.aliquotsInSameContainer = aliquotsInSameContainer;
 	}
 
+	public VisitCollectionMode getVisitCollectionMode() {
+		return visitCollectionMode == null ? VisitCollectionMode.ALL_SPMNS : visitCollectionMode;
+	}
+
+	public void setVisitCollectionMode(VisitCollectionMode visitCollectionMode) {
+		this.visitCollectionMode = visitCollectionMode;
+	}
+
 	public VisitNamePrintMode getVisitNamePrintMode() {
 		return visitNamePrintMode != null ? visitNamePrintMode : VisitNamePrintMode.NONE;
 	}
@@ -481,6 +510,14 @@ public class CollectionProtocol extends BaseExtensionEntity {
 		this.collectionProtocolRegistrations = collectionProtocolRegistrations;
 	}
 
+	public Set<DistributionProtocol> getDistributionProtocols() {
+		return distributionProtocols;
+	}
+
+	public void setDistributionProtocols(Set<DistributionProtocol> distributionProtocols) {
+		this.distributionProtocols = distributionProtocols;
+	}
+
 	public void update(CollectionProtocol cp) {
 		setTitle(cp.getTitle()); 
 		setShortTitle(cp.getShortTitle());
@@ -493,6 +530,7 @@ public class CollectionProtocol extends BaseExtensionEntity {
 		setEnrollment(cp.getEnrollment());
 		setSopDocumentUrl(cp.getSopDocumentUrl());
 		setSopDocumentName(cp.getSopDocumentName());
+		setStoreSprEnabled(cp.getStoreSprEnabled());
 		setExtractSprText(cp.getExtractSprText());
 		setDescriptionURL(cp.getDescriptionURL());
 		setPpidFormat(cp.getPpidFormat());
@@ -507,6 +545,7 @@ public class CollectionProtocol extends BaseExtensionEntity {
 		setBarcodingEnabled(cp.isBarcodingEnabled());
 		setContainerSelectionStrategy(cp.getContainerSelectionStrategy());
 		setAliquotsInSameContainer(cp.getAliquotsInSameContainer());
+		setVisitCollectionMode(cp.getVisitCollectionMode());
 		setVisitNamePrintMode(cp.getVisitNamePrintMode());
 		setVisitNamePrintCopies(cp.getVisitNamePrintCopies());
 		setUnsignedConsentDocumentURL(cp.getUnsignedConsentDocumentURL());
@@ -514,8 +553,9 @@ public class CollectionProtocol extends BaseExtensionEntity {
 		
 		updateSites(cp.getSites());
 		updateSpecimenLabelPrintSettings(cp.getSpmnLabelPrintSettings());
-		CollectionUpdater.update(this.coordinators, cp.getCoordinators());
+		CollectionUpdater.update(getCoordinators(), cp.getCoordinators());
 		updateLabelPrePrintMode(cp.getSpmnLabelPrePrintMode());
+		CollectionUpdater.update(getDistributionProtocols(), cp.getDistributionProtocols());
 	}
 	
 	public void copyTo(CollectionProtocol cp) {
@@ -534,6 +574,8 @@ public class CollectionProtocol extends BaseExtensionEntity {
 		cp.setDescriptionURL(getDescriptionURL());
 		cp.setEnrollment(getEnrollment());
 		cp.setSpecimenCentric(isSpecimenCentric());
+		cp.setStoreSprEnabled(getStoreSprEnabled());
+		cp.setExtractSprText(getExtractSprText());
 
 		cp.setPpidFormat(getPpidFormat());
 		cp.setManualPpidEnabled(isManualPpidEnabled());
@@ -545,6 +587,7 @@ public class CollectionProtocol extends BaseExtensionEntity {
 		cp.setManualSpecLabelEnabled(isManualSpecLabelEnabled());
 		cp.setBulkPartRegEnabled(isBulkPartRegEnabled());
 		cp.setBarcodingEnabled(isBarcodingEnabled());
+		cp.setVisitCollectionMode(getVisitCollectionMode());
 		cp.setVisitNamePrintMode(getVisitNamePrintMode());
 		cp.setVisitNamePrintCopies(getVisitNamePrintCopies());
 		cp.setSpmnLabelPrePrintMode(getSpmnLabelPrePrintMode());
@@ -633,7 +676,7 @@ public class CollectionProtocol extends BaseExtensionEntity {
 	public void updateCpe(CollectionProtocolEvent cpe) {
 		CollectionProtocolEvent existing = getCpe(cpe.getId());
 		if (existing == null) {
-			throw OpenSpecimenException.userError(CpeErrorCode.NOT_FOUND);
+			throw OpenSpecimenException.userError(CpeErrorCode.NOT_FOUND, cpe.getId(), 1);
 		}
 
 		if (!existing.getEventLabel().equals(cpe.getEventLabel())) {
@@ -700,6 +743,8 @@ public class CollectionProtocol extends BaseExtensionEntity {
 		setShortTitle(Utility.getDisabledValue(getShortTitle(), 50));
 		setCode(Utility.getDisabledValue(getCode(), 32));
 		setActivityStatus(Status.ACTIVITY_STATUS_DISABLED.getStatus());
+		FormUtil.getInstance().deleteRecords(getId(), Collections.singletonList("CollectionProtocolExtension"), getId());
+		FormUtil.getInstance().deleteCpEntityForms(getId());
 	}
 	
 	@Override

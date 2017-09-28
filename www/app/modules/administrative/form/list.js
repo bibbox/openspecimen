@@ -9,11 +9,11 @@ angular.module('os.administrative.form.list', ['os.administrative.models'])
 
     function init() {
       pagerOpts = $scope.pagerOpts = new ListPagerOpts({listSizeGetter: getFormsCount});
-      $scope.formFilterOpts = {maxResults: pagerOpts.recordsPerPage + 1, excludeSysForms: true};
+      $scope.formFilterOpts = Util.filterOpts({maxResults: pagerOpts.recordsPerPage + 1, excludeSysForms: true});
       $scope.formsList = [];
       $scope.ctx = {};
       loadForms($scope.formFilterOpts);
-      Util.filter($scope, 'formFilterOpts', loadForms);
+      Util.filter($scope, 'formFilterOpts', loadForms, ['maxResults', 'excludeSysForms']);
     }
 
     function loadForms(filterOpts) {
@@ -126,7 +126,9 @@ angular.module('os.administrative.form.list', ['os.administrative.models'])
       var opts = {
         confirmDelete:  'form.delete_forms',
         successMessage: 'form.forms_deleted',
-        onBulkDeletion: loadForms
+        onBulkDeletion: function() {
+          loadForms($scope.formFilterOpts);
+        }
       }
 
       DeleteUtil.bulkDelete({bulkDelete: Form.bulkDelete}, getFormIds(forms), opts);

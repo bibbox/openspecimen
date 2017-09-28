@@ -1,22 +1,28 @@
 angular.module('os.biospecimen.specimenlist')
   .controller('SpecimenListSpecimensCtrl', function(
-    $scope, $state, $stateParams, $timeout, $filter, currentUser, reqBasedDistOrShip, list,
+    $scope, $state, $stateParams, $timeout, $filter, $injector, currentUser, list,
     SpecimensHolder, SpecimenList, CollectionProtocol, Container, DeleteUtil, Alerts, Util) {
 
     function init() { 
-      $scope.orderCreateOpts =    {resource: 'Order', operations: ['Create']};
-      $scope.shipmentCreateOpts = {resource: 'ShippingAndTracking', operations: ['Create']};
       $scope.specimenUpdateOpts = {resource: 'VisitAndSpecimen', operations: ['Update']};
 
       $scope.ctx = {
         list: list,
         spmnsInView: [],
-        filterOpts: {},
+        filterOpts: Util.filterOpts({}),
         filterPvs: {init: false},
         selection: {all: false, any: false, specimens: []},
-        reqBasedDistOrShip: (reqBasedDistOrShip.value == 'true'),
         url: SpecimenList.url(),
-        breadcrumbs: $stateParams.breadcrumbs
+        breadcrumbs: $stateParams.breadcrumbs,
+        reqBasedDistOrShip: false
+      }
+
+      if ($injector.has('spmnReqCfgUtil')) {
+        $injector.get('spmnReqCfgUtil').isReqBasedDistOrShippingEnabled().then(
+          function(result) {
+            $scope.ctx.reqBasedDistOrShip = (result.value == 'true');
+          }
+        );
       }
 
       $scope.$on('osRightDrawerOpen', initFilterPvs);
@@ -24,7 +30,7 @@ angular.module('os.biospecimen.specimenlist')
       $scope.pagingOpts = {
         totalSpmns: 0,
         currPage: 1,
-        spmnsPerPage: 10000 // for v3.5, practically disabling list specimens pagination
+        spmnsPerPage: 100
       };
 
       Util.filter($scope, 'ctx.filterOpts', loadSpecimens);
@@ -38,7 +44,7 @@ angular.module('os.biospecimen.specimenlist')
         $scope.pagingOpts = {
           totalSpmns: 0,
           currPage: 1,
-          spmnsPerPage: 10000
+          spmnsPerPage: 100
         };
       }
 
@@ -55,6 +61,7 @@ angular.module('os.biospecimen.specimenlist')
           }
 
           $scope.ctx.spmnsInView = specimens;
+          $scope.ctx.selection = {all: false, any: false, specimens: []};
         }
       );
     };
@@ -125,6 +132,12 @@ angular.module('os.biospecimen.specimenlist')
 
       SpecimensHolder.setSpecimens($scope.ctx.selection.specimens);
       $state.go(state, params);
+    }
+
+    $scope.loadSpecimens = loadSpecimens;
+
+    $scope.getSelectedSpecimens = function() {
+      return $scope.ctx.selection.specimens;
     }
 
     $scope.addChildSpecimens = function() {
@@ -209,28 +222,12 @@ angular.module('os.biospecimen.specimenlist')
       loadContainerList(name);
     }
 
-    $scope.distributeSpecimens = function() {
-      gotoView('order-addedit', {orderId: ''}, 'no_specimens_for_distribution');
-    }
-
-    $scope.shipSpecimens = function() {
-      gotoView('shipment-addedit', {shipmentId: ''}, 'no_specimens_for_shipment');
-    }
-    
-    $scope.createAliquots = function() {
-      gotoView('specimen-bulk-create-aliquots', {}, 'no_specimens_to_create_aliquots');
-    }
-
-    $scope.createDerivatives = function() {
-      gotoView('specimen-bulk-create-derivatives', {}, 'no_specimens_to_create_derivatives');
-    }
-
-    $scope.addEvent = function() {
-      gotoView('bulk-add-event', {}, 'no_specimens_to_add_event');
-    }
-
     $scope.transferSpecimens = function() {
       gotoView('bulk-transfer-specimens', {}, 'no_specimens_to_transfer');
+    }
+
+    $scope.distributeCart = function() {
+      $state.go('order-addedit', {specimenListId: list.id});
     }
 
     $scope.clearFilters = function() {

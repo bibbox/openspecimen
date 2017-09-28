@@ -7,11 +7,15 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.springframework.beans.factory.InitializingBean;
 
 import com.krishagni.catissueplus.core.biospecimen.ConfigParams;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
@@ -53,11 +57,16 @@ import com.krishagni.catissueplus.core.common.events.ResponseEvent;
 import com.krishagni.catissueplus.core.common.service.ConfigurationService;
 import com.krishagni.catissueplus.core.common.service.LabelGenerator;
 import com.krishagni.catissueplus.core.common.service.LabelPrinter;
-import com.krishagni.catissueplus.core.common.service.ObjectStateParamsResolver;
+import com.krishagni.catissueplus.core.common.service.ObjectAccessor;
 import com.krishagni.catissueplus.core.common.util.ConfigUtil;
 import com.krishagni.catissueplus.core.common.util.Utility;
+import com.krishagni.catissueplus.core.exporter.domain.ExportJob;
+import com.krishagni.catissueplus.core.exporter.services.ExportService;
+import com.krishagni.rbac.common.errors.RbacErrorCode;
 
-public class VisitServiceImpl implements VisitService, ObjectStateParamsResolver {
+public class VisitServiceImpl implements VisitService, ObjectAccessor, InitializingBean {
+	private Log logger = LogFactory.getLog(VisitServiceImpl.class);
+
 	private DaoFactory daoFactory;
 
 	private VisitFactory visitFactory;
@@ -71,7 +80,9 @@ public class VisitServiceImpl implements VisitService, ObjectStateParamsResolver
 	private SprPdfGenerator sprText2PdfGenerator;
 	
 	private static String defaultVisitSprDir;
-	
+
+	private ExportService exportSvc;
+
 	public void setDaoFactory(DaoFactory daoFactory) {
 		this.daoFactory = daoFactory;
 	}
@@ -94,7 +105,11 @@ public class VisitServiceImpl implements VisitService, ObjectStateParamsResolver
 	
 	public void setSprText2PdfGenerator(SprPdfGenerator sprText2PdfGenerator) {
 		this.sprText2PdfGenerator = sprText2PdfGenerator;
-	}	
+	}
+
+	public void setExportSvc(ExportService exportSvc) {
+		this.exportSvc = exportSvc;
+	}
 
 	@Override
 	@PlusTransactional
@@ -147,7 +162,8 @@ public class VisitServiceImpl implements VisitService, ObjectStateParamsResolver
 	@PlusTransactional
 	public ResponseEvent<VisitDetail> addVisit(RequestEvent<VisitDetail> req) {
 		try {
-			return ResponseEvent.response(saveOrUpdateVisit(req.getPayload(), false, false));
+			Visit visit = saveOrUpdateVisit(req.getPayload(), false, false);
+			return ResponseEvent.response(VisitDetail.from(visit, false, false));
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
 		} catch (Exception e) {
@@ -159,7 +175,8 @@ public class VisitServiceImpl implements VisitService, ObjectStateParamsResolver
 	@PlusTransactional
 	public ResponseEvent<VisitDetail> updateVisit(RequestEvent<VisitDetail> req) {
 		try {
-			return ResponseEvent.response(saveOrUpdateVisit(req.getPayload(), true, false));
+			Visit visit = saveOrUpdateVisit(req.getPayload(), true, false);
+			return ResponseEvent.response(VisitDetail.from(visit, false, false));
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
 		} catch (Exception e) {
@@ -171,8 +188,8 @@ public class VisitServiceImpl implements VisitService, ObjectStateParamsResolver
 	@PlusTransactional
 	public ResponseEvent<VisitDetail> patchVisit(RequestEvent<VisitDetail> req) {
 		try {
-			VisitDetail respPayload = saveOrUpdateVisit(req.getPayload(), true, true);
-			return ResponseEvent.response(respPayload);
+			Visit visit = saveOrUpdateVisit(req.getPayload(), true, true);
+			return ResponseEvent.response(VisitDetail.from(visit, false, false));
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
 		} catch (Exception e) {
@@ -220,7 +237,7 @@ public class VisitServiceImpl implements VisitService, ObjectStateParamsResolver
 			// Step 1: Create visit
 			//
 			VisitDetail inputVisit = req.getPayload().getVisit();
-			VisitDetail savedVisit = saveOrUpdateVisit(inputVisit, inputVisit.getId() != null, false);			
+			VisitDetail savedVisit = VisitDetail.from(saveOrUpdateVisit(inputVisit, inputVisit.getId() != null, false));
 			
 			List<SpecimenDetail> specimens = req.getPayload().getSpecimens();
 			setVisitId(savedVisit.getId(), specimens);
@@ -310,10 +327,8 @@ public class VisitServiceImpl implements VisitService, ObjectStateParamsResolver
 		try {
 			SprDetail detail = req.getPayload();
 			Visit visit = getVisit(detail.getId(), null);
+			ensureSprCanBeUploaded(visit);
 
-			raiseErrorIfSpecimenCentric(visit);
-			ensureUpdateSprRights(visit);
-			
 			String filename = detail.getFilename();
 			if (detail.isTextContent() || (detail.isPdfContent() && isExtractSprTextEnabled(visit))) {
 				String sprText = getTextFromReq(detail);
@@ -344,9 +359,7 @@ public class VisitServiceImpl implements VisitService, ObjectStateParamsResolver
 		try {
 			SprDetail detail = req.getPayload();
 			Visit visit = getVisit(detail.getId(), null);
-
-			raiseErrorIfSpecimenCentric(visit);
-			ensureUpdateSprRights(visit);
+			ensureSprCanBeUploaded(visit);
 			
 			File file = getSprFile(detail.getId());
 			if (file == null) {
@@ -467,7 +480,7 @@ public class VisitServiceImpl implements VisitService, ObjectStateParamsResolver
 
 	public Visit addVisit(VisitDetail input, boolean checkPermission) {
 		if (checkPermission) {
-			return saveOrUpdateVisit0(input, false, false);
+			return saveOrUpdateVisit(input, false, false);
 		} else {
 			return saveOrUpdateVisit(visitFactory.createVisit(input), null);
 		}
@@ -475,12 +488,12 @@ public class VisitServiceImpl implements VisitService, ObjectStateParamsResolver
 
 	@Override
 	public String getObjectName() {
-		return "visit";
+		return Visit.getEntityName();
 	}
 
 	@Override
 	@PlusTransactional
-	public Map<String, Object> resolve(String key, Object value) {
+	public Map<String, Object> resolveUrl(String key, Object value) {
 		if (key.equals("id")) {
 			value = Long.valueOf(value.toString());
 		}
@@ -488,11 +501,22 @@ public class VisitServiceImpl implements VisitService, ObjectStateParamsResolver
 		return daoFactory.getVisitsDao().getCprVisitIds(key, value);
 	}
 
-	private VisitDetail saveOrUpdateVisit(VisitDetail input, boolean update, boolean partial) {
-		return VisitDetail.from(saveOrUpdateVisit0(input, update, partial));
+	@Override
+	public String getAuditTable() {
+		return "CAT_SPECIMEN_COLL_GROUP_AUD";
 	}
 
-	private Visit saveOrUpdateVisit0(VisitDetail input, boolean update, boolean partial) {
+	@Override
+	public void ensureReadAllowed(Long id) {
+		AccessCtrlMgr.getInstance().ensureReadVisitRights(id);
+	}
+
+	@Override
+	public void afterPropertiesSet() {
+		exportSvc.registerObjectsGenerator("visit", this::getVisitsGenerator);
+	}
+
+	private Visit saveOrUpdateVisit(VisitDetail input, boolean update, boolean partial) {
 		Visit existing = null;
 		if (update) {
 			existing = getVisit(input.getId(), input.getName());
@@ -736,9 +760,112 @@ public class VisitServiceImpl implements VisitService, ObjectStateParamsResolver
 		return extractSprText;
 	}
 
+	private void ensureSprCanBeUploaded(Visit visit) {
+		ensureCompletedVisit(visit);
+		raiseErrorIfSpecimenCentric(visit);
+		ensureUpdateSprRights(visit);
+	}
+
+	private void ensureCompletedVisit(Visit visit) {
+		if (!visit.isCompleted()) {
+			throw OpenSpecimenException.userError(VisitErrorCode.COMPL_VISIT_REQ);
+		}
+	}
+
 	private void raiseErrorIfSpecimenCentric(Visit visit) {
 		if (visit.getCollectionProtocol().isSpecimenCentric()) {
 			throw OpenSpecimenException.userError(CpErrorCode.OP_NOT_ALLOWED_SC, visit.getCollectionProtocol().getShortTitle());
 		}
+	}
+
+	private Function<ExportJob, List<? extends Object>> getVisitsGenerator() {
+		return new Function<ExportJob, List<? extends Object>>() {
+			private boolean endOfVisits;
+
+			private boolean paramsInited;
+
+			private VisitsListCriteria crit;
+
+			private int startAt;
+
+			@Override
+			public List<? extends Object> apply(ExportJob exportJob) {
+				initParams(exportJob);
+
+				if (endOfVisits) {
+					return Collections.emptyList();
+				}
+
+				List<Visit> visits = daoFactory.getVisitsDao().getVisitsList(crit.startAt(startAt));
+				startAt += visits.size();
+				if (CollectionUtils.isNotEmpty(crit.names()) || visits.size() < 100) {
+					endOfVisits = true;
+				}
+
+				List<VisitDetail> records = new ArrayList<>();
+				for (Visit visit : visits) {
+					try {
+						boolean hasPhi = AccessCtrlMgr.getInstance().ensureReadVisitRights(visit, true);
+						VisitDetail detail = VisitDetail.from(visit, false, !hasPhi);
+						if (hasPhi) {
+							detail.setSprFile(getSprFile(visit.getId()));
+						}
+
+						records.add(detail);
+					} catch (OpenSpecimenException ose) {
+						if (!ose.containsError(RbacErrorCode.ACCESS_DENIED)) {
+							logger.error("Encountered error exporting visit record", ose);
+						}
+					}
+				}
+
+				return records;
+			}
+
+			private void initParams(ExportJob job) {
+				if (paramsInited) {
+					return;
+				}
+
+				Map<String, String> params = job.getParams();
+				if (params == null) {
+					params = Collections.emptyMap();
+				}
+
+				Long cpId = getCpId(params);
+				List<Pair<Long, Long>> siteCps = AccessCtrlMgr.getInstance().getReadAccessSpecimenSiteCps(cpId);
+				if (siteCps != null && siteCps.isEmpty()) {
+					endOfVisits = true;
+					return;
+				}
+
+				crit = new VisitsListCriteria()
+					.cpId(cpId)
+					.names(Utility.csvToStringList(params.get("visitNames")))
+					.siteCps(siteCps)
+					.useMrnSites(AccessCtrlMgr.getInstance().isAccessRestrictedBasedOnMrn());
+
+				if (!crit.names().isEmpty()) {
+					crit.limitItems(false);
+				} else {
+					crit.limitItems(true).maxResults(100);
+				}
+
+				paramsInited = true;
+			}
+
+			private Long getCpId(Map<String, String> params) {
+				String cpIdStr = params.get("cpId");
+				if (StringUtils.isNotBlank(cpIdStr)) {
+					try {
+						return Long.parseLong(cpIdStr);
+					} catch (Exception e) {
+						logger.error("Invalid CP ID: " + cpIdStr, e);
+					}
+				}
+
+				return null;
+			}
+		};
 	}
 }

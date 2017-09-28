@@ -13,9 +13,10 @@ angular.module('os.biospecimen.specimen.addaliquots', [])
         lineage: 'Aliquot',
         specimenClass: specimen.specimenClass,
         type: specimen.type,
-        createdOn : new Date(),
+        createdOn : Date.now(),
         freezeThawCycles: specimen.freezeThawCycles + 1,
-        incrParentFreezeThaw: 1
+        incrParentFreezeThaw: 1,
+        labelFmt: cpr.aliquotLabelFmt
       };
 
       //

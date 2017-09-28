@@ -77,6 +77,8 @@
     "footer_note": "<a href=\"http://www.openspecimen.org\" target=\"_blank\">OpenSpecimen</a> - powered by <a href=\"http://www.krishagni.com\" target=\"_blank\">Krishagni</a>",
     "download_initiated": "Download of file initiated. Please check your download directory ...",
     "error": "Error",
+    "use_system_setting": "Use System Setting",
+    "search_user_manual": "Search user manual",
 
     "filters": {
       "title": "Filters",
@@ -138,7 +140,7 @@
     "specimenQty": "Invalid quantity",
     "match": "This field does not match with above field",
     "dist_qty_gt_avail_qty": "Distribution quantity greater than available",
-    "dist_qty_le_zero": "Distribution quantity cannot be less than or equals zero",
+    "dist_qty_lt_zero": "Distribution quantity cannot be less than zero",
     "ret_qty_gt_dist_qty": "Return quantity greater than distributed",
     "ret_qty_le_zero": "Return quantity cannot be less than or equals zero",
     "nan": "Not a valid number",
@@ -176,6 +178,7 @@
     "sop_document": "SOP Document",
     "sop_document_url": "SOP Document URL",
     "sop_document_file": "SOP Document File",
+    "store_sprs": "Store SPRs?",
     "extract_spr_text": "Extract Text from SPR PDF Docs?",
     "view_sop": "View SOP",
     "desc_url": "Description URL",
@@ -186,6 +189,9 @@
     "visit_name_fmt": "Visit Name Format",
     "manual_enabled_for": "User Inputs Allowed For",
     "bulk_part_reg_allowed": "Bulk Registrations",
+    "on_visit_completion": "On Visit Completion",
+    "coll_primary_spmns": "Collect Primary Specimens",
+    "coll_all_spmns": "Collect All Specimens",
     "pre_print_spmn_labels": "Pre-print Labels",
     "ppids": "Participant Protocol IDs",
     "visit_names": "Visit Names",
@@ -232,8 +238,9 @@
     "deleting_event": "Deleting Event...",
     "confirm_delete_event": "Collection Protocol Event and its specimen requirements will be deleted. Are you sure you want to proceed?",
 
-    "bulk_import": "Biospecimen Data",
+    "bulk_import": "Import",
     "bulk_import_biospecimen_obj_jobs": "Import Biospecimen Objects Job List",
+    "export": "Export",
 
     "show_site_coding": "Show Site Code Information",
     "hide_site_coding": "Hide Site Code Information",
@@ -302,6 +309,7 @@
     },
 
     "spmn_label_pre_print_modes": {
+      "ON_REGISTRATION": "On Registration",
       "ON_VISIT": "On Visit",
       "NONE": "None"
     },
@@ -310,6 +318,13 @@
       "New": "Primary",
       "Derived": "Derivative",
       "Aliquot": "Aliquot"
+    },
+
+    "dp": {
+      "title": "Distribution Settings",
+      "add_dp": "Add Distribution Protocol",
+      "dup_dp": "Distribution protocol already added to the collection protocol.",
+      "no_dp": "No distribution protocols can be assigned to collection protocol."
     },
 
     "reporting": {
@@ -351,7 +366,6 @@
     "middle_name": "Middle Name",
     "birth_date": "Birth Date",
     "uid": "National ID",
-    "uid_short": "NIN",
     "mpi": "Master Patient Index",
     "gender": "Gender",
     "vital_status": "Vital Status",
@@ -366,6 +380,7 @@
     "site": "Site",
     "select_site": "Select Site",
     "pmis": "Medical Identifiers",
+    "registered_cps": "Registered Protocols",
     "protocol_id": "PPID",
     "filter_title": "Filters",
     "spmn_label_or_barcode": "Specimen Label / Barcode",
@@ -384,6 +399,8 @@
     "confirm_anonymize": "Are you sure you want to erase all PHI data of participant?",
     "anonymized_successfully": "Successfully erased participant PHI data",
     "other_cps": "Other Registered Protocols",
+    "ppids": "Participant Protocol IDs",
+    "ppids_csv": "Comma separated list of participant protocol IDs",
 
     "bulk_registration": "Bulk Participant Registration",
     "num_of_participants": "Number of Participants",
@@ -404,6 +421,8 @@
 
     "similar_participants": "Following matching participant(s) found",
     "no_matching_participant": "No matching participant found",
+    "review_match_n_save": "Following matching participant found. Please review the details and save.",
+
     "already_reg": "Already Registered?",
     "matched_attrs": "Matched Attributes",
     "matching_attr": {
@@ -421,10 +440,13 @@
     
     "buttons": {
       "register": "Add Participant",
+      "register_n_collect": "Proceed to Collection",
       "lookup_add_part": "Lookup and Add Participant",
       "update_registration": "Update",
       "register_selected_participant": "Register Selected Participant",
       "merge_participants": "Merge Participants",
+      "use_selected_participant": "Use Selected Participant",
+      "merge_with_selected_participant": "Merge with Selected Participant",
       "ignore_matches": "Ignore Matches and Proceed",
       "lookup": "Lookup",
       "bulk_register": "Bulk Register",
@@ -451,7 +473,8 @@
       "collected_specimens_count": "Count of Collected Specimens",
       "search": "Click to filter Participants",
       "bulk_register": "Click to register participants",
-      "specimen_catalog": "Click to view collection protocol specimens"
+      "specimen_catalog": "Click to view collection protocol specimens",
+      "collect_spmns": "Collect Specimens"
     },
 
     "specimen_kit": {
@@ -467,7 +490,8 @@
     "title": "Visit",
     "list": "Visits",
     "occurred_visits": "Occurred Visits",
-    "collection_status": "Collection Status",
+    "collection_status": "Collection Stats",
+    "storage_utilization": "Utilization Stats",
     "anticipated_visits": "Anticipated Visits",
     "missed_visits": "Missed Visits",
     "missed_by": "Missed By",
@@ -485,6 +509,8 @@
     "reason_for_missed_visit": "Reason for Missed Visit",
     "comments": "Comments",
     "unplanned_visit": "Unplanned Visit",
+    "names": "Visit Names",
+    "names_csv": "Comma separated list of visit names",
 
     "names_print_job_created": "Visit names print job {{jobId}} created successfully",
 
@@ -513,6 +539,7 @@
       "edit_visit": "Edit Visit",
       "collect_planned_specimens": "Collect Planned Specimens",
       "collect_unplanned_specimens": "Collect Unplanned Specimens",
+      "collect_pending_specimens": "Collect Pending Specimens",
       "print_specimen_labels": "Print Specimen Labels",
       "new_visit": "New Visit",
       "missed_visit": "Missed Visit"
@@ -541,6 +568,10 @@
     "new_spmn": "New Specimen",
 
     "id": "Identifier",
+    "create_mode": "Create",
+    "single": "Single Specimen",
+    "multiple": "Multiple Specimens",
+    "num_of_specimens": "Number of Specimens",
     "lineage": "Lineage",
     "label": "Label",
     "barcode": "Barcode",
@@ -603,6 +634,8 @@
     "aliquot_specs": "Aliquots Specifications",
     "review_locations": "Review Locations",
     "assign_locations": "Choose Locations",
+    "labels": "Labels",
+    "labels_csv": "Comma separated list of specimen labels",
 
     "reason_for_closing": "Reason for closing",
 
@@ -626,6 +659,12 @@
     "visit_name": "Visit Name",
     "visit_date": "Visit Date",
     "visit_site": "Visit Site",
+    "utilization": {
+      "stored": "Stored",
+      "virtual": "Virtual",
+      "distributed": "Distributed",
+      "no_specimens": "No Specimens"
+    },
 
     "labels_print_job_created": "Specimen labels print job {{jobId}} created successfully",
     "spmn_aliquots": "Specimen Aliquots",
@@ -822,8 +861,7 @@
     },
 
     "filter": {
-      "title": "Filters",
-      "name": "Type the Name"
+      "title": "Filters"
     },
 
     "menu_options": {
@@ -997,11 +1035,13 @@
     "user_unlocked": "User unlocked successfully",
     "users_unlocked": "Users unlocked successfully",
     "users_approved": "Users' sign-up request approved successfully",
-    "cp_count": "Collection Protocols",
     "user_since": "User Since",
     "delete_users":  "Are you sure you want to delete selected users?",
     "users_deleted": "Users deleted successfully",
     "admin_access_req": "Super administrator rights required to delete admin users: {{adminUsers}}.",
+    "lock_users": "Lock",
+    "user_locked": "User locked successfully",
+    "users_locked": "Users locked successfully",
 
     "user_roles": "User Roles",
     "bulk_import_users": "Import Users",
@@ -1052,7 +1092,8 @@
       "cp_count": "Collection Protocol(s)",
       "last_login": "Last logged date",
       "user_since": "User since (years)",
-      "search": "Click to search Users"
+      "search": "Click to search Users",
+      "lock_users": "Click to lock selected users"
     },
       
     "menu": {
@@ -1115,6 +1156,7 @@
     "auto_name": "Auto",
     "name": "Name",
     "barcode": "Barcode",
+    "name_or_barcode": "Name / Barcode",
     "type": "Type",
     "create_container": "Create Storage Container",
     "parent_container": "Parent Container",
@@ -1129,7 +1171,7 @@
     "automated": "Automated",
     "dimension": "Dimension",
     "capacity": "Approximate Capacity",
-    "specimens": "specimens",
+    "capacity_unit": "specimens",
     "out_of": "out of",
     "stored": "Stored",
     "stored_spmns": "Stored Specimens",
@@ -1568,6 +1610,20 @@
       "type_id_or_title": "Enter query ID or title to search queries"
     },
 
+    "audit_logs": {
+      "view_logs": "View Audit Logs",
+      "title": "Query Audit Logs",
+      "query": "Query",
+      "executed_by": "Executed By",
+      "type": "Type",
+      "time_of_exec": "Time of Execution",
+      "time_to_finish": "Time to Finish (seconds)",
+      "loading": "Loading audit logs. Please wait for a moment ...",
+      "no_logs": "No audit logs to show",
+      "unsaved_query": "Unsaved Query",
+      "filter": "Audit Logs Filter"
+    },
+
     "catalogs": "Catalogs",
     "search_cp": "Search Collection Protocol",
     "no_catalog": "No catalog configured for {{shortTitle}}",
@@ -1677,7 +1733,12 @@
   },
 
   "export": {
-    "job_submitted": "Export job {{id}} submitted. Link to download records file will be sent by email."
+    "title": "Export Records",
+    "initiated": "Export records has been initiated. Records file download should start in few moments...",
+    "downloading_file": "Downloading records file",
+    "file_will_be_emailed": "Export records job {{id}} is taking longer time to finish. Link to download records file will be sent to you by e-mail",
+    "failed": "Export job {{id}} failed with errors. Please contact system administrator for help!",
+    "select_record_type": "Record Type"
   },
 
   "specimen_kit": {
@@ -1745,6 +1806,7 @@
     "specimens_removed_from_user_default_list": "Specimens sucessfully removed from {{owner.firstName}} {{owner.lastName}}'s default cart",
     "specimens_removed_from_normal_list": "Specimens sucessfully removed from cart {{name}}",
     "distribute": "Distribute",
+    "distribute_all": "Distribute All",
     "ship": "Ship",
     "no_specimens_for_deletion": "Please select at least one specimen for deletion",
     "no_specimens_for_distribution": "Please select at least one specimen to create distribution order",
@@ -1757,9 +1819,11 @@
     "remove_spmns": "Remove from Cart",
     "add_event": "Add Event",
     "transfer_specimens": "Transfer Specimens",
+    "retrieve_specimens": "Retrieve",
     "location": "Storage Location",
     "no_specimens_to_add_event": "Please select at least one specimen to add event",
     "no_specimens_to_transfer": "Please select at least one specimen to transfer",
+    "no_specimens_to_retrieve": "Please select at least one specimen to retrieve",
     "create_aliquots": "Create Aliquots",
     "no_specimens_to_create_aliquots": "Please select at least one parent specimen to create aliquots",
     "create_derivatives": "Create Derivatives",
@@ -1794,6 +1858,7 @@
     "dist_date": "Distribution Date",
     "creation_date": "Creation Date",
     "tracking_url": "Tracking URL",
+    "specimen_list": "Specimen List",
     "receiving_institute": "Receiving Institute",
     "receiving_site": "Receiving Site",
     "execution_date": "Execution Date",
@@ -1802,6 +1867,8 @@
     "details": "Order Details",
     "no_specimens_in_list": "No specimens in order list to distribute. Add at least one specimen",
     "enter_specimen_label": "To add specimens to distribution list, enter labels or barcodes separated by a comma, tab or newline and click add",
+    "loading_items": "Loading order items. Please wait for a moment ...",
+    "more_time": "Saving distribution order is taking more time than anticipated. An email notification will be sent to you on successful distribution of specimens",
 
     "report_gen_initiated": "Generating distribution order report...",
     "downloading_report": "Downloading distribution order report...",
@@ -1819,9 +1886,12 @@
     "freeze_thaw_on_return": "Freeze/Thaw",
     "user": "User",
     "comments": "Comments",
-   
+    "select_dp": "Select Distribution Protocol",
+    "creation_success": "Distribution Order {{name}} successfully created",
+
     "menu": {
-      "overview": "Overview"
+      "overview": "Overview",
+      "items": "Specimens"
     },
 
     "spec": {
@@ -1859,7 +1929,9 @@
     },
 
     "errors": {
-      "insufficient_qty": "The distribution quantity of {{count}} {{ count == 1 ? 'specimen' : 'specimens' }} is more than the available quantity. Do you want to proceed?"
+      "insufficient_qty": "The distribution quantity of {{count}} {{ count == 1 ? 'specimen' : 'specimens' }} is more than the available quantity. Do you want to proceed?",
+      "no_qty_spmns_confirm": "The order contains {{spmnCount}} {{ spmnCount == 1 ? 'specimen' : 'specimens' }} with unspecified or zero available quantity. Do you want to proceed?",
+      "no_qty_spmns_msg": "The order contains one or more specimens with unspecified or zero available quantity"
     },
 
     "specimen_validation": {
@@ -1952,6 +2024,24 @@
       "extra_count": "Failed: Additional specimens present in the shipment",
       "extra_error": "Failed: Additional specimen present in the shipment"
     }
+  },
+
+  "notifs": {
+    "title": "Notifications",
+    "loading": "Loading notifications. Please wait for a moment... ",
+    "no_notifs": "No notifications to show",
+    "view_all": "View All Notifications"
+  },
+
+  "audit": {
+    "activity": "Activity",
+    "created_by": "Created By",
+    "created_on": "Created On",
+    "updated_by": "Updated By",
+    "updated_on": "Updated On",
+    "no_of_revisions": "Number of Revisions",
+    "view_all": "View all",
+    "revisions": "Revisions"
   },
 
    "jobs": {
@@ -2083,7 +2173,11 @@
         "account_inactive_days": "Inactive Account",
         "account_inactive_days_desc": "Number of days of inactivity before user account is locked.",
         "password_rule": "Password Complexity Description",
-        "password_rule_desc": "User friendly description of password complexity requirements."
+        "password_rule_desc": "User friendly description of password complexity requirements.",
+        "forgot_password": "Forgot Password",
+        "forgot_password_desc": "Allow or prevent users who have forgotten their passwords to set new password by using 'Forgot Password' feature.",
+        "default_domain": "Default Domain",
+        "default_domain_desc": "The user domain to be pre-selected for authentication on the user sign-in page."
       },
       
       "administrative": {
@@ -2093,7 +2187,11 @@
         "dp_expiry_rem_rept_inter": "Repeat DP Expiry Reminder",
         "dp_expiry_rem_rept_inter_desc": "Number of days after which email notification should be repeated for distribution protocol expiry.",
         "active_users_login_days": "Active User Login Days Criteria",
-        "active_users_login_days_desc": "Number of days elapsed since last login before user is considered as inactive"
+        "active_users_login_days_desc": "Number of days elapsed since last login before user is considered as inactive.",
+        "system_lockdown": "System Lockdown",
+        "system_lockdown_desc": "Stop all users from using OpenSpecimen except super administrators.",
+        "user_sign_up": "User Sign Up",
+        "user_sign_up_desc": "Enable or disable users sign up feature."
       },
 
       "biospecimen": {
@@ -2125,7 +2223,7 @@
         "spmn_path_status_abbr_map": "Pathology Status Abbreviation Mapping",
         "spmn_path_status_abbr_map_desc": "CSV file containing mapping between specimen pathology status and its abbreviations. Needed for label generation.",
         "spr_deidentifier": "SPR De-identification",
-        "spr_deidentifier_desc": "Surgical pathology report de-identification",
+        "spr_deidentifier_desc": "Name of the Spring bean implementing the customised logic of de-identifying surgical pathology reports.",
         "spr_dir": "SPR Directory",
         "spr_dir_desc": "Folder on the server to store surgical pathology report files.",
         "uid_mandatory": "UID Mandatory",
@@ -2167,7 +2265,11 @@
         "rel_sorting_max_spmns": "Specimens Sorting by Relationship Limit",
         "rel_sorting_max_spmns_desc": "Maximum number of specimens that can be sorted based on their relationship",
         "staged_part_cleanup_int": "Staged Participants Retain Interval",
-        "staged_part_cleanup_int_desc": "Number of days to retain the details of participant in staging table"
+        "staged_part_cleanup_int_desc": "Number of days to retain the details of participant in staging table",
+        "store_phi": "Anonymize Participants",
+        "store_phi_desc": "Enable or disable feature to anonymize participant's PHI data.",
+        "store_spr": "Surgical Pathology Reports",
+        "store_spr_desc": "Enable or disable uploading of surgical pathology reports for a visit."
       },
 
       "common": {
@@ -2203,7 +2305,11 @@
         "deployment_site_url": "Deployment Site URL",
         "deployment_site_url_desc": "Website URL to navigate users on clicking deployment site logo",
         "cont_spmns_report_query": "Container Specimens Report",
-        "cont_spmns_report_query_desc": "Saved query to use for generating container specimens report"
+        "cont_spmns_report_query_desc": "Saved query to use for generating container specimens report",
+        "toast_disp_time": "Toast Display Time",
+        "toast_disp_time_desc": "Duration, in seconds, for which the success or error notification toasts should be displayed.",
+        "log_files_retain_period": "Log Files Retain Period",
+        "log_files_retain_period_desc": "Number of days to retain the log files after which they are deleted."
       },
 
       "email": {
@@ -2223,11 +2329,15 @@
         "server_port": "Email Server Port",
         "server_port_desc": "Email server port.",
         "starttls_enabled": "StartTLS",
-        "starttls_enabled_desc": "Enable if StartTLS is to be used for your email server."
+        "starttls_enabled_desc": "Enable if StartTLS is to be used for your email server.",
+        "admin_phone_no": "Administrator Phone Number",
+        "admin_phone_no_desc": "Phone number of the OpenSpecimen administrator displayed in emails sent from OpenSpecimen. Users can call on this number to receive help, log support tickets etc."
       },
 
       "notifications": {
         "title": "Notifications",
+        "all": "Email Notifications",
+        "all_desc": "Enable or disable email notifications sent by OpenSpecimen. When disabled, no email notifications are sent irrespective of individual notification setting.",
         "email_order_distributed": "Order Distributed",
         "email_order_distributed_desc": "Send an email when specimens are distributed.",
         "email_query_export_data": "Query Data Exported",
@@ -2238,8 +2348,6 @@
         "email_specimen_list_shared_desc": "Send an email when a specimen cart is shared with one or more users.",
         "email_users_created": "User Created",
         "email_users_created_desc": "Send an email when a new user is created.",
-        "email_users_forgot_password_link": "Forgot Password Link",
-        "email_users_forgot_password_link_desc": "Send forgot password link email.",
         "email_users_new_user_request": "User Signup Request",
         "email_users_new_user_request_desc": "Send an email to admnistrator when a new user signs up.",
         "email_users_passwd_changed": "User Password Changed",
@@ -2257,7 +2365,11 @@
         "email_cp_expiring_notification": "Expiring CP",
         "email_cp_expiring_notification_desc": "Send reminder emails when collection protocol is about to expire.",
         "email_dp_expiring_notification": "Expiring DP",
-        "email_dp_expiring_notification_desc": "Send reminder emails when distribution protocol is about to expire."
+        "email_dp_expiring_notification_desc": "Send reminder emails when distribution protocol is about to expire.",
+        "email_users_dp_role_updated": "Distribution Protocol Created",
+        "email_users_dp_role_updated_desc": "Send an email when a new distribution protocol is created.",
+        "cc_import_emails_to_admin": "Bulk Import Emails to Admin",
+        "cc_import_emails_to_admin_desc": "Copy bulk import emails to administrator email ID as well."
       },
 
       "catalog": {
@@ -2273,7 +2385,9 @@
         "max_concurrent_queries": "Concurrent Queries Limit",
         "max_concurrent_queries_desc": "Maximum number of queries that are allowed to run simultaneously before rejecting new query execution requests",
         "max_recs_in_memory": "In-memory Records Limit",
-        "max_recs_in_memory_desc": "Maximum number of query records that are allowed to be cached in-memory. When limit is reached, excessive records are spooled to disk"
+        "max_recs_in_memory_desc": "Maximum number of query records that are allowed to be cached in-memory. When limit is reached, excessive records are spooled to disk",
+        "default_result_view": "Default Result View Fields",
+        "default_result_view_desc": "List of field values to be displayed in default query result view."
       },
 
       "training": {
@@ -2313,7 +2427,11 @@
         "help_link": "Online Help",
         "help_link_desc": "Link to online software help",
         "forum_link": "Q & A Forums",
-        "forum_link_desc": "Link to Q & A forums site"
+        "forum_link_desc": "Link to Q & A forums site",
+        "cp_setup_help_link": "Collection Protocol Setup",
+        "cp_setup_help_link_desc": "Link to training materials on how to setup (create, update) collection protocols, events, specimen requirements, consents, label formats, and many more",
+        "manual_search_link": "Search URL",
+        "manual_search_link_desc": "URL to use for showing results of users' online training manual search queries."
       }
     },
 

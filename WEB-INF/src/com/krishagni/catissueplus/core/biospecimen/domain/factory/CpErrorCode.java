@@ -65,6 +65,8 @@ public enum CpErrorCode implements ErrorCode {
 
 	INVALID_SOP_DOC,
 
+	INVALID_VISIT_COLL_MODE,
+
 	INVALID_VISIT_NAME_PRINT_MODE,
 	
 	INVALID_SPMN_LABEL_PRE_PRINT_MODE,
@@ -86,8 +88,6 @@ public enum CpErrorCode implements ErrorCode {
 	RPT_DISABLED,
 
 	RPT_FILE_NOT_FOUND,
-
-	INV_CONT_SEL_STRATEGY,
 
 	CANNOT_ENABLE_BARCODING,
 

@@ -6,12 +6,14 @@ import java.io.FileOutputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Calendar;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Callable;
@@ -41,6 +43,7 @@ import com.krishagni.catissueplus.core.biospecimen.domain.AliquotSpecimensRequir
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolEvent;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolRegistration;
+import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolSite;
 import com.krishagni.catissueplus.core.biospecimen.domain.ConsentStatement;
 import com.krishagni.catissueplus.core.biospecimen.domain.CpConsentTier;
 import com.krishagni.catissueplus.core.biospecimen.domain.CpReportSettings;
@@ -85,6 +88,7 @@ import com.krishagni.catissueplus.core.common.Pair;
 import com.krishagni.catissueplus.core.common.PlusTransactional;
 import com.krishagni.catissueplus.core.common.access.AccessCtrlMgr;
 import com.krishagni.catissueplus.core.common.access.AccessCtrlMgr.ParticipantReadAccess;
+import com.krishagni.catissueplus.core.common.domain.Notification;
 import com.krishagni.catissueplus.core.common.errors.ErrorType;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.BulkDeleteEntityOp;
@@ -92,21 +96,23 @@ import com.krishagni.catissueplus.core.common.events.BulkDeleteEntityResp;
 import com.krishagni.catissueplus.core.common.events.DependentEntityDetail;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
 import com.krishagni.catissueplus.core.common.events.ResponseEvent;
-import com.krishagni.catissueplus.core.common.service.EmailService;
-import com.krishagni.catissueplus.core.common.service.ObjectStateParamsResolver;
+import com.krishagni.catissueplus.core.common.service.ObjectAccessor;
 import com.krishagni.catissueplus.core.common.util.AuthUtil;
 import com.krishagni.catissueplus.core.common.util.ConfigUtil;
+import com.krishagni.catissueplus.core.common.util.EmailUtil;
 import com.krishagni.catissueplus.core.common.util.MessageUtil;
+import com.krishagni.catissueplus.core.common.util.NotifUtil;
 import com.krishagni.catissueplus.core.common.util.Utility;
 import com.krishagni.catissueplus.core.query.Column;
 import com.krishagni.catissueplus.core.query.ListConfig;
 import com.krishagni.catissueplus.core.query.ListDetail;
 import com.krishagni.catissueplus.core.query.ListGenerator;
 import com.krishagni.rbac.common.errors.RbacErrorCode;
+import com.krishagni.rbac.events.SubjectRoleOpNotif;
 import com.krishagni.rbac.service.RbacService;
 
 
-public class CollectionProtocolServiceImpl implements CollectionProtocolService, ObjectStateParamsResolver {
+public class CollectionProtocolServiceImpl implements CollectionProtocolService, ObjectAccessor {
 
 	private ThreadPoolTaskExecutor taskExecutor;
 
@@ -119,15 +125,13 @@ public class CollectionProtocolServiceImpl implements CollectionProtocolService,
 	private DaoFactory daoFactory;
 	
 	private RbacService rbacSvc;
-	
-	private EmailService emailService;
 
 	private ListGenerator listGenerator;
 
 	private CpReportSettingsFactory rptSettingsFactory;
 
 	private Map<String, Function<Map<String, Object>, ListConfig>> listConfigFns = new HashMap<>();
-	
+
 	public void setTaskExecutor(ThreadPoolTaskExecutor taskExecutor) {
 		this.taskExecutor = taskExecutor;
 	}
@@ -150,10 +154,6 @@ public class CollectionProtocolServiceImpl implements CollectionProtocolService,
 
 	public void setRbacSvc(RbacService rbacSvc) {
 		this.rbacSvc = rbacSvc;
-	}
-
-	public void setEmailService(EmailService emailService) {
-		this.emailService = emailService;
 	}
 
 	public void setListGenerator(ListGenerator listGenerator) {
@@ -254,6 +254,7 @@ public class CollectionProtocolServiceImpl implements CollectionProtocolService,
 	public ResponseEvent<CollectionProtocolDetail> createCollectionProtocol(RequestEvent<CollectionProtocolDetail> req) {
 		try {
 			CollectionProtocol cp = createCollectionProtocol(req.getPayload(), null, false);
+			notifyUsersOnCpCreate(cp);
 			return ResponseEvent.response(CollectionProtocolDetail.from(cp));
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
@@ -261,7 +262,7 @@ public class CollectionProtocolServiceImpl implements CollectionProtocolService,
 			return ResponseEvent.serverError(e);
 		}
 	}
-	
+
 	@Override
 	@PlusTransactional
 	public ResponseEvent<CollectionProtocolDetail> updateCollectionProtocol(RequestEvent<CollectionProtocolDetail> req) {
@@ -289,25 +290,20 @@ public class CollectionProtocolServiceImpl implements CollectionProtocolService,
 			ose.checkAndThrow();
 			
 			User oldPi = existingCp.getPrincipalInvestigator();
-			boolean piChanged = !oldPi.equals(cp.getPrincipalInvestigator());
-			
 			Collection<User> addedCoord = CollectionUtils.subtract(cp.getCoordinators(), existingCp.getCoordinators());
 			Collection<User> removedCoord = CollectionUtils.subtract(existingCp.getCoordinators(), cp.getCoordinators());
-			
+
+			Collection<CollectionProtocolSite> addedSites = CollectionUtils.subtract(cp.getSites(), existingCp.getSites());
+			Collection<CollectionProtocolSite> removedSites = CollectionUtils.subtract(existingCp.getSites(), cp.getSites());
+
 			existingCp.update(cp);
 			existingCp.addOrUpdateExtension();
 			
-			// PI role handling
-			if (piChanged) {
-				removeDefaultPiRoles(cp, oldPi);
-				addDefaultPiRoles(cp, cp.getPrincipalInvestigator());
-			} 
-
-			// Coordinator Role Handling
-			removeDefaultCoordinatorRoles(cp, removedCoord);
-			addDefaultCoordinatorRoles(cp, addedCoord);
-
 			fixSopDocumentName(existingCp);
+
+			// PI and coordinators role handling
+			addOrRemovePiCoordinatorRoles(cp, "UPDATE", oldPi, cp.getPrincipalInvestigator(), addedCoord, removedCoord);
+			notifyUsersOnCpUpdate(existingCp, addedSites, removedSites);
 			return ResponseEvent.response(CollectionProtocolDetail.from(existingCp));
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
@@ -324,12 +320,13 @@ public class CollectionProtocolServiceImpl implements CollectionProtocolService,
 			Long cpId = opDetail.getCpId();
 			CollectionProtocol existing = daoFactory.getCollectionProtocolDao().getById(cpId);
 			if (existing == null) {
-				throw OpenSpecimenException.userError(CpeErrorCode.NOT_FOUND, cpId);
+				throw OpenSpecimenException.userError(CpErrorCode.NOT_FOUND);
 			}
 			
 			AccessCtrlMgr.getInstance().ensureReadCpRights(existing);
 			
 			CollectionProtocol cp = createCollectionProtocol(opDetail.getCp(), existing, true);
+			notifyUsersOnCpCreate(cp);
 			return ResponseEvent.response(CollectionProtocolDetail.from(cp));
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
@@ -420,7 +417,6 @@ public class CollectionProtocolServiceImpl implements CollectionProtocolService,
 			}
 
 			boolean completed = crit.isForceDelete() ? forceDeleteCps(cps) : deleteCps(cps);
-
 			BulkDeleteEntityResp<CollectionProtocolDetail> resp = new BulkDeleteEntityResp<>();
 			resp.setCompleted(completed);
 			resp.setEntities(CollectionProtocolDetail.from(cps));
@@ -638,7 +634,7 @@ public class CollectionProtocolServiceImpl implements CollectionProtocolService,
 		try {
 			CollectionProtocolEvent cpe = daoFactory.getCollectionProtocolDao().getCpe(cpeId);
 			if (cpe == null) {
-				return ResponseEvent.userError(CpeErrorCode.NOT_FOUND);
+				return ResponseEvent.userError(CpeErrorCode.NOT_FOUND, cpeId, 1);
 			}
 
 			CollectionProtocol cp = cpe.getCollectionProtocol();
@@ -701,14 +697,17 @@ public class CollectionProtocolServiceImpl implements CollectionProtocolService,
 			String eventLabel = opDetail.getEventLabel();
 			
 			CollectionProtocolEvent existing = null;
+			Object key = null;
 			if (opDetail.getEventId() != null) {
 				existing = cpDao.getCpe(opDetail.getEventId());
+				key = opDetail.getEventId();
 			} else if (!StringUtils.isBlank(eventLabel) && !StringUtils.isBlank(cpTitle)) {
 				existing = cpDao.getCpeByEventLabel(cpTitle, eventLabel);
+				key = eventLabel;
 			}
 			
 			if (existing == null) {
-				throw OpenSpecimenException.userError(CpeErrorCode.NOT_FOUND);
+				throw OpenSpecimenException.userError(CpeErrorCode.NOT_FOUND, key, 1);
 			}
 			
 			CollectionProtocol cp = existing.getCollectionProtocol();
@@ -734,7 +733,7 @@ public class CollectionProtocolServiceImpl implements CollectionProtocolService,
 			Long cpeId = req.getPayload();
 			CollectionProtocolEvent cpe = daoFactory.getCollectionProtocolDao().getCpe(cpeId);
 			if (cpe == null) {
-				throw OpenSpecimenException.userError(CpeErrorCode.NOT_FOUND);
+				throw OpenSpecimenException.userError(CpeErrorCode.NOT_FOUND, cpeId, 1);
 			}
 			
 			CollectionProtocol cp = cpe.getCollectionProtocol();
@@ -757,7 +756,7 @@ public class CollectionProtocolServiceImpl implements CollectionProtocolService,
 		try {
 			CollectionProtocolEvent cpe = daoFactory.getCollectionProtocolDao().getCpe(cpeId);
 			if (cpe == null) {
-				return ResponseEvent.userError(CpeErrorCode.NOT_FOUND);
+				return ResponseEvent.userError(CpeErrorCode.NOT_FOUND, cpeId, 1);
 			}
 			
 			AccessCtrlMgr.getInstance().ensureReadCpRights(cpe.getCollectionProtocol());
@@ -1234,17 +1233,28 @@ public class CollectionProtocolServiceImpl implements CollectionProtocolService,
 
 	@Override
 	public String getObjectName() {
-		return "cp";
+		return CollectionProtocol.getEntityName();
 	}
 
 	@Override
 	@PlusTransactional
-	public Map<String, Object> resolve(String key, Object value) {
+	public Map<String, Object> resolveUrl(String key, Object value) {
 		if (key.equals("id")) {
 			value = Long.valueOf(value.toString());
 		}
 
 		return daoFactory.getCollectionProtocolDao().getCpIds(key, value);
+	}
+
+	@Override
+	public String getAuditTable() {
+		return "CAT_COLLECTION_PROTOCOL_AUD";
+	}
+
+	@Override
+	public void ensureReadAllowed(Long id) {
+		CollectionProtocol cp = getCollectionProtocol(id, null, null);
+		AccessCtrlMgr.getInstance().ensureReadCpRights(cp);
 	}
 
 	private CpListCriteria addCpListCriteria(CpListCriteria crit) {
@@ -1294,8 +1304,7 @@ public class CollectionProtocolServiceImpl implements CollectionProtocolService,
 		cp.addOrUpdateExtension();
 		
 		//Assign default roles to PI and Coordinators
-		addDefaultPiRoles(cp, cp.getPrincipalInvestigator());
-		addDefaultCoordinatorRoles(cp, cp.getCoordinators());
+		addOrRemovePiCoordinatorRoles(cp, "CREATE", null, cp.getPrincipalInvestigator(), cp.getCoordinators(), null);
 		fixSopDocumentName(cp);
 		return cp;
 	}
@@ -1491,41 +1500,90 @@ public class CollectionProtocolServiceImpl implements CollectionProtocolService,
 		return aliquots;
 	}
 
-	private void addDefaultPiRoles(CollectionProtocol cp, User user) {
+	private void addOrRemovePiCoordinatorRoles(CollectionProtocol cp, String cpOp, User oldPi, User newPi, Collection<User> newCoord, Collection<User> removedCoord) {
+		List<User> notifUsers = null;
+		if (!Objects.equals(oldPi, newPi)) {
+			notifUsers = AccessCtrlMgr.getInstance().getSiteAdmins(null, cp);
+
+			if (newPi != null) {
+				addDefaultPiRoles(cp, notifUsers, newPi, cpOp);
+			}
+
+			if (oldPi != null) {
+				removeDefaultPiRoles(cp, notifUsers, oldPi, cpOp);
+			}
+		}
+
+		if (CollectionUtils.isNotEmpty(newCoord)) {
+			if (notifUsers == null) {
+				notifUsers = AccessCtrlMgr.getInstance().getSiteAdmins(null, cp);
+			}
+
+			addDefaultCoordinatorRoles(cp, notifUsers, newCoord, cpOp);
+		}
+
+		if (CollectionUtils.isNotEmpty(removedCoord)) {
+			if (notifUsers == null) {
+				notifUsers = AccessCtrlMgr.getInstance().getSiteAdmins(null, cp);
+			}
+
+			removeDefaultCoordinatorRoles(cp, notifUsers, removedCoord, cpOp);
+		}
+	}
+
+	private void addDefaultPiRoles(CollectionProtocol cp, List<User> notifUsers, User user, String cpOp) {
 		try {
-			rbacSvc.addSubjectRole(null, cp, user, getDefaultPiRoles());
+			for (String role : getDefaultPiRoles()) {
+				addRole(cp, notifUsers, user, role, cpOp);
+			}
 		} catch (OpenSpecimenException ose) {
 			ose.rethrow(RbacErrorCode.ACCESS_DENIED, CpErrorCode.USER_UPDATE_RIGHTS_REQUIRED);
 			throw ose;
 		}
 	}
 
-	private void removeDefaultPiRoles(CollectionProtocol cp, User user) {
+	private void removeDefaultPiRoles(CollectionProtocol cp, List<User> notifUsers, User user, String cpOp) {
 		try {
-			rbacSvc.removeSubjectRole(null, cp, user, getDefaultPiRoles());
-		} catch (OpenSpecimenException ose) {
-			ose.rethrow(RbacErrorCode.ACCESS_DENIED, CpErrorCode.USER_UPDATE_RIGHTS_REQUIRED);
-		}
-	}
-	
-	private void addDefaultCoordinatorRoles(CollectionProtocol cp, Collection<User> coordinators) {
-		try {
-			for (User user : coordinators) {
-				rbacSvc.addSubjectRole(null, cp, user, getDefaultCoordinatorRoles());
+			for (String role : getDefaultPiRoles()) {
+				removeRole(cp, notifUsers, user, role, cpOp);
 			}
 		} catch (OpenSpecimenException ose) {
 			ose.rethrow(RbacErrorCode.ACCESS_DENIED, CpErrorCode.USER_UPDATE_RIGHTS_REQUIRED);
 		}
 	}
 	
-	private void removeDefaultCoordinatorRoles(CollectionProtocol cp, Collection<User> coordinators) {
+	private void addDefaultCoordinatorRoles(CollectionProtocol cp, List<User> notifUsers, Collection<User> coordinators, String cpOp) {
 		try {
 			for (User user : coordinators) {
-				rbacSvc.removeSubjectRole(null, cp, user, getDefaultCoordinatorRoles());
+				for (String role : getDefaultCoordinatorRoles()) {
+					addRole(cp, notifUsers, user, role, cpOp);
+				}
 			}
 		} catch (OpenSpecimenException ose) {
 			ose.rethrow(RbacErrorCode.ACCESS_DENIED, CpErrorCode.USER_UPDATE_RIGHTS_REQUIRED);
 		}
+	}
+	
+	private void removeDefaultCoordinatorRoles(CollectionProtocol cp, List<User> notifUsers, Collection<User> coordinators, String cpOp) {
+		try {
+			for (User user : coordinators) {
+				for (String role : getDefaultCoordinatorRoles()) {
+					removeRole(cp, notifUsers, user, role, cpOp);
+				}
+			}
+		} catch (OpenSpecimenException ose) {
+			ose.rethrow(RbacErrorCode.ACCESS_DENIED, CpErrorCode.USER_UPDATE_RIGHTS_REQUIRED);
+		}
+	}
+
+	private void addRole(CollectionProtocol cp, List<User> admins, User user, String role, String cpOp) {
+		SubjectRoleOpNotif notifReq = getNotifReq(cp, role, admins, user, cpOp, "ADD");
+		rbacSvc.addSubjectRole(null, cp, user, new String[] { role }, notifReq);
+	}
+
+	private void removeRole(CollectionProtocol cp, List<User> admins, User user, String role, String cpOp) {
+		SubjectRoleOpNotif notifReq = getNotifReq(cp, role, admins, user, cpOp, "REMOVE");
+		rbacSvc.removeSubjectRole(null, cp, user, new String[] { role }, notifReq);
 	}
 	
 	private String[] getDefaultPiRoles() {
@@ -1718,11 +1776,32 @@ public class CollectionProtocolServiceImpl implements CollectionProtocolService,
 	}
 
 	private void forceDeleteCp(final CollectionProtocol cp) {
+		while (deleteRegistrations(cp));
+		deleteCp(cp);
+	}
+
+	private boolean deleteCps(List<CollectionProtocol> cps) {
+		cps.forEach(cp -> deleteCp(cp));
+		return true;
+	}
+
+	@PlusTransactional
+	private boolean deleteCp(CollectionProtocol cp) {
 		boolean success = false;
 		String stackTrace = null;
+		CollectionProtocol deletedCp = new CollectionProtocol();
 		try {
-			while (deleteRegistrations(cp));
-			deleteCp(cp);
+			//
+			// refresh cp, as it could have been fetched in another transaction
+			// if in same transaction, then it will be obtained from session
+			//
+			cp = daoFactory.getCollectionProtocolDao().getById(cp.getId());
+
+			removeContainerRestrictions(cp);
+			addOrRemovePiCoordinatorRoles(cp, "DELETE", cp.getPrincipalInvestigator(), null, null, cp.getCoordinators());
+			removeCpRoles(cp);
+			BeanUtils.copyProperties(cp, deletedCp);
+			cp.delete();
 			success = true;
 		} catch (Exception ex) {
 			success = false;
@@ -1734,28 +1813,9 @@ public class CollectionProtocolServiceImpl implements CollectionProtocolService,
 				throw OpenSpecimenException.serverError(ex);
 			}
 		} finally {
-			sendEmail(cp, success, stackTrace);
+			notifyUsersOnCpDelete(deletedCp, success, stackTrace);
 		}
-	}
 
-	private boolean deleteCps(List<CollectionProtocol> cps) {
-		cps.forEach(cp -> deleteCp(cp));
-		return true;
-	}
-	
-	@PlusTransactional
-	private boolean deleteCp(CollectionProtocol cp) {
-		//
-		// refresh cp, as it could have been fetched in another transaction
-		// if in same transaction, then it will be obtained from session
-		//
-		cp = daoFactory.getCollectionProtocolDao().getById(cp.getId());
-
-		removeContainerRestrictions(cp);
-		removeDefaultPiRoles(cp, cp.getPrincipalInvestigator());
-		removeDefaultCoordinatorRoles(cp, cp.getCoordinators());
-		removeCpRoles(cp);
-		cp.delete();
 		return true;
 	}
 	
@@ -1779,18 +1839,89 @@ public class CollectionProtocolServiceImpl implements CollectionProtocolService,
 		rbacSvc.removeCpRoles(cp.getId());
 	}
 
-	private void sendEmail(CollectionProtocol cp, boolean success, String stackTrace) {
-		User currentUser = AuthUtil.getCurrentUser();
-		String[] rcpts = {currentUser.getEmailAddress(), cp.getPrincipalInvestigator().getEmailAddress()};
+	private void notifyUsersOnCpCreate(CollectionProtocol cp) {
+		notifyUsersOnCpOp(cp, cp.getSites(), OP_CP_CREATED);
+	}
 
-		Map<String, Object> props = new HashMap<>();
-		props.put("cp", cp);
-		props.put("$subject", new String[] {cp.getShortTitle()});
-		props.put("user", currentUser);
-		props.put("error", stackTrace);
+	private void notifyUsersOnCpUpdate(CollectionProtocol cp, Collection<CollectionProtocolSite> addedSites, Collection<CollectionProtocolSite> removedSites) {
+		notifyUsersOnCpOp(cp, removedSites, OP_CP_SITE_REMOVED);
+		notifyUsersOnCpOp(cp, addedSites, OP_CP_SITE_ADDED);
+	}
 
-		String tmpl = success ? CP_DELETE_SUCCESS_EMAIL_TMPL : CP_DELETE_FAILED_EMAIL_TMPL;
-		emailService.sendEmail(tmpl, rcpts, props);
+	private void notifyUsersOnCpDelete(CollectionProtocol cp, boolean success, String stackTrace) {
+		if (success) {
+			notifyUsersOnCpOp(cp, cp.getSites(), OP_CP_DELETED);
+		} else {
+			User currentUser = AuthUtil.getCurrentUser();
+			String[] rcpts = {currentUser.getEmailAddress(), cp.getPrincipalInvestigator().getEmailAddress()};
+			String[] subjParams = new String[] {cp.getShortTitle()};
+
+			Map<String, Object> props = new HashMap<>();
+			props.put("cp", cp);
+			props.put("$subject", subjParams);
+			props.put("user", currentUser);
+			props.put("error", stackTrace);
+			EmailUtil.getInstance().sendEmail(CP_DELETE_FAILED_EMAIL_TMPL, rcpts, null, props);
+		}
+	}
+
+	private void notifyUsersOnCpOp(CollectionProtocol cp, Collection<CollectionProtocolSite> sites, int op) {
+		Map<String, Object> emailProps = new HashMap<>();
+		emailProps.put("$subject", new Object[] {cp.getShortTitle(), op});
+		emailProps.put("cp", cp);
+		emailProps.put("op", op);
+		emailProps.put("currentUser", AuthUtil.getCurrentUser());
+		emailProps.put("ccAdmin", false);
+
+		if (op == OP_CP_CREATED || op == OP_CP_DELETED) {
+			List<User> superAdmins = AccessCtrlMgr.getInstance().getSuperAdmins();
+			notifyUsers(superAdmins, CP_OP_EMAIL_TMPL, emailProps, (op == OP_CP_CREATED) ? "CREATE" : "DELETE");
+		}
+
+		for (CollectionProtocolSite cpSite : sites) {
+			String siteName = cpSite.getSite().getName();
+			emailProps.put("siteName", siteName);
+			emailProps.put("$subject", new Object[] {siteName, op, cp.getShortTitle()});
+			notifyUsers(cpSite.getSite().getCoordinators(), CP_SITE_UPDATED_EMAIL_TMPL, emailProps, "UPDATE");
+		}
+	}
+
+	private void notifyUsers(Collection<User> users, String template, Map<String, Object> emailProps, String notifOp) {
+		for (User rcpt : users) {
+			emailProps.put("rcpt", rcpt);
+			EmailUtil.getInstance().sendEmail(template, new String[] {rcpt.getEmailAddress()}, null, emailProps);
+		}
+
+		CollectionProtocol cp = (CollectionProtocol)emailProps.get("cp");
+		Object[] subjParams = (Object[])emailProps.get("$subject");
+
+		Notification notif = new Notification();
+		notif.setEntityType(CollectionProtocol.getEntityName());
+		notif.setEntityId(cp.getId());
+		notif.setOperation(notifOp);
+		notif.setCreatedBy(AuthUtil.getCurrentUser());
+		notif.setCreationTime(Calendar.getInstance().getTime());
+		notif.setMessage(MessageUtil.getInstance().getMessage(template + "_subj", subjParams));
+		NotifUtil.getInstance().notify(notif, Collections.singletonMap("cp-overview", users));
+	}
+
+	private SubjectRoleOpNotif getNotifReq(CollectionProtocol cp, String role, List<User> notifUsers, User user, String cpOp, String roleOp) {
+		SubjectRoleOpNotif notifReq = new SubjectRoleOpNotif();
+		notifReq.setAdmins(notifUsers);
+		notifReq.setAdminNotifMsg("cp_admin_notif_role_" + roleOp.toLowerCase());
+		notifReq.setAdminNotifParams(new Object[] { user.getFirstName(), user.getLastName(), role, cp.getShortTitle(), user.getInstitute().getName() });
+		notifReq.setUser(user);
+
+		if (cpOp.equals("DELETE")) {
+			notifReq.setSubjectNotifMsg("cp_delete_user_notif_role");
+			notifReq.setSubjectNotifParams(new Object[] { cp.getShortTitle(), role });
+		} else {
+			notifReq.setSubjectNotifMsg("cp_user_notif_role_" + roleOp.toLowerCase());
+			notifReq.setSubjectNotifParams(new Object[] { role, cp.getShortTitle(), user.getInstitute().getName() });
+		}
+
+		notifReq.setEndUserOp(cpOp);
+		return notifReq;
 	}
 
 	private String getMsg(String code) {
@@ -1992,7 +2123,17 @@ public class CollectionProtocolServiceImpl implements CollectionProtocolService,
 
 	private static final String ALIQUOT_LABEL_MSG            = "cp_aliquot_label";
 	
-	private static final String CP_DELETE_SUCCESS_EMAIL_TMPL = "cp_delete_success";
+	private static final String CP_OP_EMAIL_TMPL             = "cp_op";
 	
 	private static final String CP_DELETE_FAILED_EMAIL_TMPL  = "cp_delete_failed";
+
+	private static final String CP_SITE_UPDATED_EMAIL_TMPL   = "cp_site_updated";
+
+	private static final int OP_CP_SITE_ADDED = -1;
+
+	private static final int OP_CP_SITE_REMOVED = 1;
+
+	private static final int OP_CP_CREATED = 0;
+
+	private static final int OP_CP_DELETED = 2;
 }

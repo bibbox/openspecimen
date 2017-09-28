@@ -1,6 +1,7 @@
 
 package com.krishagni.catissueplus.core.biospecimen.events;
 
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
@@ -11,6 +12,7 @@ import java.util.stream.Collectors;
 
 import org.apache.commons.collections.CollectionUtils;
 import org.codehaus.jackson.annotate.JsonIgnore;
+import org.codehaus.jackson.map.annotate.JsonDeserialize;
 import org.codehaus.jackson.map.annotate.JsonSerialize;
 
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolRegistration;
@@ -22,6 +24,8 @@ import com.krishagni.catissueplus.core.de.events.ExtensionDetail;
 @JsonSerialize(include = JsonSerialize.Inclusion.NON_NULL)
 @ListenAttributeChanges
 public class ParticipantDetail extends AttributeModifiedSupport {
+	private static final SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
+
 	private Long id;
 
 	private String source;
@@ -123,6 +127,15 @@ public class ParticipantDetail extends AttributeModifiedSupport {
 		return birthDate;
 	}
 
+	public String getBirthDateStr() {
+		return birthDate != null ? sdf.format(birthDate) : null;
+	}
+
+	public void setBirthDateStr(String birthDateStr) {
+
+	}
+
+	@JsonDeserialize(using = com.krishagni.catissueplus.core.common.util.JsonDateDeserializer.class)
 	public void setBirthDate(Date birthDate) {
 		this.birthDate = birthDate;
 	}
@@ -294,7 +307,7 @@ public class ParticipantDetail extends AttributeModifiedSupport {
 		result.setEthnicities(new HashSet<>(participant.getEthnicities()));
 		result.setGender(participant.getGender());
 		result.setEmpi(excludePhi ? "###" : participant.getEmpi());
-		result.setPmis(PmiDetail.from(participant.getPmis(), excludePhi)); 
+		result.setPmis(PmiDetail.from(participant.getPmisOrderedById(), excludePhi));
 		result.setRaces(new HashSet<>(participant.getRaces()));
 		result.setSexGenotype(participant.getSexGenotype());
 		result.setUid(excludePhi ? "###" : participant.getUid());
@@ -325,8 +338,10 @@ public class ParticipantDetail extends AttributeModifiedSupport {
 	private static CprSummary getCprSummary(CollectionProtocolRegistration cpr) {
 		CprSummary cprSummary = new CprSummary();
 		cprSummary.setCpId(cpr.getCollectionProtocol().getId());
-		cprSummary.setCprId(cpr.getId());
 		cprSummary.setCpShortTitle(cpr.getCollectionProtocol().getShortTitle());
+		cprSummary.setCprId(cpr.getId());
+		cprSummary.setPpid(cpr.getPpid());
+		cprSummary.setRegistrationDate(cpr.getRegistrationDate());
 		return cprSummary;
 	}
 }

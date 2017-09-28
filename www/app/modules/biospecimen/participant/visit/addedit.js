@@ -1,7 +1,7 @@
 
 angular.module('os.biospecimen.visit.addedit', [])
   .controller('AddEditVisitCtrl', function(
-    $scope, $state, $stateParams, cp, cpr, visit, latestVisit, extensionCtxt, hasDict,
+    $scope, $state, $stateParams, cp, cpr, visit, latestVisit, extensionCtxt, hasDict, mrnAccessRestriction,
     PvManager, ExtensionsUtil) {
 
     function loadPvs() {
@@ -14,14 +14,17 @@ angular.module('os.biospecimen.visit.addedit', [])
       angular.extend(currVisit, {cprId: cpr.id, cpTitle: cpr.cpTitle});
 
       $scope.visitCtx = {
-        obj: {visit: $scope.currVisit, cp: cp}, inObjs: ['visit']
+        obj: {visit: $scope.currVisit, cp: cp},
+        inObjs: ['visit'],
+        mrnAccessRestriction: mrnAccessRestriction
       }
 
       if (!currVisit.id) {
         angular.extend(currVisit, {
           visitDate: currVisit.anticipatedVisitDate || new Date(),
           status: 'Complete',
-          clinicalDiagnosis: latestVisit ? latestVisit.clinicalDiagnosis : currVisit.clinicalDiagnosis
+          clinicalDiagnoses: latestVisit ? latestVisit.clinicalDiagnoses : currVisit.clinicalDiagnoses,
+          site: getVisitSite(cpr, latestVisit, currVisit)
         });
         delete currVisit.anticipatedVisitDate;
       }
@@ -38,6 +41,19 @@ angular.module('os.biospecimen.visit.addedit', [])
       if (!hasDict) {
         loadPvs();
       }
+    }
+
+    function getVisitSite(cpr, latestVisit, currVisit) {
+      var site = currVisit.site;
+      if (!!site) {
+        // site = site;
+      } else if (latestVisit) {
+        site = latestVisit.site;
+      } else if (cpr.participant.pmis.length > 0) {
+        site = cpr.participant.pmis[0].siteName;
+      }
+
+      return site;
     }
 
     $scope.saveVisit = function() {

@@ -9,15 +9,16 @@ angular.module('os.biospecimen.specimenlist',
   .config(function($stateProvider) {
     $stateProvider
       .state('specimen-lists', {
-        url: '/specimen-lists',
+        url: '/specimen-lists?filters',
         templateUrl: 'modules/biospecimen/specimen-list/lists.html',
         controller: 'SpecimenListsCtrl',
         resolve: {
           pagerOpts: function(ListPagerOpts) {
             return new ListPagerOpts({recordsPerPage: 50});
           },
-          lists: function(SpecimenList, pagerOpts) {
-            return SpecimenList.query({includeStats: true, maxResults: pagerOpts.recordsPerPage + 1});
+          lists: function($stateParams, pagerOpts, SpecimenList, Util) {
+            var defOpts = {includeStats: true, maxResults: pagerOpts.recordsPerPage + 1};
+            return SpecimenList.query(Util.filterOpts(defOpts, $stateParams.filters));
           }
         },
         parent: 'signed-in'
@@ -38,7 +39,7 @@ angular.module('os.biospecimen.specimenlist',
         parent: 'signed-in'
       })
       .state('specimen-list', {
-        url: '/',
+        url: '/?filters',
         params: {
           breadcrumbs: [
             {state: 'specimen-lists', params: {}, captionKey: 'specimen_list.lists'}
@@ -46,15 +47,6 @@ angular.module('os.biospecimen.specimenlist',
         },
         templateUrl: 'modules/biospecimen/specimen-list/specimens.html',
         controller: 'SpecimenListSpecimensCtrl',
-        resolve: {
-          reqBasedDistOrShip: function($injector) {
-            if ($injector.has('spmnReqCfgUtil')) {
-              return $injector.get('spmnReqCfgUtil').isReqBasedDistOrShippingEnabled();
-            } else {
-              return {value: false};
-            }
-          }
-        },
         parent: 'specimen-list-root'
       })
       .state('specimen-list-addedit', {
@@ -68,4 +60,8 @@ angular.module('os.biospecimen.specimenlist',
         },
         parent: 'specimen-list-root'
       });
+  })
+
+  .run(function(UrlResolver) {
+    UrlResolver.regUrlState('specimen-list', 'specimen-list', 'listId');
   });

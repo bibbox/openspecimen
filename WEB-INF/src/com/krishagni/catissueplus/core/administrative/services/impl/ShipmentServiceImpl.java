@@ -3,7 +3,6 @@ package com.krishagni.catissueplus.core.administrative.services.impl;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -38,7 +37,7 @@ import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
 import com.krishagni.catissueplus.core.common.events.ResponseEvent;
 import com.krishagni.catissueplus.core.common.service.EmailService;
-import com.krishagni.catissueplus.core.common.service.ObjectStateParamsResolver;
+import com.krishagni.catissueplus.core.common.service.ObjectAccessor;
 import com.krishagni.catissueplus.core.common.util.ConfigUtil;
 import com.krishagni.catissueplus.core.common.util.MessageUtil;
 import com.krishagni.catissueplus.core.common.util.Utility;
@@ -53,7 +52,7 @@ import com.krishagni.rbac.common.errors.RbacErrorCode;
 
 import edu.common.dynamicextensions.query.WideRowMode;
 
-public class ShipmentServiceImpl implements ShipmentService, ObjectStateParamsResolver {
+public class ShipmentServiceImpl implements ShipmentService, ObjectAccessor {
 	private static final String SHIPMENT_SHIPPED_EMAIL_TMPL = "shipment_shipped";
 	
 	private static final String SHIPMENT_RECEIVED_EMAIL_TMPL = "shipment_received";
@@ -120,12 +119,7 @@ public class ShipmentServiceImpl implements ShipmentService, ObjectStateParamsRe
 	@PlusTransactional
 	public ResponseEvent<ShipmentDetail> getShipment(RequestEvent<Long> req) {
 		try {
-			Long shipmentId = req.getPayload();
-			Shipment shipment = getShipmentDao().getById(shipmentId);
-			if (shipment == null) {
-				return ResponseEvent.userError(ShipmentErrorCode.NOT_FOUND);
-			}
-			
+			Shipment shipment = getShipment(req.getPayload(), null);
 			AccessCtrlMgr.getInstance().ensureReadShipmentRights(shipment);
 			return ResponseEvent.response(ShipmentDetail.from(shipment));
 		} catch (OpenSpecimenException ose) {
@@ -134,7 +128,7 @@ public class ShipmentServiceImpl implements ShipmentService, ObjectStateParamsRe
 			return ResponseEvent.serverError(e);
 		}
 	}
-	
+
 	@Override
 	@PlusTransactional
 	public ResponseEvent<ShipmentDetail> createShipment(RequestEvent<ShipmentDetail> req) {
@@ -179,11 +173,8 @@ public class ShipmentServiceImpl implements ShipmentService, ObjectStateParamsRe
 	public ResponseEvent<ShipmentDetail> updateShipment(RequestEvent<ShipmentDetail> req) {
 		try {
 			ShipmentDetail detail = req.getPayload();
-			Shipment existing = getShipment(detail);
-			if (existing == null) {
-				return ResponseEvent.userError(ShipmentErrorCode.NOT_FOUND);
-			}
-			
+			Shipment existing = getShipment(detail.getId(), detail.getName());
+
 			Shipment newShipment = shipmentFactory.createShipment(detail, null);
 			AccessCtrlMgr.getInstance().ensureUpdateShipmentRights(newShipment);
 			
@@ -224,22 +215,33 @@ public class ShipmentServiceImpl implements ShipmentService, ObjectStateParamsRe
 			return ResponseEvent.userError(SavedQueryErrorCode.NOT_FOUND, queryId);
 		}
 		
-		return new ResponseEvent<QueryDataExportResult>(exportShipmentReport(shipment, query));
+		return new ResponseEvent<>(exportShipmentReport(shipment, query));
 	}
 
 	@Override
 	public String getObjectName() {
-		return "shipment";
+		return Shipment.getEntityName();
 	}
 
 	@Override
 	@PlusTransactional
-	public Map<String, Object> resolve(String key, Object value) {
+	public Map<String, Object> resolveUrl(String key, Object value) {
 		if (key.equals("id")) {
 			value = Long.valueOf(value.toString());
 		}
 
 		return daoFactory.getShipmentDao().getShipmentIds(key, value);
+	}
+
+	@Override
+	public String getAuditTable() {
+		return "OS_SHIPMENTS_AUD";
+	}
+
+	@Override
+	public void ensureReadAllowed(Long id) {
+		Shipment shipment = getShipment(id, null);
+		AccessCtrlMgr.getInstance().ensureReadShipmentRights(shipment);
 	}
 
 	private ShipmentListCriteria addShipmentListCriteria(ShipmentListCriteria crit) {
@@ -344,7 +346,7 @@ public class ShipmentServiceImpl implements ShipmentService, ObjectStateParamsRe
 				Long spmnSiteId = spmnStorageSites.get(spmn.getId());
 				return spmnSiteId != null && !spmnSiteId.equals(sendingSite.getId());
 			})
-			.map(spmn -> spmn.getLabel())
+			.map(Specimen::getLabel)
 			.collect(Collectors.joining(", "));
 
 		if (StringUtils.isNotBlank(invalidSpmnLabels)) {
@@ -390,12 +392,16 @@ public class ShipmentServiceImpl implements ShipmentService, ObjectStateParamsRe
 		}
 	}
 	
-	private Shipment getShipment(ShipmentDetail detail) {
+	private Shipment getShipment(Long id, String name) {
 		Shipment shipment = null;
-		if (detail.getId() != null) {
-			shipment = getShipmentDao().getById(detail.getId());
-		} else if (StringUtils.isNotBlank(detail.getName())) {
-			shipment = getShipmentDao().getShipmentByName(detail.getName());
+		if (id != null) {
+			shipment = getShipmentDao().getById(id);
+		} else if (StringUtils.isNotBlank(name)) {
+			shipment = getShipmentDao().getShipmentByName(name);
+		}
+
+		if (shipment == null) {
+			throw OpenSpecimenException.userError(ShipmentErrorCode.NOT_FOUND);
 		}
 		
 		return shipment;

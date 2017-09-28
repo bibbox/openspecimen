@@ -12,10 +12,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.hibernate.envers.Audited;
+import org.hibernate.envers.NotAudited;
+
 import com.krishagni.catissueplus.core.administrative.domain.User;
 import com.krishagni.catissueplus.core.common.util.Utility;
 
+@Audited
 public class SpecimenList extends BaseEntity {
+	private static final String ENTITY_NAME = "specimen_list";
+
 	private String name;
 	
 	private User owner;
@@ -31,6 +37,10 @@ public class SpecimenList extends BaseEntity {
 	private Set<SpecimenListItem> specimens = new HashSet<>();
 	
 	private Date deletedOn;
+
+	public static String getEntityName() {
+		return ENTITY_NAME;
+	}
 
 	public String getName() {
 		return name;
@@ -72,6 +82,7 @@ public class SpecimenList extends BaseEntity {
 		this.lastUpdatedOn = lastUpdatedOn;
 	}
 
+	@NotAudited
 	public Set<User> getSharedWith() {
 		return sharedWith;
 	}
@@ -80,6 +91,7 @@ public class SpecimenList extends BaseEntity {
 		this.sharedWith = sharedWith;
 	}
 
+	@NotAudited
 	public Set<SpecimenListItem> getSpecimens() {
 		return specimens;
 	}

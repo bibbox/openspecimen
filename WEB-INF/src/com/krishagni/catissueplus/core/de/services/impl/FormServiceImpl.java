@@ -10,9 +10,13 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -23,11 +27,13 @@ import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolRegi
 import com.krishagni.catissueplus.core.biospecimen.domain.Participant;
 import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
 import com.krishagni.catissueplus.core.biospecimen.domain.Visit;
+import com.krishagni.catissueplus.core.biospecimen.domain.factory.CpErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.CprErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.SpecimenErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.VisitErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
 import com.krishagni.catissueplus.core.biospecimen.services.impl.SystemFormUpdatePreventer;
+import com.krishagni.catissueplus.core.common.Pair;
 import com.krishagni.catissueplus.core.common.PlusTransactional;
 import com.krishagni.catissueplus.core.common.access.AccessCtrlMgr;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
@@ -36,6 +42,7 @@ import com.krishagni.catissueplus.core.common.events.DependentEntityDetail;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
 import com.krishagni.catissueplus.core.common.events.ResponseEvent;
 import com.krishagni.catissueplus.core.common.util.AuthUtil;
+import com.krishagni.catissueplus.core.common.util.Utility;
 import com.krishagni.catissueplus.core.de.domain.DeObject;
 import com.krishagni.catissueplus.core.de.domain.Form;
 import com.krishagni.catissueplus.core.de.domain.FormErrorCode;
@@ -61,7 +68,10 @@ import com.krishagni.catissueplus.core.de.events.RemoveFormContextOp;
 import com.krishagni.catissueplus.core.de.repository.FormDao;
 import com.krishagni.catissueplus.core.de.services.FormContextProcessor;
 import com.krishagni.catissueplus.core.de.services.FormService;
+import com.krishagni.catissueplus.core.exporter.domain.ExportJob;
+import com.krishagni.catissueplus.core.exporter.services.ExportService;
 import com.krishagni.rbac.common.errors.RbacErrorCode;
+
 import edu.common.dynamicextensions.domain.nui.Container;
 import edu.common.dynamicextensions.domain.nui.Control;
 import edu.common.dynamicextensions.domain.nui.DataType;
@@ -85,6 +95,8 @@ import krishagni.catissueplus.beans.FormRecordEntryBean;
 import krishagni.catissueplus.beans.FormRecordEntryBean.Status;
 
 public class FormServiceImpl implements FormService, InitializingBean {
+	private static Log logger = LogFactory.getLog(FormServiceImpl.class);
+
 	private static final String CP_FORM = "CollectionProtocol";
 
 	private static final String PARTICIPANT_FORM = "Participant";
@@ -115,6 +127,8 @@ public class FormServiceImpl implements FormService, InitializingBean {
 	private FormDao formDao;
 
 	private DaoFactory daoFactory;
+
+	private ExportService exportSvc;
 	
 	private Map<String, List<FormContextProcessor>> ctxtProcs = new HashMap<>();
 
@@ -126,6 +140,10 @@ public class FormServiceImpl implements FormService, InitializingBean {
 		this.daoFactory = daoFactory;
 	}
 
+	public void setExportSvc(ExportService exportSvc) {
+		this.exportSvc = exportSvc;
+	}
+
 	public void setCtxtProcs(Map<String, List<FormContextProcessor>> ctxtProcs) {
 		this.ctxtProcs = ctxtProcs;
 	}
@@ -133,6 +151,7 @@ public class FormServiceImpl implements FormService, InitializingBean {
 	@Override
 	public void afterPropertiesSet() throws Exception {
 		FormEventsNotifier.getInstance().addListener(new SystemFormUpdatePreventer(formDao));
+		exportSvc.registerObjectsGenerator("extensions", this::getFormRecordsGenerator);
 	}
 
 	@Override
@@ -172,7 +191,7 @@ public class FormServiceImpl implements FormService, InitializingBean {
     	Long formId = req.getPayload();
 		Container container = Container.getContainer(formId);
 		if (container == null) {
-			return ResponseEvent.userError(FormErrorCode.NOT_FOUND);
+			return ResponseEvent.userError(FormErrorCode.NOT_FOUND, formId, 1);
 		} else {
 			return ResponseEvent.response(container);
 		}
@@ -210,7 +229,7 @@ public class FormServiceImpl implements FormService, InitializingBean {
 		Long formId = op.getFormId();
 		Container form = Container.getContainer(formId);
 		if (form == null) {
-			return ResponseEvent.userError(FormErrorCode.NOT_FOUND);
+			return ResponseEvent.userError(FormErrorCode.NOT_FOUND, formId, 1);
 		}
 		
 		List<FormFieldSummary> fields = getFormFields(form);
@@ -373,7 +392,7 @@ public class FormServiceImpl implements FormService, InitializingBean {
 			FormRecordCriteria crit = req.getPayload();
 			Container form = Container.getContainer(crit.getFormId());
 			if (form == null) {
-				return ResponseEvent.userError(FormErrorCode.NOT_FOUND, crit.getFormId());
+				return ResponseEvent.userError(FormErrorCode.NOT_FOUND, crit.getFormId(), 1);
 			}
 
 			FormData record = getRecord(form, crit.getRecordId());
@@ -641,7 +660,7 @@ public class FormServiceImpl implements FormService, InitializingBean {
 			}
 
 			if (form == null) {
-				return ResponseEvent.userError(FormErrorCode.NOT_FOUND, input.getFormId());
+				return ResponseEvent.userError(FormErrorCode.NOT_FOUND, input.getFormId(), 1);
 			}
 
 			String controlName = input.getControlName();
@@ -659,21 +678,9 @@ public class FormServiceImpl implements FormService, InitializingBean {
 			String searchStr = input.getSearchString();
 			int maxResults = input.getMaxResults() <= 0 ? 100 : input.getMaxResults();
 
-			List<PermissibleValue> pvs = ((SelectControl) control).getPvs();
-			List<PermissibleValue> selectedPvs = new ArrayList<PermissibleValue>();
-			for (PermissibleValue pv : pvs) {
-				if (StringUtils.isNotBlank(searchStr) &&
-						StringUtils.lastIndexOfIgnoreCase(pv.getValue(), searchStr) == -1) {
-					continue;
-				}
-				
-				selectedPvs.add(pv);
-				if (--maxResults == 0) {
-					break;
-				}
-			}
-			
-			return ResponseEvent.response(selectedPvs);
+			SelectControl selectControl = (SelectControl) control;
+			List<PermissibleValue> pvs = selectControl.getPvDataSource().getPermissibleValues(searchStr, maxResults);
+			return ResponseEvent.response(pvs);
 		} catch (Exception e) {
 			return ResponseEvent.serverError(e);
 		}
@@ -862,7 +869,7 @@ public class FormServiceImpl implements FormService, InitializingBean {
 	}
 	
 	private List<FormFieldSummary> getFormFields(Container container) {
-        List<FormFieldSummary> fields = new ArrayList<FormFieldSummary>();
+        List<FormFieldSummary> fields = new ArrayList<>();
 
         for (Control control : container.getControls()) {        	
             FormFieldSummary field = new FormFieldSummary();
@@ -882,11 +889,10 @@ public class FormServiceImpl implements FormService, InitializingBean {
             	                
             	if (control instanceof SelectControl) {
             		SelectControl selectCtrl = (SelectControl)control;
-            		List<String> pvs = new ArrayList<String>();
-            		for (PermissibleValue pv : selectCtrl.getPvs()) {
-            			pvs.add(pv.getValue());
-            		}
-            		
+					List<String> pvs = selectCtrl.getPvDataSource()
+						.getPermissibleValues(Calendar.getInstance().getTime(), 100)
+						.stream().map(PermissibleValue::getValue)
+						.collect(Collectors.toList());
             		field.setPvs(pvs);
             	} else if (control instanceof LookupControl) {
             		LookupControl luCtrl = (LookupControl)control;
@@ -998,5 +1004,245 @@ public class FormServiceImpl implements FormService, InitializingBean {
 		}
 
 		return result;
+	}
+
+	private Function<ExportJob, List<? extends Object>> getFormRecordsGenerator() {
+		return new Function<ExportJob, List<? extends Object>>() {
+			private boolean endOfRecords = false;
+
+			private boolean paramsInited = false;
+
+			private Container form;
+
+			private boolean formHasPhi;
+
+			private String entityType;
+
+			private CollectionProtocol cp;
+
+			private Long cpId;
+
+			private int startAt;
+
+			private Object lastObj;
+
+			private Long lastObjId;
+
+			private boolean lastObjReadAllowed;
+
+			private boolean lastObjPhiAllowed;
+
+			@Override
+			public List<? extends Object> apply(ExportJob job) {
+				if (endOfRecords) {
+					return Collections.emptyList();
+				}
+
+				if (!paramsInited) {
+					initParams(job);
+				}
+
+
+				Function<ExportJob, List<Map<String, Object>>> recordsFn = null;
+				if (entityType.equals("Participant") || entityType.equals("CommonParticipant")) {
+					recordsFn = this::getRegistrationFormRecords;
+				} else if (entityType.equals("SpecimenCollectionGroup")) {
+					recordsFn = this::getVisitFormRecords;
+				} else if (entityType.equals("Specimen") || entityType.equals("SpecimenEvent")) {
+					recordsFn = this::getSpmnFormRecords;
+				}
+
+				List<Map<String, Object>> records = null;
+				if (recordsFn != null) {
+					while (!endOfRecords && CollectionUtils.isEmpty(records)) {
+						records = recordsFn.apply(job);
+					}
+				}
+
+				return records;
+			}
+
+			private void initParams(ExportJob job) {
+				Map<String, String> params = job.getParams();
+				if (params == null) {
+					params = Collections.emptyMap();
+				}
+
+				String formName = params.get("formName");
+				if (StringUtils.isBlank(formName)) {
+					throw OpenSpecimenException.userError(FormErrorCode.NAME_REQUIRED);
+				}
+
+				form = Container.getContainer(formName);
+				if (form == null) {
+					throw OpenSpecimenException.userError(FormErrorCode.NOT_FOUND, formName, 1);
+				}
+				formHasPhi = form.hasPhiFields();
+
+				entityType = params.get("entityType");
+				if (StringUtils.isBlank(entityType)) {
+					throw OpenSpecimenException.userError(FormErrorCode.ENTITY_TYPE_REQUIRED);
+				}
+
+				String cpIdStr = params.get("cpId");
+				if (StringUtils.isNotBlank(cpIdStr)) {
+					try {
+						cpId = Long.parseLong(cpIdStr);
+					} catch (Exception e) {
+						logger.error("Invalid CP ID: " + cpIdStr, e);
+					}
+				}
+
+				paramsInited = true;
+			}
+
+			private List<Map<String, Object>> getRegistrationFormRecords(ExportJob job) {
+				String entityType = job.getParams().get("entityType");
+
+				return getRecords(
+					job,
+					"ppids",
+					(ppids) -> {
+						if (entityType.equals("Participant")) {
+							return formDao.getRegistrationRecords(cpId, form.getId(), ppids, startAt, 100);
+						} else {
+							return formDao.getParticipantRecords(cpId, form.getId(), ppids, startAt, 100);
+						}
+					},
+					"cprId",
+					(cprId) -> daoFactory.getCprDao().getById(cprId),
+					(cpr) -> {
+						if (entityType.equals("Participant")) {
+							return AccessCtrlMgr.getInstance().ensureReadCprRights((CollectionProtocolRegistration) cpr);
+						} else {
+							return AccessCtrlMgr.getInstance().ensureReadParticipantRights(((CollectionProtocolRegistration) cpr).getParticipant().getId());
+						}
+					},
+					(cprFormValueMap) -> {
+						CollectionProtocolRegistration cpr = (CollectionProtocolRegistration) cprFormValueMap.first();
+						Map<String, Object> valueMap = cprFormValueMap.second();
+
+						Map<String, Object> formData = new HashMap<>();
+						formData.put("recordId", valueMap.get("id"));
+						formData.put("cpShortTitle", cpr.getCollectionProtocol().getShortTitle());
+						formData.put("ppid", cpr.getPpid());
+						formData.put("formValueMap", valueMap);
+						return formData;
+					}
+				);
+			}
+
+			private List<Map<String, Object>> getVisitFormRecords(ExportJob job) {
+				return getRecords(
+					job,
+					"visitNames",
+					(visitNames) -> formDao.getVisitRecords(cpId, form.getId(), visitNames, startAt, 100),
+					"visitId",
+					(visitId) -> daoFactory.getVisitsDao().getById(visitId),
+					(visit) -> AccessCtrlMgr.getInstance().ensureReadVisitRights((Visit) visit, true),
+					(visitFormValueMap) -> {
+						Visit visit = (Visit) visitFormValueMap.first();
+						Map<String, Object> valueMap = visitFormValueMap.second();
+
+						Map<String, Object> formData = new HashMap<>();
+						formData.put("recordId", valueMap.get("id"));
+						formData.put("cpShortTitle", visit.getCollectionProtocol().getShortTitle());
+						formData.put("visitName", visit.getName());
+						formData.put("formValueMap", valueMap);
+						return formData;
+					}
+				);
+			}
+
+			private List<Map<String, Object>> getSpmnFormRecords(ExportJob job) {
+				return getRecords(
+					job,
+					"specimenLabels",
+					(spmnLabels) -> formDao.getSpecimenRecords(cpId, form.getId(), entityType, spmnLabels, startAt, 100),
+					"spmnId",
+					(specimenId) -> daoFactory.getSpecimenDao().getById(specimenId),
+					(specimen) -> AccessCtrlMgr.getInstance().ensureReadSpecimenRights((Specimen) specimen, true),
+					(spmnFormValueMap) -> {
+						Specimen specimen = (Specimen) spmnFormValueMap.first();
+						Map<String, Object> valueMap = spmnFormValueMap.second();
+
+						Map<String, Object> formData = new HashMap<>();
+						formData.put("recordId", valueMap.get("id"));
+						formData.put("cpShortTitle", specimen.getCollectionProtocol().getShortTitle());
+						formData.put("specimenLabel", specimen.getLabel());
+						formData.put("barcode", specimen.getBarcode());
+						formData.put("formValueMap", valueMap);
+						return formData;
+					}
+				);
+			}
+
+			private List<Map<String, Object>> getRecords(
+				ExportJob job,
+				String namesCsvVar,
+				Function<List<String>, List<Map<String, Object>>> getFormRecs,
+				String objIdVar,
+				Function<Long, Object> getObj,
+				Function<Object, Boolean> objAccessChecker,
+				Function<Pair<Object, Map<String, Object>>, Map<String, Object>> toFormRec) {
+
+				String namesCsv = job.getParams().get(namesCsvVar);
+				List<String> names = null;
+				if (StringUtils.isNotBlank(namesCsv)) {
+					names = Utility.csvToStringList(namesCsv);
+					endOfRecords = true;
+				}
+
+				List<Map<String, Object>> records = getFormRecs.apply(names);
+				startAt += records.size();
+				if (records.size() < 100) {
+					endOfRecords = true;
+				}
+
+				List<Map<String, Object>> result = new ArrayList<>();
+				for (Map<String, Object> record : records) {
+					Long objId = (Long)record.get(objIdVar);
+					if (objId.equals(lastObjId) && !lastObjReadAllowed) {
+						continue;
+					}
+
+					if (!objId.equals(lastObjId)) {
+						try {
+							lastObj = getObj.apply(objId);
+							lastObjId = objId;
+							lastObjPhiAllowed = objAccessChecker.apply(lastObj);
+							lastObjReadAllowed = true;
+						} catch (OpenSpecimenException ose) {
+							if (isAccessDeniedError(ose)) {
+								lastObjReadAllowed = lastObjPhiAllowed = false;
+								continue;
+							}
+
+							throw ose;
+						}
+					}
+
+					Long recordId = (Long)record.get("recordId");
+					result.add(toFormRec.apply(Pair.make(lastObj, getFormData(recordId, !lastObjPhiAllowed))));
+				}
+
+				return result;
+			}
+
+			private Map<String, Object> getFormData(Long recordId, boolean maskPhi) {
+				FormDataManager formDataMgr = new FormDataManagerImpl(false);
+				FormData formData = formDataMgr.getFormData(form, recordId);
+
+				if (formHasPhi && maskPhi) {
+					formData.maskPhiFieldValues();
+				}
+
+				return formData.getFieldNameValueMap(true);
+			}
+
+			private boolean isAccessDeniedError(OpenSpecimenException ose) {
+				return ose.containsError(RbacErrorCode.ACCESS_DENIED);
+			}
+		};
 	}
 }

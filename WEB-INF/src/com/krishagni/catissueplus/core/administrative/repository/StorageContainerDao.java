@@ -8,7 +8,6 @@ import java.util.Map;
 
 import com.krishagni.catissueplus.core.administrative.domain.StorageContainer;
 import com.krishagni.catissueplus.core.administrative.domain.StorageContainerPosition;
-import com.krishagni.catissueplus.core.administrative.events.ContainerSelectorCriteria;
 import com.krishagni.catissueplus.core.administrative.events.StorageContainerSummary;
 import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
 import com.krishagni.catissueplus.core.biospecimen.repository.SpecimenListCriteria;
@@ -35,20 +34,22 @@ public interface StorageContainerDao extends Dao<StorageContainer> {
 
 	List<Specimen> getSpecimens(SpecimenListCriteria crit, boolean orderByLocation);
 
+	Long getSpecimensCount(SpecimenListCriteria crit);
+
 	public Map<Long, Integer> getRootContainerSpecimensCount(Collection<Long> containerIds);
 
 	public Map<String, Integer> getSpecimensCountByType(Long containerId);
 
 	public StorageContainerSummary getAncestorsHierarchy(Long containerId);
 
-	public List<StorageContainerSummary> getChildContainers(Long containerId, int noOfColumns);
+	public List<StorageContainerSummary> getChildContainers(Long containerId, Integer noOfColumns);
 
 	List<StorageContainer> getDescendantContainers(StorageContainerListCriteria crit);
-
-	public List<Long> getLeastEmptyContainerId(ContainerSelectorCriteria crit);
 
 	public int deleteReservedPositions(List<String> reservationIds);
 
 	public int deleteReservedPositionsOlderThan(Date expireTime);
+
+	List<Long> getLeafContainerIds(Long containerId, int startAt, int maxContainers);
 }
 	

@@ -19,12 +19,16 @@ import com.krishagni.catissueplus.core.administrative.domain.Shipment;
 import com.krishagni.catissueplus.core.administrative.domain.Site;
 import com.krishagni.catissueplus.core.administrative.domain.StorageContainer;
 import com.krishagni.catissueplus.core.administrative.domain.User;
+import com.krishagni.catissueplus.core.administrative.domain.factory.InstituteErrorCode;
+import com.krishagni.catissueplus.core.administrative.domain.factory.SiteErrorCode;
+import com.krishagni.catissueplus.core.administrative.repository.UserListCriteria;
 import com.krishagni.catissueplus.core.biospecimen.ConfigParams;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolRegistration;
 import com.krishagni.catissueplus.core.biospecimen.domain.Participant;
 import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
 import com.krishagni.catissueplus.core.biospecimen.domain.Visit;
+import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolSite;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.CpErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.CprErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.ParticipantErrorCode;
@@ -96,6 +100,14 @@ public class AccessCtrlMgr {
 	}
 
 	public void ensureCreateUpdateUserRolesRights(User user, Site roleSite) {
+		//
+		// ensure the role site belongs to user's institute
+		//
+		if (roleSite != null && !roleSite.getInstitute().equals(user.getInstitute())) {
+			throw OpenSpecimenException.userError(
+				SiteErrorCode.INVALID_SITE_INSTITUTE, roleSite.getName(), user.getInstitute().getName());
+		}
+
 		if (AuthUtil.isAdmin()) {
 			return;
 		}
@@ -117,6 +129,31 @@ public class AccessCtrlMgr {
 		}
 
 		ensureUserImportRights(user);
+	}
+
+	public List<User> getSuperAndSiteAdmins(Site site, CollectionProtocol cp) {
+		List<User> result = getSuperAdmins();
+		result.addAll(getSiteAdmins(site, cp));
+		return result;
+	}
+
+	public List<User> getSuperAdmins() {
+		UserListCriteria crit = new UserListCriteria().activityStatus("Active").type("SUPER");
+		return bsDaoFactory.getUserDao().getUsers(crit);
+	}
+
+	public List<User> getSiteAdmins(Site site, CollectionProtocol cp) {
+		List<User> result = new ArrayList<>();
+		if (site != null) {
+			result.addAll(site.getCoordinators());
+		} else if (cp != null) {
+			result.addAll(cp.getSites().stream()
+				.map(CollectionProtocolSite::getSite)
+				.flatMap(s -> s.getCoordinators().stream())
+				.collect(Collectors.toList()));
+		}
+
+		return result;
 	}
 
 	private void ensureUserObjectRights(User user, Operation op) {
@@ -353,7 +390,7 @@ public class AccessCtrlMgr {
 				sites = getUserInstituteSites(userId);
 			}
 
-			Set<Long> siteIds = sites.stream().map(s -> s.getId()).collect(Collectors.toSet());
+			Set<Long> siteIds = sites.stream().map(Site::getId).collect(Collectors.toSet());
 			Long cpId = access.getCollectionProtocol() != null ? access.getCollectionProtocol().getId() : null;
 			if (Resource.PARTICIPANT.getName().equals(access.getResource())) {
 				phiSiteCps.add(Pair.make(siteIds, cpId));
@@ -397,9 +434,9 @@ public class AccessCtrlMgr {
 
 			if (accessSite != null) {
 				siteCps.add(Pair.make(Collections.singleton(accessSite.getId()), cpId));
-			} else if (accessSite == null) {
+			} else {
 				Set<Site> sites = getUserInstituteSites(userId);
-				siteCps.add(Pair.make(sites.stream().map(s -> s.getId()).collect(Collectors.toSet()), cpId));
+				siteCps.add(Pair.make(sites.stream().map(Site::getId).collect(Collectors.toSet()), cpId));
 			}
 		}
 

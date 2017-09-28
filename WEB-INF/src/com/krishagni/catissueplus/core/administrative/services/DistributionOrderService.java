@@ -3,11 +3,14 @@ package com.krishagni.catissueplus.core.administrative.services;
 import java.util.List;
 
 import com.krishagni.catissueplus.core.administrative.domain.DistributionOrder;
+import com.krishagni.catissueplus.core.administrative.domain.DistributionProtocol;
 import com.krishagni.catissueplus.core.administrative.events.DistributionOrderDetail;
 import com.krishagni.catissueplus.core.administrative.events.DistributionOrderItemDetail;
+import com.krishagni.catissueplus.core.administrative.events.DistributionOrderItemListCriteria;
 import com.krishagni.catissueplus.core.administrative.events.DistributionOrderListCriteria;
 import com.krishagni.catissueplus.core.administrative.events.DistributionOrderSummary;
 import com.krishagni.catissueplus.core.administrative.events.ReturnedSpecimenDetail;
+import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
 import com.krishagni.catissueplus.core.biospecimen.events.SpecimenInfo;
 import com.krishagni.catissueplus.core.biospecimen.repository.SpecimenListCriteria;
 import com.krishagni.catissueplus.core.common.EntityCrudListener;
@@ -29,6 +32,8 @@ public interface DistributionOrderService {
 	public ResponseEvent<DistributionOrderDetail> deleteOrder(RequestEvent<Long> req);
 	
 	public ResponseEvent<QueryDataExportResult> exportReport(RequestEvent<Long> req);
+
+	ResponseEvent<List<DistributionOrderItemDetail>> getOrderItems(RequestEvent<DistributionOrderItemListCriteria> req);
 	
 	public ResponseEvent<List<DistributionOrderItemDetail>> getDistributedSpecimens(RequestEvent<SpecimenListCriteria> req);
 
@@ -38,4 +43,6 @@ public interface DistributionOrderService {
 	// Internal APIs for use by plugins and service extenders...
 	//
 	public void addListener(EntityCrudListener<DistributionOrderDetail, DistributionOrder> listener);
+
+	public void validateSpecimens(DistributionProtocol dp, List<Specimen> specimens);
 }

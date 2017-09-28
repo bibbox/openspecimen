@@ -6,8 +6,12 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.StringReader;
 import java.io.StringWriter;
 import java.text.SimpleDateFormat;
+import java.time.LocalDate;
+import java.time.Period;
+import java.time.ZoneId;
 import java.util.Base64;
 import java.util.Calendar;
 import java.util.Collection;
@@ -20,6 +24,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import javax.activation.FileTypeMap;
 import javax.crypto.Cipher;
@@ -118,6 +123,33 @@ public class Utility {
 	
 	public static InputStream getResourceInputStream(String path) {
 		return Thread.currentThread().getContextClassLoader().getResourceAsStream(path);		
+	}
+
+	public static List<String> csvToStringList(String value) {
+		if (StringUtils.isBlank(value)) {
+			return Collections.emptyList();
+		}
+
+		CsvReader reader = null;
+		try {
+			reader = CsvFileReader.createCsvFileReader(new StringReader(value), false);
+
+			String[] row = new String[0];
+			if (reader.next()) {
+				row = reader.getRow();
+			}
+			return Stream.of(row).map(String::trim).collect(Collectors.toList());
+		} catch (Exception e) {
+			throw new RuntimeException(e);
+		} finally {
+			if (reader != null) {
+				try {
+					reader.close();
+				} catch (Exception e) {
+
+				}
+			}
+		}
 	}
 	
 	public static String stringListToCsv(Collection<String> elements) {
@@ -314,26 +346,21 @@ public class Utility {
 	}
 
 	public static Integer getAge(Date birthDate) {
-		if (birthDate == null) {
+		return yearsBetween(birthDate, null);
+	}
+
+	public static Integer yearsBetween(Date from, Date to) {
+		if (from == null) {
 			return null;
 		}
-		
-		Calendar currentDate = Calendar.getInstance();
-		Calendar dob = Calendar.getInstance();
-		dob.setTime(birthDate);
 
-		int currentYear = currentDate.get(Calendar.YEAR);
-		int birthYear = dob.get(Calendar.YEAR);
-		int age = currentYear - birthYear;
-		
-		int currentMonth = currentDate.get(Calendar.MONTH);
-		int birthMonth = dob.get(Calendar.MONTH);
-		if (currentMonth < birthMonth  ||
-				(currentMonth == birthMonth && currentDate.get(Calendar.DAY_OF_MONTH) < dob.get(Calendar.DAY_OF_MONTH))) {
-		  age--;
+		LocalDate startDt = LocalDate.from(from.toInstant().atZone(ZoneId.systemDefault()));
+		LocalDate endDt = LocalDate.now();
+		if (to != null) {
+			endDt = LocalDate.from(to.toInstant().atZone(ZoneId.systemDefault()));
 		}
-		
-		return age;
+
+		return Period.between(startDt, endDt).getYears();
 	}
 	
 	public static boolean isEmpty(Map<?, ?> map) {

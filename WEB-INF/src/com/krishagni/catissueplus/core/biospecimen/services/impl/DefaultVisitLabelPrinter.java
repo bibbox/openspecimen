@@ -34,7 +34,7 @@ import com.krishagni.catissueplus.core.common.util.AuthUtil;
 public class DefaultVisitLabelPrinter extends AbstractLabelPrinter<Visit> implements InitializingBean, ConfigChangeListener {
 	private static final Log logger = LogFactory.getLog(DefaultVisitLabelPrinter.class);
 	
-	private List<VisitLabelPrintRule> rules = new ArrayList<VisitLabelPrintRule>();
+	private List<VisitLabelPrintRule> rules = null;
 	
 	private DaoFactory daoFactory;
 	
@@ -42,8 +42,6 @@ public class DefaultVisitLabelPrinter extends AbstractLabelPrinter<Visit> implem
 	
 	private LabelTmplTokenRegistrar printLabelTokensRegistrar;
 	
-	private MessageSource messageSource;
-
 	public void setDaoFactory(DaoFactory daoFactory) {
 		this.daoFactory = daoFactory;
 	}
@@ -56,13 +54,22 @@ public class DefaultVisitLabelPrinter extends AbstractLabelPrinter<Visit> implem
 		this.printLabelTokensRegistrar = printLabelTokensRegistrar;
 	}
 
-	public void setMessageSource(MessageSource messageSource) {
-		this.messageSource = messageSource;
+	@Override
+	public List<LabelTmplToken> getTokens() {
+		return printLabelTokensRegistrar.getTokens();
 	}
 
 	@Override
 	public LabelPrintJob print(List<PrintItem<Visit>> printItems) {		
 		try {
+			if (rules == null) {
+				synchronized (this) {
+					if (rules == null) {
+						reloadRules();
+					}
+				}
+			}
+
 			String ipAddr = AuthUtil.getRemoteAddr();
 			User currentUser = AuthUtil.getCurrentUser();
 			
@@ -117,7 +124,7 @@ public class DefaultVisitLabelPrinter extends AbstractLabelPrinter<Visit> implem
 
 	@Override
 	public void afterPropertiesSet() throws Exception {
-		reloadRules();
+		this.rules = null;
 		cfgSvc.registerChangeListener(ConfigParams.MODULE, this);
 	}
 	
@@ -127,12 +134,13 @@ public class DefaultVisitLabelPrinter extends AbstractLabelPrinter<Visit> implem
 			return;
 		}
 		
-		reloadRules();
+		this.rules = null;
 	}		
 		
 	private void reloadRules() {
 		FileDetail fileDetail = cfgSvc.getFileDetail(ConfigParams.MODULE, ConfigParams.VISIT_LABEL_PRINT_RULES);
 		if (fileDetail == null || fileDetail.getFileIn() == null) {
+			this.rules = null;
 			return;
 		}
 
@@ -151,7 +159,7 @@ public class DefaultVisitLabelPrinter extends AbstractLabelPrinter<Visit> implem
 				rules.add(rule);
 				logger.info(String.format("Adding rule [%s]", rule));
 			}
-			
+
 			this.rules = rules;
 		} catch (Exception e) {
 			logger.error("Error loading rules from file: " + fileDetail.getFilename(), e);
@@ -216,7 +224,6 @@ public class DefaultVisitLabelPrinter extends AbstractLabelPrinter<Visit> implem
 				rule.setCmdFileFmt(ruleLineFields[idx - 1]);
 			}
 
-			rule.setMessageSource(messageSource);
 			return rule;
 		} catch (Exception e) {
 			logger.error("Error parsing rule: " + ruleLine, e);

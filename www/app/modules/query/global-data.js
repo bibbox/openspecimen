@@ -1,10 +1,18 @@
 
 angular.module('os.query.globaldata', ['os.query.models', 'os.biospecimen.models'])
-  .factory('QueryGlobalData', function($translate, $q, CollectionProtocol, Form, SavedQuery, QueryUtil, Util) {
+  .factory('QueryGlobalData', function(
+    $translate, $q, $http,
+    ApiUrls, CollectionProtocol, Form, SavedQuery, QueryFolder, QueryUtil, Util) {
+
     var QueryGlobalData = function() {
       this.cpsQ = undefined;
       this.cpList = undefined;
-      this.defSelectList = [];
+      this.defSelectList = undefined;
+
+      this.foldersQ = undefined;
+      this.allFolders = undefined;
+      this.myFolders = undefined;
+      this.sharedFolders = undefined;
     };
 
     QueryGlobalData.prototype.getCps = function() {
@@ -28,6 +36,38 @@ angular.module('os.query.globaldata', ['os.query.models', 'os.biospecimen.models
       this.cpsQ.then(function(result) { d.resolve(result); });
       return d.promise;
     };
+
+    QueryGlobalData.prototype.loadFolders = function(currentUser) {
+      var d = $q.defer();
+      if (!this.foldersQ) {
+        this.foldersQ = QueryFolder.query();
+      }
+
+      var that = this;
+      if (!this.allFolders) {
+        this.foldersQ.then(
+          function(folders) {
+            that.allFolders = folders;
+            that.myFolders = [];
+            that.sharedFolders = [];
+
+            angular.forEach(folders, function(folder) {
+              if (folder.owner.id == currentUser.id) {
+                that.myFolders.push(folder);
+              } else {
+                that.sharedFolders.push(folder);
+              }
+            });
+
+            d.resolve({allFolders: folders, myFolders: that.myFolders, sharedFolders: that.sharedFolders});
+          }
+        );
+      } else {
+        d.resolve({allFolders: this.allFolders, myFolders: this.myFolders, sharedFolders: this.sharedFolders});
+      }
+
+      return d.promise;
+    }
 
     QueryGlobalData.prototype.loadCpForms = function(cp) {
       var d = $q.defer();
@@ -55,6 +95,37 @@ angular.module('os.query.globaldata', ['os.query.models', 'os.biospecimen.models
         d.resolve(cp.forms);
       }  
     
+      return d.promise;
+    }
+
+    QueryGlobalData.prototype.getDefSelectList = function() {
+      var d = $q.defer();
+      if (!this.selectListQ) {
+        this.selectListQ = $http.get(ApiUrls.getBaseUrl() + 'query/default-result-view');
+      }
+
+      if (!this.defSelectList) {
+        var that = this;
+        this.selectListQ.then(
+          function(resp) {
+            if (resp.data.length > 0) {
+              that.defSelectList = resp.data;
+              d.resolve(that.defSelectList);
+              return;
+            } else {
+              getDefParticipantFormFields(that).then(
+                function(selectList) {
+                  that.defSelectList = selectList;
+                  d.resolve(that.defSelectList);
+                }
+              );
+            }
+          }
+        );
+      } else {
+        d.resolve(this.defSelectList);
+      }
+
       return d.promise;
     }
 
@@ -230,24 +301,29 @@ angular.module('os.query.globaldata', ['os.query.models', 'os.biospecimen.models
     }
 
     function initDefSelectList(queryGlobal, selectList) {
-      if (queryGlobal.defSelectList.length > 0) {
-        Util.unshiftAll(selectList, queryGlobal.defSelectList);
-        return;
-      }
+      queryGlobal.getDefSelectList().then(
+        function(defSelectList) {
+          Util.unshiftAll(selectList, defSelectList);
+        }
+      );
+    }
 
-      getDefParticipantForm(queryGlobal).then(
+    function getDefParticipantFormFields(queryGlobal) {
+      return getDefParticipantForm(queryGlobal).then(
         function(form) {
-          form.getFields().then(
+          var result = [];
+          return form.getFields().then(
             function(fields) {
               angular.forEach(fields, function(field) {
                 if (field.type == 'SUBFORM') {
                   return;
                 }
 
-                queryGlobal.defSelectList.push('Participant.' + field.name);
+                result.push('Participant.' + field.name);
               });
 
-              Util.unshiftAll(selectList, queryGlobal.defSelectList);
+
+              return result;
             }
           );
         }

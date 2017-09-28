@@ -50,7 +50,10 @@
             <span translate="user.login_name">Login Name</span>
           </th>
           <th class="col">
-            <span translate="user.cp_count">Collection Protocols</span>
+            <span translate="user.institute">Institute</span>
+          </th>
+          <th class="col">
+            <span translate="user.primary_site">Primary Site</span>
           </th>
           <th class="col">
             <span translate="user.user_since">User Since</span>
@@ -78,11 +81,14 @@
             <span>{{user.loginName}}</span>
           </td>
           <td class="col">
-            <span>{{user.cpCount | number: 0}}</span>
+            <span>{{user.instituteName | osNoValue}}</span>
+          </td>
+          <td class="col">
+            <span>{{user.primarySite | osNoValue}}</span>
           </td>
           <td class="col" ng-switch on="!!user.creationDate">
             <span ng-switch-when="true">
-              {{user.creationDate | date: 'yyyy'}}
+              {{user.creationDate | date: global.dateFmt}}
             </span>
             <span ng-switch-when="false" translate="common.na">
               Not Available
@@ -102,11 +108,6 @@
       ui-sref="user-addedit({userId: ''})">
       <span class="fa fa-plus"></span>
       <span translate="common.buttons.create">Create</span>
-    </button>
-
-    <button show-if-admin class="default" title="{{'user.announcement.tooltip' | translate}}"
-      ng-click="broadcastAnnouncement()">
-      <span translate="user.announcement.new">New Announcement</span>
     </button>
 
     <div show-if-allowed="userResource.importOpts" dropdown class="os-inline-btn">
@@ -140,6 +141,25 @@
 
     <os-plugin-hooks view-name="'user-list'" sec-name="'page-header'"></os-plugin-hooks>
 
+    <div show-if-admin="institute" dropdown class="os-inline-btn">
+      <button class="default dropdown-toggle">
+        <span translate="common.buttons.more">More</span>
+        <span class="fa fa-caret-down"></span>
+      </button>
+
+      <ul class="dropdown-menu dropdown-menu-right">
+        <li show-if-admin>
+          <a title="{{'user.announcement.tooltip' | translate}}"
+             ng-click="broadcastAnnouncement()">
+            <span class="fa fa-bullhorn"></span>
+            <span translate="user.announcement.new">New Announcement</span>
+          </a>
+        </li>
+
+        <os-plugin-hooks view-name="'user-list'" sec-name="'more-menu'"></os-plugin-hooks>
+      </ul>
+    </div>
+
     <os-help class="os-btns btn default" link="user_help_link"></os-help>
   </div>
 </script>
@@ -156,6 +176,11 @@
       <span translate="common.buttons.delete">Delete</span>
     </button>
 
+    <button class="default" title="{{'user.tooltip.lock_users' | translate}}" ng-click="lockUsers()">
+      <span class="fa fa-lock"></span>
+      <span translate="user.lock_users">Lock</span>
+    </button>
+
     <button class="default" title="{{'user.tooltip.unlock_users' | translate}}" ng-click="unlockUsers()">
       <span class="fa fa-unlock"></span>
       <span translate="user.unlock_users">Unlock</span>
@@ -165,5 +190,7 @@
       <span class="fa fa-check"></span>
       <span translate="user.approve_users">Approve</span>
     </button>
+
+    <os-export show-if-admin="institute" class="default" detail="ctx.exportDetail" check-list="ctx.checkList"></os-export>
   </div>
 </script>

@@ -10,6 +10,7 @@ import java.util.Properties;
 
 import javax.mail.internet.MimeMessage;
 
+import org.apache.commons.lang3.BooleanUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -116,6 +117,10 @@ public class EmailServiceImpl implements EmailService, ConfigChangeListener, Ini
 	@Override
 	public boolean sendEmail(Email mail) {
 		try {
+			if (!isEmailNotifEnabled()) {
+				return false;
+			}
+
 			final MimeMessage mimeMessage = mailSender.createMimeMessage();
 			final MimeMessageHelper message = new MimeMessageHelper(mimeMessage, true, "UTF-8"); // true = multipart
 			message.setSubject(mail.getSubject());
@@ -149,6 +154,10 @@ public class EmailServiceImpl implements EmailService, ConfigChangeListener, Ini
 	}
 
 	private boolean sendEmail(String tmplKey, String tmplContent, String[] to, String[] bcc, File[] attachments, Map<String, Object> props) {
+		if (!isEmailNotifEnabled()) {
+			return false;
+		}
+
 		boolean emailEnabled = cfgSvc.getBoolSetting("notifications", "email_" + tmplKey, true);
 		if (!emailEnabled) {
 			return false;
@@ -165,24 +174,28 @@ public class EmailServiceImpl implements EmailService, ConfigChangeListener, Ini
 		props.put("footer", getFooterTmpl());
 		props.put("appUrl", getAppUrl());
 		props.put("adminEmailAddress", adminEmailId);
-		props.put("adminPhone", "1234567890");//TODO: will be replaced by property file
+		props.put("adminPhone", cfgSvc.getStrSetting("email", "admin_phone_no", "Not Specified"));
 		props.put("dateFmt", new SimpleDateFormat(ConfigUtil.getInstance().getDateTimeFmt()));
 		props.put("urlEncoder", URLEncoder.class);
-		String subject = getSubject(tmplKey, (String[]) props.get("$subject"));
+		String subject = getSubject(tmplKey, (Object[]) props.get("$subject"));
 		String content = templateService.render(getBaseTmpl(), props);
 
 		Email email = new Email();
 		email.setSubject(subject);
 		email.setBody(content);
 		email.setToAddress(to);
-		email.setCcAddress(new String[] {adminEmailId});
 		email.setBccAddress(bcc);
 		email.setAttachments(attachments);
+
+		boolean ccAdmin = BooleanUtils.toBooleanDefaultIfNull((Boolean) props.get("ccAdmin"), true);
+		if (ccAdmin) {
+			email.setCcAddress(new String[] { adminEmailId });
+		}
 
 		return sendEmail(email);
 	}
 	
-	private String getSubject(String subjKey, String[] subjParams) {
+	private String getSubject(String subjKey, Object[] subjParams) {
 		return getSubjectPrefix() + MessageUtil.getInstance().getMessage(subjKey.toLowerCase() + "_subj", subjParams);
 	}
 
@@ -261,5 +274,9 @@ public class EmailServiceImpl implements EmailService, ConfigChangeListener, Ini
 	
 	private String getAppUrl() {
 		return cfgSvc.getStrSetting("common", "app_url");
+	}
+
+	private boolean isEmailNotifEnabled() {
+		return cfgSvc.getBoolSetting("notifications", "all", true);
 	}
 }

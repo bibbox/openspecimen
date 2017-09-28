@@ -42,16 +42,16 @@ public class SpecimenDaoImpl extends AbstractDao<Specimen> implements SpecimenDa
 		Criteria query = getCurrentSession().createCriteria(Specimen.class, "specimen")
 			.add(Subqueries.propertyIn("specimen.id", getSpecimenIdsQuery(crit)));
 
-		if (crit.limitItems()) {
-			if (crit.specimenListId() != null) {
-				query.createAlias("specimen.specimenListItems", "listItem")
-					.createAlias("listItem.list", "list")
-					.add(Restrictions.eq("list.id", crit.specimenListId()))
-					.addOrder(Order.asc("listItem.id"));
-			} else {
-				query.addOrder(Order.asc("specimen.id"));
-			}
+		if (crit.specimenListId() != null) {
+			query.createAlias("specimen.specimenListItems", "listItem")
+				.createAlias("listItem.list", "list")
+				.add(Restrictions.eq("list.id", crit.specimenListId()))
+				.addOrder(Order.asc("listItem.id"));
+		} else {
+			query.addOrder(Order.asc("specimen.id"));
+		}
 
+		if (crit.limitItems()) {
 			query.setFirstResult(crit.startAt()).setMaxResults(crit.maxResults());
 		}
 
@@ -184,7 +184,7 @@ public class SpecimenDaoImpl extends AbstractDao<Specimen> implements SpecimenDa
 			Long siteId = (Long)row[1];
 			Set<Long> siteIds = results.get(id);
 			if (siteIds == null) {
-				siteIds = new HashSet<Long>();
+				siteIds = new HashSet<>();
 				results.put(id, siteIds);
 			}
 			
@@ -264,6 +264,25 @@ public class SpecimenDaoImpl extends AbstractDao<Specimen> implements SpecimenDa
 		return result;
 	}
 
+	@SuppressWarnings("unchecked")
+	@Override
+	public List<String> getNonCompliantSpecimens(SpecimenListCriteria crit) {
+		if (CollectionUtils.isEmpty(crit.ids()) && crit.specimenListId() == null) {
+			return Collections.emptyList();
+		}
+
+		Criteria query = getCurrentSession().createCriteria(Specimen.class, "specimen")
+			.setProjection(Projections.property("specimen.label"))
+			.add(Subqueries.propertyNotIn("specimen.id", getSpecimenIdsQuery(crit)));
+
+		if (CollectionUtils.isNotEmpty(crit.ids())) {
+			addIdsCond(query, crit.ids());
+		}
+
+		addSpecimenListCond(query, crit);
+		return query.list();
+	}
+
 	private void addIdsCond(Criteria query, List<Long> ids) {
 		addInCond(query, "specimen.id", ids);
 	}
@@ -301,7 +320,6 @@ public class SpecimenDaoImpl extends AbstractDao<Specimen> implements SpecimenDa
 		for (int i = 0; i < numValues; i += 500) {
 			List<T> params = values.subList(i, i + 500 > numValues ? numValues : i + 500);
 			condition.add(Restrictions.in(property, params));
-			i += 500;
 		}
 	}
 
@@ -349,6 +367,7 @@ public class SpecimenDaoImpl extends AbstractDao<Specimen> implements SpecimenDa
 		addSpecimenTypeCond(query, crit);
 		addAnatomicSiteCond(query, crit);
 		addAvailableSpecimenCond(query, crit);
+		addNoQtySpecimenCond(query, crit);
 		return detachedCriteria;
 	}
 
@@ -369,7 +388,7 @@ public class SpecimenDaoImpl extends AbstractDao<Specimen> implements SpecimenDa
 	}
 
 	private void addSiteCpsCond(Criteria query, SpecimenListCriteria crit) {
-		SpecimenDaoHelper.getInstance().addSiteCpsCond(query, crit);
+		BiospecimenDaoHelper.getInstance().addSiteCpsCond(query, crit);
 	}
 
 	private void addCpCond(Criteria query, SpecimenListCriteria crit) {
@@ -485,6 +504,18 @@ public class SpecimenDaoImpl extends AbstractDao<Specimen> implements SpecimenDa
 			Restrictions.disjunction()
 				.add(Restrictions.isNull("availableQuantity"))
 				.add(Restrictions.gt("availableQuantity", new BigDecimal(0)))
+		);
+	}
+
+	private void addNoQtySpecimenCond(Criteria query, SpecimenListCriteria crit) {
+		if (!crit.noQty()) {
+			return;
+		}
+
+		query.add(
+			Restrictions.disjunction()
+				.add(Restrictions.isNull("availableQuantity"))
+				.add(Restrictions.eq("availableQuantity", BigDecimal.ZERO))
 		);
 	}
 

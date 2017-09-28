@@ -4,15 +4,10 @@ angular.module('os.biospecimen.models.visit', ['os.common.models', 'os.biospecim
  
     function enrich(visits) {
       angular.forEach(visits, function(visit) {
-        var actualSpecimenCnt = visit.collectedSpecimens + visit.uncollectedSpecimens;
-        if (actualSpecimenCnt <= visit.anticipatedSpecimens) {
-          visit.pendingSpecimens = visit.anticipatedSpecimens - actualSpecimenCnt;
-          visit.totalSpecimens = visit.anticipatedSpecimens + visit.unplannedSpecimens;
-        } else {
-          // usually occurs when specimens got collected and requirement was deleted later
-          visit.pendingSpecimens = 0;
-          visit.totalSpecimens = actualSpecimenCnt + visit.unplannedSpecimens;
-        }
+        visit.totalPrimarySpmns = visit.pendingPrimarySpmns + visit.plannedPrimarySpmnsColl +
+          visit.uncollectedPrimarySpmns + visit.unplannedPrimarySpmnsColl;
+        visit.reqStorage = visit.storedSpecimens + visit.notStoredSpecimens +
+          visit.distributedSpecimens + visit.closedSpecimens;
       });
 
       return visits;
@@ -28,10 +23,12 @@ angular.module('os.biospecimen.models.visit', ['os.common.models', 'os.biospecim
           event.eventId = event.id;
           event.site = event.defaultSite;
           event.cpTitle = event.collectionProtocol;
+          event.clinicalDiagnoses = [event.clinicalDiagnosis];
          
           delete event.id;
           delete event.defaultSite;
           delete event.collectionProtocol;
+          delete event.clinicalDiagnosis;
           delete event.specimenRequirements;
           delete event.visitNamePrintMode;
           delete event.visitNamePrintCopies;

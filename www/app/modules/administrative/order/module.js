@@ -24,48 +24,59 @@ angular.module('os.administrative.order',
         parent: 'signed-in'
       })
       .state('order-list', {
-        url: '/orders',
+        url: '/orders?filters',
         templateUrl: 'modules/administrative/order/list.html',     
         controller: 'OrderListCtrl',
         parent: 'order-root'
       })
       .state('order-addedit', {
-        url: '/order-addedit/:orderId?requestId',
+        url: '/order-addedit/:orderId?requestId&specimenListId',
         templateUrl: 'modules/administrative/order/addedit.html',
         controller: 'OrderAddEditCtrl',
         resolve: {
-          order: function($stateParams , DistributionOrder) {
+          specimenList: function($stateParams, SpecimenList) {
+            if ($stateParams.specimenListId) {
+              return SpecimenList.getById($stateParams.specimenListId);
+            }
+
+            return null;
+          },
+
+          order: function($stateParams, specimenList, DistributionOrder) {
             if ($stateParams.orderId) {
               return DistributionOrder.getById($stateParams.orderId);
             }
 
-            return new DistributionOrder({status: 'PENDING', orderItems: []});
+            return new DistributionOrder({status: 'PENDING', orderItems: [], specimenList: specimenList});
           },
 
           spmnRequest: function($stateParams, $injector, order) {
-            var SpecimenRequest       = undefined;
-            var SpecimenRequestHolder = undefined;
-            if ($injector.has('spmnReqSpecimenRequest')) {
-              SpecimenRequest = $injector.get('spmnReqSpecimenRequest');
-              SpecimenRequestHolder = $injector.get('spmnReqHolder');
+            var catalog;
+            if ($injector.has('scCatalog')) {
+              var scCatalog = $injector.get('scCatalog');
+              catalog = new scCatalog({id: -1});
             }
 
+            if (!catalog) {
+              return null;
+            }
 
+            var reqId = undefined;
             if (angular.isDefined(order.id)) {
-              return !!order.request ? SpecimenRequest.getById(order.request.id) : undefined;
+              reqId = !!order.request ? order.request.id : undefined;
+            } else if (angular.isDefined($stateParams.requestId)) {
+              reqId = $stateParams.requestId;
             }
 
-            if (!angular.isDefined($stateParams.requestId)) {
-              return undefined;
+            return !reqId ? null : catalog.getRequest(reqId);
+          },
+
+          requestDp: function(spmnRequest, DistributionProtocol) {
+            if (spmnRequest && spmnRequest.dpId) {
+              return DistributionProtocol.getById(spmnRequest.dpId);
             }
 
-            var request = SpecimenRequestHolder.get();
-            SpecimenRequestHolder.clear();
-            if (!request) {
-              request = SpecimenRequest.getById($stateParams.requestId);
-            }
-
-            return request;
+            return null;
           }
         },
         parent: 'order-root'
@@ -118,6 +129,12 @@ angular.module('os.administrative.order',
         templateUrl: 'modules/administrative/order/overview.html',
         parent: 'order-detail'
       })
+      .state('order-detail.items', {
+        url: '/items',
+        templateUrl: 'modules/administrative/order/items.html',
+        controller: 'OrderItemsCtrl',
+        parent: 'order-detail'
+      })
       .state('order-return-specimens', {
         url: '/return-specimens',
         templateUrl: 'modules/administrative/order/return-specimens.html',
@@ -129,4 +146,6 @@ angular.module('os.administrative.order',
         },
         parent: 'order-root'
       });
-  });
+  }).run(function(UrlResolver) {
+    UrlResolver.regUrlState('order-overview', 'order-detail.overview', 'orderId');
+  });;

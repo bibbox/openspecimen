@@ -4,15 +4,17 @@ import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.util.HashMap;
+import java.io.Reader;
 import java.util.Map;
+import java.util.TreeMap;
 
 import org.apache.commons.io.IOUtils;
+import org.apache.commons.lang3.StringUtils;
 
 import au.com.bytecode.opencsv.CSVReader;
 
 public class CsvFileReader implements CsvReader {
-	private Map<String, Integer> columnNameIdxMap = new HashMap<String, Integer>();
+	private Map<String, Integer> columnNameIdxMap = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
 
 	private String[] currentRow;
 
@@ -29,7 +31,11 @@ public class CsvFileReader implements CsvReader {
 	}
 
 	public static CsvFileReader createCsvFileReader(InputStream inputStream, boolean firstRowHeaderRow) {
-		CSVReader csvReader = new CSVReader(new InputStreamReader(inputStream), Utility.getFieldSeparator());
+		return createCsvFileReader(new InputStreamReader(inputStream), firstRowHeaderRow);
+	}
+
+	public static CsvFileReader createCsvFileReader(Reader reader, boolean firstRowHeaderRow) {
+		CSVReader csvReader = new CSVReader(reader, Utility.getFieldSeparator());
 		return new CsvFileReader(csvReader, firstRowHeaderRow);
 	}
 	
@@ -102,11 +108,18 @@ public class CsvFileReader implements CsvReader {
 	public boolean next() {
 		try {
 			currentRow = csvReader.readNext();
+
+			boolean hasNext = currentRow != null && currentRow.length > 0;
+			if (hasNext) {
+				for (int i = 0; i < currentRow.length; i++) {
+					currentRow[i] = StringUtils.trim(currentRow[i]);
+				}
+			}
+
+			return hasNext;
 		} catch (IOException e) {
 			throw new CsvException("Error reading line from CSV file", e);
 		}
-
-		return (currentRow != null && currentRow.length > 0);
 	}
 
 	public void close() {

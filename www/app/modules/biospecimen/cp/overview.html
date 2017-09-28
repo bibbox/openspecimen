@@ -18,6 +18,7 @@
         <span class="fa fa-download"></span>
         <span translate="cp.menu_options.export">Export</span>
       </a>
+      <os-help class="os-btns btn default" link="cp_setup_help_link"></os-help>
     </div>
   </div>
 
@@ -123,6 +124,13 @@
         </li>
 
         <li class="item">
+          <strong class="key key-sm" translate="cp.store_sprs">Store Pathology Reports?</strong>
+          <span class="value value-md">
+            {{cp.storeSprEnabled | osBoolValue: 'common.yes': 'common.no': 'common.use_system_setting'}}
+          </span>
+        </li>
+
+        <li class="item" ng-if="cp.storeSprEnabled || (cp.storeSprEnabled == undefined && sysStoreSpr)">
           <strong class="key key-sm" translate="cp.extract_spr_text">Extract Text from SPR PDF docs?</strong>
           <span class="value value-md" ng-switch on="cp.extractSprText">
             <span ng-switch-when="true" translate="common.yes">Yes</span>
@@ -135,6 +143,10 @@
       <div ng-if="!!cp.extensionDetail">
         <div os-extension-overview ext-object="cp.extensionDetail" show-column="2"></div>
       </div>
+    </div>
+
+    <div class="col-xs-4">
+      <os-audit-overview object-name="'collection_protocol'" object-id="cp.id"></os-audit-overview>
     </div>
   </div>
 </div>

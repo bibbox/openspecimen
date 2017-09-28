@@ -9,6 +9,8 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -42,7 +44,7 @@ import krishagni.catissueplus.beans.FormContextBean;
 import krishagni.catissueplus.beans.FormRecordEntryBean;
 
 public class FormDaoImpl extends AbstractDao<FormContextBean> implements FormDao {
-	
+
 	@Override
 	public Class<FormContextBean> getType() {
 		return FormContextBean.class;
@@ -593,12 +595,102 @@ public class FormDaoImpl extends AbstractDao<FormContextBean> implements FormDao
 			.setParameterList("recordIds", recordIds)
 			.executeUpdate();
 	}
-	
+
+	@Override
+	public int deleteRecords(Long cpId, List<String> entityTypes, Long objectId) {
+		return getCurrentSession().getNamedQuery(SOFT_DELETE_ENTITY_RECS)
+			.setParameter("cpId", cpId)
+			.setParameterList("entityTypes", entityTypes)
+			.setParameter("objectId", objectId)
+			.executeUpdate();
+	}
+
+	@Override
+	public int deleteFormContexts(Long cpId, List<String> entityTypes) {
+		return getCurrentSession().getNamedQuery(SOFT_DELETE_CP_FORMS)
+			.setParameter("deleteTime", Calendar.getInstance().getTime())
+			.setParameter("cpId", cpId)
+			.setParameterList("entityTypes", entityTypes)
+			.executeUpdate();
+	}
+
+	@Override
+	public List<Map<String, Object>> getRegistrationRecords(Long cpId, Long formId, List<String> ppids, int startAt, int maxResults) {
+		return getEntityRecords(
+			cpId, formId, GET_REG_FORM_RECORDS,
+			ppids, "ppids", "cpr.protocol_participant_id in (:ppids)", null,
+			startAt, maxResults,
+			row -> {
+				Map<String, Object> regRecord = new HashMap<>();
+				regRecord.put("cpId", ((Number) row[0]).longValue());
+				regRecord.put("cpShortTitle", row[1]);
+				regRecord.put("cprId", ((Number) row[2]).longValue());
+				regRecord.put("ppid", row[3]);
+				regRecord.put("recordId", ((Number) row[4]).longValue());
+				return regRecord;
+			});
+	}
+
+	@Override
+	public List<Map<String, Object>> getParticipantRecords(Long cpId, Long formId, List<String> ppids, int startAt, int maxResults) {
+		return getEntityRecords(
+			cpId, formId, GET_PART_FORM_RECORDS,
+			ppids, "ppids", "cpr.protocol_participant_id in (:ppids)", null,
+			startAt, maxResults,
+			row -> {
+				Map<String, Object> partRecord = new HashMap<>();
+				partRecord.put("cpId", ((Number) row[0]).longValue());
+				partRecord.put("cpShortTitle", row[1]);
+				partRecord.put("cprId", ((Number) row[2]).longValue());
+				partRecord.put("participantId", ((Number) row[3]).longValue());
+				partRecord.put("ppid", row[4]);
+				partRecord.put("recordId", ((Number) row[5]).longValue());
+				return partRecord;
+			});
+	}
+
+	@Override
+	public List<Map<String, Object>> getVisitRecords(Long cpId, Long formId, List<String> visitNames, int startAt, int maxResults) {
+		return getEntityRecords(
+			cpId, formId, GET_VISIT_FORM_RECORDS,
+			visitNames, "visitNames", "v.name in (:visitNames)", null,
+			startAt, maxResults,
+			row -> {
+				Map<String, Object> visitRecord = new HashMap<>();
+				visitRecord.put("cpId", ((Number) row[0]).longValue());
+				visitRecord.put("cpShortTitle", row[1]);
+				visitRecord.put("visitId", ((Number) row[2]).longValue());
+				visitRecord.put("visitName", row[3]);
+				visitRecord.put("recordId", ((Number) row[4]).longValue());
+				return visitRecord;
+			});
+	}
+
+	@SuppressWarnings("unchecked")
+	@Override
+	public List<Map<String, Object>> getSpecimenRecords(Long cpId, Long formId, String entityType, List<String> spmnLabels, int startAt, int maxResults) {
+		return getEntityRecords(
+			cpId, formId, GET_SPMN_FORM_RECORDS,
+			spmnLabels, "spmnLabels", "s.label in (:spmnLabels)",
+			Collections.singletonMap("entityType", entityType),
+			startAt, maxResults,
+			(row) -> {
+				Map<String, Object> spmnRecord = new HashMap<>();
+				spmnRecord.put("cpId", ((Number) row[0]).longValue());
+				spmnRecord.put("cpShortTitle", row[1]);
+				spmnRecord.put("spmnId", ((Number) row[2]).longValue());
+				spmnRecord.put("spmnLabel", row[3]);
+				spmnRecord.put("spmnBarcode", row[4]);
+				spmnRecord.put("recordId", ((Number) row[5]).longValue());
+				return spmnRecord;
+			});
+	}
+
 	private Query getAllFormsQuery(FormListCriteria crit, boolean countReq) {
 		Query query = countReq ? getCountFormsQuery(crit) : getListFormsQuery(crit);
 
 		if (StringUtils.isNotBlank(crit.query())) {
-			query.setParameter("caption", "%" + crit.query() + "%");
+			query.setParameter("caption", "%" + crit.query().toLowerCase() + "%");
 		}
 		
 		if (crit.userId() != null) {
@@ -648,7 +740,7 @@ public class FormDaoImpl extends AbstractDao<FormContextBean> implements FormDao
 
 		StringBuilder sqlBuilder = new StringBuilder(String.format(GET_ALL_FORMS, proj, whereClause, cpFormsSql));
 		if (StringUtils.isNotBlank(crit.query())) {
-			sqlBuilder.append(" and c.caption like :caption ");
+			sqlBuilder.append(" and lower(c.caption) like :caption ");
 		}
 		
 		if (crit.userId() != null) {
@@ -664,7 +756,7 @@ public class FormDaoImpl extends AbstractDao<FormContextBean> implements FormDao
 		if (!countReq) {
 			sqlBuilder.append(" order by modificationTime desc ");
 		}
-		
+
 		return sqlBuilder.toString();
 	}
 
@@ -843,7 +935,39 @@ public class FormDaoImpl extends AbstractDao<FormContextBean> implements FormDao
 		
 		return dependentEntities;
  	}
-	
+
+	private List<Map<String, Object>> getEntityRecords(
+		Long cpId, Long formId, String queryName,
+		List<String> names, String namesVar, String namesCond,
+		Map<String, Object> params,
+		int startAt, int maxResults,
+		Function<Object[], Map<String, Object>> rowMapper) {
+
+		String sql = getCurrentSession().getNamedQuery(queryName).getQueryString();
+		if (CollectionUtils.isNotEmpty(names)) {
+			int orderByIdx = sql.lastIndexOf("order by");
+			sql = sql.substring(0, orderByIdx) + " and " + namesCond + " " + sql.substring(orderByIdx);
+		}
+
+		Query query = getCurrentSession().createSQLQuery(sql)
+			.setParameter("formId", formId)
+			.setParameter("cpId", cpId)
+			.setFirstResult(startAt)
+			.setMaxResults(maxResults);
+
+		if (CollectionUtils.isNotEmpty(names)) {
+			query.setParameterList(namesVar, names);
+		}
+
+		if (params != null) {
+			for (Map.Entry<String, Object> param : params.entrySet()) {
+				query.setParameter(param.getKey(), param.getValue());
+			}
+		}
+
+		return ((List<Object[]>)query.list()).stream().map(rowMapper).collect(Collectors.toList());
+	}
+
 	private static final String FQN = FormContextBean.class.getName();
 	
 	private static final String GET_FORMS_BY_ENTITY_TYPE = FQN + ".getFormsByEntityType";
@@ -948,6 +1072,11 @@ public class FormDaoImpl extends AbstractDao<FormContextBean> implements FormDao
 			"where " +
 			"  form_ctxt_id = :formCtxtId and record_id in (:recordIds)";
 
+
+	private static final String SOFT_DELETE_ENTITY_RECS = RE_FQN + ".deleteEntityRecords";
+
+	private static final String SOFT_DELETE_CP_FORMS = FQN + ".deleteCpEntityForms";
+
 	private static final String GET_ALL_FORMS =
 			"select %s " +
 			"from " +
@@ -960,11 +1089,10 @@ public class FormDaoImpl extends AbstractDao<FormContextBean> implements FormDao
 			"    from " +
 			"      dyextn_containers ic " +
 			"      left join catissue_form_context ctxt on ctxt.container_id = ic.identifier and ctxt.deleted_on is null " +
-			"      left join catissue_collection_protocol cp on ctxt.cp_id = cp.identifier " +
+			"      left join catissue_collection_protocol cp on ctxt.cp_id = cp.identifier and cp.activity_status != 'Disabled'" +
 			"    where " +
 			"      ic.deleted_on is null and " +
-			"      (ctxt.entity_type is null or ctxt.entity_type != 'Query') and " +
-			"      (cp.identifier is null or cp.activity_status != 'Disabled') " +
+			"      (ctxt.entity_type is null or ctxt.entity_type != 'Query') " +
 			"      %s " +
 			"    group by " +
 			"      ic.identifier " +
@@ -990,4 +1118,16 @@ public class FormDaoImpl extends AbstractDao<FormContextBean> implements FormDao
 	private static final String SYS_FORM_COND = " and ctxt.is_sys_form = :sysForm";
 
 	private static final String NON_SYS_FORM_COND = " and (ctxt.is_sys_form is null or ctxt.is_sys_form = :sysForm) ";
+
+
+	//
+	// used for form records export
+	//
+	private static final String GET_PART_FORM_RECORDS  = RE_FQN + ".getParticipantRecords";
+
+	private static final String GET_REG_FORM_RECORDS   = RE_FQN + ".getRegistrationRecords";
+
+	private static final String GET_VISIT_FORM_RECORDS = RE_FQN + ".getVisitRecords";
+
+	private static final String GET_SPMN_FORM_RECORDS  = RE_FQN + ".getSpecimenRecords";
 }

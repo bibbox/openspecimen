@@ -28,7 +28,7 @@ angular.module('os.administrative.user',
         parent: 'signed-in'
       })
       .state('user-list', {
-        url: '/users',
+        url: '/users?filters',
         templateUrl: 'modules/administrative/user/list.html',
         controller: 'UserListCtrl',
         parent: 'user-root'
@@ -148,5 +148,10 @@ angular.module('os.administrative.user',
         controller: 'UserPasswordCtrl',
         parent: 'user-root'
       })
-  });
+  })
 
+  .run(function(UrlResolver) {
+    UrlResolver.regUrlState('user-overview', 'user-detail.overview', 'userId');
+    UrlResolver.regUrlState('user-roles', 'user-detail.roles', 'userId');
+    UrlResolver.regUrlState('user-password-change', 'user-password', 'userId');
+  });

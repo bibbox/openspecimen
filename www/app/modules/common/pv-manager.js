@@ -78,6 +78,7 @@ angular.module('openspecimen')
     ];
 
     var spmnLabelPrePrintModes = [
+      {name: 'ON_REGISTRATION', displayKey:'cp.spmn_label_pre_print_modes.ON_REGISTRATION'},
       {name: 'ON_VISIT', displayKey:'cp.spmn_label_pre_print_modes.ON_VISIT'},
       {name: 'NONE', displayKey:'cp.spmn_label_pre_print_modes.NONE'}
     ];
@@ -145,10 +146,15 @@ angular.module('openspecimen')
 
       var params = {
         attribute: pvId,
-        searchString: srchTerm,
         includeOnlyLeafValue: incOnlyLeaf,
         maxResults: 100
       };
+
+      if (angular.isArray(srchTerm)) {
+        params.value = srchTerm
+      } else {
+        params.searchString = srchTerm
+      }
 
       return $http.get(url, {params: params}).then(
         function(result) {

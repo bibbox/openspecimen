@@ -1,6 +1,6 @@
 
 angular.module('os.query.executor', [])
-  .factory('QueryExecutor', function($http, $document, ApiUrls) {
+  .factory('QueryExecutor', function($http, $document, Util, ApiUrls) {
     var queryUrl = ApiUrls.getBaseUrl() + 'query';
 
     return {
@@ -28,14 +28,15 @@ angular.module('os.query.executor', [])
         );
       },
 
-      getRecords: function(queryId, cpId, aql, wideRowMode) {
+      getRecords: function(queryId, cpId, aql, wideRowMode, outputIsoFmt) {
         var req = {
           savedQueryId: queryId, 
           cpId: cpId,
           drivingForm: 'Participant',
           runType: 'Data', 
           aql: aql, 
-          wideRowMode: wideRowMode || "OFF"
+          wideRowMode: wideRowMode || "OFF",
+          outputIsoDateTime: (outputIsoFmt || false)
         };
         return $http.post(queryUrl, req).then(
           function(resp) {
@@ -64,24 +65,7 @@ angular.module('os.query.executor', [])
 
       downloadDataFile: function(fileId, filename) {
         filename = !!filename ? filename : 'QueryResults.csv';
-        var link = angular.element('<a/>').attr(
-          {
-            href: queryUrl + '/export?fileId=' + fileId + '&filename=' + filename,
-            target: '_blank'
-          }
-        );
-
-        angular.element($document[0].body).append(link);
-
-        if (typeof link[0].click == "function") {
-          link[0].click();
-        } else { // Safari fix
-          var dispatch = document.createEvent("HTMLEvents");
-          dispatch.initEvent("click", true, true);
-          link[0].dispatchEvent(dispatch);
-        }
-
-        link.remove();
+        Util.downloadFile(queryUrl + '/export?fileId=' + fileId + '&filename=' + filename);
       },
 
       getFacetValues: function(cpId, facetExprs, searchTerm, restriction) {

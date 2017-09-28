@@ -25,14 +25,24 @@ public class VisitSummary implements Comparable<VisitSummary> {
 	private Date visitDate;
 	
 	private Date anticipatedVisitDate;
+
+	private int totalPendingSpmns;
+
+	private int pendingPrimarySpmns;
 	
-	private int anticipatedSpecimens;
+	private int plannedPrimarySpmnsColl;
 	
-	private int collectedSpecimens;
+	private int uncollectedPrimarySpmns;
 	
-	private int uncollectedSpecimens;
-	
-	private int unplannedSpecimens;
+	private int unplannedPrimarySpmnsColl;
+
+	private int storedSpecimens;
+
+	private int notStoredSpecimens;
+
+	private int distributedSpecimens;
+
+	private int closedSpecimens;
 
 	private String missedReason;
 
@@ -110,36 +120,76 @@ public class VisitSummary implements Comparable<VisitSummary> {
 		this.anticipatedVisitDate = anticipatedVisitDate;
 	}
 
-	public int getAnticipatedSpecimens() {
-		return anticipatedSpecimens;
+	public int getTotalPendingSpmns() {
+		return totalPendingSpmns;
 	}
 
-	public void setAnticipatedSpecimens(int anticipatedSpecimens) {
-		this.anticipatedSpecimens = anticipatedSpecimens;
+	public void setTotalPendingSpmns(int totalPendingSpmns) {
+		this.totalPendingSpmns = totalPendingSpmns;
 	}
 
-	public int getCollectedSpecimens() {
-		return collectedSpecimens;
+	public int getPendingPrimarySpmns() {
+		return pendingPrimarySpmns;
 	}
 
-	public void setCollectedSpecimens(int collectedSpecimens) {
-		this.collectedSpecimens = collectedSpecimens;
+	public void setPendingPrimarySpmns(int pendingPrimarySpmns) {
+		this.pendingPrimarySpmns = pendingPrimarySpmns;
 	}
 
-	public int getUncollectedSpecimens() {
-		return uncollectedSpecimens;
+	public int getPlannedPrimarySpmnsColl() {
+		return plannedPrimarySpmnsColl;
 	}
 
-	public void setUncollectedSpecimens(int uncollectedSpecimens) {
-		this.uncollectedSpecimens = uncollectedSpecimens;
+	public void setPlannedPrimarySpmnsColl(int plannedPrimarySpmnsColl) {
+		this.plannedPrimarySpmnsColl = plannedPrimarySpmnsColl;
 	}
 
-	public int getUnplannedSpecimens() {
-		return unplannedSpecimens;
+	public int getUncollectedPrimarySpmns() {
+		return uncollectedPrimarySpmns;
 	}
 
-	public void setUnplannedSpecimens(int unplannedSpecimens) {
-		this.unplannedSpecimens = unplannedSpecimens;
+	public void setUncollectedPrimarySpmns(int uncollectedPrimarySpmns) {
+		this.uncollectedPrimarySpmns = uncollectedPrimarySpmns;
+	}
+
+	public int getUnplannedPrimarySpmnsColl() {
+		return unplannedPrimarySpmnsColl;
+	}
+
+	public void setUnplannedPrimarySpmnsColl(int unplannedPrimarySpmnsColl) {
+		this.unplannedPrimarySpmnsColl = unplannedPrimarySpmnsColl;
+	}
+
+	public int getStoredSpecimens() {
+		return storedSpecimens;
+	}
+
+	public void setStoredSpecimens(int storedSpecimens) {
+		this.storedSpecimens = storedSpecimens;
+	}
+
+	public int getNotStoredSpecimens() {
+		return notStoredSpecimens;
+	}
+
+	public void setNotStoredSpecimens(int notStoredSpecimens) {
+		this.notStoredSpecimens = notStoredSpecimens;
+	}
+
+	public int getDistributedSpecimens() {
+		return distributedSpecimens;
+	}
+
+	public void setDistributedSpecimens(int distributedSpecimens) {
+		this.distributedSpecimens = distributedSpecimens;
+	}
+
+	public int getClosedSpecimens() {
+		return closedSpecimens;
+	}
+
+	public void setClosedSpecimens(int closedSpecimens) {
+		this.closedSpecimens = closedSpecimens;
 	}
 
 	public String getMissedReason() {

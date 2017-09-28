@@ -811,12 +811,14 @@ public class StorageContainer extends BaseEntity {
 				Specimen.getEntityName(), getSpecimensCount());
 	}
 	
-	public void delete() {
-		int specimensCnt = getSpecimensCount();
-		if (specimensCnt > 0) {
-			throw OpenSpecimenException.userError(StorageContainerErrorCode.REF_ENTITY_FOUND);
+	public void delete(boolean checkSpecimens) {
+		if (checkSpecimens) {
+			int specimensCnt = getSpecimensCount();
+			if (specimensCnt > 0) {
+				throw OpenSpecimenException.userError(StorageContainerErrorCode.REF_ENTITY_FOUND, getName());
+			}
 		}
-		
+
 		deleteWithoutCheck();
 	}
 	
@@ -916,22 +918,23 @@ public class StorageContainer extends BaseEntity {
 	}
 
 	public void setFreezerCapacity() {
-		if (isDimensionless()) {
-			return;
-		}
-
 		List<StorageContainer> containers = new ArrayList<>();
 		StorageContainer freezer = this;
 		while (freezer.getParentContainer() != null) {
 			containers.add(freezer);
 			freezer = freezer.getParentContainer();
 		}
+		containers.add(freezer);
 
 		if (freezer.getCapacity() != null && freezer.getCapacity() > 0) {
 			return;
 		}
 
-		Integer capacity = freezer.getNoOfRows() * freezer.getNoOfColumns();
+		if (containers.stream().anyMatch(StorageContainer::isDimensionless)) {
+			return;
+		}
+
+		Integer capacity = 1;
 		for (StorageContainer container : containers) {
 			capacity *= container.getNoOfRows() * container.getNoOfColumns();
 		}
@@ -949,7 +952,6 @@ public class StorageContainer extends BaseEntity {
 
 	public void processList(ContainerStoreList list) {
 		getAutoFreezerProvider().getInstance().processList(list);
-		list.setExecutionTime(Calendar.getInstance().getTime());
 	}
 
 	private void deleteWithoutCheck() {
@@ -1110,7 +1112,7 @@ public class StorageContainer extends BaseEntity {
 			if (cycleExistsInHierarchy(otherParentContainer)) {
 				throw OpenSpecimenException.userError(StorageContainerErrorCode.HIERARCHY_CONTAINS_CYCLE);
 			}
-			
+
 			if (position != null) {
 				position.update(otherPos);
 			} else {
@@ -1137,7 +1139,7 @@ public class StorageContainer extends BaseEntity {
 		}
 
 		if (Status.ACTIVITY_STATUS_DISABLED.getStatus().equals(other.getActivityStatus())) {
-			delete();
+			delete(true);
 		} else {
 			List<StorageContainer> containers = new ArrayList<>();
 			containers.add(this);

@@ -392,6 +392,8 @@ edu.common.de.Form = function(args) {
   }
 
   this.setValue = function(formData) {
+    formData = formData || {};
+
     var recId = undefined;
     if (formData) {
       recId = formData.id;
@@ -399,9 +401,7 @@ edu.common.de.Form = function(args) {
 
     for (var i = 0; i < this.fieldObjs.length; ++i) {
       var fieldObj = this.fieldObjs[i];
-      if (recId) {
-        fieldObj.setValue(recId, formData[fieldObj.getName()]);
-      }
+      fieldObj.setValue(recId, formData[fieldObj.getName()]);
       fieldObj.postRender();
     }
   };

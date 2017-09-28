@@ -9,8 +9,12 @@ public class DpListCriteria extends AbstractListCriteria<DpListCriteria> {
 	private String title;
 	
 	private Long piId;
+
+	private String irbId;
 	
 	private String receivingInstitute;
+
+	private String cpShortTitle;
 	
 	private Set<Long> siteIds;
 
@@ -40,6 +44,15 @@ public class DpListCriteria extends AbstractListCriteria<DpListCriteria> {
 		this.piId = piId;
 		return self();
 	}
+
+	public String irbId() {
+		return irbId;
+	}
+
+	public DpListCriteria irbId(String irbId) {
+		this.irbId = irbId;
+		return self();
+	}
 	
 	public String receivingInstitute() {
 		return receivingInstitute;
@@ -47,6 +60,15 @@ public class DpListCriteria extends AbstractListCriteria<DpListCriteria> {
 	
 	public DpListCriteria receivingInstitute(String receivingInstitute) {
 		this.receivingInstitute = receivingInstitute;
+		return self();
+	}
+
+	public String cpShortTitle() {
+		return cpShortTitle;
+	}
+
+	public DpListCriteria cpShortTitle(String cpShortTitle) {
+		this.cpShortTitle = cpShortTitle;
 		return self();
 	}
 	

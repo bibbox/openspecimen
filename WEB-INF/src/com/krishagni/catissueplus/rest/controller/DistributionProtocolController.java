@@ -59,6 +59,9 @@ public class DistributionProtocolController {
 
 			@RequestParam(value = "receivingInstitute", required = false)
 			String receivingInstitute,
+
+			@RequestParam(value = "cp", required = false)
+			String cpShortTitle,
 			
 			@RequestParam(value = "startAt", required = false, defaultValue = "0") 
 			int startAt,
@@ -82,6 +85,7 @@ public class DistributionProtocolController {
 			.title(title)
 			.piId(piId)
 			.receivingInstitute(receivingInstitute)
+			.cpShortTitle(cpShortTitle)
 			.includeStat(includeStats)
 			.excludeExpiredDps(excludeExpiredDps)
 			.activityStatus(activityStatus);
@@ -104,6 +108,9 @@ public class DistributionProtocolController {
 			@RequestParam(value = "piId", required = false)
 			Long piId,
 
+			@RequestParam(value = "irbId", required = false)
+			String irbId,
+
 			@RequestParam(value = "receivingInstitute", required = false)
 			String receivingInstitute,
 			
@@ -114,6 +121,7 @@ public class DistributionProtocolController {
 			.query(searchStr)
 			.title(title)
 			.piId(piId)
+			.irbId(irbId)
 			.receivingInstitute(receivingInstitute)
 			.activityStatus(activityStatus);
 		

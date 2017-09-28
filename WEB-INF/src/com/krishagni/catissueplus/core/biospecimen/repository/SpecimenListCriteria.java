@@ -8,6 +8,8 @@ import com.krishagni.catissueplus.core.common.events.AbstractListCriteria;
 public class SpecimenListCriteria extends AbstractListCriteria<SpecimenListCriteria> {
 	private Long cpId;
 
+	private String cpShortTitle;
+
 	private String[] lineages;
 
 	private String[] collectionStatuses;
@@ -38,6 +40,8 @@ public class SpecimenListCriteria extends AbstractListCriteria<SpecimenListCrite
 
 	private boolean available;
 
+	private boolean noQty;
+
 	public SpecimenListCriteria() {
 		exactMatch(true);
 	}
@@ -53,6 +57,15 @@ public class SpecimenListCriteria extends AbstractListCriteria<SpecimenListCrite
 
 	public SpecimenListCriteria cpId(Long cpId) {
 		this.cpId = cpId;
+		return self();
+	}
+
+	public String cpShortTitle() {
+		return cpShortTitle;
+	}
+
+	public SpecimenListCriteria cpShortTitle(String cpShortTitle) {
+		this.cpShortTitle = cpShortTitle;
 		return self();
 	}
 
@@ -188,6 +201,15 @@ public class SpecimenListCriteria extends AbstractListCriteria<SpecimenListCrite
 
 	public SpecimenListCriteria available(boolean available) {
 		this.available = available;
+		return self();
+	}
+
+	public boolean noQty() {
+		return this.noQty;
+	}
+
+	public SpecimenListCriteria noQty(boolean noQty) {
+		this.noQty = noQty;
 		return self();
 	}
 }

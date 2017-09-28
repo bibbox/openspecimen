@@ -7,8 +7,8 @@ public enum StorageContainerErrorCode implements ErrorCode {
 	NOT_FOUND,
 	
 	NAME_REQUIRED,
-	
-	ID_OR_NAME_REQ,
+
+	ID_NAME_OR_BARCODE_REQ,
 	
 	SRC_ID_OR_NAME_REQ,
 	
@@ -70,7 +70,11 @@ public enum StorageContainerErrorCode implements ErrorCode {
 
 	AUTOMATED_NOT_DIMENSIONLESS,
 
-	SPMNS_RPT_NOT_CONFIGURED;
+	SPMNS_RPT_NOT_CONFIGURED,
+
+	INV_CONT_SEL_STRATEGY,
+
+	INV_CONT_SEL_RULE;
 
 	@Override
 	public String code() {

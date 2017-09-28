@@ -29,7 +29,7 @@ angular.module('os.administrative.container',
         parent: 'signed-in'
       })
       .state('container-list', {
-        url: '/containers',
+        url: '/containers?filters',
         templateUrl: 'modules/administrative/container/list.html',
         controller: 'ContainerListCtrl',
         parent: 'container-root'
@@ -175,7 +175,7 @@ angular.module('os.administrative.container',
         parent: 'container-detail'
       })
       .state('container-detail.specimens', {
-        url: '/specimens',
+        url: '/specimens?filters',
         templateUrl: 'modules/administrative/container/specimens.html',
         controller: 'ContainerSpecimensCtrl',
         parent: 'container-detail'
@@ -188,10 +188,11 @@ angular.module('os.administrative.container',
       caption: 'entities.container',
       order: 4,
       search: function(searchData) {
-        Container.getByName(searchData.containerName).then(
+        var nameOrBarcode = searchData.containerName;
+        Container.getByName(nameOrBarcode, nameOrBarcode).then(
           function(container) {
             if (container == undefined) {
-              Alerts.error('search.error', {entity: 'Container', key: searchData.containerName});
+              Alerts.error('search.error', {entity: 'Container', key: nameOrBarcode});
               return;
             }
 

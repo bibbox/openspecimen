@@ -1,5 +1,5 @@
 angular.module('os.biospecimen.models.specimen', ['os.common.models', 'os.biospecimen.models.form'])
-  .factory('Specimen', function(osModel, $http, SpecimenRequirement, Form, Util) {
+  .factory('Specimen', function(osModel, $http, $parse, SpecimenRequirement, Form, Util) {
 
     function matches(name, regex) {
       return name && name.match(regex) != null;
@@ -83,11 +83,7 @@ angular.module('os.biospecimen.models.specimen', ['os.common.models', 'os.biospe
     };
 
     Specimen.save = function(specimens) {
-      return $http.post(Specimen.url() + 'collect', specimens).then(
-        function(result) {
-          return result.data;
-        }
-      );
+      return $http.post(Specimen.url() + 'collect', specimens).then(Specimen.modelArrayRespTransform);
     };
 
     Specimen.bulkUpdate = function(specimens) {
@@ -219,6 +215,18 @@ angular.module('os.biospecimen.models.specimen', ['os.common.models', 'os.biospe
 
     Specimen.prototype.showVirtual = function() {
       return this.storageType == 'Virtual' && (!this.status || this.status == 'Pending');
+    }
+
+    Specimen.prototype.getMatchingRule = function(allocRules) {
+      var result = -1;
+      for (var i = 0; i < allocRules.length; ++i) {
+        if ($parse(allocRules[i].criteria)({specimen: this})) {
+          result = i;
+          break;
+        }
+      }
+
+      return {index: result, rule: result != -1 ? allocRules[result] : undefined};
     }
 
     function toSpecimenAttrs(sr) {

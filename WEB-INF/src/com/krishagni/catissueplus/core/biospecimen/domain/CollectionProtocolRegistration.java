@@ -25,6 +25,7 @@ import com.krishagni.catissueplus.core.common.events.DependentEntityDetail;
 import com.krishagni.catissueplus.core.common.service.LabelGenerator;
 import com.krishagni.catissueplus.core.common.util.Status;
 import com.krishagni.catissueplus.core.common.util.Utility;
+import com.krishagni.catissueplus.core.de.services.impl.FormUtil;
 
 @Configurable
 @Audited
@@ -239,6 +240,8 @@ public class CollectionProtocolRegistration extends BaseEntity {
 		setBarcode(Utility.getDisabledValue(getBarcode(), 255));
 		setPpid(Utility.getDisabledValue(getPpid(), 255));
 		setActivityStatus(Status.ACTIVITY_STATUS_DISABLED.getStatus());
+		FormUtil.getInstance().deleteRecords(getCollectionProtocol().getId(), Collections.singletonList("Participant"), getId());
+		FormUtil.getInstance().deleteRecords(getCollectionProtocol().getId(), Collections.singletonList("ParticipantExtension"), getParticipant().getId());
 
 		//
 		// If participant is registered to only this deleted registration
@@ -293,12 +296,19 @@ public class CollectionProtocolRegistration extends BaseEntity {
 			setPpid(cp.getId() + "_" + participant.getId());
 		}
 	}
+
+	public boolean isSpecimenLabelPrePrintOnRegEnabled() {
+		return !getCollectionProtocol().isManualSpecLabelEnabled() &&
+			getCollectionProtocol().getSpmnLabelPrePrintMode() == CollectionProtocol.SpecimenLabelPrePrintMode.ON_REGISTRATION;
+	}
+
+	public void addVisit(Visit visit) {
+		visit.setRegistration(this);
+		getVisits().add(visit);
+	}
 	
 	public void addVisits(Collection<Visit> visits) {
-		for (Visit visit : visits) {
-			visit.setRegistration(this); 
-			getVisits().add(visit);
-		}
+		visits.forEach(this::addVisit);
 	}
 
 	private void updateConsentResponses(Collection<ConsentTierResponse> consentResponses) {

@@ -69,6 +69,11 @@
   padding: 0px 4px;
 }
 
+.fa.os-status-virtual:before {
+  color: #99f;
+  padding: 0px 4px;
+}
+
 .fa.os-status-part-distributed:before {
   color: transparent;
 }
@@ -128,6 +133,7 @@
   float: left;
 }
 
+.os-key-values .value.os-status-closed,
 .os-key-values .value.os-status-collected, 
 .os-key-values .value.os-status-not-collected, 
 .os-key-values .value.os-status-missed,
@@ -135,6 +141,7 @@
 .os-key-values .value.os-status-shipped,
 .os-key-values .value.os-status-received,
 .os-key-values .value.os-status-distributed,
+.os-key-values .value.os-status-virtual,
 .os-key-values .value.os-status-part-distributed,
 .os-key-values .value.os-status-returned {
   width: initial!important;
@@ -145,6 +152,10 @@
 
 .dropdown-menu .fa.os-status-pending:before {
   padding: 0px;
+}
+
+.os-key-values .value.os-status-closed {
+  background: #d9534f;
 }
 
 .os-key-values .value.os-status-collected {
@@ -161,6 +172,10 @@
 
 .os-key-values .value.os-status-not-collected {
   background: #d9534f;
+}
+
+.os-key-values .value.os-status-virtual {
+  background: #99f;
 }
 
 .os-key-values .value.os-status-distributed {
@@ -213,6 +228,18 @@
 
 .progress-bar-missed {
   background-color: #888;
+}
+
+.progress-bar-virtual {
+  background-color: #99f;
+}
+
+.progress-bar-distributed {
+  background-color: #5bc0de;
+}
+
+.progress-bar-closed {
+  background-color: #d9534f;
 }
 
 .os-time-no-wheels tbody tr:first-child,

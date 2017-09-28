@@ -1,6 +1,9 @@
 
 angular.module('openspecimen')
-  .factory('Util', function($rootScope, $timeout, $document, $q, $parse, $modal, $translate, QueryExecutor, Alerts) {
+  .factory('Util', function(
+    $rootScope, $state, $stateParams, $timeout, $document, $q,
+    $parse, $modal, $translate, $http, osRightDrawerSvc, ApiUrls, Alerts) {
+
     var isoDateRe = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2}(?:\.\d*))(?:Z|(\+|-)([\d|:]*))?$/;
     function clear(input) {
       input.splice(0, input.length);
@@ -15,7 +18,24 @@ angular.module('openspecimen')
       unshiftAll(arr, elements);
     };
 
-    function filter($scope, varName, callback) {
+    function filterOpts(opts, filters) {
+      if (!filters) {
+        filters = $stateParams.filters;
+      }
+
+      if (!!filters) {
+        try {
+          angular.extend(opts, angular.fromJson(atob(filters)));
+          osRightDrawerSvc.open();
+        } catch (e) {
+          console.log("Invalid filter");
+        }
+      }
+
+      return opts;
+    }
+
+    function filter($scope, varName, callback, excludeParams) {
       $scope.$watch(varName, function(newVal, oldVal) {
         if (newVal == oldVal) {
           return;
@@ -27,6 +47,24 @@ angular.module('openspecimen')
 
         $scope._filterQ = $timeout(
           function() {
+            var filters = angular.copy(newVal);
+
+            excludeParams = excludeParams || ['includeStats', 'maxResults'];
+            angular.forEach(excludeParams, function(param) { delete filters[param]; });
+
+            angular.forEach(filters,
+              function(value, key) {
+                if (!value) { delete filters[key]; }
+              }
+            );
+
+            var fb = undefined;
+            if (Object.keys(filters).length > 0) {
+              fb = btoa(JSON.stringify(filters));
+            }
+
+            $stateParams.filters = fb;
+            $state.go($state.current.name, $stateParams, {notify: false});
             callback(newVal);
           },
           $rootScope.global.filterWaitInterval
@@ -146,7 +184,8 @@ angular.module('openspecimen')
       minRange = minRange || 1000000;
       fractionDigits = fractionDigits || undefined;
       
-      if (angular.isNumber(input) && input >= minRange) {
+      input = +input;
+      if (angular.isNumber(input) && !isNaN(input) && input >= minRange) {
         input = fractionDigits != undefined ? input.toExponential(fractionDigits) : input.toExponential();
       }
 
@@ -171,7 +210,9 @@ angular.module('openspecimen')
           Alerts.remove(alert);
           if (result.completed) {
             Alerts.info(msgClass + '.downloading_report');
-            QueryExecutor.downloadDataFile(result.dataFile, (filename || entity.name) + '.csv');
+
+            filename = (filename || entity.name) + '.csv';
+            downloadFile(ApiUrls.getBaseUrl() + 'query/export?fileId=' + result.dataFile + '&filename=' + filename);
           } else if (result.dataFile) {
             Alerts.info(msgClass + '.report_will_be_emailed');
           }
@@ -179,6 +220,30 @@ angular.module('openspecimen')
 
         function() {
           Alerts.remove(alert);
+        }
+      );
+    }
+
+    function downloadFile(fileUrl) {
+      $http({method: 'GET', url: fileUrl, responseType: 'arraybuffer'}).then(
+        function(resp) {
+          var headers = resp.headers;
+
+          var contentType = headers('content-type');
+          var filename = headers('content-disposition');
+          filename = filename.substr(filename.indexOf('=') + 1);
+
+          var link = angular.element('<a/>');
+          try {
+            var blob = new Blob([resp.data], { type: contentType });
+            var url = window.URL.createObjectURL(blob);
+
+            link.attr({href: url, download: filename});
+            var clickEvent = new MouseEvent("click", {"view": window, "bubbles": true, "cancelable": false});
+            link[0].dispatchEvent(clickEvent);
+          } catch (ex) {
+            console.log(ex);
+          }
         }
       );
     }
@@ -403,6 +468,8 @@ angular.module('openspecimen')
 
       assign: assign,
 
+      filterOpts: filterOpts,
+
       filter: filter,
 
       splitStr: splitStr,
@@ -416,6 +483,8 @@ angular.module('openspecimen')
       parseDate: parseDate,
 
       downloadReport : downloadReport,
+
+      downloadFile: downloadFile,
 
       booleanPromise: booleanPromise,
 

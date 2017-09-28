@@ -1,6 +1,7 @@
 
 package com.krishagni.catissueplus.core.biospecimen.events;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
@@ -9,6 +10,8 @@ import java.util.Set;
 import java.util.HashSet;
 
 import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.lang3.StringUtils;
+import org.codehaus.jackson.annotate.JsonIgnore;
 
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolRegistration;
 import com.krishagni.catissueplus.core.biospecimen.domain.Visit;
@@ -73,6 +76,9 @@ public class VisitDetail extends AttributeModifiedSupport {
 	// transient variables specifying action to be performed
 	//
 	private boolean forceDelete;
+
+	@JsonIgnore
+	File sprFile;
 
 	public Long getCprId() {
 		return cprId;
@@ -282,6 +288,14 @@ public class VisitDetail extends AttributeModifiedSupport {
 		this.forceDelete = forceDelete;
 	}
 
+	public File getSprFile() {
+		return sprFile;
+	}
+
+	public void setSprFile(File sprFile) {
+		this.sprFile = sprFile;
+	}
+
 	public static VisitDetail from(Visit visit) {
 		return from(visit, true, true);
 	}
@@ -295,12 +309,17 @@ public class VisitDetail extends AttributeModifiedSupport {
 		detail.setComments(visit.getComments());
 		detail.setId(visit.getId());
 		detail.setName(visit.getName());
-		detail.setSurgicalPathologyNumber(visit.getSurgicalPathologyNumber());
 		detail.setSprName(visit.getSprName());
 		detail.setSprLocked(visit.isSprLocked());
 		detail.setVisitDate(visit.getVisitDate());
 		detail.setMissedReason(visit.getMissedReason());
 		detail.setCohort(visit.getCohort());
+
+		if (excludePhi && StringUtils.isNotBlank(visit.getSurgicalPathologyNumber())) {
+			detail.setSurgicalPathologyNumber("###");
+		} else {
+			detail.setSurgicalPathologyNumber(visit.getSurgicalPathologyNumber());
+		}
 
 		if (visit.getMissedBy() != null) {
 			detail.setMissedBy(UserSummary.from(visit.getMissedBy()));

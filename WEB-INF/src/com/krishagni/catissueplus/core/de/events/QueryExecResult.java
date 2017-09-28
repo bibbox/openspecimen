@@ -1,9 +1,14 @@
 package com.krishagni.catissueplus.core.de.events;
 
 import java.util.List;
+import java.util.Map;
 
 public class QueryExecResult {
+	private List<Map<String, Object>> columnMetadata;
+
 	private String[] columnLabels;
+
+	private String[] columnTypes;
 
 	private String[] columnUrls;
 	
@@ -13,12 +18,30 @@ public class QueryExecResult {
 	
 	private int dbRowsCount;
 
+	public List<Map<String, Object>> getColumnMetadata() {
+		return columnMetadata;
+	}
+
+	public QueryExecResult setColumnMetadata(List<Map<String, Object>> columnMetadata) {
+		this.columnMetadata = columnMetadata;
+		return this;
+	}
+
 	public String[] getColumnLabels() {
 		return columnLabels;
 	}
 
 	public QueryExecResult setColumnLabels(String[] columnLabels) {
 		this.columnLabels = columnLabels;
+		return this;
+	}
+
+	public String[] getColumnTypes() {
+		return columnTypes;
+	}
+
+	public QueryExecResult setColumnTypes(String[] columnTypes) {
+		this.columnTypes = columnTypes;
 		return this;
 	}
 

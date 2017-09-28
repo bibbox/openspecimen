@@ -1,6 +1,9 @@
 
 angular.module('os.biospecimen.participant.overview', ['os.biospecimen.models'])
-  .controller('ParticipantOverviewCtrl', function($scope, hasFieldsFn, visits, Visit, ExtensionsUtil, Util, Alerts) {
+  .controller('ParticipantOverviewCtrl', function(
+    $scope, $state, $stateParams, hasFieldsFn, storePhi, cp, cpr, visits,
+    Visit, CollectSpecimensSvc, ExtensionsUtil, Util, Alerts) {
+
     function init() {
       $scope.occurredVisits    = Visit.completedVisits(visits);
       $scope.anticipatedVisits = Visit.anticipatedVisits(visits);
@@ -10,7 +13,12 @@ angular.module('os.biospecimen.participant.overview', ['os.biospecimen.models'])
       $scope.partCtx = {
         obj: {cpr: $scope.cpr},
         inObjs: ['cpr'],
-        showEdit: hasFieldsFn(['cpr'], [])
+        showEdit: hasFieldsFn(['cpr'], []),
+        auditObjs: [
+          {objectId: cpr.id, objectName: 'collection_protocol_registration'},
+          {objectId: cpr.participant.id, objectName: 'participant'}
+        ],
+        showAnonymize: storePhi
       }
     }
 
@@ -33,6 +41,16 @@ angular.module('os.biospecimen.participant.overview', ['os.biospecimen.models'])
           )
         }
       });
+    }
+
+    $scope.collect = function(visit) {
+      var retSt = {state: $state.current, params: $stateParams};
+      CollectSpecimensSvc.collectVisit(retSt, cp, cpr.id, visit);
+    }
+
+    $scope.collectPending = function(visit) {
+      var retSt = {state: $state.current, params: $stateParams};
+      CollectSpecimensSvc.collectPending(retSt, cp, cpr.id, visit);
     }
 
     init();

@@ -51,7 +51,13 @@ public enum UserErrorCode implements ErrorCode {
 
 	ANN_MESSAGE_REQ,
 	
-	INVALID_TYPE;
+	INVALID_TYPE,
+
+	SIGN_UP_NOT_ALLOWED,
+
+	FORGOT_PASSWD_DISABLED,
+
+	NOT_FOUND_IN_OS_DOMAIN;
 	
 	public String code() {
 		return "USER_" + this.name();

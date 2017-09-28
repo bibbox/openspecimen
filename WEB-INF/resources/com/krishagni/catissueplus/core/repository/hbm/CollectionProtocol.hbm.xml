@@ -37,6 +37,8 @@
 
     <property name="sopDocumentName" column="SOP_DOCUMENT_NAME"/>
 
+    <property name="storeSprEnabled" column="STORE_SPRS"/>
+
     <property name="extractSprText" column="EXTRACT_SPR_TEXT"/>
 
     <property name="descriptionURL" column="DESCRIPTION_URL"/>
@@ -68,6 +70,14 @@
     <property name="containerSelectionStrategy" column="CONTAINER_SEL_STRATEGY"/>
 
     <property name="aliquotsInSameContainer" column="ALIQUOTS_IN_SAME_CONT"/>
+
+    <property name="visitCollectionMode" column="VISIT_COLLECTION_MODE">
+      <type name="org.hibernate.type.EnumType">
+        <param name="enumClass">
+          com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol$VisitCollectionMode
+        </param>
+      </type>
+    </property>
 
     <property name="visitNamePrintMode" column="VISIT_NAME_PRINT_MODE">
       <type name="org.hibernate.type.EnumType">
@@ -130,6 +140,13 @@
         <filter name="activeEntity"/>
       </many-to-many>
     </set>
+
+    <set name="distributionProtocols" table="OS_CP_ALLOWED_DPS" inverse="false">
+      <key column="CP_ID"/>
+      <many-to-many class="com.krishagni.catissueplus.core.administrative.domain.DistributionProtocol" column="DP_ID">
+        <filter name="activeEntity"/>
+      </many-to-many>
+    </set>
     
     <filter name="activeEntity"/>
 
@@ -189,7 +206,7 @@
         cpe.eventLabel = :label
     </query>
     
-    <query name="getCpeByShortTitleAndEventLabel">
+    <query name="getCpesByShortTitleAndEventLabels">
       select
         cpe
       from
@@ -197,14 +214,14 @@
         join cp.collectionProtocolEvents cpe
       where
         cp.shortTitle = :shortTitle and
-        cpe.eventLabel = :label
+        cpe.eventLabel in (:labels)
     </query>
 
-    <query name="getCpByTitle">
+    <query name="getCpsByTitle">
       from 
         com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol
       where
-        title = :title and 
+        title in (:titles) and
         activityStatus = 'Active'
     </query>
 

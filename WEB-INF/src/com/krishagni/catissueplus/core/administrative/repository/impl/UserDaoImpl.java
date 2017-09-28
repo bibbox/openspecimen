@@ -3,10 +3,9 @@ package com.krishagni.catissueplus.core.administrative.repository.impl;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Date;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Collectors;
 
 import org.apache.commons.collections.CollectionUtils;
@@ -24,6 +23,7 @@ import com.krishagni.catissueplus.core.administrative.repository.UserDao;
 import com.krishagni.catissueplus.core.administrative.repository.UserListCriteria;
 import com.krishagni.catissueplus.core.common.events.DependentEntityDetail;
 import com.krishagni.catissueplus.core.common.repository.AbstractDao;
+import com.krishagni.catissueplus.core.common.util.Utility;
 
 public class UserDaoImpl extends AbstractDao<User> implements UserDao {
 	
@@ -66,11 +66,15 @@ public class UserDaoImpl extends AbstractDao<User> implements UserDao {
 		
 		return criteria.list();
 	}
-	
+
 	public User getUser(String loginName, String domainName) {
-		String hql = String.format(GET_USER_BY_LOGIN_NAME_HQL, " and activityStatus != 'Disabled'");
-		List<User> users = executeGetUserByLoginNameHql(hql, loginName, domainName);
+		List<User> users = getUsers(Collections.singletonList(loginName), domainName);
 		return users.isEmpty() ? null : users.get(0);
+	}
+
+	public List<User> getUsers(List<String> loginNames, String domainName) {
+		String hql = String.format(GET_USER_BY_LOGIN_NAME_HQL, " and activityStatus != 'Disabled'");
+		return executeGetUserByLoginNameHql(hql, loginNames, domainName);
 	}
 	
 	@Override
@@ -86,7 +90,7 @@ public class UserDaoImpl extends AbstractDao<User> implements UserDao {
 	
 	public Boolean isUniqueLoginName(String loginName, String domainName) {
 		String hql = String.format(GET_USER_BY_LOGIN_NAME_HQL, "");
-		List<User> users = executeGetUserByLoginNameHql(hql, loginName, domainName);
+		List<User> users = executeGetUserByLoginNameHql(hql, Collections.singletonList(loginName), domainName);
 		return users.isEmpty();
 	}
 	
@@ -192,18 +196,15 @@ public class UserDaoImpl extends AbstractDao<User> implements UserDao {
 			.executeUpdate();
 	}
 
-	@SuppressWarnings("unchecked")
-	public Map<Long, Integer> getCpCount(Collection<Long> userIds) {
-		List<Object[]> rows = getCurrentSession().getNamedQuery(GET_CP_COUNT_BY_USERS)
-			.setParameterList("userIds", userIds)
-			.list();
+	@Override
+	public List<User> getSuperAndInstituteAdmins(String instituteName) {
+		UserListCriteria crit = new UserListCriteria().activityStatus("Active").type("SUPER");
+		List<User> users = getUsers(crit);
 
-		Map<Long, Integer> result = new HashMap<>();
-		for (Object[] row : rows) {
-			result.put((Long)row[0], (Integer)row[1]);
+		if (StringUtils.isNotBlank(instituteName)) {
+			users.addAll(getUsers(crit.type("INSTITUTE").instituteName(instituteName)));
 		}
-
-		return result;
+		return users;
 	}
 
 	private Criteria getUsersListQuery(UserListCriteria crit) {
@@ -219,7 +220,6 @@ public class UserDaoImpl extends AbstractDao<User> implements UserDao {
 		return addSearchConditions(criteria, crit);
 	}
 
-
 	private String[] excludeUsersList() {
 		return new String[] {
 			User.SYS_USER,
@@ -229,12 +229,11 @@ public class UserDaoImpl extends AbstractDao<User> implements UserDao {
 	}
 
 	@SuppressWarnings("unchecked")
-	private List<User> executeGetUserByLoginNameHql(String hql, String loginName, String domainName) {
-		return sessionFactory.getCurrentSession()
-				.createQuery(hql)
-				.setString("loginName", loginName)
-				.setString("domainName", domainName)
-				.list();
+	private List<User> executeGetUserByLoginNameHql(String hql, Collection<String> loginNames, String domainName) {
+		return sessionFactory.getCurrentSession().createQuery(hql)
+			.setParameterList("loginNames", loginNames)
+			.setString("domainName", domainName)
+			.list();
 	}
 	
 	@SuppressWarnings("unchecked")
@@ -259,10 +258,16 @@ public class UserDaoImpl extends AbstractDao<User> implements UserDao {
 					.add(Restrictions.ilike("u.loginName", searchString, MatchMode.ANYWHERE))
 			);
 		}
+
+		if (CollectionUtils.isNotEmpty(listCrit.ids())) {
+			criteria.add(Restrictions.in("u.id", listCrit.ids()));
+		}
 		
 		addActivityStatusRestriction(criteria, listCrit.activityStatus());
 		addInstituteRestriction(criteria, listCrit.instituteName());
 		addDomainRestriction(criteria, listCrit.domainName());
+		addTypeRestriction(criteria, listCrit.type());
+		addActiveSinceRestriction(criteria, listCrit.activeSince());
 		return criteria;
 	}
 
@@ -293,6 +298,14 @@ public class UserDaoImpl extends AbstractDao<User> implements UserDao {
 		
 		criteria.add(Restrictions.eq("u.activityStatus", activityStatus));
 	}
+
+	private void addTypeRestriction(Criteria criteria, String type) {
+		if (StringUtils.isBlank(type)) {
+			return;
+		}
+
+		criteria.add(Restrictions.eq("u.type", User.Type.valueOf(type)));
+	}
 	
 	private void addInstituteRestriction(Criteria criteria, String instituteName) {
 		if (StringUtils.isBlank(instituteName)) {
@@ -312,6 +325,14 @@ public class UserDaoImpl extends AbstractDao<User> implements UserDao {
 			.add(Restrictions.eq("domain.name", domainName));
 	}
 
+	private void addActiveSinceRestriction(Criteria criteria, Date activeSince) {
+		if (activeSince == null) {
+			return;
+		}
+
+		criteria.add(Restrictions.ge("u.creationDate", Utility.chopTime(activeSince)));
+	}
+
 	private List<DependentEntityDetail> getDependentEntities(List<Object[]> rows) {
 		List<DependentEntityDetail> dependentEntities = new ArrayList<DependentEntityDetail>();
 		
@@ -325,7 +346,7 @@ public class UserDaoImpl extends AbstractDao<User> implements UserDao {
  	}
 
 	private static final String GET_USER_BY_LOGIN_NAME_HQL =
-			"from com.krishagni.catissueplus.core.administrative.domain.User where loginName = :loginName and authDomain.name = :domainName  %s";
+			"from com.krishagni.catissueplus.core.administrative.domain.User where loginName in (:loginNames) and authDomain.name = :domainName  %s";
 	
 	private static final String GET_USER_BY_EMAIL_HQL = 
 			"from com.krishagni.catissueplus.core.administrative.domain.User where emailAddress = :emailAddress %s";
@@ -333,8 +354,6 @@ public class UserDaoImpl extends AbstractDao<User> implements UserDao {
 	private static final String FQN = User.class.getName();
 
 	private static final String GET_DEPENDENT_ENTITIES = FQN + ".getDependentEntities";
-
-	private static final String GET_CP_COUNT_BY_USERS = FQN + ".getCpCountByUsers";
 
 	private static final String TOKEN_FQN = ForgotPasswordToken.class.getName();
 	

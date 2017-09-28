@@ -97,4 +97,19 @@ public interface FormDao extends Dao<FormContextBean> {
 	public void deleteFormContexts(Collection<Long> formIds);
 
 	public void deleteRecords(Long formCtxtId, Collection<Long> recordIds);
+
+	int deleteRecords(Long cpId, List<String> entityTypes, Long objectId);
+
+	int deleteFormContexts(Long cpId, List<String> entityTypes);
+
+	//
+	// used by form data exporter
+	//
+	List<Map<String, Object>> getRegistrationRecords(Long cpId, Long formId, List<String> ppids, int startAt, int maxResults);
+
+	List<Map<String, Object>> getParticipantRecords(Long cpId, Long formId, List<String> ppids, int startAt, int maxResults);
+
+	List<Map<String, Object>> getVisitRecords(Long cpId, Long formId, List<String> visitNames, int startAt, int maxResults);
+
+	List<Map<String, Object>> getSpecimenRecords(Long cpId, Long formId, String entityType, List<String> spmnLabels, int startAt, int maxResults);
 }

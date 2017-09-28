@@ -8,7 +8,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Supplier;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.apache.commons.collections.CollectionUtils;
@@ -36,16 +36,18 @@ import com.krishagni.catissueplus.core.common.events.Operation;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
 import com.krishagni.catissueplus.core.common.events.Resource;
 import com.krishagni.catissueplus.core.common.events.ResponseEvent;
-import com.krishagni.catissueplus.core.common.service.ObjectStateParamsResolver;
+import com.krishagni.catissueplus.core.common.service.ObjectAccessor;
 import com.krishagni.catissueplus.core.common.util.AuthUtil;
 import com.krishagni.catissueplus.core.common.util.Status;
 import com.krishagni.catissueplus.core.common.util.Utility;
+import com.krishagni.catissueplus.core.exporter.domain.ExportJob;
 import com.krishagni.catissueplus.core.exporter.services.ExportService;
 import com.krishagni.rbac.common.errors.RbacErrorCode;
+import com.krishagni.rbac.events.SubjectRoleOpNotif;
 import com.krishagni.rbac.service.RbacService;
 
 
-public class SiteServiceImpl implements SiteService, ObjectStateParamsResolver, InitializingBean {
+public class SiteServiceImpl implements SiteService, ObjectAccessor, InitializingBean {
 	private SiteFactory siteFactory;
 
 	private DaoFactory daoFactory;
@@ -108,14 +110,7 @@ public class SiteServiceImpl implements SiteService, ObjectStateParamsResolver, 
 	@PlusTransactional		
 	public ResponseEvent<SiteDetail> getSite(RequestEvent<SiteQueryCriteria> req) {
 		SiteQueryCriteria crit = req.getPayload();
-		Site site = null;
-		
-		if (AuthUtil.isAdmin()) {
-			site = getFromDb(crit);
-		} else {
-			site = getFromAccessibleSite(crit);
-		}
-		
+		Site site = getFromAccessibleSite(crit.getId(), crit.getName());
 		if (site == null) {
 			return ResponseEvent.userError(SiteErrorCode.NOT_FOUND);
 		}
@@ -135,7 +130,7 @@ public class SiteServiceImpl implements SiteService, ObjectStateParamsResolver, 
 			ose.checkAndThrow();
 			daoFactory.getSiteDao().saveOrUpdate(site, true);
 			site.addOrUpdateExtension();
-			addDefaultCoordinatorRoles(site, site.getCoordinators());
+			addDefaultCoordinatorRoles(site, site.getCoordinators(), "CREATE");
 			return ResponseEvent.response(SiteDetail.from(site));
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
@@ -210,7 +205,7 @@ public class SiteServiceImpl implements SiteService, ObjectStateParamsResolver, 
 
 			AccessCtrlMgr.getInstance().ensureCreateUpdateDeleteSiteRights(existing);
 			
-			removeDefaultCoordinatorRoles(existing, existing.getCoordinators());
+			removeDefaultCoordinatorRoles(existing, existing.getCoordinators(), "DELETE");
 			existing.delete(deleteOp.isClose());
 			return ResponseEvent.response(SiteDetail.from(existing));
 		} catch (OpenSpecimenException ose) {
@@ -222,17 +217,30 @@ public class SiteServiceImpl implements SiteService, ObjectStateParamsResolver, 
 
 	@Override
 	public String getObjectName() {
-		return "site";
+		return Site.getEntityName();
 	}
 
 	@Override
 	@PlusTransactional
-	public Map<String, Object> resolve(String key, Object value) {
+	public Map<String, Object> resolveUrl(String key, Object value) {
 		if (key.equals("id")) {
 			value = Long.valueOf(value.toString());
 		}
 
 		return daoFactory.getSiteDao().getSiteIds(key, value);
+	}
+
+	@Override
+	public String getAuditTable() {
+		return "CATISSUE_SITE_AUD";
+	}
+
+	@Override
+	public void ensureReadAllowed(Long id) {
+		Site site = getFromAccessibleSite(id, null);
+		if (site == null) {
+			throw OpenSpecimenException.userError(SiteErrorCode.NOT_FOUND);
+		}
 	}
 
 	@Override
@@ -293,10 +301,10 @@ public class SiteServiceImpl implements SiteService, ObjectStateParamsResolver, 
 		existing.addOrUpdateExtension();
 
 		if (Status.isClosedOrDisabledStatus(existing.getActivityStatus())) {
-			removeDefaultCoordinatorRoles(existing, existing.getCoordinators());
+			removeDefaultCoordinatorRoles(existing, existing.getCoordinators(), "UPDATE");
 		} else {
-			removeDefaultCoordinatorRoles(existing, removedCoordinators);
-			addDefaultCoordinatorRoles(existing, addedCoordinators);
+			removeDefaultCoordinatorRoles(existing, removedCoordinators, "UPDATE");
+			addDefaultCoordinatorRoles(existing, addedCoordinators, "UPDATE");
 		}
 
 		return SiteDetail.from(existing);
@@ -323,16 +331,32 @@ public class SiteServiceImpl implements SiteService, ObjectStateParamsResolver, 
 		return site;
 	}
 
-	private void addDefaultCoordinatorRoles(Site site, Collection<User> users) {
-		for (User user: users) {
-			rbacSvc.addSubjectRole(site, null, user, getDefaultCoordinatorRoles());
+	private void addDefaultCoordinatorRoles(Site site, Collection<User> users, String siteOp) {
+		SubjectRoleOpNotif notifReq = getNotifReq(site, siteOp, "ADD");
+		for (User user : users) {
+			notifReq.setUser(user);
+			notifReq.setAdminNotifParams(new Object[] { user.getFirstName(), user.getLastName(), site.getName() });
+			rbacSvc.addSubjectRole(site, null, user, getDefaultCoordinatorRoles(), notifReq);
 		}
 	}
 	
-	private void removeDefaultCoordinatorRoles(Site site, Collection<User> users) {
+	private void removeDefaultCoordinatorRoles(Site site, Collection<User> users, String siteOp) {
+		SubjectRoleOpNotif notifReq = getNotifReq(site, siteOp, "REMOVE");
 		for (User user: users) {
-			rbacSvc.removeSubjectRole(site, null, user, getDefaultCoordinatorRoles());
+			notifReq.setUser(user);
+			notifReq.setAdminNotifParams(new Object[]{user.getFirstName(), user.getLastName(), site.getName()});
+			rbacSvc.removeSubjectRole(site, null, user, getDefaultCoordinatorRoles(), notifReq);
 		}
+	}
+
+	private SubjectRoleOpNotif getNotifReq(Site site, String siteOp, String roleOp) {
+		SubjectRoleOpNotif notifReq = new SubjectRoleOpNotif();
+		notifReq.setEndUserOp(siteOp);
+		notifReq.setAdmins(AccessCtrlMgr.getInstance().getSuperAdmins());
+		notifReq.setAdminNotifMsg("site_admin_notif_role_" + roleOp.toLowerCase());
+		notifReq.setSubjectNotifMsg(siteOp.equals("DELETE") ? "site_delete_user_notif": "site_user_notif_role_" + roleOp.toLowerCase());
+		notifReq.setSubjectNotifParams(new Object[] { site.getName() });
+		return notifReq;
 	}
 	
 	private String[] getDefaultCoordinatorRoles() {
@@ -394,10 +418,12 @@ public class SiteServiceImpl implements SiteService, ObjectStateParamsResolver, 
 			accessibleSites = AccessCtrlMgr.getInstance().getRoleAssignedSites();
 		}
 
+		boolean noIds = CollectionUtils.isEmpty(criteria.ids());
 		boolean noIncTypes = CollectionUtils.isEmpty(criteria.includeTypes());
 		boolean noExlTypes = CollectionUtils.isEmpty(criteria.excludeTypes());
 		boolean noSearchTerm = StringUtils.isBlank(criteria.query());
 		return accessibleSites.stream()
+			.filter(site -> noIds || criteria.ids().contains(site.getId()))
 			.filter(site -> noIncTypes || criteria.includeTypes().contains(site.getType()))
 			.filter(site -> noExlTypes || !criteria.excludeTypes().contains(site.getType()))
 			.filter(site -> noSearchTerm || StringUtils.containsIgnoreCase(site.getName(), criteria.query()))
@@ -405,16 +431,17 @@ public class SiteServiceImpl implements SiteService, ObjectStateParamsResolver, 
 			.collect(Collectors.toList());
 	}
 	
-	private Site getFromAccessibleSite(SiteQueryCriteria crit) {
+	private Site getFromAccessibleSite(Long siteId, String siteName) {
+		if (AuthUtil.isAdmin()) {
+			return getSite(siteId, siteName);
+		}
+
+		Site result = null;
 		Set<Site> accessibleSites = AccessCtrlMgr.getInstance().getRoleAssignedSites();
-		
-		Long siteId = crit.getId();
-		String siteName = crit.getName();
-		Site result = null;		
 		for (Site site : accessibleSites) {
-			if (siteId != null && siteId.equals(site.getId())) {
+			if (site.getId().equals(siteId)) {
 				result = site;
-			} else if (StringUtils.isNotBlank(siteName) && siteName.equals(site.getName())) {
+			} else if (site.getName().equals(siteName)) {
 				result = site;
 			}
 			
@@ -426,7 +453,7 @@ public class SiteServiceImpl implements SiteService, ObjectStateParamsResolver, 
 		if (result == null) {
 			try {
 				AccessCtrlMgr.getInstance().ensureCreateShipmentRights();
-				result = getFromDb(crit);
+				result = getSite(siteId, siteName);
 			} catch (OpenSpecimenException ose) {
 				
 			}
@@ -435,18 +462,6 @@ public class SiteServiceImpl implements SiteService, ObjectStateParamsResolver, 
 		return result;
 	}
 	
-	private Site getFromDb(SiteQueryCriteria crit) {
-		Site result = null;
-		
-		if (crit.getId() != null) {
-			result = daoFactory.getSiteDao().getById(crit.getId());
-		} else if (crit.getName() != null) {
-			result = daoFactory.getSiteDao().getSiteByName(crit.getName());
-		}		
-		
-		return result;
-	}
-
 	private SiteDetail curateBulkUpdateFields(SiteDetail input) {
 		SiteDetail detail = new SiteDetail();
 
@@ -473,28 +488,28 @@ public class SiteServiceImpl implements SiteService, ObjectStateParamsResolver, 
 		return detail;
 	}
 
-	private Supplier<List<? extends Object>> getSitesGenerator() {
-		return new Supplier<List<? extends Object>>() {
+	private Function<ExportJob, List<? extends Object>> getSitesGenerator() {
+		return new Function<ExportJob, List<? extends Object>>() {
 			private boolean endOfSites;
 
 			private int startAt;
 
 			@Override
-			public List<? extends Object> get() {
+			public List<? extends Object> apply(ExportJob job) {
 				if (endOfSites) {
 					return Collections.emptyList();
 				}
 
 				Collection<Site> sites;
 				if (AuthUtil.isAdmin()) {
-					sites = daoFactory.getSiteDao().getSites(new SiteListCriteria().startAt(startAt));
+					sites = daoFactory.getSiteDao().getSites(new SiteListCriteria().startAt(startAt).ids(job.getRecordIds()));
 					startAt += sites.size();
 
-					if (sites.isEmpty()) {
+					if (sites.isEmpty() || CollectionUtils.isNotEmpty(job.getRecordIds())) {
 						endOfSites = true;
 					}
 				} else {
-					sites = getAccessibleSites(new SiteListCriteria());
+					sites = getAccessibleSites(new SiteListCriteria().ids(job.getRecordIds()));
 					endOfSites = true;
 				}
 

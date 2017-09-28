@@ -35,8 +35,6 @@ import com.krishagni.catissueplus.core.common.events.ResponseEvent;
 import com.krishagni.catissueplus.core.common.util.AuthUtil;
 
 public class AuthTokenFilter extends GenericFilterBean {
-	private static final String OS_AUTH_TOKEN_HDR = "X-OS-API-TOKEN";
-	
 	private static final String OS_CLIENT_HDR = "X-OS-API-CLIENT";
 	
 	private static final String BASIC_AUTH = "Basic ";
@@ -94,6 +92,7 @@ public class AuthTokenFilter extends GenericFilterBean {
 		httpResp.setHeader("Access-Control-Allow-Credentials", "true");
 		httpResp.setHeader("Access-Control-Allow-Methods", "POST, GET, PUT, DELETE, PATCH, OPTIONS");
 		httpResp.setHeader("Access-Control-Allow-Headers", "Origin, Accept, Content-Type, X-OS-API-TOKEN, X-OS-API-CLIENT");
+		httpResp.setHeader("Access-Control-Expose-Headers", "Content-Disposition, Content-Length, Content-Type");
 
 		httpResp.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
 		httpResp.setHeader("Pragma", "no-cache");
@@ -117,7 +116,7 @@ public class AuthTokenFilter extends GenericFilterBean {
 		}
 
 		User userDetails = null;
-		String authToken = httpReq.getHeader(OS_AUTH_TOKEN_HDR);
+		String authToken = AuthUtil.getAuthTokenFromHeader(httpReq);
 		if (authToken == null) {
 			authToken = AuthUtil.getTokenFromCookie(httpReq);
 		}
@@ -127,9 +126,8 @@ public class AuthTokenFilter extends GenericFilterBean {
 			TokenDetail tokenDetail = new TokenDetail();
 			tokenDetail.setToken(authToken);
 			tokenDetail.setIpAddress(httpReq.getRemoteAddr());			
-			
-			RequestEvent<TokenDetail> atReq = new RequestEvent<TokenDetail>(tokenDetail);			
-			ResponseEvent<AuthToken> atResp = authService.validateToken(atReq);
+
+			ResponseEvent<AuthToken> atResp = authService.validateToken(new RequestEvent<>(tokenDetail));
 			if (atResp.isSuccessful()) {
 				userDetails = atResp.getPayload().getUser();
 				loginAuditLog = atResp.getPayload().getLoginAuditLog();
@@ -141,6 +139,7 @@ public class AuthTokenFilter extends GenericFilterBean {
 		if (userDetails == null) {
 			String clientHdr = httpReq.getHeader(OS_CLIENT_HDR);
 			if (clientHdr != null && clientHdr.equals("webui")) {
+				AuthUtil.clearTokenCookie(httpReq, httpResp);
 				setUnauthorizedResp(httpResp);
 			} else {
 				setRequireAuthResp(httpResp);

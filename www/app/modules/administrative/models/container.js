@@ -47,6 +47,14 @@ angular.module('os.administrative.models.container', ['os.common.models'])
       );
     };
 
+    Container.prototype.getSpecimensCount = function(filterOpts) {
+      return $http.get(Container.url() + this.$id() + '/specimens-count', {params: filterOpts}).then(
+        function(resp) {
+          return resp.data;
+        }
+      );
+    }
+
     Container.prototype.generateReport = function() {
       return $http.get(Container.url() + this.$id() + '/report').then(
         function(resp) {
@@ -166,8 +174,8 @@ angular.module('os.administrative.models.container', ['os.common.models'])
       return Container._flatten(containers, 'childContainers');
     };
 
-    Container.getByName = function(name) {
-      return $http.get(Container.url() + '/byname/', {params: {name: name}}).then(
+    Container.getByName = function(name, barcode) {
+      return $http.get(Container.url() + '/byname/', {params: {name: name, barcode: barcode}}).then(
         function(result) {
           return new Container(result.data);
         }
@@ -247,7 +255,7 @@ angular.module('os.administrative.models.container', ['os.common.models'])
     }
 
     Container.bulkDelete = function(containerIds) {
-      return $http.delete(Container.url(), {params: {id: containerIds}})
+      return $http.delete(Container.url(), {params: {id: containerIds, forceDelete: true}})
         .then(Container.modelArrayRespTransform);
     }
 

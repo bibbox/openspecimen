@@ -7,6 +7,7 @@ import java.util.stream.Collectors;
 import com.fasterxml.jackson.annotation.JsonFilter;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
+import com.krishagni.catissueplus.core.administrative.events.DistributionProtocolSummary;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
 import com.krishagni.catissueplus.core.common.events.UserSummary;
 import com.krishagni.catissueplus.core.de.events.ExtensionDetail;
@@ -27,6 +28,8 @@ public class CollectionProtocolDetail extends CollectionProtocolSummary {
 	private String sopDocumentUrl;
 
 	private String sopDocumentName;
+
+	private Boolean storeSprEnabled;
 
 	private Boolean extractSprText;
 
@@ -54,6 +57,8 @@ public class CollectionProtocolDetail extends CollectionProtocolSummary {
 
 	private Boolean aliquotsInSameContainer;
 
+	private String visitCollectionMode;
+
 	private String visitNamePrintMode;
 
 	private Integer visitNamePrintCopies;
@@ -61,6 +66,8 @@ public class CollectionProtocolDetail extends CollectionProtocolSummary {
 	private String spmnLabelPrePrintMode;
 	
 	private List<CpSpecimenLabelPrintSettingDetail> spmnLabelPrintSettings;
+
+	private List<DistributionProtocolSummary> distributionProtocols;
 
 	private String activityStatus;
 	
@@ -127,6 +134,14 @@ public class CollectionProtocolDetail extends CollectionProtocolSummary {
 
 	public void setSopDocumentName(String sopDocumentName) {
 		this.sopDocumentName = sopDocumentName;
+	}
+
+	public Boolean getStoreSprEnabled() {
+		return storeSprEnabled;
+	}
+
+	public void setStoreSprEnabled(Boolean storeSprEnabled) {
+		this.storeSprEnabled = storeSprEnabled;
 	}
 
 	public Boolean getExtractSprText() {
@@ -233,6 +248,14 @@ public class CollectionProtocolDetail extends CollectionProtocolSummary {
 		this.aliquotsInSameContainer = aliquotsInSameContainer;
 	}
 
+	public String getVisitCollectionMode() {
+		return visitCollectionMode;
+	}
+
+	public void setVisitCollectionMode(String visitCollectionMode) {
+		this.visitCollectionMode = visitCollectionMode;
+	}
+
 	public String getVisitNamePrintMode() {
 		return visitNamePrintMode;
 	}
@@ -263,6 +286,14 @@ public class CollectionProtocolDetail extends CollectionProtocolSummary {
 
 	public void setSpmnLabelPrintSettings(List<CpSpecimenLabelPrintSettingDetail> spmnLabelPrintSettings) {
 		this.spmnLabelPrintSettings = spmnLabelPrintSettings;
+	}
+
+	public List<DistributionProtocolSummary> getDistributionProtocols() {
+		return distributionProtocols;
+	}
+
+	public void setDistributionProtocols(List<DistributionProtocolSummary> distributionProtocols) {
+		this.distributionProtocols = distributionProtocols;
 	}
 
 	public String getActivityStatus() {
@@ -311,6 +342,7 @@ public class CollectionProtocolDetail extends CollectionProtocolSummary {
 		result.setAnticipatedParticipantsCount(cp.getEnrollment());
 		result.setSopDocumentUrl(cp.getSopDocumentUrl());
 		result.setSopDocumentName(cp.getSopDocumentName());
+		result.setStoreSprEnabled(cp.getStoreSprEnabled());
 		result.setExtractSprText(cp.getExtractSprText());
 		result.setDescriptionUrl(cp.getDescriptionURL());
 		result.setSpecimenLabelFmt(cp.getSpecimenLabelFormat());
@@ -325,10 +357,12 @@ public class CollectionProtocolDetail extends CollectionProtocolSummary {
 		result.setBarcodingEnabled(cp.isBarcodingEnabled());
 		result.setContainerSelectionStrategy(cp.getContainerSelectionStrategy());
 		result.setAliquotsInSameContainer(cp.getAliquotsInSameContainer());
+		result.setVisitCollectionMode(cp.getVisitCollectionMode().name());
 		result.setVisitNamePrintMode(cp.getVisitNamePrintMode().name());
 		result.setVisitNamePrintCopies(cp.getVisitNamePrintCopies());
 		result.setSpmnLabelPrePrintMode(cp.getSpmnLabelPrePrintMode().name());
 		result.setSpmnLabelPrintSettings(CpSpecimenLabelPrintSettingDetail.from(cp.getSpmnLabelPrintSettings()));
+		result.setDistributionProtocols(DistributionProtocolSummary.from(cp.getDistributionProtocols()));
 		result.setActivityStatus(cp.getActivityStatus());
 		result.setCpSites(CollectionProtocolSiteDetail.from(cp.getSites()));
 		result.setExtensionDetail(ExtensionDetail.from(cp.getExtension()));

@@ -8,6 +8,7 @@ import java.util.stream.Collectors;
 
 import org.apache.commons.collections.CollectionUtils;
 import org.codehaus.jackson.annotate.JsonIgnore;
+import org.codehaus.jackson.annotate.JsonProperty;
 
 import com.krishagni.catissueplus.core.de.domain.DeObject;
 import com.krishagni.catissueplus.core.de.domain.DeObject.Attr;
@@ -63,6 +64,7 @@ public class ExtensionDetail {
 		this.attrs = attrs;
 	}
 
+	@JsonProperty
 	public void setAttrsMap(Map<String, Object> attrsMap) {
 		attrs.clear();
 		
@@ -113,7 +115,7 @@ public class ExtensionDetail {
 							.map(ExtensionDetail::getAttrsMap).collect(Collectors.toList());
 					attrsMap.put(attr.getName(), sfAttrsMap);
 				}
-			} else if (attr.getValue() instanceof List) {
+			} else if ("fileUpload".equals(attr.getType()) || attr.getValue() instanceof List) {
 				attrsMap.put(attr.getName(), attr.getValue());
 			} else {
 				Object value = attr.getDisplayValue();

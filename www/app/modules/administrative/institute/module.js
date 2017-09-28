@@ -10,7 +10,7 @@ angular.module('os.administrative.institute',
   .config(function($stateProvider) {
     $stateProvider
       .state('institute-list', {
-        url: '/institutes',
+        url: '/institutes?filters',
         templateUrl: 'modules/administrative/institute/list.html',
         controller: 'InstituteListCtrl',
         parent: 'signed-in'
@@ -36,9 +36,9 @@ angular.module('os.administrative.institute',
         resolve: {
           importDetail: function() {
             return {
-              breadcrumbs: [{state: 'institute-list', title: 'institutes.list'}],
+              breadcrumbs: [{state: 'institute-list', title: 'institute.list'}],
               objectType: 'institute',
-              title: 'institutes.bulk_import',
+              title: 'institute.bulk_import',
               onSuccess: {state: 'institute-list'}
             };
           }
@@ -52,8 +52,8 @@ angular.module('os.administrative.institute',
         resolve: {
           importDetail: function() {
             return {
-              breadcrumbs: [{state: 'institute-list', title: 'institutes.list'}],
-              title: 'institutes.bulk_import_jobs',
+              breadcrumbs: [{state: 'institute-list', title: 'institute.list'}],
+              title: 'institute.bulk_import_jobs',
               objectTypes: ['institute']
             }
           }

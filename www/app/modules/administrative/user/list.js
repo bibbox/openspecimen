@@ -13,13 +13,14 @@ angular.module('os.administrative.user.list', ['os.administrative.models'])
       $scope.ctx = {
         exportDetail: {objectType: 'user'}
       };
+
       initPvsAndFilterOpts();
       loadUsers($scope.userFilterOpts);
       ItemsHolder.setItems('users', undefined);
     }
   
     function initPvsAndFilterOpts() {
-      $scope.userFilterOpts = {includeStats: true, maxResults: pagerOpts.recordsPerPage + 1};
+      $scope.userFilterOpts = Util.filterOpts({includeStats: true, maxResults: pagerOpts.recordsPerPage + 1});
       $scope.$on('osRightDrawerOpen', function() {
         if (pvInit) {
           return;
@@ -75,6 +76,11 @@ angular.module('os.administrative.user.list', ['os.administrative.models'])
     }
 
     function loadUsers(filterOpts) {
+      if (!currentUser.admin) {
+        filterOpts = filterOpts || {};
+        filterOpts.institute = currentUser.instituteName;
+      }
+
       User.query(filterOpts).then(function(result) {
         if (!$scope.users && result.length > 12) {
           //
@@ -93,9 +99,9 @@ angular.module('os.administrative.user.list', ['os.administrative.models'])
       return User.getCount($scope.userFilterOpts)
     }
 
-    function activateUsers(msgKey) {
+    function updateStatus(status, msgKey) {
       var users = $scope.ctx.checkList.getSelectedItems();
-      User.bulkUpdate({detail: {activityStatus: 'Active'}, ids: getUserIds(users)}).then(
+      User.bulkUpdate({detail: {activityStatus: status}, ids: getUserIds(users)}).then(
         function(savedUsers) {
           Alerts.success(msgKey);
 
@@ -144,7 +150,9 @@ angular.module('os.administrative.user.list', ['os.administrative.models'])
       var opts = {
         confirmDelete: 'user.delete_users',
         successMessage: 'user.users_deleted',
-        onBulkDeletion: loadUsers
+        onBulkDeletion: function() {
+          loadUsers($scope.userFilterOpts);
+        }
       }
 
       DeleteUtil.bulkDelete({bulkDelete: User.bulkDelete}, getUserIds(users), opts);
@@ -157,11 +165,15 @@ angular.module('os.administrative.user.list', ['os.administrative.models'])
     }
 
     $scope.unlockUsers = function() {
-      activateUsers('user.users_unlocked');
+      updateStatus('Active', 'user.users_unlocked');
     }
 
     $scope.approveUsers = function() {
-      activateUsers('user.users_approved');
+      updateStatus('Active', 'user.users_approved');
+    }
+
+    $scope.lockUsers = function() {
+      updateStatus('Locked', 'user.users_locked');
     }
 
     init();

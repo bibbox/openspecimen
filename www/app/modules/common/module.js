@@ -5,4 +5,6 @@ angular.module('os.common', [
   'os.common.form',
   'os.common.delete',
   'os.common.search',
-  'os.common.export']);
+  'os.common.export',
+  'os.common.notif',
+  'os.common.audit']);
