@@ -691,7 +691,7 @@ public class CollectionProtocolRegistrationServiceImpl implements CollectionProt
 		}
 		
 		//
-		// we’ve been asked to use participant in inputCpr for updating existingCpr
+		// we've been asked to use participant in inputCpr for updating existingCpr
 		//
 		// Two broad cases:
 		// Case #1: Participants are registered to non-overlapping protocols. 
