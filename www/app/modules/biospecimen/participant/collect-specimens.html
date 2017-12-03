@@ -43,15 +43,35 @@
             <th class="col os-col-25">
               <div class="os-col-60 os-no-left-padding">
                 <span translate="specimens.container">Container</span>
-                <span style="font-weight: normal" ng-switch on="autoPosAllocate">
-                  <span>(</span>
-                  <a ng-switch-when="true" ng-click="manuallySelectContainers()">
-                    <span translate="specimens.manual_selection">Manual Selection</span>
-                  </a>
-                  <a ng-switch-default ng-click="applyFirstLocationToAll()">
-                    <span translate="specimens.copy_first_to_all">Copy First To All</span>
-                  </a>
-                  <span>)</span>
+                <span class="os-more-options">
+                  <div dropdown style="margin: -3px 0px 0px 5px;">
+                    <button class="btn btn-xs btn-default dropdown-toggle">
+                      <span translate="common.buttons.more">More</span>
+                      <span class="fa fa-caret-down"></span>
+                    </button>
+                    <ul class="dropdown-menu" role="menu">
+                      <li ng-if="autoPosAllocate">
+                        <a ng-click="reallocatePositions()">
+                          <span translate="specimens.reallocate">Reallocate</span>
+                        </a>
+                      </li>
+                      <li ng-if="autoPosAllocate">
+                        <a ng-click="selectPositionsManually()">
+                          <span translate="specimens.manual_selection">Manual selection</span>
+                        </a>
+                      </li>
+                      <li ng-if="!autoPosAllocate">
+                        <a ng-click="applyFirstLocationToAll()">
+                          <span translate="common.copy_first_to_all">Copy first to all</span>
+                        </a>
+                      </li>
+                      <li>
+                        <a ng-click="selectPositionsManually(true)">
+                          <span translate="specimens.clear_positions">Clear positions</span>
+                        </a>
+                      </li>
+                    </ul>
+                  </div>
                 </span>
               </div>
               <div class="os-col-15 os-no-left-padding">
@@ -173,7 +193,7 @@
             </td>
             <td class="col os-col-10" style="overflow: visible;">
               <os-select os-md-input edit-when="specimen.existingStatus != 'Collected'" list="specimenStatuses" 
-                ng-model="specimen.status" on-change="statusChanged(specimen)" required>
+                ng-model="specimen.status" on-select="statusChanged(specimen)" required>
               </os-select>
             </td>
             <td class="col os-col-5">
@@ -213,10 +233,21 @@
         <div class="panel panel-default">
           <div class="panel-heading">
             <span>{{group.title}}</span>
-            <a ng-click="group.opts.$$sdeFormFields.copyFirstToAll()">
-              <span>(</span>
+            <a class="btn btn-xs btn-default" ng-click="group.opts.cofrc = !group.opts.cofrc" ng-if="group.opts.enableCofrc">
+              <span ng-if="group.opts.cofrc">
+                <span class="fa fa-plus"></span>
+                <span translate="common.show_all">Show all rows</span>
+                <span>({{group.input.length}})</span>
+              </span>
+              <span ng-if="!group.opts.cofrc">
+                <span class="fa fa-minus"></span>
+                <span translate="common.show_only_first">Show only first row</span>
+              </span>
+            </a>
+            <a class="btn btn-xs btn-default" ng-click="group.opts.$$sdeFormFields.copyFirstToAll()"
+              ng-if="!group.opts.enableCofrc || !group.opts.cofrc">
+              <span class="fa fa-clone"></span>
               <span translate="specimens.copy_first_to_all">Copy First To All</span>
-              <span>)</span>
             </a>
           </div>
           <div class="panel-body">

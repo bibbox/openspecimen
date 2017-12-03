@@ -242,10 +242,21 @@ angular.module('os.biospecimen.specimen',
         },
         parent: 'signed-in'
       })
+      .state('specimen-bulk-edit', {
+        url: '/bulk-edit-specimens',
+        templateUrl: "modules/biospecimen/participant/specimen/bulk-edit.html",
+        controller: 'BulkEditSpecimensCtrl',
+        parent: 'signed-in'
+      })
       .state('bulk-add-event', {
         url: '/bulk-add-event',
         templateUrl: 'modules/biospecimen/participant/specimen/bulk-add-event.html',
         controller: 'BulkAddEventCtrl',
+        resolve: {
+          events: function(SpecimenEvent) {
+            return SpecimenEvent.getEvents();
+          }
+        },
         parent: 'signed-in'
       })
       .state('specimen-search', {

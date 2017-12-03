@@ -73,6 +73,8 @@
     "close": "Close",
     "close_reason": "Reason for closing",
     "copy_first_to_all": "Copy first to all",
+    "show_all": "Show all",
+    "show_only_first": "Show first",
     "confirm_navigation": " You've unsaved form changes. If you navigate away from this page without submitting form, the changes will be lost. Are you sure you want to leave this page?",
     "footer_note": "<a href=\"http://www.openspecimen.org\" target=\"_blank\">OpenSpecimen</a> - powered by <a href=\"http://www.krishagni.com\" target=\"_blank\">Krishagni</a>",
     "download_initiated": "Download of file initiated. Please check your download directory ...",
@@ -609,7 +611,9 @@
     "cp": "Collection Protocol",
     "ppid": "PPID",
     "concentration_unit": "&#181;g/&#181;l",
-    "manual_selection": "Manual Selection",
+    "manual_selection": "Manual allocation",
+    "reallocate": "Rerun auto allocation",
+    "clear_positions": "Clear positions",
     "copy_first_to_all": "Copy first to all",
     "row": "Row",
     "column": "Column",
@@ -740,18 +744,25 @@
       "visit_not_completed": "Please complete the visit before collecting unplanned specimen"
     },
 
+    "bulk_update": "Bulk Update Specimens",
+
     "bulk_events": {
-      "title": "Bulk Events",
-      "create": "Create Bulk Event",
-      "add_event": "Add Event",
-      "select_specimens": "Select Specimens",
-      "add_event_details": "Add Event Details",
-      "select_event": "Select Event",
+      "add_edit": "Bulk Events",
+      "select_specimens": "Specimens",
+      "options": "Options",
+      "event_details": "Event Details",
+      "select_event": "Event",
+      "op": "Action",
+      "add": "Add",
+      "edit": "Edit",
+      "mode": "Mode",
+      "single": "Form",
+      "table": "Table",
       "no_specimens_in_list": "No specimens in list to add event. Add at least one specimen",
       "enter_specimen_label": "To add specimens to list, enter labels or barcodes separated by a comma, tab or newline and click add",
       "details": "Event Details",
       "copy_first_to_all": "Copy First To All",
-      "events_saved": "Event saved successfully"
+      "events_saved": "Events saved successfully"
     },
     "bulk_transfer": {
       "title": "Bulk Transfer Specimens",
@@ -1208,6 +1219,11 @@
       "LINEAR": "Linear",
       "TWO_D" : "Row and Column"
     },
+    "block": "Block",
+    "unblock": "Unblock",
+    "cell_blocked": "Blocked",
+    "empty_cells_can_be_blocked": "Only empty positions can be blocked",
+    "blocked_cells_can_be_unblocked": "Only blocked positions can be unblocked",
     "cell_display_prop": "Display in Map",
     "cell_display_props": {
       "SPECIMEN_LABEL": "Specimen Label",
@@ -1812,10 +1828,11 @@
     "inc_child_spmns": "Include Child Specimens",
     "export": "Export Cart",
     "remove_spmns": "Remove from Cart",
-    "add_event": "Add Event",
+    "add_event": "Add/Edit Event",
     "transfer_specimens": "Transfer Specimens",
     "retrieve_specimens": "Retrieve",
     "location": "Storage Location",
+    "no_specimens_to_edit": "Please select at least one specimen to edit",
     "no_specimens_to_add_event": "Please select at least one specimen to add event",
     "no_specimens_to_transfer": "Please select at least one specimen to transfer",
     "no_specimens_to_retrieve": "Please select at least one specimen to retrieve",
@@ -2417,6 +2434,10 @@
       "showing": "Showing",
       "of": "of",
       "many_more": "many more",
-      "records": "records"
+      "records": "records",
+      "recs_to_display": "Records to Display",
+      "hundred": "100",
+      "two_hundred": "200",
+      "five_hundred": "500"
     }
 }

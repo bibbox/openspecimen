@@ -944,7 +944,8 @@ edu.common.de.DatePicker = function(id, field, args) {
     if (this.timeEl) {
       this.timeEl.timepicker({
         showMeridian: false,
-        minuteStep: 1
+        minuteStep: 1,
+        defaultTime: (field.defaultType == 'CURRENT_DATE') ? 'current' : false
       });
     }
 
@@ -1536,6 +1537,8 @@ edu.common.de.SubFormField = function(id, sfField, args) {
   };
 
   this.setValue = function(recId, value) {
+    value = value || [];
+
     this.recId = recId;
     this.sfFieldsEl.children().remove();
     this.fieldObjsRows = [];
@@ -2091,7 +2094,7 @@ edu.common.de.LookupField = function(params, callback) {
   };
 
   var initSelection = function(elem, callback) {
-    if (!that.value) {
+    if (!that.value && field.defaultType != 'none') {
       $.when(that.getDefaultValue()).done(
         function(result) {
           that.value = result.id;
@@ -2099,7 +2102,7 @@ edu.common.de.LookupField = function(params, callback) {
           callback(result);
         }
       );
-    } else {
+    } else if (!!that.value) {
       $.when(that.lookup(that.value)).done(
         function(result) {
           callback(result);
