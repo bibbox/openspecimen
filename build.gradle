@@ -226,6 +226,9 @@ def getBranch() {
     branchCmd = "git describe --tags --exact-match";
     branch = branchCmd.execute().text.trim();
   }
+  if (branch.length() == 0) {
+    branch = "4.2.2 (bibbox build)";
+  }
   return branch;
 }
 
