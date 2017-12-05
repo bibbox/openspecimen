@@ -15,7 +15,7 @@ public abstract class AbstractVisitLabelToken extends AbstractLabelTmplToken imp
 
 	@Override
 	public String getReplacement(Object object) {
-		return getReplacement(object, null);
+		return getReplacement(object, (Object[]) null);
 	}
 
 	@Override
