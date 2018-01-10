@@ -103,18 +103,6 @@ public class AuthTokenFilter extends GenericFilterBean {
 			return;
 		}
 
-		List<String> urls = excludeUrls.get(httpReq.getMethod());
-		if (urls == null) {
-			urls = Collections.emptyList();
-		}
-
-		for (String url : urls) {
-			if (matches(httpReq, url)) {
-				chain.doFilter(req, resp);
-				return;
-			}
-		}
-
 		User userDetails = null;
 		String authToken = AuthUtil.getAuthTokenFromHeader(httpReq);
 		if (authToken == null) {
@@ -140,9 +128,9 @@ public class AuthTokenFilter extends GenericFilterBean {
 			String clientHdr = httpReq.getHeader(OS_CLIENT_HDR);
 			if (clientHdr != null && clientHdr.equals("webui")) {
 				AuthUtil.clearTokenCookie(httpReq, httpResp);
-				setUnauthorizedResp(httpResp);
+				setUnauthorizedResp(req, resp, chain, false);
 			} else {
-				setRequireAuthResp(httpResp);
+				setRequireAuthResp(req, resp, chain);
 			}
 			return;
 		}
@@ -151,16 +139,18 @@ public class AuthTokenFilter extends GenericFilterBean {
 		Date callStartTime = Calendar.getInstance().getTime();
 		chain.doFilter(req, resp);
 		AuthUtil.clearCurrentUser();
-	
-		UserApiCallLog userAuditLog = new UserApiCallLog();
-		userAuditLog.setUser(userDetails);
-		userAuditLog.setUrl(httpReq.getRequestURI().toString());
-		userAuditLog.setMethod(httpReq.getMethod());
-		userAuditLog.setCallStartTime(callStartTime);
-		userAuditLog.setCallEndTime(Calendar.getInstance().getTime());
-		userAuditLog.setResponseCode(Integer.toString(httpResp.getStatus()));
-		userAuditLog.setLoginAuditLog(loginAuditLog);
-		auditService.insertApiCallLog(userAuditLog);
+
+		if (isRecordableApi(httpReq)) {
+			UserApiCallLog userAuditLog = new UserApiCallLog();
+			userAuditLog.setUser(userDetails);
+			userAuditLog.setUrl(httpReq.getRequestURI().toString());
+			userAuditLog.setMethod(httpReq.getMethod());
+			userAuditLog.setCallStartTime(callStartTime);
+			userAuditLog.setCallEndTime(Calendar.getInstance().getTime());
+			userAuditLog.setResponseCode(Integer.toString(httpResp.getStatus()));
+			userAuditLog.setLoginAuditLog(loginAuditLog);
+			auditService.insertApiCallLog(userAuditLog);
+		}
 	}
 	
 	private User doBasicAuthentication(HttpServletRequest httpReq, HttpServletResponse httpResp) throws UnsupportedEncodingException {
@@ -191,17 +181,56 @@ public class AuthTokenFilter extends GenericFilterBean {
 		return null;
 	}
 
-	private void setRequireAuthResp(HttpServletResponse httpResp) throws IOException {
-		httpResp.setHeader(HttpHeaders.WWW_AUTHENTICATE, "Basic realm=\"OpenSpecimen\"");
-		setUnauthorizedResp(httpResp);
+	private void setRequireAuthResp(ServletRequest req, ServletResponse resp, FilterChain chain)
+	throws IOException, ServletException {
+		if (requiresSignIn(req)) {
+			HttpServletResponse httpResp = (HttpServletResponse)resp;
+			httpResp.setHeader(HttpHeaders.WWW_AUTHENTICATE, "Basic realm=\"OpenSpecimen\"");
+			setUnauthorizedResp(req, resp, chain, true);
+		} else {
+			chain.doFilter(req, resp);
+		}
 	}
 
-	private void setUnauthorizedResp(HttpServletResponse httpResp) throws IOException {
-		httpResp.sendError(HttpServletResponse.SC_UNAUTHORIZED,
+	private void setUnauthorizedResp(ServletRequest req, ServletResponse resp, FilterChain chain, boolean reqSignIn)
+	throws IOException, ServletException {
+		if (reqSignIn || requiresSignIn(req)) {
+			HttpServletResponse httpResp = (HttpServletResponse)resp;
+			httpResp.sendError(HttpServletResponse.SC_UNAUTHORIZED,
 				"You must supply valid credentials to access the OpenSpecimen REST API");
+		} else {
+			chain.doFilter(req, resp);
+		}
+	}
+
+	private boolean requiresSignIn(ServletRequest req) {
+		HttpServletRequest httpReq = (HttpServletRequest)req;
+
+		List<String> urls = excludeUrls.get(httpReq.getMethod());
+		if (urls == null) {
+			urls = Collections.emptyList();
+		}
+
+		boolean requiresSignIn = true;
+		for (String url : urls) {
+			if (matches(httpReq, url)) {
+				requiresSignIn = false;
+				break;
+			}
+		}
+
+		return requiresSignIn;
+	}
+
+	private boolean isRecordableApi(HttpServletRequest httpReq) {
+		return !matches(httpReq, "/user-notifications/unread-count/**");
 	}
 
 	private boolean matches(HttpServletRequest httpReq, String url) {
+		return new AntPathRequestMatcher(getUrlPattern(url), httpReq.getMethod(), true).matches(httpReq);
+	}
+
+	private String getUrlPattern(String url) {
 		if (!url.startsWith("/**")) {
 			String prefix = "/**";
 			if (!url.startsWith("/")) {
@@ -211,6 +240,6 @@ public class AuthTokenFilter extends GenericFilterBean {
 			url = prefix + url;
 		}
 
-		return new AntPathRequestMatcher(url, httpReq.getMethod(), true).matches(httpReq);
+		return url;
 	}
 }

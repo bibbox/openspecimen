@@ -68,6 +68,8 @@ public interface FormDao extends Dao<FormContextBean> {
 	
 	public List<FormRecordEntryBean> getRecordEntries(Long formCtxtId, Long objectId);
 
+	public Map<Long, Pair<Long, Long>> getLatestRecordIds(Long formId, String entityType, List<Long> objectIds);
+
 	public FormRecordEntryBean getRecordEntry(Long formCtxtId, Long objectId, Long recordId);
 
 	public FormRecordEntryBean getRecordEntry(Long formId, Long recordId);
@@ -105,11 +107,11 @@ public interface FormDao extends Dao<FormContextBean> {
 	//
 	// used by form data exporter
 	//
-	List<Map<String, Object>> getRegistrationRecords(Long cpId, Long formId, List<String> ppids, int startAt, int maxResults);
+	List<Map<String, Object>> getRegistrationRecords(Collection<Long> cpIds, Long formId, List<String> ppids, int startAt, int maxResults);
 
-	List<Map<String, Object>> getParticipantRecords(Long cpId, Long formId, List<String> ppids, int startAt, int maxResults);
+	List<Map<String, Object>> getParticipantRecords(Collection<Long> cpIds, Long formId, List<String> ppids, int startAt, int maxResults);
 
-	List<Map<String, Object>> getVisitRecords(Long cpId, Long formId, List<String> visitNames, int startAt, int maxResults);
+	List<Map<String, Object>> getVisitRecords(Collection<Long> cpIds, Long formId, List<String> visitNames, int startAt, int maxResults);
 
-	List<Map<String, Object>> getSpecimenRecords(Long cpId, Long formId, String entityType, List<String> spmnLabels, int startAt, int maxResults);
+	List<Map<String, Object>> getSpecimenRecords(Collection<Long> cpIds, Long formId, String entityType, List<String> spmnLabels, int startAt, int maxResults);
 }

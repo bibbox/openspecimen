@@ -247,16 +247,6 @@ public class CollectionProtocolDaoImpl extends AbstractDao<CollectionProtocol> i
 	}
 
 	@Override
-	public int getMinEventPoint(Long cpId) {
-		Number minEventPoint = (Number)sessionFactory.getCurrentSession()
-			.getNamedQuery(GET_MIN_CPE_CAL_POINT)
-			.setLong("cpId", cpId)
-			.uniqueResult();
-
-		return minEventPoint != null ? minEventPoint.intValue() : 0;
-	}
-
-	@Override
 	public void saveCpe(CollectionProtocolEvent cpe) {
 		saveCpe(cpe, false);		
 	}
@@ -409,6 +399,7 @@ public class CollectionProtocolDaoImpl extends AbstractDao<CollectionProtocol> i
 		projs.add(Projections.property("ppidFormat"));
 		projs.add(Projections.property("manualPpidEnabled"));
 		projs.add(Projections.property("specimenCentric"));
+		projs.add(Projections.property("catalogId"));
 
 		if (cpCriteria.includePi()) {
 			projs.add(Projections.property("pi.id"));
@@ -431,6 +422,7 @@ public class CollectionProtocolDaoImpl extends AbstractDao<CollectionProtocol> i
 		cp.setPpidFmt((String)fields[idx++]);
 		cp.setManualPpidEnabled((Boolean)fields[idx++]);
 		cp.setSpecimenCentric((Boolean)fields[idx++]);
+		cp.setCatalogId((Long)fields[idx++]);
 
 		if (includePi) {
 			UserSummary user = new UserSummary();

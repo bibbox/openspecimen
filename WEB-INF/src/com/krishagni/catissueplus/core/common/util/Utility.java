@@ -46,12 +46,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.krishagni.catissueplus.core.biospecimen.domain.BaseEntity;
 import com.krishagni.catissueplus.core.biospecimen.domain.BaseExtensionEntity;
 import com.krishagni.catissueplus.core.common.PdfUtil;
+import com.krishagni.catissueplus.core.common.domain.IntervalUnit;
 
 import au.com.bytecode.opencsv.CSVWriter;
 
 public class Utility {
 	private static final String key = "0pEN@eSEncRyPtKy";
-	
+
 	private static final SecretKey secretKey = new SecretKeySpec(key.getBytes(), "AES");
 
 	private static FileTypeMap fileTypesMap = null;
@@ -60,19 +61,19 @@ public class Utility {
 		if (StringUtils.isBlank(value)) {
 			return value;
 		}
-		
+
 		if (maxLength < 14) {
 			throw new IllegalArgumentException("Max length should be at least 14 characters");
 		}
-		
+
 		int valueMaxLength = maxLength - 14;
 		if (value.length() > valueMaxLength) {
 			value = value.substring(0, valueMaxLength);
 		}
-		
+
 		return value + "_" + Calendar.getInstance().getTimeInMillis();
 	}
-	
+
 	public static Long numberToLong(Object number) {
 		if (number == null) {
 			return null;
@@ -82,35 +83,35 @@ public class Utility {
 			throw new IllegalArgumentException("Input object is not a number");
 		}
 
-		return ((Number)number).longValue();
+		return ((Number) number).longValue();
 	}
 
 	public static boolean isEmptyOrSuperset(Set<?> leftOperand, Set<?> rightOperand) {
 		if (CollectionUtils.isEmpty(leftOperand)) {
 			return true;
 		}
-		
-		return leftOperand.containsAll(rightOperand);		
-	}	
-	
-	public static String getInputStreamDigest(InputStream in) 
-	throws IOException {
+
+		return leftOperand.containsAll(rightOperand);
+	}
+
+	public static String getInputStreamDigest(InputStream in)
+			throws IOException {
 		return DigestUtils.md5Hex(getInputStreamBytes(in));
 	}
-	
-	public static String getResourceDigest(String resource) 
-	throws IOException {
+
+	public static String getResourceDigest(String resource)
+			throws IOException {
 		InputStream in = null;
 		try {
 			in = getResourceInputStream(resource);
 			return getInputStreamDigest(in);
 		} finally {
 			IOUtils.closeQuietly(in);
-		}		
+		}
 	}
-	
-	public static byte[] getInputStreamBytes(InputStream in) 
-	throws IOException {
+
+	public static byte[] getInputStreamBytes(InputStream in)
+			throws IOException {
 		ByteArrayOutputStream bout = null;
 		try {
 			bout = new ByteArrayOutputStream();
@@ -120,9 +121,9 @@ public class Utility {
 			IOUtils.closeQuietly(bout);
 		}
 	}
-	
+
 	public static InputStream getResourceInputStream(String path) {
-		return Thread.currentThread().getContextClassLoader().getResourceAsStream(path);		
+		return Thread.currentThread().getContextClassLoader().getResourceAsStream(path);
 	}
 
 	public static List<String> csvToStringList(String value) {
@@ -151,19 +152,19 @@ public class Utility {
 			}
 		}
 	}
-	
+
 	public static String stringListToCsv(Collection<String> elements) {
 		return stringListToCsv(elements.toArray(new String[0]), true);
 	}
-		
+
 	public static String stringListToCsv(Collection<String> elements, boolean quotechar) {
 		return stringListToCsv(elements.toArray(new String[0]), quotechar);
 	}
-	
+
 	public static String stringListToCsv(String[] elements) {
 		return stringListToCsv(elements, true);
 	}
-	
+
 	public static String stringListToCsv(String[] elements, boolean quotechar) {
 		StringWriter writer = new StringWriter();
 		CsvWriter csvWriter = null;
@@ -171,7 +172,7 @@ public class Utility {
 			if (quotechar) {
 				csvWriter = CsvFileWriter.createCsvFileWriter(writer);
 			} else {
-				csvWriter =  CsvFileWriter.createCsvFileWriter(writer, CSVWriter.DEFAULT_SEPARATOR, CSVWriter.NO_QUOTE_CHARACTER);
+				csvWriter = CsvFileWriter.createCsvFileWriter(writer, CSVWriter.DEFAULT_SEPARATOR, CSVWriter.NO_QUOTE_CHARACTER);
 			}
 			csvWriter.writeNext(elements);
 			csvWriter.flush();
@@ -182,20 +183,20 @@ public class Utility {
 			if (csvWriter != null) {
 				try {
 					csvWriter.close();
-				} catch (Exception e) {					
-				}				
+				} catch (Exception e) {
+				}
 			}
-		}		
+		}
 	}
-	
+
 	public static void writeKeyValuesToCsv(OutputStream out, Map<String, String> keyValues) {
 		StringWriter strWriter = new StringWriter();
-		CsvWriter csvWriter= null;
+		CsvWriter csvWriter = null;
 
 		try {
 			csvWriter = CsvFileWriter.createCsvFileWriter(strWriter);
 			for (Map.Entry<String, String> keyValue : keyValues.entrySet()) {
-				csvWriter.writeNext(new String[] {keyValue.getKey(), keyValue.getValue()});
+				csvWriter.writeNext(new String[]{keyValue.getKey(), keyValue.getValue()});
 			}
 			csvWriter.flush();
 			out.write(strWriter.toString().getBytes());
@@ -206,10 +207,10 @@ public class Utility {
 			IOUtils.closeQuietly(csvWriter);
 		}
 	}
-	
+
 	public static long getTimezoneOffset() {
 		Calendar cal = Calendar.getInstance();
-		return -1 * cal.get(Calendar.ZONE_OFFSET);		
+		return -1 * cal.get(Calendar.ZONE_OFFSET);
 	}
 
 	public static void sendToClient(HttpServletResponse httpResp, String filename, File file) {
@@ -255,7 +256,7 @@ public class Utility {
 			IOUtils.closeQuietly(in);
 		}
 	}
-	
+
 	public static String getContentType(String filename) {
 		if (fileTypesMap == null) {
 			synchronized (Utility.class) {
@@ -269,8 +270,8 @@ public class Utility {
 	public static String getContentType(File file) {
 		return getContentType(file.getName());
 	}
-	
-	
+
+
 	public static String getFileText(File file) {
 		FileInputStream in = null;
 		try {
@@ -283,7 +284,7 @@ public class Utility {
 			IOUtils.closeQuietly(in);
 		}
 	}
-	
+
 	public static String getString(InputStream in, String contentType) {
 		String fileText = null;
 		try {
@@ -295,13 +296,13 @@ public class Utility {
 			return fileText;
 		} catch (IOException e) {
 			throw new RuntimeException("Error getting file text", e);
-		}	
-	}	
-	
+		}
+	}
+
 	public static String getDateString(Date date) {
 		return new SimpleDateFormat(ConfigUtil.getInstance().getDateFmt()).format(date);
 	}
-	
+
 	public static String getDateTimeString(Date date) {
 		return new SimpleDateFormat(ConfigUtil.getInstance().getDateTimeFmt()).format(date);
 	}
@@ -324,15 +325,19 @@ public class Utility {
 		if (returnSet) {
 			return (T) new HashSet(result);
 		}
-		
+
 		return (T) result;
 	}
-	
+
 	public static <T> T collect(Collection<?> collection, String propertyName) {
 		return collect(collection, propertyName, false);
-    }
+	}
 
-    public static <T> List<T> nullSafe(List<T> iterable) {
+	public static <T> Set<T> subtract(Collection<T> coll1, Collection<T> coll2) {
+		return coll1.stream().filter(element -> !coll2.contains(element)).collect(Collectors.toSet());
+	}
+
+	public static <T> List<T> nullSafe(List<T> iterable) {
 		return iterable == null ? Collections.emptyList() : iterable;
 	}
 
@@ -362,20 +367,20 @@ public class Utility {
 
 		return Period.between(startDt, endDt).getYears();
 	}
-	
+
 	public static boolean isEmpty(Map<?, ?> map) {
 		return map == null || map.isEmpty();
 	}
-	
+
 	public static Date chopTime(Date date) {
 		if (date == null) {
 			return null;
 		}
-		
+
 		return DateUtils.truncate(date, Calendar.DATE);
 	}
 
-	public static Date getEndOfDay (Date date) {
+	public static Date getEndOfDay(Date date) {
 		if (date == null) {
 			return null;
 		}
@@ -388,11 +393,11 @@ public class Utility {
 		cal.set(Calendar.MILLISECOND, 999);
 		return cal.getTime();
 	}
-	
+
 	public static char getFieldSeparator() {
-		return ConfigUtil.getInstance().getCharSetting("common", "field_separator", CSVWriter.DEFAULT_SEPARATOR); 
+		return ConfigUtil.getInstance().getCharSetting("common", "field_separator", CSVWriter.DEFAULT_SEPARATOR);
 	}
-	
+
 	public static String encrypt(String value) {
 		try {
 			Cipher cipher = Cipher.getInstance("AES");
@@ -403,7 +408,7 @@ public class Utility {
 			throw new RuntimeException(e);
 		}
 	}
-	
+
 	public static String decrypt(String value) {
 		try {
 			Cipher cipher = Cipher.getInstance("AES");
@@ -430,7 +435,7 @@ public class Utility {
 				return Collections.emptyMap();
 			}
 
-			return new ObjectMapper().readValue(json, new TypeReference<HashMap<String, Object>>(){});
+			return new ObjectMapper().readValue(json, new TypeReference<HashMap<String, Object>>() {});
 		} catch (Exception e) {
 			throw new RuntimeException("Error parsing JSON into Map:\n" + json, e);
 		}
@@ -486,11 +491,11 @@ public class Utility {
 
 	private static boolean equals(Object val1, Object val2) {
 		if (val1 instanceof Collection || val2 instanceof Collection) {
-			return equalCollections((Collection)val1, (Collection)val2);
+			return equalCollections((Collection) val1, (Collection) val2);
 		} else if (val1 instanceof Map || val2 instanceof Map) {
-			return equalMaps((Map)val1, (Map)val2);
+			return equalMaps((Map) val1, (Map) val2);
 		} else if (val1 instanceof Date) {
-			return DateUtils.isSameDay((Date)val1, (Date)val2);
+			return DateUtils.isSameDay((Date) val1, (Date) val2);
 		} else if (val1 == val2) {
 			return true;
 		} else if ((val1 != null && val2 == null) || val1 == null) {
@@ -590,5 +595,32 @@ public class Utility {
 		}
 
 		return isValid;
+	}
+
+	public static Integer getNoOfDays(Integer interval, IntervalUnit intervalUnit) {
+		if (interval == null) {
+			return null;
+		}
+
+		Integer noOfDays = null;
+		switch (intervalUnit) {
+			case DAYS:
+				noOfDays = interval;
+				break;
+
+			case WEEKS:
+				noOfDays = interval * 7;
+				break;
+
+			case MONTHS:
+				noOfDays = interval * 30;
+				break;
+
+			case YEARS:
+				noOfDays = interval * 365;
+				break;
+		}
+
+		return noOfDays;
 	}
 }

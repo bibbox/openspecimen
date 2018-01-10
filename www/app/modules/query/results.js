@@ -147,8 +147,10 @@ angular.module('os.query.results', ['os.query.models'])
 
       currResults = {};
 
+      var aql = getAql(true, true);
       var outputIsoFmt = (qc.reporting.type != 'crosstab');
-      QueryExecutor.getRecords(qc.id, qc.selectedCp.id, getAql(true, true), qc.wideRowMode || 'DEEP', outputIsoFmt).then(
+      var opts = {outputColumnExprs: qc.outputColumnExprs};
+      QueryExecutor.getRecords(qc.id, qc.selectedCp.id, aql, qc.wideRowMode || 'DEEP', outputIsoFmt, opts).then(
         function(result) {
           currResults = result;
           $scope.resultsCtx.waitingForRecords = false;
@@ -426,9 +428,18 @@ angular.module('os.query.results', ['os.query.models'])
 
           var cellTemplate = null;
           if (result.columnUrls[idx]) {
+            var link, linkTxt;
+            if (result.columnUrls[idx] == 'true') {
+              link = '{{row.getProperty(col.field)}}';
+              linkTxt = 'Click here';
+            } else {
+              link = '{{cellUrl(row, col,' + idx + ')}}'
+              linkTxt = '{{row.getProperty(col.field)}}';
+            }
+
             cellTemplate = '<div class="ngCellText" ng-class="col.colIndex()">' +
-                           '  <a href="{{cellUrl(row, col,' + idx + ')}}" target="_blank">' +
-                           '    {{row.getProperty(col.field)}}' +
+                           '  <a href="' + link + '" target="_blank">' +
+                                linkTxt +
                            '  </a>' +
                            '</div>';
           }
@@ -496,16 +507,6 @@ angular.module('os.query.results', ['os.query.models'])
         return {id: row.hidden[0].$specimenId};
       });
     };
-
-    function loadCpCatalog(cp) {
-      if (!cp.catalogQuery) {
-        Alerts.error("queries.no_catalog", cp);
-        return;
-      }
-
-      $state.go('query-results', {cpId: cp.id, queryId: cp.catalogQuery.id});
-    }
-
 
     var gridFilterPlugin = {
       init: function(scope, grid) {
@@ -581,7 +582,9 @@ angular.module('os.query.results', ['os.query.models'])
       var qc = $scope.queryCtx;
 
       var alert = Alerts.info('queries.export_initiated', {}, false);  
-      QueryExecutor.exportQueryResultsData(qc.id, qc.selectedCp.id, getAql(false), qc.wideRowMode || 'DEEP').then(
+      var aql = getAql(false);
+      var opts = {outputColumnExprs: qc.outputColumnExprs};
+      QueryExecutor.exportQueryResultsData(qc.id, qc.selectedCp.id, aql, qc.wideRowMode || 'DEEP', opts).then(
         function(result) {
           Alerts.remove(alert);
           if (result.completed) {
@@ -773,17 +776,8 @@ angular.module('os.query.results', ['os.query.models'])
       $scope.toggleFacetValueSelection(facet);
     }
 
-    $scope.switchCatalog = function(cp) {
-      if (!cp.catalogQuery) {
-        cp.getCatalogQuery().then(
-          function(query) {
-            cp.catalogQuery = query;
-            loadCpCatalog(cp);
-          }
-        );
-      } else {
-        loadCpCatalog(cp);
-      }
+    $scope.saveQuery = function() {
+      QueryUtil.saveQuery($scope.queryCtx);
     }
 
     init();

@@ -37,14 +37,16 @@ angular.module('openspecimen')
     }
   })
   .controller('LoginCtrl', function(
-    $scope, $rootScope, $state, $stateParams, $http, $location, $injector,
-    AuthDomain, AuthService) {
+    $scope, $rootScope, $state, $stateParams, $q, $http, $location, $injector,
+    Alerts, AuthDomain, AuthService) {
 
     function init() {
+      $scope.errors = [];
       $scope.loginData = {};
       
+      var logoutQ;
       if ($location.search().logout) {
-        $scope.logout();
+        logoutQ = $scope.logout();
       }
  
       if ($http.defaults.headers.common['X-OS-API-TOKEN']) {
@@ -58,10 +60,7 @@ angular.module('openspecimen')
         //
         // User not logged in
         //
-        var catalogId = $injector.get('scCatalog').defCatalogId;
-        if (catalogId) {
-          $state.go('sc-catalog-dashboard', {catalogId: catalogId}, {location: 'replace'});
-        }
+        $q.when(logoutQ, gotoCatalog, gotoCatalog);
       }
 
       if ($stateParams.directVisit == 'true') {
@@ -69,6 +68,13 @@ angular.module('openspecimen')
       }
 
       loadDomains();
+    }
+
+    function gotoCatalog() {
+      var catalogId = $injector.get('scCatalog').defCatalogId;
+      if (catalogId) {
+        $state.go('sc-catalog-dashboard', {catalogId: catalogId}, {location: 'replace'});
+      }
     }
 
     function loadDomains() {
@@ -114,13 +120,22 @@ angular.module('openspecimen')
     };
 
     $scope.login = function() {
-      AuthService.authenticate($scope.loginData).then(onLogin);
+      $scope.errors = [];
+      AuthService.authenticate($scope.loginData).then(
+        onLogin,
+        function(resp) {
+          $scope.errors = (resp.data || []);
+          Alerts.clear();
+        }
+      );
     }
 
     $scope.logout = function() {
       if ($http.defaults.headers.common['X-OS-API-TOKEN']) {
-        AuthService.logout();
+        return AuthService.logout();
       }
+
+      return undefined;
     }
 
     init();

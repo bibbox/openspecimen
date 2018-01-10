@@ -45,14 +45,6 @@ angular.module('os.biospecimen.cp.list', ['os.biospecimen.models'])
       $state.go('cp-summary-view', {cpId: cp.id});
     };
 
-    $scope.viewCatalog = function(cp) {
-      cp.getCatalogQuery().then(
-        function(query) {
-          $state.go('query-results', {queryId: query.id, cpId: cp.id});
-        }
-      );
-    }
-
     $scope.deleteCps = function() {
       var cps = $scope.ctx.checkList.getSelectedItems();
 
@@ -64,6 +56,10 @@ angular.module('os.biospecimen.cp.list', ['os.biospecimen.models'])
       }
 
       DeleteUtil.bulkDelete({bulkDelete: CollectionProtocol.bulkDelete}, getCpIds(cps), opts);
+    }
+
+    $scope.pageSizeChanged = function() {
+      filterOpts.maxResults = pagerOpts.recordsPerPage + 1;
     }
 
     init();

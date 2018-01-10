@@ -31,6 +31,8 @@ public class StorageContainerPosition implements Comparable<StorageContainerPosi
 
 	private Date reservationTime;
 
+	private Boolean blocked;
+
 	public Long getId() {
 		return id;
 	}
@@ -76,7 +78,7 @@ public class StorageContainerPosition implements Comparable<StorageContainerPosi
 			return null;
 		}
 
-		return (getPosTwoOrdinal() - 1) * getContainer().getNoOfColumns() + getPosOneOrdinal();
+		return getContainer().getPositionAssigner().toPosition(getContainer(), getPosTwoOrdinal(), getPosOneOrdinal());
 	}
 
 	public StorageContainer getContainer() {
@@ -117,6 +119,18 @@ public class StorageContainerPosition implements Comparable<StorageContainerPosi
 
 	public void setReservationTime(Date reservationTime) {
 		this.reservationTime = reservationTime;
+	}
+
+	public Boolean getBlocked() {
+		return blocked;
+	}
+
+	public void setBlocked(Boolean blocked) {
+		this.blocked = blocked;
+	}
+
+	public boolean isBlocked() {
+		return blocked != null && blocked;
 	}
 
 	public void update(StorageContainerPosition other) {

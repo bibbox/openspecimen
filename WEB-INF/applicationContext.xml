@@ -255,6 +255,8 @@
         <bean class="com.krishagni.catissueplus.core.biospecimen.label.cpr.CpSiteCodePpidToken"/>
         <bean class="com.krishagni.catissueplus.core.biospecimen.label.cpr.UniqueIdPpidToken"/>
         <bean class="com.krishagni.catissueplus.core.biospecimen.label.cpr.SiteCodePpidToken"/>
+        <bean class="com.krishagni.catissueplus.core.biospecimen.label.cpr.ExternalSubjectIdPpidToken"/>
+        <bean class="com.krishagni.catissueplus.core.biospecimen.label.cpr.RegSiteCodePpidToken"/>
       </list>
     </property>
   </bean>
@@ -335,6 +337,7 @@
         <bean class="com.krishagni.catissueplus.core.biospecimen.label.specimen.PpidUniqueIdLabelToken"/>
         <bean class="com.krishagni.catissueplus.core.biospecimen.label.specimen.CpPpidUniqueIdLabelToken"/>
         <bean class="com.krishagni.catissueplus.core.biospecimen.label.specimen.SpecimenCpUniqueIdToken"/>
+        <bean class="com.krishagni.catissueplus.core.biospecimen.label.specimen.ParentSpecimenCounterLabelToken"/>
         <ref bean="extnPvLabelToken"/>
       </list>
     </property>
@@ -421,18 +424,6 @@
     <property name="emailService" ref="emailService"/>
     <property name="templateService" ref="templateService"/>
     <property name="cfgService" ref="cfgSvc"/>
-  </bean>
-
-  <bean id="catalogSettingFact" class="com.krishagni.catissueplus.core.de.domain.factory.impl.CpCatalogSettingFactoryImpl">
-    <property name="daoFactory" ref="biospecimenDaoFactory"/>
-    <property name="deDaoFactory" ref="deDaoFactory"/>
-  </bean>
-
-  <bean id="catalogSvc" class="com.krishagni.catissueplus.core.de.services.impl.CatalogServiceImpl">
-    <property name="daoFactory" ref="biospecimenDaoFactory"/>
-    <property name="deDaoFactory" ref="deDaoFactory"/>
-    <property name="catalogSettingFactory" ref="catalogSettingFact"/>
-    <property name="cpCopier" ref="cpCopier"/>
   </bean>
 
   <bean id="reportSettingsFact" class="com.krishagni.catissueplus.core.biospecimen.domain.factory.impl.CpReportSettingsFactoryImpl">
@@ -812,7 +803,9 @@
         <value>com/krishagni/catissueplus/core/administrative/schema/user-roles.xml</value>
         <value>com/krishagni/catissueplus/core/administrative/schema/container.xml</value>
         <value>com/krishagni/catissueplus/core/administrative/schema/shipment.xml</value>
+        <value>com/krishagni/catissueplus/core/administrative/schema/container-shipment.xml</value>
         <value>com/krishagni/catissueplus/core/administrative/schema/distribution-order.xml</value>
+        <value>com/krishagni/catissueplus/core/administrative/schema/return-specimen.xml</value>
         <value>com/krishagni/catissueplus/core/biospecimen/schema/cp.xml</value>
         <value>com/krishagni/catissueplus/core/biospecimen/schema/cpe.xml</value>
         <value>com/krishagni/catissueplus/core/biospecimen/schema/sr.xml</value>
@@ -918,11 +911,25 @@
         <entry key="shipment">
           <bean class="com.krishagni.catissueplus.core.administrative.services.impl.ShipmentImporter">
             <property name="shipmentSvc" ref="shipmentSvc"/>
+            <property name="type" value="SPECIMEN"/>
+          </bean>
+        </entry>
+
+        <entry key="containerShipment">
+          <bean class="com.krishagni.catissueplus.core.administrative.services.impl.ShipmentImporter">
+            <property name="shipmentSvc" ref="shipmentSvc"/>
+            <property name="type" value="CONTAINER"/>
           </bean>
         </entry>
 
         <entry key="distributionOrder">
           <bean class="com.krishagni.catissueplus.core.administrative.services.impl.DistributionOrderImporter">
+            <property name="orderSvc" ref="distributionOrderService"/>
+          </bean>
+        </entry>
+
+        <entry key="returnSpecimen">
+          <bean class="com.krishagni.catissueplus.core.administrative.services.impl.ReturnSpecimensImporter">
             <property name="orderSvc" ref="distributionOrderService"/>
           </bean>
         </entry>
@@ -1074,6 +1081,7 @@
     <property name="daoFactory" ref="biospecimenDaoFactory"/>
     <property name="specimenFactory" ref="specimenFactory"/>
     <property name="specimenResolver" ref="specimenResolver"/>
+    <property name="containerFactory" ref="storageContainerFactory"/>
   </bean>
   
   <bean id="shipmentSvc" class="com.krishagni.catissueplus.core.administrative.services.impl.ShipmentServiceImpl">
@@ -1081,6 +1089,7 @@
     <property name="shipmentFactory" ref="shipmentFactory" />
     <property name="emailService" ref="emailService"/>
     <property name="querySvc" ref="querySvc"/>
+    <property name="containerSvc" ref="storageContainerSvc"/>
     <property name="deDaoFactory" ref="deDaoFactory"/>
   </bean>
 

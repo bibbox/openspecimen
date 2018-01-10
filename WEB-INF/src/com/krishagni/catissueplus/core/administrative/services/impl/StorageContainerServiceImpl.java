@@ -23,16 +23,18 @@ import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.factory.InitializingBean;
 
 import com.krishagni.catissueplus.core.administrative.domain.ContainerType;
+import com.krishagni.catissueplus.core.administrative.domain.Site;
 import com.krishagni.catissueplus.core.administrative.domain.StorageContainer;
 import com.krishagni.catissueplus.core.administrative.domain.StorageContainerPosition;
+import com.krishagni.catissueplus.core.administrative.domain.factory.SiteErrorCode;
 import com.krishagni.catissueplus.core.administrative.domain.factory.StorageContainerErrorCode;
 import com.krishagni.catissueplus.core.administrative.domain.factory.StorageContainerFactory;
-import com.krishagni.catissueplus.core.administrative.events.AssignPositionsOp;
 import com.krishagni.catissueplus.core.administrative.events.ContainerCriteria;
 import com.krishagni.catissueplus.core.administrative.events.ContainerHierarchyDetail;
 import com.krishagni.catissueplus.core.administrative.events.ContainerQueryCriteria;
 import com.krishagni.catissueplus.core.administrative.events.ContainerReplicationDetail;
 import com.krishagni.catissueplus.core.administrative.events.ContainerReplicationDetail.DestinationDetail;
+import com.krishagni.catissueplus.core.administrative.events.PositionsDetail;
 import com.krishagni.catissueplus.core.administrative.events.ReservePositionsOp;
 import com.krishagni.catissueplus.core.administrative.events.StorageContainerDetail;
 import com.krishagni.catissueplus.core.administrative.events.StorageContainerPositionDetail;
@@ -332,9 +334,9 @@ public class StorageContainerServiceImpl implements StorageContainerService, Obj
 
 	@Override
 	@PlusTransactional
-	public ResponseEvent<List<StorageContainerPositionDetail>> assignPositions(RequestEvent<AssignPositionsOp> req) {
+	public ResponseEvent<List<StorageContainerPositionDetail>> assignPositions(RequestEvent<PositionsDetail> req) {
 		try {
-			AssignPositionsOp op = req.getPayload();
+			PositionsDetail op = req.getPayload();
 			StorageContainer container = getContainer(op.getContainerId(), op.getContainerName());
 			
 			List<StorageContainerPosition> positions = op.getPositions().stream()
@@ -489,6 +491,64 @@ public class StorageContainerServiceImpl implements StorageContainerService, Obj
 
 	@Override
 	@PlusTransactional
+	public ResponseEvent<List<StorageContainerPositionDetail>> blockPositions(RequestEvent<PositionsDetail> req) {
+		try {
+			PositionsDetail opDetail = req.getPayload();
+			if (CollectionUtils.isEmpty(opDetail.getPositions())) {
+				return ResponseEvent.response(Collections.emptyList());
+			}
+
+			StorageContainer container = getContainer(opDetail.getContainerId(), opDetail.getContainerName());
+			AccessCtrlMgr.getInstance().ensureUpdateContainerRights(container);
+			if (container.isDimensionless()) {
+				return ResponseEvent.userError(StorageContainerErrorCode.DL_POS_BLK_NP, container.getName());
+			}
+
+			List<StorageContainerPosition> positions = opDetail.getPositions().stream()
+				.map(detail -> container.createPosition(detail.getPosOne(), detail.getPosTwo()))
+				.collect(Collectors.toList());
+
+			container.blockPositions(positions);
+			daoFactory.getStorageContainerDao().saveOrUpdate(container, true);
+			return ResponseEvent.response(StorageContainerPositionDetail.from(container.getOccupiedPositions()));
+		} catch (OpenSpecimenException ose) {
+			return ResponseEvent.error(ose);
+		} catch (Exception e) {
+			return ResponseEvent.serverError(e);
+		}
+	}
+
+	@Override
+	@PlusTransactional
+	public ResponseEvent<List<StorageContainerPositionDetail>> unblockPositions(RequestEvent<PositionsDetail> req) {
+		try {
+			PositionsDetail opDetail = req.getPayload();
+			if (CollectionUtils.isEmpty(opDetail.getPositions())) {
+				return ResponseEvent.response(Collections.emptyList());
+			}
+
+			StorageContainer container = getContainer(opDetail.getContainerId(), opDetail.getContainerName());
+			AccessCtrlMgr.getInstance().ensureUpdateContainerRights(container);
+			if (container.isDimensionless()) {
+				return ResponseEvent.userError(StorageContainerErrorCode.DL_POS_BLK_NP, container.getName());
+			}
+
+			List<StorageContainerPosition> positions = opDetail.getPositions().stream()
+				.map(detail -> container.createPosition(detail.getPosOne(), detail.getPosTwo()))
+				.collect(Collectors.toList());
+
+			container.unblockPositions(positions);
+			daoFactory.getStorageContainerDao().saveOrUpdate(container, true);
+			return ResponseEvent.response(StorageContainerPositionDetail.from(container.getOccupiedPositions()));
+		} catch (OpenSpecimenException ose) {
+			return ResponseEvent.error(ose);
+		} catch (Exception e) {
+			return ResponseEvent.serverError(e);
+		}
+	}
+
+	@Override
+	@PlusTransactional
 	public ResponseEvent<List<StorageLocationSummary>> reservePositions(RequestEvent<ReservePositionsOp> req) {
 		long t1 = System.currentTimeMillis();
 		try {
@@ -496,9 +556,6 @@ public class StorageContainerServiceImpl implements StorageContainerService, Obj
 			if (StringUtils.isNotBlank(op.getReservationToCancel())) {
 				cancelReservation(new RequestEvent<>(op.getReservationToCancel()));
 			}
-
-			String reservationId = UUID.randomUUID().toString();
-			Date reservationTime = Calendar.getInstance().getTime();
 
 			Long cpId = op.getCpId();
 			CollectionProtocol cp = daoFactory.getCollectionProtocolDao().getById(cpId);
@@ -525,6 +582,8 @@ public class StorageContainerServiceImpl implements StorageContainerService, Obj
 				return ResponseEvent.response(Collections.emptyList());
 			}
 
+			String reservationId = StorageContainer.getReservationId();
+			Date reservationTime = Calendar.getInstance().getTime();
 			List<StorageContainerPosition> reservedPositions = new ArrayList<>();
 			for (ContainerCriteria criteria : op.getCriteria()) {
 				criteria.siteCps(reqSiteCps);
@@ -553,22 +612,9 @@ public class StorageContainerServiceImpl implements StorageContainerService, Obj
 						numPositions = 1;
 					}
 
-					while (numPositions != 0) {
-						StorageContainerPosition pos = container.nextAvailablePosition(true);
-						if (pos == null) {
-							break;
-						}
-
-						pos.setReservationId(reservationId);
-						pos.setReservationTime(reservationTime);
-						reservedPositions.add(pos);
-						--numPositions;
-
-						if (!container.isDimensionless()) {
-							container.addPosition(pos);
-						}
-					}
-
+					List<StorageContainerPosition> positions = container.reservePositions(reservationId, reservationTime, numPositions);
+					reservedPositions.addAll(positions);
+					numPositions -= positions.size();
 					if (numPositions == 0) {
 						allAllocated = true;
 					} else {
@@ -635,8 +681,7 @@ public class StorageContainerServiceImpl implements StorageContainerService, Obj
 		try {
 			StorageContainer container = getContainer(req.getPayload());
 			AccessCtrlMgr.getInstance().ensureReadContainerRights(container);
-			return ResponseEvent.response(daoFactory.getStorageContainerDao()
-					.getChildContainers(container.getId(), container.getNoOfColumns()));
+			return ResponseEvent.response(daoFactory.getStorageContainerDao().getChildContainers(container));
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
 		} catch (Exception e) {
@@ -714,6 +759,23 @@ public class StorageContainerServiceImpl implements StorageContainerService, Obj
 			container.getPosition().occupy();
 		}
 
+		daoFactory.getStorageContainerDao().saveOrUpdate(container, true);
+		return container;
+	}
+
+	@Override
+	@PlusTransactional
+	public StorageContainer createSiteContainer(Long siteId, String siteName) {
+		Site site = getSite(siteId, siteName);
+		if (site.getContainer() != null) {
+			return site.getContainer();
+		}
+
+		StorageContainerDetail detail = new StorageContainerDetail();
+		detail.setName(StorageContainer.getDefaultSiteContainerName(site));
+		detail.setSiteName(site.getName());
+
+		StorageContainer container = containerFactory.createStorageContainer(detail);
 		daoFactory.getStorageContainerDao().saveOrUpdate(container, true);
 		return container;
 	}
@@ -872,18 +934,18 @@ public class StorageContainerServiceImpl implements StorageContainerService, Obj
 	private ResponseEvent<StorageContainerDetail> updateStorageContainer(RequestEvent<StorageContainerDetail> req, boolean partial) {
 		try {
 			StorageContainerDetail input = req.getPayload();			
-			StorageContainer existing = getContainer(input.getId(), input.getName());			
+			StorageContainer existing = getContainer(input.getId(), input.getName());
 			AccessCtrlMgr.getInstance().ensureUpdateContainerRights(existing);			
 			
 			input.setId(existing.getId());
-			StorageContainer container = null;
+			StorageContainer container;
 			if (partial) {
 				container = containerFactory.createStorageContainer(existing, input);
 			} else {
 				container = containerFactory.createStorageContainer(input); 
 			}
 			
-			ensureUniqueConstraints(existing, container);			
+			ensureUniqueConstraints(existing, container);
 			existing.update(container);			
 			daoFactory.getStorageContainerDao().saveOrUpdate(existing, true);
 			return ResponseEvent.response(StorageContainerDetail.from(existing));			
@@ -936,7 +998,7 @@ public class StorageContainerServiceImpl implements StorageContainerService, Obj
 	
 	private StorageContainerPosition createPosition(StorageContainer container, StorageContainerPositionDetail pos, boolean vacateOccupant) {
 		if (StringUtils.isBlank(pos.getPosOne()) ^ StringUtils.isBlank(pos.getPosTwo())) {
-			throw OpenSpecimenException.userError(StorageContainerErrorCode.INVALID_POSITIONS);
+			throw OpenSpecimenException.userError(StorageContainerErrorCode.INV_POS, container.getName(), pos.getPosOne(), pos.getPosTwo());
 		}
 		
 		String entityType = pos.getOccuypingEntity();
@@ -1204,16 +1266,38 @@ public class StorageContainerServiceImpl implements StorageContainerService, Obj
 		copy.setNoOfRows(source.getNoOfRows());
 		copy.setColumnLabelingScheme(source.getColumnLabelingScheme());
 		copy.setRowLabelingScheme(source.getRowLabelingScheme());
+		copy.setPositionLabelingMode(source.getPositionLabelingMode());
+		copy.setPositionAssignment(source.getPositionAssignment());
 		copy.setComments(source.getComments());
-		copy.setAllowedSpecimenClasses(new HashSet<String>(source.getAllowedSpecimenClasses()));		
-		copy.setAllowedSpecimenTypes(new HashSet<String>(source.getAllowedSpecimenTypes()));
-		copy.setAllowedCps(new HashSet<CollectionProtocol>(source.getAllowedCps()));
+		copy.setAllowedSpecimenClasses(new HashSet<>(source.getAllowedSpecimenClasses()));
+		copy.setAllowedSpecimenTypes(new HashSet<>(source.getAllowedSpecimenTypes()));
+		copy.setAllowedCps(new HashSet<>(source.getAllowedCps()));
 		copy.setCompAllowedSpecimenClasses(copy.computeAllowedSpecimenClasses());
 		copy.setCompAllowedSpecimenTypes(copy.computeAllowedSpecimenTypes());
 		copy.setCompAllowedCps(copy.computeAllowedCps());
 		copy.setStoreSpecimenEnabled(source.isStoreSpecimenEnabled());
 		copy.setCreatedBy(AuthUtil.getCurrentUser());
 		return copy;
+	}
+
+	private Site getSite(Long siteId, String siteName) {
+		Site site = null;
+		Object key = null;
+		if (siteId != null) {
+			site = daoFactory.getSiteDao().getById(siteId);
+			key = siteId;
+		} else if (StringUtils.isNotBlank(siteName)) {
+			site = daoFactory.getSiteDao().getSiteByName(siteName);
+			key = siteName;
+		}
+
+		if (key == null) {
+			throw OpenSpecimenException.userError(SiteErrorCode.NAME_REQUIRED);
+		} else if (site == null) {
+			throw OpenSpecimenException.userError(SiteErrorCode.NOT_FOUND, key);
+		}
+
+		return site;
 	}
 
 	private QueryDataExportResult exportResult(final StorageContainer container, SavedQuery query) {
@@ -1259,6 +1343,8 @@ public class StorageContainerServiceImpl implements StorageContainerService, Obj
 
 	private Function<ExportJob, List<? extends Object>> getContainersGenerator() {
 		return new Function<ExportJob, List<? extends Object>>() {
+			private boolean paramsInited;
+
 			private boolean loadTopLevelContainers = true;
 
 			private boolean endOfContainers;
@@ -1273,6 +1359,8 @@ public class StorageContainerServiceImpl implements StorageContainerService, Obj
 
 			@Override
 			public List<StorageContainerDetail> apply(ExportJob job) {
+				initParams();
+
 				if (endOfContainers) {
 					return Collections.emptyList();
 				}
@@ -1331,6 +1419,15 @@ public class StorageContainerServiceImpl implements StorageContainerService, Obj
 				}
 
 				return result;
+			}
+
+			private void initParams() {
+				if (paramsInited) {
+					return;
+				}
+
+				endOfContainers = !AccessCtrlMgr.getInstance().hasStorageContainerEximRights();
+				paramsInited = true;
 			}
 
 			private List<StorageContainerDetail> getContainers(StorageContainerListCriteria crit) {

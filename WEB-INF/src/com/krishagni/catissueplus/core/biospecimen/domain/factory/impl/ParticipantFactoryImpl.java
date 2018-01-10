@@ -60,7 +60,7 @@ public class ParticipantFactoryImpl implements ParticipantFactory {
 		existing.setCpId(detail.getCpId());
 
 		Participant participant = new Participant();
-		BeanUtils.copyProperties(existing, participant, new String[] {"cprs"});
+		BeanUtils.copyProperties(existing, participant, "cprs", "source");
 		
 		OpenSpecimenException ose = new OpenSpecimenException(ErrorType.USER_ERROR);
 		setParticipantAttrs(detail, participant, true, ose);
@@ -82,7 +82,6 @@ public class ParticipantFactoryImpl implements ParticipantFactory {
 		setVitalStatus(detail, participant, partial, ose);
 		setBirthAndDeathDate(detail, participant, partial, ose);
 		setActivityStatus(detail, participant, partial, ose);
-		setSexGenotype(detail, participant, partial, ose);
 		setGender(detail, participant, partial, ose);
 		setRace(detail, participant, partial, ose);
 		setEthnicity(detail, participant, partial, ose);
@@ -221,20 +220,6 @@ public class ParticipantFactoryImpl implements ParticipantFactory {
 		participant.setActivityStatus(status);		
 	}
 
-	private void setSexGenotype(ParticipantDetail detail, Participant participant, boolean partial, OpenSpecimenException oce) {
-		if (partial && !detail.isAttrModified("sexGenotype")) {
-			return;
-		}
-		
-		String genotype = detail.getSexGenotype();		
-		if (!isValid(GENOTYPE, genotype)) {
-			oce.addError(ParticipantErrorCode.INVALID_GENOTYPE);
-			return;
-		}
-		
-		participant.setSexGenotype(genotype);
-	}
-	
 	private void setGender(ParticipantDetail detail, Participant participant, boolean partial, OpenSpecimenException oce) {
 		if (partial && !detail.isAttrModified("gender")) {
 			return;

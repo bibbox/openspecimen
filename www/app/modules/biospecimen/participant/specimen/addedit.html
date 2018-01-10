@@ -10,11 +10,7 @@
         </li>
         <li ng-if="!cp.specimenCentric">
           <a ui-sref="participant-detail.overview({cprId: cpr.id})">
-            <ng-switch on="!!(cpr.participant.lastName || cpr.participant.firstName)">
-              <span ng-switch-when="true"> {{cpr.participant.firstName}} {{cpr.participant.lastName}} </span>
-              <span ng-switch-when="false" translate="common.na"> N/A </span>
-            </ng-switch>
-            <span>({{cpr.ppid}})</span>
+            <span>{{cpr.ppid}}</span>
           </a>
         </li>
         <li ng-if="!cp.specimenCentric">
@@ -38,15 +34,66 @@
 
   <div class="container">
     <form name="sform" class="form-horizontal" os-form-validator="sform" validator="sformValidator" novalidate>
+      <div class="form-group" ng-if="!currSpecimen.id && !currSpecimen.reqId">
+        <label class="col-xs-3 control-label" translate="specimens.create_mode">Create</label>
+        <div class="col-xs-6">
+          <label class="radio-inline">
+            <input type="radio" name="createMode" ng-model="spmnCtx.mode" ng-value="'single'">
+            <span translate="specimens.single">Single Specimen</span>
+          </label>
+          <label class="radio-inline">
+            <input type="radio" name="createMode" ng-model="spmnCtx.mode" ng-value="'multiple'">
+            <span translate="specimens.multiple">Multiple Specimens</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="form-group" ng-if="spmnCtx.manualSpecLabelReq" ng-switch on="spmnCtx.mode">
+        <span ng-switch-when="single" ng-if="!fieldsCtx.hasDict">
+          <label class="col-xs-3 control-label" translate="specimens.label">Label</label>
+          <div class="col-xs-6">
+            <input type="text" name="label" ng-model="currSpecimen.label" class="form-control"
+              ng-disabled="currSpecimen.labelFmt && !cp.manualSpecLabelEnabled"
+              ng-required="currSpecimen.status != 'Missed Collection'"
+              placeholder="{{'specimens.label' | translate}}"/>
+            <div os-field-error field="sform.label"></div>
+          </div>
+        </span>
+        <span ng-switch-default>
+          <label class="col-xs-3 control-label" translate="specimens.labels">Labels</label>
+          <div class="col-xs-6">
+            <textarea name="labels" ng-model="currSpecimen.labels" class="form-control"
+              placeholder="{{'specimens.labels_csv' | translate}}" rows="2" required>
+            </textarea>
+            <div os-field-error field="sform.labels"></div>
+          </div>
+        </span>
+      </div>
+
+      <div class="form-group" ng-if="spmnCtx.mode == 'multiple' && !spmnCtx.manualSpecLabelReq">
+        <label class="col-xs-3 control-label" translate="specimens.num_of_specimens">No of Specimens</label>
+        <div class="col-xs-6">
+          <input type="text" name="numOfSpecimens" ng-model="currSpecimen.numOfSpecimens" class="form-control"
+            placeholder="{{'specimens.num_of_specimens' | translate}}" ng-pattern="/^[1-9][0-9]*$/" required>
+          <div os-field-error field="sform.numOfSpecimens"></div>
+        </div>
+      </div>
+
       <div ng-switch on="fieldsCtx.hasDict">
         <div ng-switch-when="true">
           <sde-form-fields name="spmn" base-fields="fieldsCtx.sysDict" fields="fieldsCtx.cpDict"
-            obj="spmnCtx.obj" in-objs="spmnCtx.inObjs" ex-objs="spmnCtx.exObjs">
+            obj="spmnCtx.obj" in-objs="spmnCtx.inObjs" ex-objs="spmnCtx.exObjs" opts="spmnCtx.opts">
           </sde-form-fields>
         </div>
         <div ng-switch-default>
           <div ng-include="'modules/biospecimen/participant/specimen/static-addedit.html'">
           </div>
+        </div>
+      </div>
+
+      <div ng-if="!currSpecimen.id && !currSpecimen.reqId">
+        <div ng-form="aliquotForm">
+          <div ng-include="'modules/biospecimen/participant/specimen/add-aliquots-tmpl.html'"></div>
         </div>
       </div>
 
@@ -70,51 +117,6 @@
 
 <script type="text/ng-template" id="modules/biospecimen/participant/specimen/static-addedit.html">
   <div>
-    <div class="form-group" ng-if = "!currSpecimen.id && !currSpecimen.reqId">
-      <label class="col-xs-3 control-label" translate="specimens.create_mode">Create</label>
-      <div class="col-xs-6">
-        <label class="radio-inline">
-          <input type="radio" name="createMode" ng-model="spmnCtx.mode" ng-value="'single'">
-          <span translate="specimens.single">Single Specimen</span>
-        </label>
-        <label class="radio-inline">
-          <input type="radio" name="createMode" ng-model="spmnCtx.mode" ng-value="'multiple'">
-          <span translate="specimens.multiple">Multiple Specimens</span>
-        </label>
-      </div>
-    </div>
-
-    <div class="form-group" ng-if="spmnCtx.manualSpecLabelReq" ng-switch on="spmnCtx.mode">
-      <span ng-switch-when="single">
-        <label class="col-xs-3 control-label" translate="specimens.label">Label</label>
-        <div class="col-xs-6">
-          <input type="text" name="label" ng-model="currSpecimen.label" class="form-control"
-            ng-disabled="currSpecimen.labelFmt && !cp.manualSpecLabelEnabled"
-            ng-required="currSpecimen.status != 'Missed Collection'"
-            placeholder="{{'specimens.label' | translate}}"/>
-          <div os-field-error field="sform.label"></div>
-        </div>
-      </span>
-      <span ng-switch-default>
-        <label class="col-xs-3 control-label" translate="specimens.labels">Labels</label>
-        <div class="col-xs-6" ng-switch on="spmnCtx.mode">
-          <textarea name="labels" ng-model="currSpecimen.labels" class="form-control"
-            placeholder="{{'specimens.labels_csv' | translate}}" rows="2" required>
-          </textarea>
-          <div os-field-error field="sform.labels"></div>
-        </div>
-      </span>
-    </div>
-
-    <div class="form-group" ng-if="spmnCtx.mode == 'multiple' && !spmnCtx.manualSpecLabelReq">
-      <label class="col-xs-3 control-label" translate="specimens.num_of_specimens">No of Specimens</label>
-      <div class="col-xs-6">
-        <input type="text" name="numOfSpecimens" ng-model="currSpecimen.numOfSpecimens" class="form-control"
-          placeholder="{{'specimens.num_of_specimens' | translate}}" ng-pattern="/^[1-9][0-9]*$/" required>
-        <div os-field-error field="sform.numOfSpecimens"></div>
-      </div>
-    </div>
-
     <div class="form-group" ng-if="barcodingEnabled">
       <label class="col-xs-3 control-label" translate="specimens.barcode">Barcode</label>
       <div class="col-xs-6">
@@ -144,7 +146,7 @@
       </div>
     </div>
 
-    <div class="form-group" ng-if="spmnCtx.mode == 'single'">
+    <div class="form-group">
       <label class="col-xs-3 control-label" translate="specimens.initial_qty">Initial Quantity</label>
       <div class="col-xs-6">
         <os-spmn-measure name="qty" specimen="currSpecimen" quantity="currSpecimen.initialQty"
@@ -184,7 +186,7 @@
       </div>
     </div>
 
-    <div class="form-group" ng-if="currSpecimen.lineage != 'Aliquot' && !currSpecimen.poolSpecimen">
+    <div class="form-group" ng-if="!currSpecimen.poolSpecimen">
       <label class="col-xs-3 control-label" translate="specimens.concentration">Concentration</label>
       <div class="col-xs-6"> 
         <os-spmn-measure name="concentration" specimen="currSpecimen" quantity="currSpecimen.concentration"
@@ -354,7 +356,31 @@
     </div>
 
     <div class="os-entity-extn-form-fields" ng-if="!!extnOpts">
-      <div id='de-form' class='os-extn-form' os-de-form opts="extnOpts" ctrl="deFormCtrl" extended-obj="currSpecimen"></div>
+      <div class="os-section-divider">
+        <span translate="specimens.custom_fields">Additional Fields</span>
+      </div>
+      <div class='os-extn-form' os-de-form opts="extnOpts" ctrl="deFormCtrl" extended-obj="currSpecimen"></div>
     </div>
+  </div>
+</script>
+
+<script type="text/ng-template" id="modules/biospecimen/participant/specimen/add-aliquots-tmpl.html">
+  <div class="os-section-divider">
+    <span translate="specimens.aliquot_details">Aliquot Details</span>
+  </div>
+
+  <div class="form-group">
+    <div class="col-xs-offset-3 col-xs-6 os-text-checkbox">
+      <div class="checkbox">
+        <os-checkbox ng-model="aliquotSpec.createAliquots"></os-checkbox>
+      </div>
+      <div class="message os-ctrl-padding-top">
+        <span translate="specimens.create_aliquots_q">Do you want to create aliquots?</span>
+      </div>
+    </div>
+  </div>
+
+  <div ng-if="!!aliquotSpec.createAliquots">
+    <div ng-include src="'modules/biospecimen/participant/specimen/aliquot-form-fields.html'"></div>
   </div>
 </script>

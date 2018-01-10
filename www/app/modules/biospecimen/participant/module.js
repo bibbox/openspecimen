@@ -17,6 +17,7 @@ angular.module('os.biospecimen.participant',
     'os.biospecimen.visit',
     'os.biospecimen.specimen',
     'os.biospecimen.extensions.list',
+    'os.biospecimen.extensions.util',
     'os.biospecimen.extensions.addedit-record',
     'os.biospecimen.specimenkit'
   ])
@@ -44,22 +45,23 @@ angular.module('os.biospecimen.participant',
           },
 
           cpViewCtx: function(cp, currentUser, AuthorizationService) {
+            var participantEximAllowed = AuthorizationService.isAllowed({
+              resource: 'ParticipantPhi',
+              operations: ['Export Import'],
+              cp: cp.shortTitle
+            });
+
+            var visitSpmnEximAllowed = AuthorizationService.isAllowed({
+              resource: 'VisitAndSpecimen',
+              operations: ['Export Import'],
+              cp: cp.shortTitle
+            });
+
             return {
-              participantImportAllowed: AuthorizationService.isAllowed({
-                resource: 'ParticipantPhi',
-                operations: ['Bulk Import'],
-                cp: cp.shortTitle
-              }),
-
-              visitSpecimenImportAllowed: AuthorizationService.isAllowed({
-                resource: 'VisitAndSpecimen',
-                operations: ['Bulk Import'],
-                cp: cp.shortTitle
-              }),
-
-              participantExportAllowed: (currentUser.admin || currentUser.instituteAdmin),
-
-              visitSpecimenExportAllowed: (currentUser.admin || currentUser.instituteAdmin)
+              participantImportAllowed: participantEximAllowed,
+              visitSpecimenImportAllowed: visitSpmnEximAllowed,
+              participantExportAllowed: participantEximAllowed,
+              visitSpecimenExportAllowed: visitSpmnEximAllowed
             }
           },
 
@@ -143,18 +145,6 @@ angular.module('os.biospecimen.participant',
           }
         },
         resolve: {
-          catalogQuery: function(cp) {
-            if (cp.catalogQuery) {
-              return cp.catalogQuery;
-            }
-
-            return cp.getCatalogQuery().then(
-              function(query) {
-                cp.catalogQuery = query;
-              }
-            );
-          },
-
           defSopDoc: function(cp, SettingUtil) {
             if (!!cp.sopDocumentName || !!cp.sopDocumentUrl) {
               return null;
@@ -493,6 +483,9 @@ angular.module('os.biospecimen.participant',
                 return setting.value == 'true';
               }
             );
+          },
+          consents: function(hasDict, hasFieldsFn, cpr) {
+            return (hasDict && hasFieldsFn(['consents'])) ? cpr.getConsents() : null;
           }
         },
         controller: 'ParticipantOverviewCtrl',
@@ -533,11 +526,13 @@ angular.module('os.biospecimen.participant',
         templateUrl: 'modules/biospecimen/participant/collect-specimens.html',
         controller: 'CollectSpecimensCtrl',
         resolve: {
-          visit: function($stateParams, cpr, Visit) {
-            if (!!$stateParams.visitId) {
+          visit: function($stateParams, cp, cpr, Visit) {
+            if (!!$stateParams.visitId && $stateParams.visitId > 0) {
               return Visit.getById($stateParams.visitId);
             } else if (!!$stateParams.eventId) {
               return Visit.getAnticipatedVisit($stateParams.eventId, cpr.registrationDate);
+            } else if (cp.specimenCentric) {
+              return new Visit({cpId: cp.id});
             }
 
             return null;
@@ -546,7 +541,7 @@ angular.module('os.biospecimen.participant',
             //
             // required for lastest visit clinical diagnosis.
             //
-            return $stateParams.visitId ? null : cpr.getLatestVisit();
+            return ($stateParams.visitId || !cpr || !cpr.id) ? null : cpr.getLatestVisit();
           },
           spmnCollFields: function($stateParams, hasSde, cp, CpConfigSvc) {
             if (!hasSde) {
@@ -565,18 +560,48 @@ angular.module('os.biospecimen.participant',
       .state('participant-detail.extensions', {
         url: '/extensions',
         template: '<div ui-view></div>',
-        controller: function($scope, cpr) {
+        controller: function($scope, cpr, forms, records, ExtensionsUtil) {
           $scope.extnOpts = {
             update: $scope.participantResource.updateOpts,
             isEntityActive: cpr.activityStatus == 'Active',
             entity: cpr
+          }
+
+          ExtensionsUtil.linkFormRecords(forms, records);
+        },
+        resolve: {
+          orderSpec: function(cp, CpConfigSvc) {
+            return CpConfigSvc.getWorkflowData(cp.id, 'forms', {}).then(
+              function(wf) {
+                return [
+                  {type: 'CommonParticipant', forms: wf['CommonParticipant'] || []},
+                  {type: 'Participant', forms: wf['Participant'] || []}
+                ];
+              }
+            );
+          },
+          forms: function(cpr, orderSpec, ExtensionsUtil) {
+            return cpr.getForms().then(
+              function(forms) {
+                return ExtensionsUtil.sortForms(forms, orderSpec);
+              }
+            )
+          },
+          records: function(cpr) {
+            return cpr.getRecords();
+          },
+          viewOpts: function() {
+            return {
+              goBackFn: null,
+              showSaveNext: true
+            };
           }
         },
         abstract: true,
         parent: 'participant-detail'
       })
       .state('participant-detail.extensions.list', {
-        url: '/list',
+        url: '/list?formId&formCtxtId&recordId',
         templateUrl: 'modules/biospecimen/extensions/list.html',
         controller: 'FormsListCtrl', 
         parent: 'participant-detail.extensions'

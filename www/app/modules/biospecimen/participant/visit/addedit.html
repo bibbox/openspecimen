@@ -9,11 +9,7 @@
         </li>
         <li>
           <a ui-sref="participant-detail.overview({cprId: cpr.id})">
-            <ng-switch on="!!(cpr.participant.lastName || cpr.participant.firstName)">
-              <span ng-switch-when="true"> {{cpr.participant.firstName}} {{cpr.participant.lastName}} </span>
-              <span ng-switch-when="false" translate="common.na"> N/A </span>
-            </ng-switch>
-            <span>({{cpr.ppid}})</span>
+            <span>{{cpr.ppid}}</span>
           </a>
         </li>
         <li>
@@ -28,7 +24,8 @@
           <span ng-switch-when="true">Update</span> 
           <span ng-switch-default>Add</span>
         </ng-switch>
-        <os-event-desc event-point="currVisit.eventPoint" event-label="currVisit.eventLabel"></os-event-desc>
+        <os-event-desc event-point="currVisit.eventPoint" event-point-unit="visit.eventPointUnit"
+          event-label="currVisit.eventLabel"></os-event-desc>
       </h3>
     </div>
   </div>

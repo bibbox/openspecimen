@@ -661,7 +661,7 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 
 	private QueryDataExportResult exportReport(final DistributionOrder order, SavedQuery report) {
 		Filter filter = new Filter();
-		filter.setField("Order.id");
+		filter.setField("Specimen.specimenOrders.id");
 		filter.setOp(Op.EQ);
 		filter.setValues(new String[] { order.getId().toString() });
 		
@@ -899,8 +899,9 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 			row = location.getPositionY();
 			column = location.getPositionX();
 			if (container.usesLinearLabelingMode() && location.getPosition() != null && location.getPosition() != 0) {
-				row = String.valueOf((location.getPosition() - 1) / container.getNoOfColumns() + 1);
-				column = String.valueOf((location.getPosition() - 1) % container.getNoOfColumns() + 1);
+				Pair<Integer, Integer> coord = container.getPositionAssigner().fromPosition(container, location.getPosition());
+				row = coord.first().toString();
+				column = coord.second().toString();
 			}
 		}
 

@@ -1,6 +1,6 @@
 
 angular.module('os.administrative.models.container', ['os.common.models'])
-  .factory('Container', function(osModel, $q, $http, $translate) {
+  .factory('Container', function(osModel, $q, $http, $translate, BoxLayoutUtil) {
     var Container = new osModel(
       'storage-containers',
       function(container) {
@@ -144,6 +144,26 @@ angular.module('os.administrative.models.container', ['os.common.models'])
         }
       );
     };
+
+    Container.prototype.blockPositions = function(positions) {
+      return $http.put(Container.url() + this.$id() + '/block-positions', positions).then(
+        function(resp) {
+          return resp.data;
+        }
+      );
+    }
+
+    Container.prototype.unblockPositions = function(positions) {
+      return $http.put(Container.url() + this.$id() + '/unblock-positions', positions).then(
+        function(resp) {
+          return resp.data;
+        }
+      );
+    }
+
+    Container.prototype.getPositionAssigner = function() {
+      return BoxLayoutUtil.getPositionAssigner(this.positionAssignment);
+    }
 
     Container.list = function(opts) {
       var defOpts = {topLevelContainers: true};

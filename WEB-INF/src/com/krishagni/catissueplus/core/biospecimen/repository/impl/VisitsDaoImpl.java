@@ -13,15 +13,19 @@ import java.util.Map;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang.StringUtils;
 import org.hibernate.Criteria;
+import org.hibernate.criterion.DetachedCriteria;
 import org.hibernate.criterion.Order;
 import org.hibernate.criterion.Projections;
 import org.hibernate.criterion.Restrictions;
+import org.hibernate.criterion.Subqueries;
 
 import com.krishagni.catissueplus.core.biospecimen.domain.Visit;
 import com.krishagni.catissueplus.core.biospecimen.events.VisitSummary;
 import com.krishagni.catissueplus.core.biospecimen.repository.VisitsDao;
 import com.krishagni.catissueplus.core.biospecimen.repository.VisitsListCriteria;
+import com.krishagni.catissueplus.core.common.domain.IntervalUnit;
 import com.krishagni.catissueplus.core.common.repository.AbstractDao;
+import com.krishagni.catissueplus.core.common.util.Utility;
 
 public class VisitsDaoImpl extends AbstractDao<Visit> implements VisitsDao {
 	
@@ -42,7 +46,8 @@ public class VisitsDaoImpl extends AbstractDao<Visit> implements VisitsDao {
 		Map<Long, VisitSummary> anticipatedVisits = new HashMap<>();  // eventId: key
 
 		Date regDate = null;
-		int minEventPoint = 0;
+		int minEventPoint = 0, minEventPointInDays = 0;
+		IntervalUnit minEventPointUnit = IntervalUnit.DAYS;
 		for (Object[] row : rows) {
 			Long visitId = (Long)row[0];
 			String eventStatus = (String)row[3];
@@ -56,11 +61,17 @@ public class VisitsDaoImpl extends AbstractDao<Visit> implements VisitsDao {
 			visit.setName((String)row[2]);
 			visit.setEventLabel((String)row[4]);
 			visit.setEventPoint((Integer)row[5]);
-			visit.setStatus((String)row[6]);
-			visit.setVisitDate((Date)row[7]);
-			regDate = (Date)row[8];
-			visit.setMissedReason((String)row[9]);
-			visit.setCpId((Long)row[10]);
+
+			String eventPointUnit = (String) row[6];
+			if (StringUtils.isNotBlank(eventPointUnit)) {
+				visit.setEventPointUnit(IntervalUnit.valueOf(eventPointUnit));
+			}
+
+			visit.setStatus((String)row[7]);
+			visit.setVisitDate((Date)row[8]);
+			regDate = (Date)row[9];
+			visit.setMissedReason((String)row[10]);
+			visit.setCpId((Long)row[11]);
 			visits.add(visit);
 
 			if (crit.includeStat()) {
@@ -71,8 +82,13 @@ public class VisitsDaoImpl extends AbstractDao<Visit> implements VisitsDao {
 				}
 			}
 
-			if (visit.getEventPoint() != null && visit.getEventPoint() < minEventPoint) {
-				minEventPoint = visit.getEventPoint();
+			if (visit.getEventPoint() != null) {
+				Integer interval = Utility.getNoOfDays(visit.getEventPoint(), visit.getEventPointUnit());
+				if (interval < minEventPointInDays) {
+					minEventPoint = visit.getEventPoint();
+					minEventPointInDays = interval;
+					minEventPointUnit = visit.getEventPointUnit();
+				}
 			}
 		}
 
@@ -83,7 +99,8 @@ public class VisitsDaoImpl extends AbstractDao<Visit> implements VisitsDao {
 			}
 
 			cal.setTime(regDate);
-			cal.add(Calendar.DAY_OF_YEAR, visit.getEventPoint() - minEventPoint);
+			setAnticipatedVisitDateInCalender(cal, visit.getEventPoint(), visit.getEventPointUnit());
+			setAnticipatedVisitDateInCalender(cal, -minEventPoint, minEventPointUnit);
 			visit.setAnticipatedVisitDate(cal.getTime());
 		}
 
@@ -104,27 +121,10 @@ public class VisitsDaoImpl extends AbstractDao<Visit> implements VisitsDao {
 	@Override
 	@SuppressWarnings("unchecked")
 	public List<Visit> getVisitsList(VisitsListCriteria crit) {
-		Criteria query = getCurrentSession().createCriteria(Visit.class, "visit");
+		Criteria query = getCurrentSession().createCriteria(Visit.class, "visit")
+			.add(Subqueries.propertyIn("visit.id", getVisitIdsListQuery(crit)));
 
-		String startAlias = "cpr";
-		if (crit.cpId() != null) {
-			startAlias = "cpSite";
-			query.createAlias("visit.registration", "cpr")
-				.createAlias("cpr.collectionProtocol", "cp")
-				.add(Restrictions.eq("cp.id", crit.cpId()));
-		}
-
-		boolean limitItems = true;
-		if (CollectionUtils.isNotEmpty(crit.names())) {
-			query.add(Restrictions.in("name", crit.names()));
-			limitItems = false;
-		}
-
-		if (CollectionUtils.isNotEmpty(crit.siteCps())) {
-			BiospecimenDaoHelper.getInstance().addSiteCpsCond(query, crit.siteCps(), crit.useMrnSites(), startAlias);
-		}
-
-		if (limitItems) {
+		if (CollectionUtils.isEmpty(crit.names())) {
 			query.setFirstResult(crit.startAt()).setMaxResults(crit.maxResults());
 		}
 
@@ -237,6 +237,50 @@ public class VisitsDaoImpl extends AbstractDao<Visit> implements VisitsDao {
 			visit.setTotalPendingSpmns((Integer) row[idx++]);
 			visit.setPendingPrimarySpmns((Integer) row[idx++]);
 		}
+	}
+
+	private void setAnticipatedVisitDateInCalender(Calendar cal, Integer interval, IntervalUnit intervalUnit) {
+		switch (intervalUnit) {
+			case DAYS:
+				cal.add(Calendar.DAY_OF_YEAR, interval);
+				break;
+
+			case WEEKS:
+				cal.add(Calendar.WEEK_OF_YEAR, interval);
+				break;
+
+			case MONTHS:
+				cal.add(Calendar.MONTH, interval);
+				break;
+
+			case YEARS:
+				cal.add(Calendar.YEAR, interval);
+				break;
+		}
+	}
+
+	private DetachedCriteria getVisitIdsListQuery(VisitsListCriteria crit) {
+		DetachedCriteria detachedCriteria = DetachedCriteria.forClass(Visit.class, "visit")
+			.setProjection(Projections.distinct(Projections.property("visit.id")));
+		Criteria query = detachedCriteria.getExecutableCriteria(getCurrentSession());
+
+		String startAlias = "cpr";
+		if (crit.cpId() != null) {
+			startAlias = "cpSite";
+			query.createAlias("visit.registration", "cpr")
+				.createAlias("cpr.collectionProtocol", "cp")
+				.add(Restrictions.eq("cp.id", crit.cpId()));
+		}
+
+		if (CollectionUtils.isNotEmpty(crit.names())) {
+			query.add(Restrictions.in("name", crit.names()));
+		}
+
+		if (CollectionUtils.isNotEmpty(crit.siteCps())) {
+			BiospecimenDaoHelper.getInstance().addSiteCpsCond(query, crit.siteCps(), crit.useMrnSites(), startAlias);
+		}
+
+		return detachedCriteria;
 	}
 
 	private static final String FQN = Visit.class.getName();

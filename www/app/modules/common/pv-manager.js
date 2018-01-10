@@ -89,6 +89,24 @@ angular.module('openspecimen')
       {name: 'NONE', displayKey:'srs.spmn_label_auto_print_modes.NONE'}
     ];
 
+    var intervalUnits = [
+      {name: 'DAYS',   displayKey: 'common.interval_units.DAYS'},
+      {name: 'WEEKS',  displayKey: 'common.interval_units.WEEKS'},
+      {name: 'MONTHS', displayKey: 'common.interval_units.MONTHS'},
+      {name: 'YEARS',  displayKey: 'common.interval_units.YEARS'}
+    ]
+
+    var positionAssignments = [
+      {name: 'HZ_TOP_DOWN_LEFT_RIGHT',  displayKey: 'container.position_assignments.HZ_TOP_DOWN_LEFT_RIGHT'},
+      {name: 'HZ_TOP_DOWN_RIGHT_LEFT',  displayKey: 'container.position_assignments.HZ_TOP_DOWN_RIGHT_LEFT'},
+      {name: 'HZ_BOTTOM_UP_LEFT_RIGHT', displayKey: 'container.position_assignments.HZ_BOTTOM_UP_LEFT_RIGHT'},
+      {name: 'HZ_BOTTOM_UP_RIGHT_LEFT', displayKey: 'container.position_assignments.HZ_BOTTOM_UP_RIGHT_LEFT'},
+      {name: 'VT_TOP_DOWN_LEFT_RIGHT',  displayKey: 'container.position_assignments.VT_TOP_DOWN_LEFT_RIGHT'},
+      {name: 'VT_TOP_DOWN_RIGHT_LEFT',  displayKey: 'container.position_assignments.VT_TOP_DOWN_RIGHT_LEFT'},
+      {name: 'VT_BOTTOM_UP_LEFT_RIGHT', displayKey: 'container.position_assignments.VT_BOTTOM_UP_LEFT_RIGHT'},
+      {name: 'VT_BOTTOM_UP_RIGHT_LEFT', displayKey: 'container.position_assignments.VT_BOTTOM_UP_RIGHT_LEFT'},
+    ]
+
     var pvMap = {
       anatomicSite: anatomicSites,
       'storage-type': storageTypes,
@@ -99,7 +117,9 @@ angular.module('openspecimen')
       'quality-status': qualityStatuses,
       'visit-name-print-modes': visitNamePrintModes,
       'specimen-label-pre-print-modes': spmnLabelPrePrintModes,
-      'specimen-label-auto-print-modes': spmnLabelAutoPrintModes
+      'specimen-label-auto-print-modes': spmnLabelAutoPrintModes,
+      'interval-units': intervalUnits,
+      'container-position-assignments': positionAssignments
     };
 
     var pvIdMap = {

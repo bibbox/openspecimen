@@ -9,7 +9,6 @@ angular.module('os.biospecimen.cp',
     'os.biospecimen.cp.consents',
     'os.biospecimen.cp.events',
     'os.biospecimen.cp.specimens',
-    'os.biospecimen.cp.catalog',
     'os.biospecimen.cp.dp'
   ])
 
@@ -41,17 +40,22 @@ angular.module('os.biospecimen.cp',
           $scope.codingEnabled = $scope.global.appProps.cp_coding_enabled;
         },
         resolve: {
-          cpsCtx: function(currentUser, AuthorizationService) {
-            return {
-              participantImportAllowed: AuthorizationService.isAllowed({
-                resource: 'ParticipantPhi',
-                operations: ['Bulk Import']
-              }),
+          cpsCtx: function(currentUser, authInit, AuthorizationService) {
+            var participantEximAllowed = AuthorizationService.isAllowed({
+              resource: 'ParticipantPhi',
+              operations: ['Export Import']
+            });
 
-              visitSpecimenImportAllowed: AuthorizationService.isAllowed({
-                resource: 'VisitAndSpecimen',
-                operations: ['Bulk Import']
-              })
+            var visitSpmnEximAllowed = AuthorizationService.isAllowed({
+              resource: 'VisitAndSpecimen',
+              operations: ['Export Import']
+            });
+
+            return {
+              participantImportAllowed: participantEximAllowed,
+              visitSpecimenImportAllowed: visitSpmnEximAllowed,
+              participantExportAllowed: participantEximAllowed,
+              visitSpecimenExportAllowed: visitSpmnEximAllowed
             }
           }
         },
@@ -156,6 +160,44 @@ angular.module('os.biospecimen.cp',
         },
         parent: 'cps'
       })
+      .state('export-multi-cp-objs', {
+        url: '/export-multi-cp-objs',
+        templateUrl: 'modules/common/export/add.html',
+        controller: 'AddEditExportJobCtrl',
+        resolve: {
+          cp: function(CollectionProtocol) {
+            return new CollectionProtocol({id: -1});
+          },
+
+          allowedEntityTypes: function(cp, cpsCtx) {
+            var entityTypes = [];
+            if (cpsCtx.participantExportAllowed) {
+              entityTypes.push('CommonParticipant');
+              entityTypes.push('Participant');
+            }
+
+            if (cpsCtx.visitSpecimenExportAllowed) {
+              entityTypes.push('SpecimenCollectionGroup');
+            }
+
+            if (cpsCtx.visitSpecimenExportAllowed) {
+              entityTypes.push('Specimen');
+              entityTypes.push('SpecimenEvent');
+            }
+
+            return entityTypes;
+          },
+
+          forms: function(cp, allowedEntityTypes) {
+            return allowedEntityTypes.length > 0 ? cp.getForms(allowedEntityTypes) : [];
+          },
+
+          exportDetail: function(cp, allowedEntityTypes, forms, ExportUtil) {
+            return ExportUtil.getExportDetail(cp, allowedEntityTypes, forms);
+          }
+        },
+        parent: 'cps'
+      })
       .state('cp-detail', {
         url: '/:cpId',
         templateUrl: 'modules/biospecimen/cp/detail.html',
@@ -229,24 +271,20 @@ angular.module('os.biospecimen.cp',
         parent: 'cp-detail.settings',
         controller: 'CpLabelSettingsCtrl'
       })
-      .state('cp-detail.settings.catalog', {
-        url: '/catalog',
-        templateUrl: 'modules/biospecimen/cp/catalog-settings.html',
+      .state('cp-detail.settings.forms', {
+        url: '/forms',
+        templateUrl: 'modules/biospecimen/cp/form-settings.html',
         parent: 'cp-detail.settings',
         resolve: {
-          catalogSetting: function(cp) {
-            if (cp.catalogSetting) {
-              return cp.catalogSetting;
-            }
+          forms: function(cp) {
+            return cp.getForms(['CommonParticipant', 'Participant', 'SpecimenCollectionGroup', 'Specimen']);
+          },
 
-            return cp.getCatalogSetting().then(
-              function(setting) {
-                cp.catalogSetting = setting || {};
-              }
-            );
+          formsWf: function(cp, CpConfigSvc) {
+            return CpConfigSvc.getWorkflow(cp.id, 'forms');
           }
         },
-        controller: 'CpCatalogSettingsCtrl'
+        controller: 'CpFormSettingsCtrl'
       })
       .state('cp-detail.settings.container', {
         url: '/container',

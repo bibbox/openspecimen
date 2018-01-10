@@ -1,45 +1,110 @@
 
 angular.module('os.biospecimen.extensions.addedit-record', [])
-  .controller('FormRecordAddEditCtrl', function($scope, $state, $stateParams, formDef, postSaveFilters, ExtensionsUtil, Alerts) {
-    var recId = $stateParams.recordId;
-    if (!!recId) {
-      recId = parseInt(recId);
+  .controller('FormRecordAddEditCtrl', function(
+    $scope, $state, $stateParams, forms, records, formDef,
+    postSaveFilters, viewOpts,
+    LocationChangeListener, ExtensionsUtil, Alerts) {
+
+    function init() {
+      var recId = $stateParams.recordId;
+      if (!!recId) {
+        recId = parseInt(recId);
+      }
+
+      var nextForm = undefined;
+      if (viewOpts.showSaveNext) {
+        nextForm = getNextForm();
+      }
+
+      $scope.formOpts = {
+        formId: $stateParams.formId,
+        formDef: formDef,
+        recordId: recId,
+        formCtxtId: parseInt($stateParams.formCtxId),
+        objectId: $scope.object.id,
+        showActionBtns: viewOpts.showActionBtns == false ? false : true,
+        showSaveNext: viewOpts.showSaveNext && !!nextForm,
+
+        onSave: function(formData, next) {
+          angular.forEach(postSaveFilters, function(filter) {
+            filter($scope.object, formDef.name, formData);
+          });
+
+          Alerts.success("extensions.record_saved");
+          if (nextForm) {
+            var params = angular.extend({}, $stateParams);
+            params.formCtxId = nextForm.formCtxtId;
+            params.formId = nextForm.formId;
+            params.recordId = undefined;
+            LocationChangeListener.allowChange();
+            $state.go($state.current.name, params);
+          } else {
+            gotoRecsList();
+          }
+        },
+
+        onError: function() {
+          alert("Error");
+        },
+
+        onCancel: function() {
+          gotoRecsList();
+        },
+
+        onPrint: function(html) {
+          alert(html);
+        },
+
+        onDelete: function() {
+          var record = {recordId: recId, formId: $stateParams.formId, formCaption: formDef.caption}
+          ExtensionsUtil.deleteRecord(record, gotoRecsList);
+        }
+      };
     }
 
-    $scope.formOpts = {
-      formId: $stateParams.formId,
-      formDef: formDef,
-      recordId: recId,
-      formCtxtId: parseInt($stateParams.formCtxId),
-      objectId: $scope.object.id,
-      showActionBtns: true,
+    function getNextForm() {
+      var nextForm = undefined;
+      var anyForm = false;
+      for (var i = 0; i < forms.length - 1; ++i) {
+        var f = forms[i], nf = forms[i + 1];
+        if (!anyForm && f.formId == $stateParams.formId) {
+          anyForm = true;
+        }
 
-      onSave: function(formData) {
-        angular.forEach(postSaveFilters, function(filter) {
-          filter($scope.object, formDef.name, formData);
-        });
-
-        $scope.back();
-        Alerts.success("extensions.record_saved");
-      },
-
-      onError: function() {
-        alert("Error");
-      },
-
-      onCancel: function() {
-        $scope.back();
-      },
-
-      onPrint: function(html) {
-        alert(html);
-      },
-
-      onDelete: function() {
-        var record = {recordId: recId, formId: $stateParams.formId, formCaption: formDef.caption}
-        ExtensionsUtil.deleteRecord(record, function(record) {
-          $scope.back();
-        });
+        if (anyForm && (nf.multiRecord || nf.records.length == 0)) {
+          nextForm = nf;
+          break;
+        }
       }
-    };
+
+      return nextForm;
+    }
+
+    function gotoRecsList() {
+      if (typeof viewOpts.goBackFn == 'function') {
+        viewOpts.goBackFn();
+        return;
+      }
+
+      reloadRecs().then(
+        function() {
+          LocationChangeListener.allowChange();
+          var params = {formId: $stateParams.formId, formCtxtId: $stateParams.formCtxId, recordId: null}
+          $state.go($scope.extnState + 'list', params);
+        }
+      );
+    }
+
+    function reloadRecs() {
+      records.length = 0;
+      return $scope.object.getRecords().then(
+        function(dbRecs) {
+          Array.prototype.push.apply(records, dbRecs);
+          ExtensionsUtil.linkFormRecords(forms, records);
+          return dbRecs;
+        }
+      );
+    }
+
+    init();
   });

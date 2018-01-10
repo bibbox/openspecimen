@@ -43,6 +43,7 @@ import com.krishagni.catissueplus.core.biospecimen.events.SpecimenEventDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.VisitDetail;
 import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
 import com.krishagni.catissueplus.core.biospecimen.services.SpecimenResolver;
+import com.krishagni.catissueplus.core.common.Pair;
 import com.krishagni.catissueplus.core.common.errors.ActivityStatusErrorCode;
 import com.krishagni.catissueplus.core.common.errors.ErrorType;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
@@ -128,6 +129,7 @@ public class SpecimenFactoryImpl implements SpecimenFactory {
 		specimen.setVisit(visit);
 		specimen.setForceDelete(detail.isForceDelete());
 		specimen.setPrintLabel(detail.isPrintLabel());
+		specimen.setAutoCollectParents(detail.isAutoCollectParents());
 
 		setCollectionStatus(detail, existing, specimen, ose);
 		setLineage(detail, existing, specimen, ose);
@@ -624,10 +626,10 @@ public class SpecimenFactoryImpl implements SpecimenFactory {
 	
 	private void setConcentration(SpecimenDetail detail, Specimen specimen, OpenSpecimenException ose) {
 		Specimen parent = specimen.getParentSpecimen();
-		if (specimen.isAliquot() && parent != null) {
-			specimen.setConcentration(parent.getConcentration());
-		} else if (!specimen.isAliquot()) {
+		if (!specimen.isAliquot() || detail.getConcentration() != null) {
 			specimen.setConcentration(detail.getConcentration());
+		} else if (parent != null){
+			specimen.setConcentration(parent.getConcentration());
 		}
 	}
 	
@@ -790,7 +792,7 @@ public class SpecimenFactoryImpl implements SpecimenFactory {
 	}
 
 	private void setSpecimenPosition(SpecimenDetail detail, Specimen specimen, OpenSpecimenException ose) {
-		StorageContainer container = null;
+		specimen.setTransferComments(detail.getTransferComments());
 
 		StorageLocationSummary location = detail.getStorageLocation();
 		if (isVirtual(location) || !specimen.isCollected()) {
@@ -801,6 +803,7 @@ public class SpecimenFactoryImpl implements SpecimenFactory {
 			return;
 		}
 
+		StorageContainer container = null;
 		Object key = null;
 		if (location.getId() != null && location.getId() != -1) {
 			key = location.getId();
@@ -833,8 +836,9 @@ public class SpecimenFactoryImpl implements SpecimenFactory {
 			posOne = location.getPositionX();
 			posTwo = location.getPositionY();
 			if (container.usesLinearLabelingMode() && location.getPosition() != null && location.getPosition() != 0) {
-				posTwo = String.valueOf((location.getPosition() - 1) / container.getNoOfColumns() + 1);
-				posOne = String.valueOf((location.getPosition() - 1) % container.getNoOfColumns() + 1);
+				Pair<Integer, Integer> coord = container.getPositionAssigner().fromPosition(container, location.getPosition());
+				posTwo = coord.first().toString();
+				posOne = coord.second().toString();
 			}
 		}
 

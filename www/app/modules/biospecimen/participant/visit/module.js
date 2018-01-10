@@ -3,6 +3,7 @@ angular.module('os.biospecimen.visit', [
     'ui.router',
     'os.biospecimen.participant.specimen-tree',
     'os.biospecimen.extensions',
+    'os.biospecimen.extensions.util',
     'os.biospecimen.visit.addedit',
     'os.biospecimen.visit.spr',
     'os.biospecimen.visit.detail',
@@ -14,11 +15,13 @@ angular.module('os.biospecimen.visit', [
         url: '/visits?visitId&eventId',
         template: '<div ui-view></div>',
         resolve: {
-          visit: function($stateParams, cpr, Visit) {
+          visit: function($stateParams, cp, cpr, Visit) {
             if (!!$stateParams.visitId && $stateParams.visitId > 0) {
               return Visit.getById($stateParams.visitId);
             } else if (!!$stateParams.eventId) {
               return Visit.getAnticipatedVisit($stateParams.eventId, cpr.registrationDate);
+            } else if (cp.specimenCentric) {
+              return new Visit({cpId: cp.id});
             }
 
             return null;
@@ -102,18 +105,45 @@ angular.module('os.biospecimen.visit', [
       .state('visit-detail.extensions', {
         url: '/extensions',
         template: '<div ui-view></div>',
-        controller: function($scope, visit) {
+        controller: function($scope, visit, forms, records, ExtensionsUtil) {
           $scope.extnOpts = {
             update: $scope.specimenResource.updateOpts,
             entity: visit,
             isEntityActive: visit.activityStatus == 'Active'
+          }
+
+          ExtensionsUtil.linkFormRecords(forms, records);
+        },
+        resolve: {
+          orderSpec: function(cp, CpConfigSvc) {
+            return CpConfigSvc.getWorkflowData(cp.id, 'forms', {}).then(
+              function(wf) {
+                return [{type: 'SpecimenCollectionGroup', forms: wf['SpecimenCollectionGroup'] || []}];
+              }
+            );
+          },
+          forms: function(visit, orderSpec, ExtensionsUtil) {
+            return visit.getForms().then(
+              function(forms) {
+                return ExtensionsUtil.sortForms(forms, orderSpec);
+              } 
+            ) 
+          },
+          records: function(visit) {
+            return visit.getRecords();
+          },
+          viewOpts: function() {
+            return {
+              goBackFn: null,
+              showSaveNext: true
+            };
           }
         },
         abstract: true,
         parent: 'visit-detail'
       })
       .state('visit-detail.extensions.list', {
-        url: '/list',
+        url: '/list?formId&formCtxtId&recordId',
         templateUrl: 'modules/biospecimen/extensions/list.html',
         controller: 'FormsListCtrl',
         parent: 'visit-detail.extensions'

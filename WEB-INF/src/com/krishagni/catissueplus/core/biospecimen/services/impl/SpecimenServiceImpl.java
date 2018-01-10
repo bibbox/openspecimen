@@ -55,6 +55,7 @@ import com.krishagni.catissueplus.core.common.errors.ActivityStatusErrorCode;
 import com.krishagni.catissueplus.core.common.errors.CommonErrorCode;
 import com.krishagni.catissueplus.core.common.errors.ErrorType;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
+import com.krishagni.catissueplus.core.common.events.BulkEntityDetail;
 import com.krishagni.catissueplus.core.common.events.DependentEntityDetail;
 import com.krishagni.catissueplus.core.common.events.LabelTokenDetail;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
@@ -239,6 +240,29 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 
 	@Override
 	@PlusTransactional
+	public ResponseEvent<List<SpecimenInfo>> bulkUpdateSpecimens(RequestEvent<BulkEntityDetail<SpecimenDetail>> req) {
+		try {
+			BulkEntityDetail<SpecimenDetail> buDetail = req.getPayload();
+			SpecimenDetail spmn = buDetail.getDetail();
+
+			OpenSpecimenException ose = new OpenSpecimenException(ErrorType.USER_ERROR);
+			List<Specimen> savedSpmns = new ArrayList<>();
+			for (Long id : buDetail.getIds()) {
+				spmn.setId(id);
+				savedSpmns.add(updateSpecimen(spmn, ose));
+			}
+
+			ose.checkAndThrow();
+			return ResponseEvent.response(SpecimenDetail.from(savedSpmns));
+		} catch (OpenSpecimenException ose) {
+			return ResponseEvent.error(ose);
+		} catch (Exception e) {
+			return ResponseEvent.serverError(e);
+		}
+	}
+
+	@Override
+	@PlusTransactional
 	public ResponseEvent<List<SpecimenDetail>> updateSpecimensStatus(RequestEvent<List<SpecimenStatusDetail>> req) {
 		try {
 			List<SpecimenDetail> result = new ArrayList<>();
@@ -353,12 +377,13 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 				return ResponseEvent.userError(SpecimenErrorCode.INVALID_QTY_OR_CNT);
 			}
 
-			List<SpecimenDetail> aliquots = new ArrayList<SpecimenDetail>();
+			List<SpecimenDetail> aliquots = new ArrayList<>();
 			for (int i = 0; i < count; ++i) {
 				SpecimenDetail aliquot = new SpecimenDetail();
 				aliquot.setLineage(Specimen.ALIQUOT);
 				aliquot.setInitialQty(aliquotQty);
 				aliquot.setAvailableQty(aliquotQty);
+				aliquot.setConcentration(spec.getConcentration());
 				aliquot.setParentLabel(parentSpecimen.getLabel());
 				aliquot.setParentId(parentSpecimen.getId());
 				aliquot.setCreatedOn(spec.getCreatedOn());
@@ -533,11 +558,22 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 
 	@Override
 	public void onConfigChange(String name, String value) {
-		if (name.equals(ConfigParams.UNIQUE_SPMN_LABEL_PER_CP) && !"true".equalsIgnoreCase(value)) {
-			boolean dupSpmnLabels = daoFactory.getSpecimenDao().areDuplicateLabelsPresent();
-			if (dupSpmnLabels) {
-				throw OpenSpecimenException.userError(SpecimenErrorCode.UQ_LBL_CP_CHG_NA);
-			}
+		if ("true".equalsIgnoreCase(value)) {
+			return;
+		}
+
+		boolean duplicates = false;
+		SpecimenErrorCode errorCode = null;
+		if (name.equals(ConfigParams.UNIQUE_SPMN_LABEL_PER_CP)) {
+			duplicates = daoFactory.getSpecimenDao().areDuplicateLabelsPresent();
+			errorCode = SpecimenErrorCode.UQ_LBL_CP_CHG_NA;
+		} else if (name.equals(ConfigParams.UNIQUE_SPMN_BARCODE_PER_CP)) {
+			duplicates = daoFactory.getSpecimenDao().areDuplicateBarcodesPresent();
+			errorCode = SpecimenErrorCode.UQ_BC_CP_CHG_NA;
+		}
+
+		if (duplicates) {
+			throw OpenSpecimenException.userError(errorCode);
 		}
 	}
 
@@ -550,7 +586,7 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 	private List<Specimen> getSpecimens(SpecimenListCriteria crit) {
 		List<Pair<Long, Long>> siteCpPairs = AccessCtrlMgr.getInstance().getReadAccessSpecimenSiteCps(crit.cpId());
 		if (siteCpPairs != null && siteCpPairs.isEmpty()) {
-			return Collections.<Specimen>emptyList();
+			return Collections.emptyList();
 		}
 
 		crit.siteCps(siteCpPairs);
@@ -659,9 +695,14 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 		if (existing != null && specimen.getBarcode().equals(existing.getBarcode())) {
 			return;
 		}
-		
-		if (daoFactory.getSpecimenDao().getByBarcode(specimen.getBarcode()) != null) {
-			ose.addError(SpecimenErrorCode.DUP_BARCODE, specimen.getBarcode());
+
+		CollectionProtocol cp = specimen.getCollectionProtocol();
+		if (getSpecimenByBarcode(cp.getShortTitle(), specimen.getBarcode()) != null) {
+			if (areBarcodesUniquePerCp()) {
+				ose.addError(SpecimenErrorCode.DUP_BARCODE_IN_CP, specimen.getBarcode(), cp.getShortTitle());
+			} else {
+				ose.addError(SpecimenErrorCode.DUP_BARCODE, specimen.getBarcode());
+			}
 		}
 	}
 
@@ -865,8 +906,16 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 		return specimenResolver.getSpecimen(cpShortTitle, label);
 	}
 
+	private Specimen getSpecimenByBarcode(String cpShortTitle, String barcode) {
+		return specimenResolver.getSpecimenByBarcode(cpShortTitle, barcode);
+	}
+
 	private boolean areLabelsUniquePerCp() {
 		return cfgSvc.getBoolSetting(ConfigParams.MODULE, ConfigParams.UNIQUE_SPMN_LABEL_PER_CP, false);
+	}
+
+	private boolean areBarcodesUniquePerCp() {
+		return cfgSvc.getBoolSetting(ConfigParams.MODULE, ConfigParams.UNIQUE_SPMN_BARCODE_PER_CP, false);
 	}
 
 	private void incrParentFreezeThawCycles(SpecimenDetail detail, Specimen spec) {
@@ -982,27 +1031,31 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 				if (StringUtils.isNotBlank(cpIdStr)) {
 					try {
 						cpId = Long.parseLong(cpIdStr);
+						if (cpId == -1L) {
+							cpId = null;
+						}
 					} catch (Exception e) {
 						logger.error("Invalid CP ID: " + cpIdStr, e);
 					}
 				}
 
-				List<Pair<Long, Long>> siteCps = AccessCtrlMgr.getInstance().getReadAccessSpecimenSiteCps(cpId);
+				List<Pair<Long, Long>> siteCps = AccessCtrlMgr.getInstance().getReadAccessSpecimenSiteCps(cpId, false);
 				if (siteCps != null && siteCps.isEmpty()) {
 					endOfSpecimens = true;
-					return;
-				}
-
-				crit = new SpecimenListCriteria()
-					.labels(Utility.csvToStringList(params.get("specimenLabels")))
-					.siteCps(siteCps)
-					.useMrnSites(AccessCtrlMgr.getInstance().isAccessRestrictedBasedOnMrn())
-					.cpId(cpId);
-
-				if (CollectionUtils.isNotEmpty(crit.labels())) {
-					crit.limitItems(false);
+				} else if (!AccessCtrlMgr.getInstance().hasVisitSpecimenEximRights(cpId)) {
+					endOfSpecimens = true;
 				} else {
-					crit.limitItems(true).maxResults(100);
+					crit = new SpecimenListCriteria()
+						.labels(Utility.csvToStringList(params.get("specimenLabels")))
+						.siteCps(siteCps)
+						.useMrnSites(AccessCtrlMgr.getInstance().isAccessRestrictedBasedOnMrn())
+						.cpId(cpId);
+
+					if (CollectionUtils.isNotEmpty(crit.labels())) {
+						crit.limitItems(false);
+					} else {
+						crit.limitItems(true).maxResults(100);
+					}
 				}
 
 				paramsInited = true;
