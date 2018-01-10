@@ -701,7 +701,7 @@ public class CollectionProtocolRegistrationServiceImpl implements CollectionProt
 		}
 		
 		//
-		// we’ve been asked to use participant in inputCpr for updating existingCpr
+		// we've been asked to use participant in inputCpr for updating existingCpr
 		//
 		// Two broad cases:
 		// Case #1: Participants are registered to non-overlapping protocols. 
@@ -710,8 +710,8 @@ public class CollectionProtocolRegistrationServiceImpl implements CollectionProt
 		//
 		// Case #2: Participants are registered to overlapping protocols. 
 		// e.g. {cp1, cp2, cp4} and {cp2, cp3, cp4}
-		// In this case, we need to transfer visits from source participant’s overlapping CPRs 
-		// to target participant’s corresponding CPRs
+		// In this case, we need to transfer visits from source participant's overlapping CPRs 
+		// to target participant's corresponding CPRs
 		//
 		//
 		
