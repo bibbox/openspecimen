@@ -216,6 +216,7 @@ def getTodayDate() {
 def getCommitRevision() {
   def revCmd = "git rev-parse --short HEAD"
   def revision = revCmd.execute()
+  revision = "BIBBOX DEV";
   return revision.text.trim()
 }
 
@@ -227,6 +228,7 @@ def getBranch() {
     branchCmd = "git describe --tags --exact-match";
     branch = branchCmd.execute().text.trim();
   }
+  branch = "5.0.X";
   return branch;
 }
 
