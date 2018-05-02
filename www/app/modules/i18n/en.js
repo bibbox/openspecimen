@@ -81,6 +81,7 @@
     "error": "Error",
     "use_system_setting": "Use System Setting",
     "search_user_manual": "Search user manual",
+    "invalid_expr": "Invalid expression: {{expr}}",
 
     "interval_units": {
       "DAYS": "Days",
@@ -96,6 +97,7 @@
     },
 
     "buttons": {
+      "actions": "Actions",
       "add": "Add",
       "save": "Save",
       "export": "Export",
@@ -124,6 +126,8 @@
       "reset_password": "Reset Password",
       "add_new": "Add New",
       "add_another": "Add Another",
+      "copy_last": "Copy Last",
+      "add_more_details": "Add More Details",
       "download": "Download",
       "download_report": "Download Report",
       "reset_password": "Reset Password",
@@ -133,7 +137,9 @@
       "disable": "Disable",
       "help": "Help",
       "validate": "Validate",
-      "copy_to_clipboard": "Copy to Clipboard"
+      "copy_to_clipboard": "Copy to Clipboard",
+      "show_activity": "Show Activity",
+      "hide_activity": "Hide Activity"
     }
   },
 
@@ -194,6 +200,7 @@
     "specimen_label_fmt": "Specimen Label Format",
     "derivative_label_fmt": "Derivative Label Format",
     "aliquot_label_fmt": "Aliquot Label Format",
+    "specimen_barcode_fmt": "Specimen Barcode Format",
     "store_all_aliquots_in_same_container": "Store all Aliquots in same Container",
     "visit_name_fmt": "Visit Name Format",
     "manual_enabled_for": "User Inputs Allowed For",
@@ -254,6 +261,8 @@
 
     "show_site_coding": "Show Site Code Information",
     "hide_site_coding": "Hide Site Code Information",
+
+    "view_details": "View CP Details",
 
     "tab": {
       "overview": "Overview",
@@ -492,7 +501,9 @@
       "overview": "Overview",
       "consents": "Consents",
       "visits": "Visits",
-      "extensions": "Forms"
+      "specimens": "Specimens",
+      "extensions": "Forms",
+      "specimen_tree": "Specimen Tree"
     },
 
     "tooltip": {
@@ -592,7 +603,7 @@
       "missed": "Missed"
     },
     "closed": "Closed",
-
+    "reserved": "Reserved",
     "unplanned": "Unplanned",
     "new_spmn": "New Specimen",
 
@@ -621,6 +632,7 @@
     "storage_location": "Storage Location",
     "position": "Position",
     "virtually_located": "Not Stored",
+    "child_specimens": "Child Specimens",
     "no_specimens_to_show": "No Child Specimens to Show",
     "aliquot_cnt": "Aliquots Count",
     "qty_per_aliquot": "Quantity per Aliquot",
@@ -632,6 +644,7 @@
     "increment_parent_freeze_thaw": "Increment parent specimen's Freeze/Thaw cycles?",
     "comments": "Comments",
     "qty": "Quantity",
+    "count": "Count",
     "aliquot": "Aliquot",
     "derived": "Derived",
     "pool_specimen": "Pool Specimen",
@@ -667,9 +680,12 @@
     "assign_locations": "Choose Locations",
     "labels": "Labels",
     "labels_csv": "Comma separated list of specimen labels",
+    "other": "Other",
 
     "reason_for_closing": "Reason for closing",
 
+    "hide_events": "Hide Events",
+    "show_events": "Show Events",
     "recent_events": "Recent Events",
     "events": "Events",
     "event_name": "Name",
@@ -679,8 +695,8 @@
 
     "no_specimens_for_collection": "Please select at least one anticipated specimen for collection",
     "no_specimens_for_print": "Please select at least one collected specimen for label printing",
-    "no_specimens_for_specimen_list": "Please select at least one collected specimen to add specimen cart",
-    "no_specimens_for_delete":"Please select at least one collected specimen to delete",
+    "no_specimens_for_specimen_list": "Please select at least one existing specimen to add to cart",
+    "no_specimens_for_delete":"Please select at least one existing specimen to delete",
     "no_specimens_for_close":"Please select at least one collected specimen to close",
     "no_specimens_for_distribution": "Please select at least one collected specimen to distribute",
 
@@ -703,6 +719,8 @@
     "new_aliquot_count": "Number of aliquots",
     "aliquot_details": "Aliquot Details",
     "create_aliquots_q": "Do you want to create aliquots?",
+    "delete_q": "Delete Specimen?",
+    "confirm_q": "Do you really want to delete the specimen?",
 
     "specimens_hierarchy_deleted": "Selected specimens and their children are deleted successfully",
     "specimens_deleted": "Selected specimens are deleted successfully",
@@ -746,8 +764,8 @@
     "ctx_menu": {
       "view_specimen": "View Specimen",
       "edit_specimen": "Edit Specimen",
-      "create_aliquots": "Create Aliquots",
-      "create_derivative": "Create Derivative",
+      "create_aliquots": "Aliquots",
+      "create_derivative": "Derivative",
       "add_event": "Add Event",
       "close": "Close"
     },
@@ -766,7 +784,8 @@
       "reopen": "Reopen",
       "close": "Close",
       "add_specimen": "Add Specimen",
-      "distribute": "Distribute"
+      "distribute": "Distribute",
+      "copy_last_aliquots": "Copy Last (including Aliquots)"
     },
 
     "errors": {
@@ -778,7 +797,8 @@
       "children_created_on_lt_parent": "Created on time of children less than that of parent specimen {{parentLabel}}",
       "children_created_on_gt_curr_time": "Created on time of {{parentLabel}}'s children greater than current time",
       "aliquot_label_mismatch": "There is a mismatch in number of specified labels and aliquots",
-      "visit_not_completed": "Please complete the visit before collecting unplanned specimen"
+      "visit_not_completed": "Please complete the visit before collecting unplanned specimen",
+      "select_same_visit_spmns": "Please select specimens of same visit"
     },
 
     "bulk_update": "Bulk Update Specimens",
@@ -809,6 +829,19 @@
       "new_location": "New Location",
       "comments": "Comments",
       "success": "Successfully updated locations of {{spmnsCount}} specimens"
+    },
+
+    "tree_node_statuses": {
+      "closed": "Closed",
+      "part-distributed": "Partly Distributed",
+      "distributed": "Distributed",
+      "returned": "Returned",
+      "reserved": "Reserved",
+      "virtual": "Not Stored",
+      "unplanned": "Unplanned Collection",
+      "collected": "Planned Collection",
+      "not-collected": "Missed Collection",
+      "pending": "Pending"
     }
   },
 
@@ -974,6 +1007,7 @@
     "receiving_institute": "Receiving Institute",
     "receiving_site": "Receiving Site",
     "distributing_sites": "Distributing Sites",
+    "custom_fields_form": "Order Custom Fields",
     "order_report_query": "Order Report Query",
     "closed": "Closed",
     "confirm_close_title": "Closing {{shortTitle}} confirmation",
@@ -987,6 +1021,15 @@
     "add_consent_tier": "Add Consent Tier ...",
     "delete_consent_tier": "{{entityType}} {{entityName}} of {{entity.dpShortTitle}} will be deleted forever. Are you sure you want to proceed?",
     "select_dist_site": "Please select at least one distributing site",
+    "reserved_spmns": "Reserved Specimens",
+    "distribute": "Distribute",
+    "distribute_all": "Distribute All",
+    "cancel_reservation": "Cancel Reservation",
+    "dist_inst_pre_selected": "Distributing institute {{institute}} already selected in row {{rowNo}}",
+
+    "bulk_import": "Import Distribution Protocols",
+    "req_bulk_import": "Import Requirements",
+    "bulk_import_jobs": "Import Jobs List",
 
     "tooltip": {
       "view_details": "Click to view Distribution Protocol details",
@@ -1175,6 +1218,8 @@
 
   "forgot_password": {
     "title": "Forgot Password",
+    "loginName": "Login Name",
+    "emailAddress":  "Email Address",
     "email_reset_password_link": "Email Reset Password Link",
     "return_to_signin": "Return to sign in page",
     "reset_email_sent": "An email containing link to reset password has been sent to your email id. Please click to reset password.",
@@ -1573,7 +1618,6 @@
     "save_copy": "Save a Copy",
     "query_saved": "Query '{{title}}' saved",
 
-    "edit_filters": "Edit Filters",
     "define_view": "Columns",
     "rerun": "Rerun",
 
@@ -1723,7 +1767,9 @@
     "specimen_extension": "Specimen Custom Fields",
     "site_extension": "Site Custom Fields",
     "cp_extension": "Collection Protocol Custom Fields",
-    "dp_extension": "Distribution Protocol Custom Fields"
+    "dp_extension": "Distribution Protocol Custom Fields",
+    "dp_req_extension": "DP Requirement Custom Fields",
+    "order_extension": "Order Custom Fields"
   },
 
   "bulk_imports": {
@@ -1784,7 +1830,9 @@
       "shipment": "Shipments",
       "containerShipment": "Container Shipments",
       "distributionOrder": "Orders",
-      "returnSpecimen": "Returned Specimens"
+      "returnSpecimen": "Returned Specimens",
+      "distributionProtocol": "Distribution Protocols",
+      "dpRequirement": "Requirements"
     },
 
     "import_types": {
@@ -1876,11 +1924,13 @@
     "specimens_removed_from_user_default_list": "Specimens sucessfully removed from {{owner.firstName}} {{owner.lastName}}'s default cart",
     "specimens_removed_from_normal_list": "Specimens sucessfully removed from cart {{name}}",
     "distribute": "Distribute",
+    "reserve": "Reserve",
     "distribute_all": "Distribute All",
     "ship": "Ship",
     "no_specimens_for_deletion": "Please select at least one specimen for deletion",
-    "no_specimens_for_distribution": "Please select at least one specimen to create distribution order",
-    "no_specimens_for_shipment": "Please select at least one specimen to create shipment",
+    "no_specimens_for_distribution": "Please select at least one collected specimen to create distribution order",
+    "no_specimens_for_reservation": "Please select at least one collected specimen to reserve",
+    "no_specimens_for_shipment": "Please select at least one collected specimen to create shipment",
     "created_by": "Created By",
     "checkout": "Checkout",
     "edit_or_delete": "Edit or Delete Cart",
@@ -1888,18 +1938,18 @@
     "export": "Export Cart",
     "remove_spmns": "Remove from Cart",
     "add_event": "Add/Edit Event",
-    "transfer_specimens": "Transfer Specimens",
+    "transfer_specimens": "Transfer",
     "retrieve_specimens": "Retrieve",
     "retrieve_reason": "Reason for retrieving specimens",
     "location": "Storage Location",
-    "no_specimens_to_edit": "Please select at least one specimen to edit",
-    "no_specimens_to_add_event": "Please select at least one specimen to add event",
+    "no_specimens_to_edit": "Please select at least one existing specimen to edit",
+    "no_specimens_to_add_event": "Please select at least one collected specimen to add event",
     "no_specimens_to_transfer": "Please select at least one specimen to transfer",
-    "no_specimens_to_retrieve": "Please select at least one specimen to retrieve",
+    "no_specimens_to_retrieve": "Please select at least one collected specimen to retrieve",
     "create_aliquots": "Create Aliquots",
-    "no_specimens_to_create_aliquots": "Please select at least one parent specimen to create aliquots",
+    "no_specimens_to_create_aliquots": "Please select at least one collected parent specimen to create aliquots",
     "create_derivatives": "Create Derivatives",
-    "no_specimens_to_create_derivatives": "Please select at least one parent specimen to create derived specimens",
+    "no_specimens_to_create_derivatives": "Please select at least one collected parent specimen to create derived specimens",
     "filter_specimens": "Specimen Filters",
     "creation_time": "Creation Time",
     "last_updated": "Last Updated",
@@ -1962,6 +2012,9 @@
     "select_dp": "Select Distribution Protocol",
     "creation_success": "Distribution Order {{name}} successfully created",
 
+    "specimens_reserved": "{{count == 0 ? 'Specimens are already reserved for distribution to the selected DP' : (count == 1 ? 'Specimen reserved' : count + ' specimens reserved')}}",
+    "dist_details": "Distribution Details",
+
     "menu": {
       "overview": "Overview",
       "items": "Specimens"
@@ -1990,6 +2043,8 @@
 
     "buttons": {
       "distribute": "Distribute",
+      "distribute_now": "Distribute Now",
+      "reserve": "Reserve",
       "save_draft": "Save Draft",
       "download_report": "Download Report",
       "return_specimens": "Return Specimens",
@@ -2104,7 +2159,8 @@
       "not_found_count": "Failed: Specimens not present in the shipment",
       "not_found_error": "Failed: Specimen not present in the shipment",
       "extra_count": "Failed: Additional specimens present in the shipment",
-      "extra_error": "Failed: Additional specimen present in the shipment"
+      "extra_error": "Failed: Additional specimen present in the shipment",
+      "report_copied": "Specimen validation report copied to the clipboard"
     }
   },
 
@@ -2273,7 +2329,13 @@
         "system_lockdown": "System Lockdown",
         "system_lockdown_desc": "Stop all users from using OpenSpecimen except super administrators.",
         "user_sign_up": "User Sign Up",
-        "user_sign_up_desc": "Enable or disable users sign up feature."
+        "user_sign_up_desc": "Enable or disable users sign up feature.",
+        "order_custom_fields_form": "Order Custom Fields Form",
+        "order_custom_fields_form_desc": "Identifier of custom form to be used as default custom fields form for distribution orders.",
+        "store_list_retry_interval": "Store List Retry Interval",
+        "store_list_retry_interval_desc" : "Time interval in hours to elapse between retry of failed store list executions.",
+        "store_list_max_retries": "Store List Max Retries",
+        "store_list_max_retries_desc": "Maximum number of attempts to execute store list before marking the store list as permanently failed."
       },
 
       "biospecimen": {
@@ -2344,6 +2406,8 @@
         "extract_spr_text_desc": "Enable or disable extraction of text content from SPR PDF documents",
         "participant_lookup_flow": "Participants Lookup Workflow",
         "participant_lookup_flow_desc": "Spring bean name or fully qualified name of class implementing customised matching participants lookup workflow. For example: bean: customisedLookup or class: com.krishagni.openspecimen.plugins.CustomisedLookup",
+        "visits_lookup_flow": "Visits Lookup Workflow",
+        "visits_lookup_flow_desc": "Spring bean name or fully qualified name of class implementing customised visits lookup workflow. For example: bean: customisedVisitsLookup or class: com.krishagni.openspecimen.plugins.CustomisedVisitsLookup",
         "enable_spmn_barcoding": "Specimen Barcoding",
         "enable_spmn_barcoding_desc": "Enable or disable barcoding support for Specimen",
         "rel_sorting_max_spmns": "Specimens Sorting by Relationship Limit",
@@ -2353,7 +2417,13 @@
         "store_phi": "Anonymize Participants",
         "store_phi_desc": "Enable or disable feature to anonymize participant's PHI data.",
         "store_spr": "Surgical Pathology Reports",
-        "store_spr_desc": "Enable or disable uploading of surgical pathology reports for a visit."
+        "store_spr_desc": "Enable or disable uploading of surgical pathology reports for a visit.",
+        "specimen_barcode_format": "Specimen Barcode Format",
+        "specimen_barcode_format_desc": "The system-level format for auto-generation of specimen barcodes.",
+        "aliquot_label_format": "Aliquot Label Format",
+        "aliquot_label_format_desc": "The system-level format for aliquot labels.",
+        "mandatory_aliquot_qty": "Mandatory Aliquot Quantity",
+        "mandatory_aliquot_qty_desc": "Enable to make aliquots quantity a mandatory field."
       },
 
       "common": {
@@ -2393,7 +2463,9 @@
         "toast_disp_time": "Toast Display Time",
         "toast_disp_time_desc": "Duration, in seconds, for which the success or error notification toasts should be displayed.",
         "log_files_retain_period": "Log Files Retain Period",
-        "log_files_retain_period_desc": "Number of days to retain the log files after which they are deleted."
+        "log_files_retain_period_desc": "Number of days to retain the log files after which they are deleted.",
+        "not_specified_text": "Not Specified Text",
+        "not_specified_text_desc": "Text to display for unspecified field values in tables and overview pages."
       },
 
       "email": {
@@ -2496,6 +2568,8 @@
         "form_help_link_desc": "Link to training materials on how to manage custom forms and fields",
         "query_help_link": "Query",
         "query_help_link_desc": "Link to training materials on how to query for data (reporting)",
+        "query_results_help_link": "Query Results",
+        "query_results_help_link_desc": "Link to training materials on how to add, remove and reorder the columns displayed in query results table",
         "role_help_link": "Role",
         "role_help_link_desc": "Link to training materials on how to manage roles",
         "site_help_link": "Site",

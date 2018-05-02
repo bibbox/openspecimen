@@ -215,6 +215,7 @@ public class AccessCtrlMgr {
 
 	public void ensureCreateUpdateDpRights(DistributionProtocol dp) {
 		ensureDpObjectRights(dp, new Operation[] {Operation.CREATE, Operation.UPDATE});
+		ensureDpEximRights(dp);
 	}
 
 	public void ensureDeleteDpRights(DistributionProtocol dp) {
@@ -239,6 +240,12 @@ public class AccessCtrlMgr {
 			if (CollectionUtils.intersection(allowedSites, dp.getAllDistributingSites()).isEmpty()) {
 				throw OpenSpecimenException.userError(RbacErrorCode.ACCESS_DENIED);
 			}
+		}
+	}
+
+	private void ensureDpEximRights(DistributionProtocol dp) {
+		if (isImportOp() || isExportOp()) {
+			ensureDpObjectRights(dp, new Operation[] {Operation.EXIM});
 		}
 	}
 
@@ -458,6 +465,10 @@ public class AccessCtrlMgr {
 	
 	public boolean ensureReadParticipantRights(Long participantId) {
 		return ensureParticipantObjectRights(participantId, Operation.READ);
+	}
+
+	public boolean ensureReadParticipantRights(Participant participant) {
+		return ensureParticipantObjectRights(participant, Operation.READ);
 	}
 
 	public boolean ensureUpdateParticipantRights(Participant participant) {
@@ -711,7 +722,7 @@ public class AccessCtrlMgr {
 	private boolean ensureVisitObjectRights(Long visitId, Operation op, boolean checkPhiAccess) {
 		Visit visit = daoFactory.getVisitDao().getById(visitId);
 		if (visit == null) {
-			throw OpenSpecimenException.userError(VisitErrorCode.NOT_FOUND);
+			throw OpenSpecimenException.userError(VisitErrorCode.NOT_FOUND, visitId);
 		}
 
 		boolean phiAccess = ensureVisitObjectRights(visit, op, checkPhiAccess);
@@ -930,6 +941,10 @@ public class AccessCtrlMgr {
 		ensureDistributionOrderEximRights(order);
 	}
 
+	public void ensureCreateDistributionOrderRights(DistributionProtocol dp) {
+		ensureDistributionOrderObjectRights(dp, Operation.CREATE);
+	}
+
 	public void ensureReadDistributionOrderRights(DistributionOrder order) {
 		ensureDistributionOrderObjectRights(order, Operation.READ);
 		ensureDistributionOrderEximRights(order);
@@ -952,12 +967,16 @@ public class AccessCtrlMgr {
 	}
 	
 	private void ensureDistributionOrderObjectRights(DistributionOrder order, Operation operation) {
+		ensureDistributionOrderObjectRights(order.getDistributionProtocol(), operation);
+	}
+
+	private void ensureDistributionOrderObjectRights(DistributionProtocol dp, Operation op) {
 		if (AuthUtil.isAdmin()) {
 			return;
 		}
-		
-		Set<Site> allowedSites = getSites(Resource.ORDER, operation);
-		Set<Site> distributingSites = order.getDistributionProtocol().getAllDistributingSites();
+
+		Set<Site> allowedSites = getSites(Resource.ORDER, op);
+		Set<Site> distributingSites = dp.getAllDistributingSites();
 		if (CollectionUtils.intersection(allowedSites, distributingSites).isEmpty()) {
 			throw OpenSpecimenException.userError(RbacErrorCode.ACCESS_DENIED);
 		}

@@ -1,7 +1,12 @@
 angular.module('os.administrative.dp.requirement.addedit', ['os.administrative.models'])
-  .controller('DprAddEditCtrl', function($scope, $state, distributionProtocol, dpr, PvManager) {
+  .controller('DprAddEditCtrl', function(
+    $scope, $state, distributionProtocol, dpr, extensionCtxt,
+    ExtensionsUtil, PvManager) {
+
     function init() {
       $scope.dpr = dpr;
+      $scope.deFormCtrl = {};
+      $scope.extnOpts = ExtensionsUtil.getExtnOpts(dpr, extensionCtxt);
       loadAllSpecimenTypes();
     }
 
@@ -24,8 +29,16 @@ angular.module('os.administrative.dp.requirement.addedit', ['os.administrative.m
     }
     
     $scope.save = function() {
-      var dpr = angular.copy($scope.dpr);
-      dpr.dp = {id : distributionProtocol.id};
+      var formCtrl = $scope.deFormCtrl.ctrl;
+      if (formCtrl && !formCtrl.validate()) {
+        return;
+      }
+
+      var dpr = angular.extend(angular.copy($scope.dpr), {dp: {id: distributionProtocol.id}});
+      if (formCtrl) {
+        dpr.extensionDetail = formCtrl.getFormData();
+      }
+
       dpr.$saveOrUpdate().then(
         function(saveReq) {
           $state.go('req-list');

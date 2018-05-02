@@ -21,7 +21,8 @@
         <div ng-include src="'orders/addedit-detail.html'"></div>
       </os-wizard-step>
 
-      <os-wizard-step ng-if="!skipSpecimensTab" title="{{'orders.specimens' | translate}}" on-finish="areItemQuantitiesValid(doWizard)">
+      <os-wizard-step ng-if="!skipSpecimensTab" title="{{'orders.specimens' | translate}}"
+        on-finish="areItemQuantitiesValid(doWizard)">
         <div ng-include src="'orders/addedit-order-specimens.html'"></div>
       </os-wizard-step>
 
@@ -41,15 +42,6 @@
       </span>
     </div>
 
-    <div class="form-group">
-      <label class="col-xs-3 control-label" translate="orders.name">Name</label>
-      <div class="col-xs-6">
-        <input type="text" name="name" ng-model="order.name"
-          class="form-control" placeholder="{{'orders.name' | translate}}" ng-maxlength="255" required/>
-        <div os-field-error field="ordForm.name"></div>
-      </div>
-    </div>
-     
     <div class="form-group" ng-if="!!order.request.id">
       <label class="col-xs-3 control-label" translate="orders.request">Request</label>
       <div class="col-xs-6">
@@ -62,21 +54,30 @@
       <div class="col-xs-6">
         <os-select name="dp" ng-model="order.distributionProtocol" 
           list="dpList" display-prop="shortTitle" on-select="onDpSelect()"
-          placeholder="{{'orders.dp' | translate}}" required refresh="searchDp" ng-disabled="!!order.request.dpId">
+          placeholder="{{'orders.dp' | translate}}" required refresh="searchDp"
+          ng-disabled="!!order.request.dpId || !!order.allReservedSpmns">
         </os-select>       
         <div os-field-error field="ordForm.dp"></div>
       </div>
     </div>
-    
+
+    <div class="form-group">
+      <label class="col-xs-3 control-label" translate="orders.name">Name</label>
+      <div class="col-xs-6">
+        <input type="text" name="name" ng-model="order.name"
+          class="form-control" placeholder="{{'orders.name' | translate}}" ng-maxlength="255" required>
+        <div os-field-error field="ordForm.name"></div>
+      </div>
+    </div>
+
     <div class="form-group">
       <label class="control-label col-xs-3" translate="orders.receiving_institute">
         Receiving Institute
       </label>
       <div class="col-xs-6">
-        <os-select name="institute" ng-model="order.instituteName" list="instituteNames"
-          placeholder="{{'orders.receiving_institute' | translate}}" required
-          on-select="onInstSelect()">
-        </os-select>
+        <os-institutes name="institute" ng-model="order.instituteName" on-select="onInstSelect(institute)"
+          placeholder="{{'orders.receiving_institute' | translate}}" required>
+        </os-institutes>
         <div os-field-error field="ordForm.institute"></div>
       </div>
     </div>
@@ -103,9 +104,19 @@
     <div class="form-group">
       <label class="control-label col-xs-3" translate="orders.execution_date">Date</label>
       <div class="col-xs-6">
-        <os-date-picker name="executionDate" date="order.executionDate"
-          placeholder="{{'orders.execution_date' | translate}}" required>
-        </os-date-picker>
+        <div class="os-date-time clearfix">
+          <div class="col-xs-9 input os-no-padding">
+            <os-date-picker name="executionDate" date="order.executionDate"
+              placeholder="{{'orders.execution_date' | translate}}" required>
+            </os-date-picker>
+          </div>
+          <div class="col-xs-3">
+            <div class="os-timepicker">
+              <timepicker ng-model="order.executionDate" class="os-time-no-wheels" show-meridian="false">
+              </timepicker>
+            </div>
+          </div>
+        </div>
         <div os-field-error field="ordForm.executionDate"></div>
       </div>  
     </div>
@@ -128,6 +139,10 @@
     </div>
 
     <div class="os-divider"></div>
+
+    <div ng-if="!!ctx.extnOpts">
+      <div class='os-extn-form' os-de-form opts="ctx.extnOpts" ctrl="ctx.extnFormCtrl"></div>
+    </div>
 
     <div class="form-group right-btns">
       <div class="col-xs-offset-3 col-xs-9">
@@ -203,6 +218,9 @@
           <th class="col">
             <span translate="orders.spec.quantity">Quantity</span>
           </th>
+          <th class="col" ng-repeat="tmpl in ctx.itemFieldsHdrTmpls">
+            <ng-include src="tmpl"></ng-include>
+          </th>
           <th class="col">
             <div class="os-checkbox-container">
               <os-checkbox ng-model="input.allItemStatus" ng-change="toggleAllItemStatus()"></os-checkbox>
@@ -249,9 +267,12 @@
           <td class="col">
             <os-spmn-measure name="qty" specimen="specimen" quantity="item.quantity" md-input
               ensure-range="[{tgt: 0, cmp: 'gte', errorKey: 'distQtyLtZero'}]"
-              on-change="setStatus(item)" required>
+              on-change="setStatus(item)" ng-required="specimen.availableQty > 0">
             </os-spmn-measure>
             <div os-field-error field="sform.qty"></div>
+          </td>
+          <td class="col" ng-repeat="tmpl in ctx.itemFieldsCellTmpls">
+            <ng-include src="tmpl"></ng-include>
           </td>
           <td class="col">
             <div class="os-checkbox-container">

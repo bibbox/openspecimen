@@ -10,7 +10,11 @@ import com.krishagni.catissueplus.core.de.domain.DeObject;
 
 public abstract class BaseExtensionEntity extends BaseEntity {
 	private DeObject extension;
-	
+
+	public DeObject getExtensionIfPresent() {
+		return extension;
+	}
+
 	public DeObject getExtension() {
 		if (extension == null) {
 			extension = createExtension();
@@ -57,7 +61,7 @@ public abstract class BaseExtensionEntity extends BaseEntity {
 			
 			@Override
 			public String getFormName() {
-				return getFormNameByEntityType(getCpId());
+				return getFormNameByEntityType();
 			}
 			
 			@Override
@@ -68,7 +72,17 @@ public abstract class BaseExtensionEntity extends BaseEntity {
 			@Override
 			public Long getCpId() {
 				return BaseExtensionEntity.this.getCpId();
-			} 
+			}
+
+			@Override
+			public boolean isCpBased() {
+				return BaseExtensionEntity.this.isCpBased();
+			}
+
+			@Override
+			public Long getEntityId() {
+				return BaseExtensionEntity.this.getEntityId();
+			}
 		};
 		
 		if (StringUtils.isBlank(extnObj.getFormName())) {
@@ -86,8 +100,16 @@ public abstract class BaseExtensionEntity extends BaseEntity {
 	
 	public abstract String getEntityType();
 
-	protected Long getCpId() {
+	public Long getCpId() {
 		return -1L;
+	}
+
+	public boolean isCpBased() {
+		return true;
+	}
+
+	public Long getEntityId() {
+		return null;
 	}
 	
 	private Long getRecordId(DeObject extnObj) {

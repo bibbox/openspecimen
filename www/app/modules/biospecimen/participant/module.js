@@ -38,6 +38,7 @@ angular.module('os.biospecimen.participant',
           $scope.shipmentCreateOpts = {cp: cp.shortTitle, sites: sites, resource: 'ShippingAndTracking', operations: ['Create']};
           $scope.specimenUpdateOpts = {cp: cp.shortTitle, sites: sites, resource: 'VisitAndSpecimen', operations: ['Update']};
           $scope.specimenDeleteOpts = {cp: cp.shortTitle, sites: sites, resource: 'VisitAndSpecimen', operations: ['Delete']};
+          $scope.cpReadOpts         = {resource: 'CollectionProtocol', operations: ['Read']};
         },
         resolve: {
           cp: function($stateParams, CollectionProtocol) {
@@ -337,6 +338,14 @@ angular.module('os.biospecimen.participant',
             return CpConfigSvc.getDictionary($stateParams.cpId, []);
           },
 
+          layout: function($stateParams, hasSde, CpConfigSvc) {
+            if (!hasSde) {
+              return [];
+            }
+
+            return CpConfigSvc.getLayout($stateParams.cpId, []);
+          },
+
           hasDict: function(hasSde, sysDict, cpDict) {
             return hasSde && (cpDict.length > 0 || sysDict.length > 0);
           },
@@ -388,6 +397,42 @@ angular.module('os.biospecimen.participant',
             return SettingUtil.getSetting('biospecimen', 'enable_spmn_barcoding').then(
               function(setting) {
                 return setting.value.toLowerCase() == 'true';
+              }
+            );
+          },
+
+          spmnBarcodesAutoGen: function(cp, SettingUtil) {
+            if (!!cp.specimenBarcodeFmt) {
+              return true;
+            }
+
+            return SettingUtil.getSetting('biospecimen', 'specimen_barcode_format').then(
+              function(setting) {
+                return !!setting.value;
+              }
+            );
+          },
+
+          headers: function($q, cp, CpConfigSvc) {
+            var ph = CpConfigSvc.getCommonCfg(cp.id, 'participantHeader');
+            var vh = CpConfigSvc.getCommonCfg(cp.id, 'visitHeader');
+            var sh = CpConfigSvc.getCommonCfg(cp.id, 'specimenHeader');
+
+            return $q.all([ph, vh, sh]).then(
+              function(headers) {
+                return {participant: headers[0], visit: headers[1], specimen: headers[2]};
+              }
+            );
+          },
+
+          participantSpmnsViewState: function(cp, cpr, pendingSpmnsDispInterval, ParticipantSpecimensViewState) {
+            return new ParticipantSpecimensViewState(cp, cpr, +pendingSpmnsDispInterval.value);
+          },
+
+          aliquotQtyReq: function(SettingUtil) {
+            return SettingUtil.getSetting('biospecimen', 'mandatory_aliquot_qty').then(
+              function(resp) {
+                return resp.value == 'true' || resp.value == true || resp.value == '1' || resp.value == 1;
               }
             );
           }
@@ -486,6 +531,9 @@ angular.module('os.biospecimen.participant',
           },
           consents: function(hasDict, hasFieldsFn, cpr) {
             return (hasDict && hasFieldsFn(['consents'])) ? cpr.getConsents() : null;
+          },
+          visitsTab: function(cp, CpConfigSvc) {
+            return CpConfigSvc.getWorkflowData(cp.id, 'visitsTab', {});
           }
         },
         controller: 'ParticipantOverviewCtrl',
@@ -521,10 +569,21 @@ angular.module('os.biospecimen.participant',
         },
         parent: 'participant-detail'
       })
+      .state('participant-detail.specimens', {
+        url: '/specimens',
+        templateUrl: 'modules/biospecimen/participant/reg-specimens.html',
+        controller: 'RegSpecimensCtrl',
+        resolve: {
+          specimens: function(cpr, Specimen) {
+            return Specimen.listFor(cpr.id);
+          }
+        },
+        parent: 'participant-detail'
+      })
       .state('participant-detail.collect-specimens', {
         url: '/collect-specimens?visitId&eventId',
-        templateUrl: 'modules/biospecimen/participant/collect-specimens.html',
-        controller: 'CollectSpecimensCtrl',
+        template: '<div ui-view></div>',
+        controller: function() { },
         resolve: {
           visit: function($stateParams, cp, cpr, Visit) {
             if (!!$stateParams.visitId && $stateParams.visitId > 0) {
@@ -553,9 +612,22 @@ angular.module('os.biospecimen.participant',
                 return data || {};
               }
             );
-          },
+          }
         },
+        abstract: true,
         parent: 'participant-root'
+      })
+      .state('participant-detail.collect-specimens.tree', {
+        url: '/tree',
+        templateUrl: 'modules/biospecimen/participant/collect-specimens.html',
+        controller: 'CollectSpecimensCtrl',
+        parent: 'participant-detail.collect-specimens'
+      })
+      .state('participant-detail.collect-specimens.nth-step', {
+        url: '/nth-step',
+        templateUrl: 'modules/biospecimen/participant/collect-specimens-nth-step.html',
+        controller: 'CollectSpecimensNthStepCtrl',
+        parent: 'participant-detail.collect-specimens'
       })
       .state('participant-detail.extensions', {
         url: '/extensions',

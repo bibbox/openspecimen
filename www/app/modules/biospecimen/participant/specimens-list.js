@@ -1,7 +1,7 @@
 angular.module('os.biospecimen.participant')
   .controller('SpecimensListViewCtrl', function(
     $scope, $state, currentUser, cp, spmnListCfg, sdeConfigured,
-    Util, Specimen, SpecimensHolder, DeleteUtil, Alerts, ListPagerOpts) {
+    PluginReg, Util, Specimen, SpecimensHolder, DeleteUtil, Alerts, ListPagerOpts) {
 
     var ctrl = this;
 
@@ -12,6 +12,12 @@ angular.module('os.biospecimen.participant')
       listParams = {listName: 'specimen-list-view', maxResults: pagerOpts.recordsPerPage + 1};
 
       ctrl.showAddSpmn = !sdeConfigured,
+      ctrl.resourceOpts = {
+        orderCreateOpts:    $scope.orderCreateOpts,
+        shipmentCreateOpts: $scope.shipmentCreateOpts,
+        specimenUpdateOpts: $scope.specimenUpdateOpts,
+        specimenDeleteOpts: $scope.specimenDeleteOpts
+      }
 
       $scope.ctx = {
         filtersCfg: angular.copy(spmnListCfg.filters),
@@ -19,12 +25,7 @@ angular.module('os.biospecimen.participant')
         specimens: {},
         listSize: -1,
         pagerOpts: pagerOpts,
-        resourceOpts: {
-          orderCreateOpts:    $scope.orderCreateOpts,
-          shipmentCreateOpts: $scope.shipmentCreateOpts,
-          specimenUpdateOpts: $scope.specimenUpdateOpts,
-          specimenDeleteOpts: $scope.specimenDeleteOpts
-        }
+        resourceOpts: ctrl.resourceOpts
       };
 
       angular.extend($scope.listViewCtx, {
@@ -32,7 +33,8 @@ angular.module('os.biospecimen.participant')
         ctrl: ctrl,
         headerActionsTmpl: 'modules/biospecimen/participant/specimens-list-pager.html',
         headerButtonsTmpl: 'modules/biospecimen/participant/specimens-list-ops.html',
-        showSearch: (spmnListCfg.filters && spmnListCfg.filters.length > 0)
+        showSearch: (spmnListCfg.filters && spmnListCfg.filters.length > 0),
+        showPrimaryBtnDd: !!cp.bulkPartRegEnabled || (PluginReg.getTmpls('participant-list', 'primary-button').length > 0)
       });
 
       Util.filter($scope, 'ctx.filters', loadSpecimens);

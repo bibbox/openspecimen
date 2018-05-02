@@ -54,6 +54,9 @@
         <div os-field-error field="dprForm.quantity"></div>
       </div>
     </div>
+
+    <os-plugin-hooks view-name="'dp-req-addedit'" sec-name="'fields'" default-tmpl="">
+    </os-plugin-hooks>
     
     <div class="form-group">
       <label class="col-xs-3 control-label" translate="dp.distribution_order.comments">Comments</label>
@@ -61,6 +64,14 @@
         <textarea rows="2" class="form-control" ng-model="dpr.comments" 
           placeholder="{{'dp.distribution_order.comments' | translate}}">
         </textarea>
+      </div>
+    </div>
+
+    <div class="os-entity-extn-form-fields" ng-if="!!extnOpts">
+      <div class="os-divider"></div>
+
+      <div id="de-form" class="os-extn-form" os-de-form opts="extnOpts"
+        ctrl="deFormCtrl" extended-obj="dpRequirement">
       </div>
     </div>
 

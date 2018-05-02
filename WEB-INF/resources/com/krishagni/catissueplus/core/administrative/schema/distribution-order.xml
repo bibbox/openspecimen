@@ -52,7 +52,7 @@
     </record>
 
     <field>
-      <type>date</type>
+      <type>datetime</type>
       <caption>#getMessage("order_execution_date")</caption>
       <attribute>executionDate</attribute>
     </field>
@@ -71,6 +71,10 @@
       <caption>#getMessage("order_status")</caption>
       <attribute>status</attribute>
     </field>
+
+    <record type="customFields" cpBased="false" entityType="OrderExtension">
+      <attribute>extensionDetail</attribute>
+    </record>
 
     <record>
       <attribute>orderItem</attribute>
@@ -101,6 +105,8 @@
         <caption>#getMessage("order_item_quantity")</caption>
         <attribute>quantity</attribute>
       </field>
+
+      $schemaBuilder.insertAdditionalFields("/com/**/schema/order-item/*.xml")
 
       <field>
         <caption>#getMessage("order_item_status")</caption>

@@ -18,12 +18,14 @@ import org.apache.commons.lang.ObjectUtils;
 import org.apache.commons.lang.StringUtils;
 import org.hibernate.envers.Audited;
 import org.hibernate.envers.NotAudited;
+import org.hibernate.envers.RelationTargetAuditMode;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Configurable;
 import org.springframework.beans.factory.annotation.Qualifier;
 
 import com.krishagni.catissueplus.core.administrative.domain.DistributionOrderItem;
 import com.krishagni.catissueplus.core.administrative.domain.DistributionProtocol;
+import com.krishagni.catissueplus.core.administrative.domain.SpecimenReservedEvent;
 import com.krishagni.catissueplus.core.administrative.domain.StorageContainer;
 import com.krishagni.catissueplus.core.administrative.domain.StorageContainerPosition;
 import com.krishagni.catissueplus.core.administrative.domain.User;
@@ -133,6 +135,11 @@ public class Specimen extends BaseExtensionEntity {
 	private SpecimenReceivedEvent receivedEvent;
 
 	//
+	// record the DP for which this specimen is currently reserved
+	//
+	private SpecimenReservedEvent reservedEvent;
+
+	//
 	// Available for all specimens in hierarchy based on values set for primary specimens
 	//
 	private SpecimenCollectionReceiveDetail collRecvDetails;
@@ -146,7 +153,12 @@ public class Specimen extends BaseExtensionEntity {
 	@Autowired
 	@Qualifier("specimenLabelGenerator")
 	private LabelGenerator labelGenerator;
-	
+
+
+	@Autowired
+	@Qualifier("specimenBarcodeGenerator")
+	private LabelGenerator barcodeGenerator;
+
 	private transient boolean forceDelete;
 	
 	private transient boolean printLabel;
@@ -156,6 +168,12 @@ public class Specimen extends BaseExtensionEntity {
 	private transient String transferComments;
 
 	private transient boolean autoCollectParents;
+
+	private transient boolean updated;
+
+	private transient String uid;
+
+	private transient String parentUid;
 
 	//
 	// Records the derivatives or aliquots created from this specimen in current action/transaction
@@ -529,6 +547,15 @@ public class Specimen extends BaseExtensionEntity {
 		this.receivedEvent = receivedEvent;
 	}
 
+	@Audited(targetAuditMode = RelationTargetAuditMode.NOT_AUDITED)
+	public SpecimenReservedEvent getReservedEvent() {
+		return reservedEvent;
+	}
+
+	public void setReservedEvent(SpecimenReservedEvent reservedEvent) {
+		this.reservedEvent = reservedEvent;
+	}
+
 	@NotAudited
 	public SpecimenCollectionReceiveDetail getCollRecvDetails() {
 		return collRecvDetails;
@@ -577,6 +604,10 @@ public class Specimen extends BaseExtensionEntity {
 		return getCollectionProtocol().getId();
 	}
 
+	public String getCpShortTitle() {
+		return getCollectionProtocol().getShortTitle();
+	}
+
 	public boolean isForceDelete() {
 		return forceDelete;
 	}
@@ -601,6 +632,30 @@ public class Specimen extends BaseExtensionEntity {
 		this.autoCollectParents = autoCollectParents;
 	}
 
+	public boolean isUpdated() {
+		return updated;
+	}
+
+	public void setUpdated(boolean updated) {
+		this.updated = updated;
+	}
+
+	public String getUid() {
+		return uid;
+	}
+
+	public void setUid(String uid) {
+		this.uid = uid;
+	}
+
+	public String getParentUid() {
+		return parentUid;
+	}
+
+	public void setParentUid(String parentUid) {
+		this.parentUid = parentUid;
+	}
+
 	public boolean isPrintLabel() {
 		return printLabel;
 	}
@@ -619,6 +674,14 @@ public class Specimen extends BaseExtensionEntity {
 	
 	public boolean isActiveOrClosed() {
 		return isActive() || isClosed();
+	}
+
+	public boolean isReserved() {
+		return getReservedEvent() != null;
+	}
+
+	public boolean isEditAllowed() {
+		return !isReserved() && isActive();
 	}
 	
 	public boolean isAliquot() {
@@ -732,6 +795,17 @@ public class Specimen extends BaseExtensionEntity {
 		return getVisit().getRegistration();
 	}
 
+	public List<Specimen> getDescendants() {
+		List<Specimen> result = new ArrayList<>();
+		result.add(this);
+
+		for (Specimen specimen : getChildCollection()) {
+			result.addAll(specimen.getDescendants());
+		}
+
+		return result;
+	}
+
 	public void update(Specimen specimen) {
 		boolean wasCollected = isCollected();
 
@@ -794,6 +868,7 @@ public class Specimen extends BaseExtensionEntity {
 		setExtension(specimen.getExtension());
 		setPrintLabel(specimen.isPrintLabel());
 		setFreezeThawCycles(specimen.getFreezeThawCycles());
+		setUpdated(true);
 	}
 	
 	public void updateStatus(String activityStatus, String reason){
@@ -804,6 +879,10 @@ public class Specimen extends BaseExtensionEntity {
 	// TODO: Modify to accommodate pooled specimens
 	//	
 	public void updateStatus(String activityStatus, User user, Date date, String reason, boolean isForceDelete) {
+		if (isReserved()) {
+			throw OpenSpecimenException.userError(SpecimenErrorCode.EDIT_NOT_ALLOWED, getLabel());
+		}
+
 		if (this.activityStatus != null && this.activityStatus.equals(activityStatus)) {
 			return;
 		}
@@ -883,6 +962,11 @@ public class Specimen extends BaseExtensionEntity {
 		// add distributed event
 		//
 		SpecimenDistributionEvent.createForDistributionOrderItem(item).saveRecordEntry();
+
+		//
+		// cancel the reservation so that it can be distributed subsequently if available
+		//
+		setReservedEvent(null);
 
 		//
 		// close specimen if explicitly closed or no quantity available
@@ -1101,7 +1185,18 @@ public class Specimen extends BaseExtensionEntity {
 		
 		setLabel(label);
 	}
-	
+
+	public void setBarcodeIfEmpty() {
+		if (StringUtils.isNotBlank(barcode) || isMissed()) {
+			return;
+		}
+
+		String barcodeTmpl = getCollectionProtocol().getSpecimenBarcodeFormatToUse();
+		if (StringUtils.isNotBlank(barcodeTmpl)) {
+			setBarcode(barcodeGenerator.generateLabel(barcodeTmpl, this));
+		}
+	}
+
 	public String getLabelTmpl() {
 		String labelTmpl = null;
 		
@@ -1116,7 +1211,7 @@ public class Specimen extends BaseExtensionEntity {
 		
 		CollectionProtocol cp = getVisit().getCollectionProtocol();
 		if (isAliquot()) {
-			labelTmpl = cp.getAliquotLabelFormat();
+			labelTmpl = cp.getAliquotLabelFormatToUse();
 		} else if (isDerivative()) {
 			labelTmpl = cp.getDerivativeLabelFormat();
 		} else {
@@ -1125,7 +1220,7 @@ public class Specimen extends BaseExtensionEntity {
 		
 		return labelTmpl;		
 	}
-	
+
 	public void updatePosition(StorageContainerPosition newPosition) {
 		updatePosition(newPosition, null);
 	}
@@ -1272,6 +1367,12 @@ public class Specimen extends BaseExtensionEntity {
 		return result;
 	}
 
+	public static List<Specimen> sortByBarcodes(Collection<Specimen> specimens, final List<String> barcodes) {
+		List<Specimen> result = new ArrayList<>(specimens);
+		result.sort(Comparator.comparingInt((s) -> barcodes.indexOf(s.getBarcode())));
+		return result;
+	}
+
 	public static boolean isValidLineage(String lineage) {
 		if (StringUtils.isBlank(lineage)) {
 			return false;
@@ -1369,7 +1470,7 @@ public class Specimen extends BaseExtensionEntity {
 
 	private void adjustParentSpecimenQty(BigDecimal qty) {
 		BigDecimal parentQty = parentSpecimen.getAvailableQuantity();
-		if (parentQty == null || NumUtil.isZero(parentQty)) {
+		if (parentQty == null || NumUtil.isZero(parentQty) || qty == null) {
 			return;
 		}
 

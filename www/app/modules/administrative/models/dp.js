@@ -53,6 +53,28 @@ angular.module('os.administrative.models.dp', ['os.common.models'])
       var params = '?dpId=' + this.$id() + '&groupBy=specimenType,anatomicSite,pathologyStatus';
       return DistributionProtocol.url() + '/orders-report' + params;
     }
+
+    DistributionProtocol.prototype.getOrderExtnCtxt = function() {
+      return DistributionProtocol.getOrderExtnCtxt(this.$id());
+    }
+
+    DistributionProtocol.prototype.reserveSpecimens = function(payload) {
+      payload = payload || {};
+      payload.dpId = this.$id();
+      return $http.put(DistributionProtocol.url() + this.$id() + '/reserved-specimens', payload).then(
+        function(resp) {
+          return resp.data;
+        }
+      );
+    }
+
+    DistributionProtocol.prototype.getReservedSpecimens = function(filterOpts) {
+      return $http.get(DistributionProtocol.url() + this.$id() + '/reserved-specimens', {params: filterOpts}).then(
+        function(resp) {
+          return resp.data;
+        }
+      );
+    }
     
     DistributionProtocol.getOrders = function(params) {
       return $http.get(DistributionProtocol.url() + 'orders', {params: params}).then(
@@ -65,6 +87,14 @@ angular.module('os.administrative.models.dp', ['os.common.models'])
     DistributionProtocol.bulkDelete = function(dpIds) {
       return $http.delete(DistributionProtocol.url(), {params: {id: dpIds}})
         .then(DistributionProtocol.modelArrayRespTransform);
+    }
+
+    DistributionProtocol.getOrderExtnCtxt = function(dpId) {
+      return $http.get(DistributionProtocol.url() + dpId + '/order-extension-form').then(
+        function(resp) {
+          return resp.data;
+        }
+      );
     }
     
     return DistributionProtocol;

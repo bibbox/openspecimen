@@ -33,6 +33,7 @@ import com.krishagni.catissueplus.core.common.domain.PrintItem;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.DependentEntityDetail;
 import com.krishagni.catissueplus.core.common.service.LabelGenerator;
+import com.krishagni.catissueplus.core.common.service.impl.EventPublisher;
 import com.krishagni.catissueplus.core.common.util.Status;
 import com.krishagni.catissueplus.core.common.util.Utility;
 import com.krishagni.catissueplus.core.de.services.impl.FormUtil;
@@ -105,6 +106,8 @@ public class Visit extends BaseExtensionEntity {
 	private DaoFactory daoFactory;
 	
 	private transient boolean forceDelete;
+
+	private transient boolean updated;
 	
 	public static String getEntityName() {
 		return ENTITY_NAME;
@@ -294,6 +297,14 @@ public class Visit extends BaseExtensionEntity {
 		return Status.ACTIVITY_STATUS_ACTIVE.getStatus().equals(this.activityStatus);
 	}
 
+	public boolean isUpdated() {
+		return updated;
+	}
+
+	public void setUpdated(boolean updated) {
+		this.updated = updated;
+	}
+
 	public boolean isCompleted() {
 		return isCompleted(getStatus());
 	}
@@ -308,6 +319,10 @@ public class Visit extends BaseExtensionEntity {
 	
 	public boolean isUnplanned() {
 		return getCpEvent() == null;
+	}
+
+	public boolean isPlanned() {
+		return getCpEvent() != null;
 	}
 
 	public boolean isOfEvent(String eventLabel) {
@@ -368,6 +383,7 @@ public class Visit extends BaseExtensionEntity {
 		setDefNameTmpl(visit.getDefNameTmpl());
 		setExtension(visit.getExtension());
 		CollectionUpdater.update(getClinicalDiagnoses(), visit.getClinicalDiagnoses());
+		setUpdated(true);
 	}
 
 	public void updateSprName(String sprName) {
@@ -452,9 +468,9 @@ public class Visit extends BaseExtensionEntity {
 	}
 
 	public void createPendingSpecimens() {
-		if (CollectionUtils.isNotEmpty(getSpecimens())) {
+		if (CollectionUtils.isNotEmpty(getSpecimens()) || getCpEvent() == null) {
 			//
-			// We quit if there is at least one specimen object created for visit
+			// We quit if there is at least one specimen object created for visit or the visit is unplanned
 			//
 			return;
 		}
@@ -596,6 +612,7 @@ public class Visit extends BaseExtensionEntity {
 			specimen.addChildSpecimen(createPendingSpecimen(childSr, specimen));
 		}
 
+		EventPublisher.getInstance().publish(new SpecimenSavedEvent(specimen));
 		return specimen;
 	}
 
@@ -605,6 +622,15 @@ public class Visit extends BaseExtensionEntity {
 
 		for (Specimen specimen : specimens) {
 			SpecimenRequirement requirement = specimen.getSpecimenRequirement();
+			if (requirement == null) {
+				//
+				// OPSMN-4227: We won't pre-print unplanned specimens
+				// This can happen when following state change transition happens:
+				// visit -> completed -> planned + unplanned specimens collected -> visit missed -> pending
+				//
+				continue;
+			}
+
 			if (requirement.getLabelAutoPrintModeToUse() == SpecimenLabelAutoPrintMode.PRE_PRINT) {
 				Integer printCopies = requirement.getLabelPrintCopiesToUse();
 				spmnPrintItems.add(PrintItem.make(specimen, printCopies));

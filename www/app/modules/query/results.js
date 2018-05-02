@@ -16,7 +16,7 @@ angular.module('os.query.results', ['os.query.models'])
     }
   })
   .controller('QueryResultsCtrl', function(
-    $rootScope, $scope, $state, $stateParams, $modal, $document, $timeout, $interpolate, currentUser,
+    $scope, $state, $stateParams, $modal, $document, $timeout, $interpolate, currentUser,
     queryCtx, cps, QueryCtxHolder, QueryUtil, QueryExecutor, SpecimenList, SpecimensHolder, Alerts) {
 
     var STR_FACETED_OPS = ['eq', 'qin', 'exists', 'any'];
@@ -454,7 +454,7 @@ angular.module('os.query.results', ['os.query.models'])
             cellTemplate: !!cellTemplate ? cellTemplate : undefined,
             showSummary:  showColSummary,
             summary:      summaryRow[idx],
-            sortFn:       isDateColumn ? QueryUtil.sortDatesFn : undefined,
+            sortFn:       getSortFn(result.columnTypes[idx]),
             cellFilter:   isDateColumn ? "date: global.dateTimeFmt" : undefined
           });
         }
@@ -472,6 +472,20 @@ angular.module('os.query.results', ['os.query.models'])
         $(window).resize();
         $(window).resize();
       }, 500);
+    }
+
+    function getSortFn(type) {
+      if (type == 'INTEGER' || type == 'FLOAT' || type == 'DATE_INTERVAL') {
+        return QueryUtil.sortNumber;
+      } else if (type == 'STRING') {
+        return QueryUtil.sortAlpha;
+      } else if (type == 'BOOLEAN') {
+        return QueryUtil.sortBool;
+      } else if (type == 'DATE') {
+        return QueryUtil.sortDate;
+      } else {
+        return function(a, b) { return (a === b) ? 0 : (a < b ? -1 : 1); };
+      }
     }
 
     function getFormattedRows(labels, rows) {
@@ -495,12 +509,27 @@ angular.module('os.query.results', ['os.query.models'])
     }
 
     function showAddToSpecimenList() {
-      if ($scope.queryCtx.selectedFields.indexOf('Specimen.label') != -1) {
-        return true;
+      if ($scope.queryCtx.reporting.type == 'crosstab') {
+        return false;
       }
 
-      return false;
-    };
+      var result = false, fields = $scope.queryCtx.selectedFields;
+      for (var i = 0; i < fields.length; ++i) {
+        var field = fields[i];
+
+        if (typeof field == 'string') {
+          result = (field == 'Specimen.label');
+        } else if (typeof field == 'object' && (!field.aggFns || field.aggFns.lengths == 0)) {
+          result = (field.name == 'Specimen.label');
+        }
+
+        if (result) {
+          break;
+        }
+      }
+
+      return result;
+    }
 
     function getSelectedSpecimens() {
       return $scope.selectedRows.map(function(row) {
@@ -611,6 +640,8 @@ angular.module('os.query.results', ['os.query.models'])
       $scope.resultsCtx.selectAll = false;
     };
 
+    $scope.getSelectedSpecimens = getSelectedSpecimens;
+
     $scope.addSelectedSpecimensToSpecimenList = function(list) {
       var selectedSpecimens = getSelectedSpecimens();
       if (!selectedSpecimens || selectedSpecimens.length == 0) {
@@ -697,7 +728,7 @@ angular.module('os.query.results', ['os.query.models'])
           if (!toggledValue) {
             filter.value = [];
           } else {
-            filter.value = filter.value || [];
+            filter.value = facet.selectedValues;
 
             var valueIdx = filter.value.indexOf(toggledValue.value);
             if (toggledValue.selected && valueIdx == -1) {
@@ -749,7 +780,7 @@ angular.module('os.query.results', ['os.query.models'])
         function() {
           loadFacetValues(facet, facet.searchFor);
         },
-        $rootScope.global.filterWaitInterval
+        ui.os.global.filterWaitInterval
       );
     }
 

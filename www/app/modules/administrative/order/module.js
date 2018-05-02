@@ -30,7 +30,7 @@ angular.module('os.administrative.order',
         parent: 'order-root'
       })
       .state('order-addedit', {
-        url: '/order-addedit/:orderId?requestId&specimenListId',
+        url: '/order-addedit/:orderId?requestId&specimenListId&allReservedSpmns&dpId',
         templateUrl: 'modules/administrative/order/addedit.html',
         controller: 'OrderAddEditCtrl',
         resolve: {
@@ -42,12 +42,29 @@ angular.module('os.administrative.order',
             return null;
           },
 
-          order: function($stateParams, specimenList, DistributionOrder) {
-            if ($stateParams.orderId) {
+          order: function($stateParams, $q, specimenList, DistributionProtocol, DistributionOrder) {
+            if (!!$stateParams.orderId) {
               return DistributionOrder.getById($stateParams.orderId);
             }
 
-            return new DistributionOrder({status: 'PENDING', orderItems: [], specimenList: specimenList});
+            var allReservedSpmns = undefined;
+            var p = null;
+            if ($stateParams.dpId && $stateParams.dpId > 0) {
+              allReservedSpmns = !specimenList && ($stateParams.allReservedSpmns == 'true');
+              p = DistributionProtocol.getById($stateParams.dpId);
+            }
+
+            return $q.when(p).then(
+              function(dp) {
+                return new DistributionOrder({
+                  status: 'PENDING',
+                  distributionProtocol: dp,
+                  orderItems: [],
+                  specimenList: specimenList,
+                  allReservedSpmns: allReservedSpmns
+                });
+              }
+            );
           },
 
           spmnRequest: function($stateParams, $injector, order) {
@@ -86,13 +103,23 @@ angular.module('os.administrative.order',
         templateUrl: 'modules/common/import/add.html',
         controller: 'ImportObjectCtrl',
         resolve: {
-          importDetail: function() {
+          importDetail: function(DistributionProtocol) {
             return {
               breadcrumbs: [{state: 'order-list', title: 'orders.list'}],
               objectType: 'distributionOrder',
               csvType: 'MULTIPLE_ROWS_PER_OBJ',
               title: 'orders.bulk_import',
-              onSuccess: {state: 'order-list'}
+              onSuccess: {state: 'order-list'},
+              entityLabel: 'orders.dp',
+              entitiesFn: function(searchTerm) {
+                var filterOpts = {activityStatus: 'Active', query: searchTerm, excludeExpiredDps: true};
+                return DistributionProtocol.query(filterOpts).then(
+                  function(dps) {
+                    return dps.map(function(dp) { return {id: dp.id, name: dp.shortTitle}; });
+                  }
+                );
+              },
+              entities: []
             };
           }
         },

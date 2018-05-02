@@ -1,7 +1,7 @@
 
 angular.module('openspecimen')
   .factory('Util', function(
-    $rootScope, $state, $stateParams, $timeout, $document, $q,
+    $rootScope, $filter, $state, $stateParams, $timeout, $document, $q,
     $parse, $modal, $translate, $http, osRightDrawerSvc, ApiUrls, Alerts) {
 
     var isoDateRe = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2}(?:\.\d*))(?:Z|(\+|-)([\d|:]*))?$/;
@@ -181,6 +181,10 @@ angular.module('openspecimen')
     }
 
     function getNumberInScientificNotation(input, minRange, fractionDigits) {
+      if (input == null || input == undefined) {
+        return input;
+      }
+
       minRange = minRange || 1000000;
       fractionDigits = fractionDigits || undefined;
       
@@ -328,14 +332,18 @@ angular.module('openspecimen')
         }
       );
 
+      var added = [];
       angular.forEach(srcArray,
         function(obj) {
           if (!map[key(obj)]) {
             dstArray.push(obj);
             map[key(obj)] = obj;
+            added.push(obj);
           }
         }
       );
+
+      return added;
     }
 
     function showConfirm(opts) {
@@ -461,6 +469,156 @@ angular.module('openspecimen')
       return success;
     }
 
+    function toUtc(dt) {
+      return Date.UTC(
+        dt.getFullYear(), dt.getMonth(), dt.getDate(),
+        dt.getHours(), dt.getMinutes(), dt.getSeconds(), dt.getMilliseconds()
+      );
+    }
+
+    function dateDiffInMs(i1, i2) {
+      return toUtc(new Date(i2)) - toUtc(new Date(i1));
+    }
+
+    function dateDiffInYears(i1, i2) {
+      var d1 = new Date(i1);
+      var d2 = new Date(i2);
+      var diff = d2.getFullYear() - d1.getFullYear();
+
+      var m = d2.getMonth() - d1.getMonth();
+      if (m < 0 || (m === 0 && d2.getDate() < d1.getDate())) {
+        --diff;
+      }
+
+      return diff;
+    }
+
+
+    /**
+     * List of in-built functions available in evaluation of expressions
+     */
+    var fns = {
+      ifnull: function(cond, truth, falsy) {
+        return (cond == null || cond == undefined) ? truth : falsy;
+      },
+
+      ifNull: function(cond, truth, falsy) {
+        return (cond == null || cond == undefined) ? truth : falsy;
+      },
+
+      ifNotNull: function(cond, truth, falsy) {
+        return (cond !== null && cond !== undefined) ? truth : falsy;
+      },
+
+      concatList: function(list, expr, separator) {
+        var parsedExpr = $parse(expr);
+
+        return (list || []).map(
+          function(e) {
+            return parsedExpr(e);
+          }
+        ).join(separator);
+      },
+
+      concat: function() {
+        var result = '';
+        for (var i = 0; i < arguments.length; ++i) {
+          if (!arguments[i]) {
+            continue;
+          }
+
+          if (i != 0) {
+            result += ' ';
+          }
+
+          result += arguments[i];
+        }
+
+        return result;
+      },
+
+      minValue: function(coll, expr) {
+        var parsedExpr = $parse(expr);
+
+        var minValue = null, minIdx = -1;
+        angular.forEach(coll,
+          function(e, idx) {
+            var value = parsedExpr(e);
+
+            if (idx == 0) {
+              minValue = value;
+              minIdx = idx;
+              return;
+            }
+
+            if (value != null && value != undefined && value < minValue) {
+              minValue = value;
+              minIdx = idx;
+            }
+          }
+        );
+
+        return minValue;
+      },
+
+      toDateStr: function(input, fmt) {
+        if (input === null || input === undefined) {
+          return undefined;
+        }
+
+        return $filter('date')(input, fmt || ui.os.global.dateFmt);
+      },
+
+      toDateTimeStr: function(input, fmt) {
+        if (input === null || input === undefined) {
+          return undefined;
+        }
+
+        return $filter('date')(input, fmt || ui.os.global.dateTimeFmt);
+      },
+
+      ageInYears: function(input, today) {
+        return dateDiffInYears(input, (today && new Date(today)) || new Date());
+      },
+
+      now: function() {
+        return new Date().getTime();
+      },
+
+      currentTime: function() {
+        return new Date().getTime();
+      },
+
+      dateDiffInYears: function(d1, d2) {
+        return dateDiffInYears(d1, d2);
+      },
+
+      dateDiffInDays: function(d1, d2) {
+        return Math.floor(dateDiffInMs(d1, d2) / (24 * 60 * 60 * 1000));
+      },
+
+      dateDiffInHours: function(d1, d2) {
+        return Math.floor(dateDiffInMs(d1, d2) / (60 * 60 * 1000));
+      },
+
+      dateDiffInMinutes: function(d1, d2) {
+        return Math.floor(dateDiffInMs(d1, d2) / (60 * 1000));
+      },
+
+      dateDiffInSeconds: function(d1, d2) {
+        return Math.floor(dateDiffInMs(d1, d2) /  1000);
+      }
+    }
+
+    function evaluate(expr, inputCtx) {
+      try {
+        return $parse(expr)(angular.extend({fns: fns}, inputCtx));
+      } catch (e) {
+        Alerts.error('common.invalid_expr', {expr: expr});
+        throw e;
+      }
+    }
+
     return {
       clear: clear,
 
@@ -502,6 +660,19 @@ angular.module('openspecimen')
 
       showItemsValidationResult: showItemsValidationResult,
 
-      copyToClipboard: copyToClipboard
+      copyToClipboard: copyToClipboard,
+
+      evaluate: evaluate,
+
+      fns: fns,
+
+      toBeDateTime: function(input, reqSecs) {
+        var fmt = ui.os.global.shortDateFmt + ' HH:mm';
+        if (reqSecs) {
+          fmt += ':ss';
+        }
+
+        return $filter('date')(input, fmt);
+      }
     };
   });

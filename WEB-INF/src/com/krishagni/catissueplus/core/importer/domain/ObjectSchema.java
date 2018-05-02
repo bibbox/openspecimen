@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import com.thoughtworks.xstream.XStream;
+import com.thoughtworks.xstream.converters.reflection.PureJavaReflectionProvider;
 import com.thoughtworks.xstream.io.xml.Dom4JDriver;
 
 public class ObjectSchema {	
@@ -59,12 +60,13 @@ public class ObjectSchema {
 	}
 	
 	private static XStream getSchemaParser() {
-		XStream xstream = new XStream(new Dom4JDriver());
+		XStream xstream = new XStream(new PureJavaReflectionProvider(), new Dom4JDriver());
 		
 		xstream.alias("object-schema", ObjectSchema.class);
 		
 		xstream.alias("record", Record.class);
 		xstream.aliasAttribute(Record.class, "type", "type");
+		xstream.aliasAttribute(Record.class, "cpBased", "cpBased");
 		xstream.aliasAttribute(Record.class, "entityType", "entityType");
 		xstream.addImplicitCollection(Record.class, "subRecords", "record", Record.class);
 		
@@ -82,6 +84,8 @@ public class ObjectSchema {
 		private String caption;
 		
 		private String type;
+
+		private boolean cpBased = true; // for backward compatibility, default value is true
 		
 		private String entityType;
 		
@@ -121,6 +125,14 @@ public class ObjectSchema {
 
 		public void setType(String type) {
 			this.type = type;
+		}
+
+		public boolean isCpBased() {
+			return cpBased;
+		}
+
+		public void setCpBased(boolean cpBased) {
+			this.cpBased = cpBased;
 		}
 
 		public String getEntityType() {

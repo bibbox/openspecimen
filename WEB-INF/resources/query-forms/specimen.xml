@@ -230,7 +230,6 @@
         <options>
           <option><value>Active</value></option>
           <option><value>Closed</value></option>
-          <option><value>Disabled</value></option>
         </options>
       </dropDown>
     </row>
@@ -268,7 +267,6 @@
             <udn>containerName</udn>
             <caption>#getMessage("specimen_spec_position_container_name")</caption>
             <column>CONTAINER_NAME</column>
-            <maxLength>255</maxLength>
             <recordUrl>#/object-state-params-resolver?stateName=container-detail.locations&amp;objectName=storage_container&amp;key=name&amp;value={{$value}}</recordUrl>
           </textField>              
 
@@ -277,7 +275,6 @@
             <udn>positionDimensionTwoString</udn>
             <caption>#getMessage("specimen_spec_position_container_row")</caption>
             <column>POS_TWO_STR</column>
-            <maxLength>255</maxLength>
           </textField>              
 
           <textField>
@@ -285,7 +282,6 @@
             <udn>positionDimensionOneString</udn>
             <caption>#getMessage("specimen_spec_position_container_column")</caption>
             <column>POS_ONE_STR</column>
-            <maxLength>255</maxLength>
           </textField>
 
           <textField>
@@ -293,7 +289,6 @@
             <udn>formattedPos</udn>
             <caption>#getMessage("specimen_spec_position_formatted_pos")</caption>
             <column>FORMATTED_POSITION</column>
-            <maxLength>16</maxLength>
           </textField>
         </row>
         <row>
@@ -311,7 +306,6 @@
                 <udn>hierarchy</udn>
                 <caption>#getMessage("specimen_spec_position_container_hierarchy")</caption>
                 <column>HIERARCHY</column>
-                <maxLength>255</maxLength>
               </textField>
             </row>
           </subForm>
@@ -332,7 +326,6 @@
                 <udn>root_container_name</udn>
                 <caption>#getMessage("specimen_spec_position_container_root_name")</caption>
                 <column>FREEZER</column>
-                <maxLength>255</maxLength>
                 <recordUrl>#/object-state-params-resolver?stateName=container-detail.overview&amp;objectName=storage_container&amp;key=name&amp;value={{$value}}</recordUrl>
               </textField>
             </row>
@@ -403,7 +396,7 @@
             <caption>#getMessage("specimen_collection_container")</caption>
             <column>COLL_CONTAINER</column>
             <options>
-              <sql>select distinct coll_container from os_spmn_coll_recv_details_view order by coll_container</sql>
+              <sql>select value from catissue_permissible_value where public_id = 'collection_container' order by value</sql>
             </options>
           </dropDown>
           <dropDown>
@@ -412,7 +405,7 @@
             <caption>#getMessage("specimen_collection_procedure")</caption>
             <column>COLL_PROCEDURE</column>
             <options>
-              <sql>select distinct coll_procedure from os_spmn_coll_recv_details_view order by coll_procedure</sql>
+              <sql>select value from catissue_permissible_value where public_id = 'collection_procedure' order by value</sql>
             </options>
           </dropDown>
           <userField>
@@ -433,7 +426,7 @@
             <caption>#getMessage("specimen_received_quality")</caption>
             <column>RECV_QUALITY</column>
             <options>
-              <sql>select distinct recv_quality from os_spmn_coll_recv_details_view order by recv_quality</sql>
+              <sql>select value from catissue_permissible_value where public_id = 'receive_quality' order by value</sql>
             </options>
           </dropDown>
           <userField>
@@ -552,6 +545,40 @@
 
     <row>
       <subForm>
+        <name>specimenResv</name>
+        <udn>specimenResv</udn>
+        <caption>#getMessage("specimen_reservation")</caption>
+        <table>OS_SPECIMEN_RESV_VIEW</table>
+        <foreignKey>SPECIMEN_ID</foreignKey>
+        <parentKey>IDENTIFIER</parentKey>
+
+        <row>
+          <dropDown>
+            <name>dpShortTitle</name>
+            <udn>dpShortTitle</udn>
+            <caption>#getMessage("specimen_reservation_dp")</caption>
+            <column>DP_SHORT_TITLE</column>
+            <options>
+              <sql>select short_title from catissue_distribution_protocol where activity_status != 'Disabled' order by short_title</sql>
+            </options>
+            <recordUrl>#/object-state-params-resolver?stateName=dp-detail.overview&amp;objectName=distribution_protocol&amp;key=shortTitle&amp;value={{$value}}</recordUrl>
+          </dropDown>
+        </row>
+
+        <row>
+          <datePicker>
+            <name>resvDate</name>
+            <udn>resvDate</udn>
+            <caption>#getMessage("specimen_reservation_date")</caption>
+            <column>EVENT_TIME</column>
+            <format>MM-dd-yyyy</format>
+          </datePicker>
+        </row>
+      </subForm>
+    </row>
+
+    <row>
+      <subForm>
         <name>specimenOrders</name>
         <udn>specimenOrders</udn>
         <caption>#getMessage("specimen_order_items_order")</caption>
@@ -575,7 +602,6 @@
             <udn>name</udn>
             <caption>#getMessage("specimen_distribution_name")</caption>
             <column>NAME</column>
-            <maxLength>255</maxLength>
             <recordUrl>#/object-state-params-resolver?stateName=order-detail.overview&amp;objectName=distribution_order&amp;key=name&amp;value={{$value}}</recordUrl>
           </textField>  
         </row>
@@ -751,6 +777,22 @@
             <column>QUANTITY</column>
             <noOfDigitsAfterDecimal>2</noOfDigitsAfterDecimal>
           </numberField>
+        </row>
+
+        $querySvc.insertCustomQueryForms('order')
+
+        <row>
+          <subForm>
+            <name>customFields</name>
+            <udn>customFields</udn>
+            <caption>#getMessage("specimen_order_extensions")</caption>
+            <table>OS_ORDERS_CUSTOM_FIELDS_VIEW</table>
+            <foreignKey>ORDER_ID</foreignKey>
+            <parentKey>ORDER_ID</parentKey>
+            <customFieldsInfo>false:OrderExtension:-1</customFieldsInfo>
+            <pathLink>true</pathLink>
+            <extnFkCol>RECORD_ID</extnFkCol>
+          </subForm>
         </row>
       </subForm>
     </row>

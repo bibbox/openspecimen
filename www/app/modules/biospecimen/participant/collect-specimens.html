@@ -1,36 +1,8 @@
 <div>
-  <div os-page-header>
-    <div class="os-page-header-content">
-      <ul os-breadcrumbs>
-        <li>
-          <a ui-sref="cp-list-view({cpId: cpr.cpId})">
-            <span>{{cpr.cpShortTitle}}</span>
-          </a> 
-        </li>
-        <li ng-if="!cp.specimenCentric">
-          <a ui-sref="participant-detail.overview({cprId: cpr.id})">
-            <span>{{cpr.ppid}}</span>
-          </a>
-        </li>
-        <li ng-if="!cp.specimenCentric">
-          <a ui-sref="participant-detail.visits({visitId: visit.id, eventId: visit.eventId})" translate="visits.list">
-            Visits
-          </a>
-        </li>
-      </ul>
-
-      <h3>
-        <span>Specimen Collection</span>
-        <span ng-if="!cp.specimenCentric">
-          : <os-event-desc event-point="visit.eventPoint" event-point-unit="visit.eventPointUnit"
-            event-label="visit.eventLabel"></os-event-desc>
-        </span>
-      </h3>
-    </div>
-  </div>
+  <div ng-include="'modules/biospecimen/participant/collect-specimens-header.html'" os-replace-with-children></div>
 
   <div class="container">
-    <form name="collectionForm" os-form-validator="collectionForm" novalidate ng-if="customFieldGroups.length <= 0">
+    <form name="collectionForm" os-form-validator="collectionForm" novalidate>
       <div ng-include src="'specimen_coll_visit_details.html'" ng-if="showCollVisitDetails"></div>
 
       <table class="os-table os-table-fixed os-table-tree bulk-edit os-border os-table-muted-hdr">
@@ -75,11 +47,8 @@
                   </div>
                 </span>
               </div>
-              <div class="os-col-15 os-no-left-padding">
-                <span translate="specimens.row">Row</span>
-              </div>
-              <div class="os-col-15 os-no-left-padding">
-                <span translate="specimens.column">Column</span>
+              <div class="os-col-30 os-no-left-padding">
+                <span translate="specimens.position">Position</span>
               </div>
             </th>
             <th class="col os-col-10">Status</th>
@@ -92,11 +61,11 @@
             ng-repeat="specimen in specimens | openedTreeNodes" ng-form="sform" ng-if="specimen.showInTree">
             <td class="col os-col-30">
               <div ng-style="{'padding-left': (specimen.hasChildren ? specimen.depth * 20 : specimen.depth * 20 + 16) + 'px'}">
-                <a ng-if="specimen.hasChildren && specimen.isOpened" 
+                <a ng-if="specimen.hasChildren && specimen.isOpened"
                   class="fa fa-chevron-circle-down"
                   ng-click="closeSpecimenNode(specimen)">
                 </a>
-                <a ng-if="specimen.hasChildren && !specimen.isOpened" 
+                <a ng-if="specimen.hasChildren && !specimen.isOpened"
                   class="fa fa-chevron-circle-right"
                   ng-click="openSpecimenNode(specimen)">
                 </a>
@@ -105,7 +74,7 @@
                              'os-status-pending': specimen.existingStatus == 'Pending' || !specimen.existingStatus,
                              'os-status-not-collected': specimen.existingStatus == 'Missed Collection'}">
                 </span>
-                <os-specimen-desc specimen="specimen" show-req-label="true"></os-specimen-desc>
+                <os-specimen-desc cp="cp" specimen="specimen" show-req-label="true"></os-specimen-desc>
 
                 <span ng-if="specimen.aliquotGrp.length > 1">
                   <div class="btn-group">
@@ -130,19 +99,24 @@
               </div>
             </td>
             <td class="col os-col-15" ng-switch="barcodingEnabled">
-              <div ng-switch-when="true" os-unique-items>
-                <div ng-switch="!!specimen.aliquotGrp && !specimen.expanded">
-                  <span ng-switch-when="true">
-                    <textarea os-md-input rows="1" name="barcode"
-                      ng-model="specimen.aliquotBarcodes" edit-when="!specimen.pBarcode"
-                      ng-blur="assignBarcodes(specimen, specimen.aliquotBarcodes)">
-                    </textarea>
-                  </span>
+              <div ng-switch-when="true" ng-switch="spmnBarcodesAutoGen">
+                <div ng-switch-when="true">
+                  <span translate="specimens.auto">Auto</span>
+                </div>
+                <div ng-switch-default os-unique-items>
+                  <div ng-switch="!!specimen.aliquotGrp && !specimen.expanded">
+                    <span ng-switch-when="true">
+                      <textarea os-md-input rows="1" name="barcode"
+                        ng-model="specimen.aliquotBarcodes" edit-when="!specimen.pBarcode"
+                        ng-blur="assignBarcodes(specimen, specimen.aliquotBarcodes)">
+                      </textarea>
+                    </span>
 
-                  <span ng-switch-default>
-                    <input type="text" os-md-input edit-when="!specimen.pBarcode"
-                      name="barcode" ng-model="specimen.barcode" os-unique-item>
-                  </span>
+                    <span ng-switch-default>
+                      <input type="text" os-md-input edit-when="!specimen.pBarcode"
+                        name="barcode" ng-model="specimen.barcode" os-unique-item>
+                    </span>
+                  </div>
                 </div>
               </div>
               <div ng-switch-default ng-switch="!cp.manualSpecLabelEnabled && !specimen.label && !!specimen.labelFmt">
@@ -175,7 +149,7 @@
                 </span>
                 <span ng-switch-when="false">
                   <os-spmn-measure name="qty" specimen="specimen" quantity="specimen.initialQty"
-                    md-input ng-required="specimen.lineage == 'Aliquot'"
+                    md-input ng-required="specimen.lineage == 'Aliquot' && aliquotQtyReq"
                     on-change="changeQuantity(specimen, specimen.initialQty)">
                   </os-spmn-measure>
                 </span>
@@ -214,56 +188,6 @@
       <div class="row">
         <div class="col-xs-10">
           <button type="submit" class="btn btn-primary" os-form-submit="saveSpecimens()" mousedown-click="true"> 
-            <span translate="common.buttons.submit"> Submit </span>
-          </button>
-          <button class="btn os-btn-text" ng-click="back()">
-            <span translate="common.buttons.cancel"> Cancel </span>
-          </button>
-        </div>
-      </div>
-    </form>
-
-    <form name="collectionForm" os-form-validator="collectionForm" novalidate ng-if="customFieldGroups.length > 0">
-      <div ng-if="customFieldGroups[0].visitFields">
-        <sde-form-fields name="visit" table="customFieldGroups[0].multiple" opts="customFieldGroups[0].opts"
-          base-fields="customFieldGroups[0].baseFields" fields="customFieldGroups[0].fields"
-          obj="customFieldGroups[0].input">
-        </sde-form-fields>
-      </div>
-      <div ng-repeat="group in customFieldGroups" ng-if="!group.noMatch && !group.visitFields">
-        <div class="panel panel-default">
-          <div class="panel-heading">
-            <span>{{group.title}}</span>
-            <a class="btn btn-xs btn-default" ng-click="group.opts.cofrc = !group.opts.cofrc" ng-if="group.opts.enableCofrc">
-              <span ng-if="group.opts.cofrc">
-                <span class="fa fa-plus"></span>
-                <span translate="common.show_all">Show all rows</span>
-                <span>({{group.input.length}})</span>
-              </span>
-              <span ng-if="!group.opts.cofrc">
-                <span class="fa fa-minus"></span>
-                <span translate="common.show_only_first">Show only first row</span>
-              </span>
-            </a>
-            <a class="btn btn-xs btn-default" ng-click="group.opts.$$sdeFormFields.copyFirstToAll()"
-              ng-if="!group.opts.enableCofrc || !group.opts.cofrc">
-              <span class="fa fa-clone"></span>
-              <span translate="specimens.copy_first_to_all">Copy First To All</span>
-            </a>
-          </div>
-          <div class="panel-body">
-            <sde-form-fields name="samples" table="group.multiple" opts="group.opts"
-              base-fields="group.baseFields" fields="group.fields" obj="group.input">
-            </sde-form-fields>
-          </div>
-        </div>
-      </div>
-
-      <div class="os-divider"></div>
-
-      <div class="row">
-        <div class="col-xs-10">
-          <button type="submit" class="btn btn-primary" ng-click="updateSpecimens()">
             <span translate="common.buttons.submit"> Submit </span>
           </button>
           <button class="btn os-btn-text" ng-click="back()">

@@ -1,10 +1,21 @@
 angular.module('os.biospecimen.specimen')
-  .factory('SpecimenUtil', function($modal, $q, $parse, $location, Specimen, PvManager, Alerts, Util) {
+  .factory('SpecimenUtil', function(
+    $modal, $q, $parse, $location,
+    ParticipantSpecimensViewState, Specimen, PvManager, Alerts, Util) {
+
     var URL_LEN_LIMIT = 8192; // 8 KB
 
     function collectAliquots(scope) {
       var spec = scope.aliquotSpec;
       var parent = scope.parentSpecimen;
+      if (parent.availableQty == '') {
+        delete parent.availableQty;
+      }
+
+      if (parent.initialQty == '') {
+        delete parent.initialQty;
+      }
+
       var extensionDetail = getExtensionDetail(scope);
       if (!extensionDetail) {
         extensionDetail = scope.aliquotSpec.extensionDetail;
@@ -24,9 +35,9 @@ angular.module('os.biospecimen.specimen')
           });
           return;
         }
-      } else if (!!spec.qtyPerAliquot) {
+      } else if (spec.specimenClass == parent.specimenClass && spec.type == parent.type && !!spec.qtyPerAliquot) {
         spec.noOfAliquots = Math.floor(parent.availableQty / spec.qtyPerAliquot);
-      } else if (!!spec.noOfAliquots) {
+      } else if (spec.specimenClass == parent.specimenClass && spec.type == parent.type && !!spec.noOfAliquots) {
         spec.qtyPerAliquot = Math.round(parent.availableQty / spec.noOfAliquots * 10000) / 10000;
       }
 
@@ -41,6 +52,7 @@ angular.module('os.biospecimen.specimen')
       parent.isOpened = parent.hasChildren = true;
       parent.depth = 0;
       parent.closeAfterChildrenCreation = spec.closeParent;
+      parent.storageType = (!parent.storageLocation || !parent.storageLocation.name) && (parent.storageType || 'Virtual');
 
       var derived = undefined;
       if (spec.specimenClass != parent.specimenClass || spec.type != parent.type) {
@@ -128,6 +140,7 @@ angular.module('os.biospecimen.specimen')
             delete scope.derivative.storageLocation.reservationId;
           }
 
+          ParticipantSpecimensViewState.specimensUpdated(scope);
           scope.revertEdit();
         }
       );
@@ -348,6 +361,7 @@ angular.module('os.biospecimen.specimen')
         parentId: parent.id,
         initialQty: qty,
         concentration: concentration,
+        pathology: spec.pathology,
         storageLocation: {name: '', positionX:'', positionY: ''},
         status: 'Pending',
         children: [],
@@ -367,7 +381,7 @@ angular.module('os.biospecimen.specimen')
       });
     }
 
-    function sdeGroupSpecimens(baseFields, groups, specimens) {
+    function sdeGroupSpecimens(baseFields, groups, specimens, ctxtObjs) {
       var result = [];
       var unmatched = [].concat(specimens);
 
@@ -376,7 +390,7 @@ angular.module('os.biospecimen.specimen')
         var group = groups[i];
         var selectedSpmns = [];
         if (!group.criteria) {
-          selectedSpmns = specimens.map(function(spmn) { return {specimen: spmn} });
+          selectedSpmns = specimens.map(sdeGroupInput(ctxtObjs));
           unmatched.length = 0;
         } else {
           var exprs = group.criteria.rules.map(
@@ -394,7 +408,7 @@ angular.module('os.biospecimen.specimen')
           var expr = $parse(exprs.join(group.criteria.op == 'AND' ? ' && ' : ' || '));
           for (var j = specimens.length - 1; j >= 0; j--) {
             if (expr({specimen: specimens[j]})) {
-              selectedSpmns.unshift({specimen: specimens[j]});
+              selectedSpmns.unshift(sdeGroupInput(ctxtObjs)(specimens[j]));
 
               var uidx = unmatched.indexOf(specimens[j]);
               if (uidx > -1) {
@@ -419,12 +433,18 @@ angular.module('os.biospecimen.specimen')
 
       if (unmatched.length > 0) {
         result.push({
-          input: unmatched.map(function(specimen) { return {specimen: specimen}; }),
+          input: unmatched.map(sdeGroupInput(ctxtObjs)),
           noMatch: true
         });
       }
 
       return result;
+    }
+
+    function sdeGroupInput(ctxtObjs) {
+      return function(specimen) {
+        return angular.extend({specimen: specimen}, ctxtObjs);
+      };
     }
 
     return {

@@ -1,5 +1,5 @@
 angular.module('os.biospecimen.models.visit', ['os.common.models', 'os.biospecimen.models.form'])
-  .factory('Visit', function(osModel, $http, ApiUtil, CollectionProtocolEvent, Form) {
+  .factory('Visit', function(osModel, $http, ApiUrls, ApiUtil, CollectionProtocolEvent, Form) {
     var Visit = osModel('visits');
  
     function enrich(visits) {
@@ -106,6 +106,19 @@ angular.module('os.biospecimen.models.visit', ['os.common.models', 'os.biospecim
     Visit.collectVisitAndSpecimens = function(visitAndSpecimens) {
       return $http.post(Visit.url() + 'collect', visitAndSpecimens).then(ApiUtil.processResp);
     };
+
+    Visit.searchVisits = function(detail) {
+      return $http.post(Visit.url() + 'match', detail).then(ApiUtil.processResp);
+    }
+
+    Visit.getRouteIds = function(visitId) {
+      var params = {objectName: 'visit', key: 'id', value: visitId};
+      return $http.get(ApiUrls.getBaseUrl() + '/object-state-params', {params: params}).then(
+        function(result) {
+          return result.data;
+        }
+      );
+    }
 
     Visit.prototype.getType = function() {
       return 'visit';

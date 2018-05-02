@@ -47,13 +47,19 @@ angular.module('os.query.defineview', ['os.query.models'])
     }
 
     $scope.ok = function() {
+      var init = false;
       if (!$scope.selectedFields || $scope.selectedFields.length == 0) {
-        $scope.selectedFields = getSelectedFields(forms);
+        $scope.selectedFields = getSelectedFields(forms, true);
+        init = true;
       }
 
       if (!$scope.selectedFields || $scope.selectedFields.length == 0) {
         Alerts.error('queries.no_fields_selected');
         return;
+      }
+
+      if (init) {
+        prepareAggFns($scope.selectedFields, aggFns, true);
       }
 
       var rptParams = $scope.reporting.params;
@@ -582,12 +588,12 @@ angular.module('os.query.defineview', ['os.query.models'])
         var currLevel = level;
         var fieldParts;
         if (typeof selectedFields[i] == "string") {
-          fieldParts = selectedFields[i].split(".", 2);
+          fieldParts = selectedFields[i].split(".", currLevel + 1);
         } else {
-          fieldParts = selectedFields[i].name.split(".", 2);
+          fieldParts = selectedFields[i].name.split(".", currLevel + 1);
         }
 
-        if (Form.isExtendedField(fieldParts[1])) {
+        if (currLevel < fieldParts.length && Form.isExtendedField(fieldParts[currLevel])) {
           currLevel++;
         }
 

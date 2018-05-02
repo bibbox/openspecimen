@@ -1,43 +1,58 @@
 
 angular.module('os.administrative.order.addedit', ['os.administrative.models', 'os.biospecimen.models'])
   .controller('OrderAddEditCtrl', function(
-    $scope, $state, $translate, order, spmnRequest, requestDp,
-    Institute, Specimen, SpecimensHolder, Site, DistributionProtocol,
-    DistributionOrder, SpecimenList, Alerts, Util, SpecimenUtil) {
+    $scope, $state, $translate, $injector, order, spmnRequest, requestDp,
+    PluginReg, Specimen, SpecimensHolder, Site, DistributionProtocol,
+    DistributionOrder, SpecimenList, Alerts, Util, SpecimenUtil, ExtensionsUtil) {
     
     var ignoreQtyWarning = false;
 
     function init() {
       $scope.input = {};
       $scope.order = order;
-      $scope.skipSpecimensTab = (!!order.specimenList && !!order.specimenList.id);
+      $scope.skipSpecimensTab = ((!!order.specimenList && !!order.specimenList.id) || order.allReservedSpmns);
+
+      $scope.ctx = {
+        extnFormCtrl: {},
+        extnOpts: undefined,
+        itemFieldsHdrTmpls:  PluginReg.getTmpls('order-addedit', 'item-fields-header', ''),
+        itemFieldsCellTmpls: PluginReg.getTmpls('order-addedit', 'item-fields-addedit', '')
+      };
 
       order.request = spmnRequest;
       if (requestDp) {
         order.distributionProtocol = requestDp;
-        $scope.onDpSelect();
       } else {
         loadDps();
+        setExtnFormCtxt(order);
+      }
+
+      if (!order.id && !!order.distributionProtocol) {
+        $scope.onDpSelect();
       }
 
       $scope.dpList = [];
-      $scope.instituteNames = [];
       $scope.siteList = [];
       $scope.userFilterOpts = {};
 
       $scope.input = {allItemStatus: false, noQtySpmnsPresent: false};
 
-      loadInstitutes();
       setUserAndSiteList(order);
 
       if (!$scope.skipSpecimensTab) {
         if (!order.id) {
           if (angular.isArray(SpecimensHolder.getSpecimens())) {
             order.orderItems = getOrderItems(SpecimensHolder.getSpecimens());
+            order.comments = SpecimensHolder.getExtra() || order.comments;
             SpecimensHolder.setSpecimens(null);
           } else if (!!order.request) {
             order.orderItems = getOrderItemsFromReq(order.request.items, []);
           }
+
+          //
+          // newly created order. item costs are auto-populated
+          //
+          addItemCosts(order.distributionProtocol, order.orderItems);
         } else if (!!order.id) {
           loadOrderItems();
         }
@@ -60,14 +75,6 @@ angular.module('os.administrative.order.addedit', ['os.administrative.models', '
       );
     }
     
-    function loadInstitutes () {
-      Institute.query().then(
-        function (institutes) {
-          $scope.instituteNames = Institute.getNames(institutes);
-        }
-      );
-    }
-
     function loadOrderItems() {
       order.getOrderItems().then(
         function(orderItems) {
@@ -87,6 +94,19 @@ angular.module('os.administrative.order.addedit', ['os.administrative.models', '
     function setUserAndSiteList(order) {
       var instituteName = order.instituteName;
       setUserFilterOpts(instituteName);
+    }
+
+    function setExtnFormCtxt(order) {
+      if (!order.distributionProtocol) {
+        return;
+      }
+
+      $scope.ctx.extnOpts = undefined;
+      DistributionProtocol.getOrderExtnCtxt(order.distributionProtocol.id).then(
+        function(extnCtxt) {
+          $scope.ctx.extnOpts = ExtensionsUtil.getExtnOpts(order, extnCtxt);
+        }
+      );
     }
 
     function getOrderItems(specimens) {
@@ -201,6 +221,11 @@ angular.module('os.administrative.order.addedit', ['os.administrative.models', '
         orderClone.orderItems = items;
       }
 
+      var formCtrl = $scope.ctx.extnFormCtrl.ctrl;
+      if (formCtrl) {
+        orderClone.extensionDetail = formCtrl.getFormData();
+      }
+
       orderClone.$saveOrUpdate().then(
         function(savedOrder) {
           if (savedOrder.completed) {
@@ -252,6 +277,29 @@ angular.module('os.administrative.order.addedit', ['os.administrative.models', '
       );
     }
 
+    function addItemCosts(dp, items) {
+      if (!$injector.has('distInvDistributionCost')) {
+        return;
+      }
+
+      var spmnIds = (items || []).map(function(item) { return item.specimen.id });
+      if (!dp || !dp.id || spmnIds.length == 0) {
+        return;
+      }
+
+      $injector.get('distInvDistributionCost').getCosts(dp.id, spmnIds).then(
+        function(resp) {
+          var spmnCosts = resp.specimenCosts;
+
+          angular.forEach(items,
+            function(item) {
+              item.cost = spmnCosts[item.specimen.id];
+            }
+          );
+        }
+      );
+    }
+
     function getValidationMsgKeys(useBarcode) {
       return {
         title:         'orders.specimen_validation.title',
@@ -267,15 +315,22 @@ angular.module('os.administrative.order.addedit', ['os.administrative.models', '
     }
 
     $scope.onDpSelect = function() {
-      $scope.order.instituteName = $scope.order.distributionProtocol.instituteName;
-      $scope.order.siteName = $scope.order.distributionProtocol.defReceivingSiteName;
-      $scope.order.requester = $scope.order.distributionProtocol.principalInvestigator;
-      setUserAndSiteList($scope.order);
+      var ord = $scope.order;
+      if (!ord.id) {
+        ord.name = ord.distributionProtocol.shortTitle + '_' + Util.toBeDateTime(new Date(), true);
+      }
+
+      ord.instituteName = ord.distributionProtocol.instituteName;
+      ord.siteName = ord.distributionProtocol.defReceivingSiteName;
+      ord.requester = ord.distributionProtocol.principalInvestigator;
+      setUserAndSiteList(ord);
+      setExtnFormCtxt(ord);
+
+      addItemCosts(ord.distributionProtocol, ord.orderItems);
     }
     
-    $scope.onInstSelect = function () {
-      var instName = $scope.order.instituteName;
-      setUserFilterOpts(instName);
+    $scope.onInstSelect = function (instituteName) {
+      setUserFilterOpts(instituteName);
       $scope.order.siteName = '';
       $scope.order.requester = '';
     }
@@ -287,8 +342,9 @@ angular.module('os.administrative.order.addedit', ['os.administrative.models', '
 
       ignoreQtyWarning = false;
       var newItems = getOrderItems(specimens);
-      Util.addIfAbsent($scope.order.orderItems, newItems, 'specimen.id');
+      var addedItems = Util.addIfAbsent($scope.order.orderItems, newItems, 'specimen.id');
       $scope.input.noQtySpmnsPresent = $scope.input.noQtySpmnsPresent || anyNoQtySpmns(newItems);
+      addItemCosts($scope.order.distributionProtocol, addedItems);
       return true;
     }
 
@@ -315,6 +371,11 @@ angular.module('os.administrative.order.addedit', ['os.administrative.models', '
     }
 
     $scope.passThrough = function() {
+      var formCtrl = $scope.ctx.extnFormCtrl.ctrl;
+      if (formCtrl && !formCtrl.validate()) {
+        return false;
+      }
+
       return true;
     }
 
@@ -341,16 +402,12 @@ angular.module('os.administrative.order.addedit', ['os.administrative.models', '
     $scope.setHeaderStatus = setHeaderStatus;
 
     $scope.toggleAllItemStatus = function() {
-      var allStatus;
-      if ($scope.input.allItemStatus) {
-        allStatus = 'DISTRIBUTED_AND_CLOSED';
-      } else {
-        allStatus = 'DISTRIBUTED';
-      }
-      
+      var allStatus = $scope.input.allItemStatus ? 'DISTRIBUTED_AND_CLOSED' : 'DISTRIBUTED';
       angular.forEach($scope.order.orderItems,
         function(item) {
-          if (item.quantity != item.specimen.availableQty) {
+          if (item.quantity == null || item.quantity == undefined ||
+              item.specimen.availableQty == null || item.specimen.availableQty == undefined ||
+              item.quantity != item.specimen.availableQty) {
             item.status = allStatus;
           }
         }

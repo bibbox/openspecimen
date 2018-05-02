@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import org.codehaus.jackson.annotate.JsonIgnore;
 
@@ -13,6 +14,8 @@ import com.krishagni.catissueplus.core.biospecimen.domain.AliquotSpecimensRequir
 import com.krishagni.catissueplus.core.biospecimen.domain.DerivedSpecimenRequirement;
 import com.krishagni.catissueplus.core.biospecimen.domain.SpecimenRequirement;
 import com.krishagni.catissueplus.core.common.events.UserSummary;
+import com.krishagni.catissueplus.core.common.util.NumUtil;
+import com.krishagni.catissueplus.core.common.util.Utility;
 
 @JsonFilter("withoutId")
 public class SpecimenRequirementDetail implements Comparable<SpecimenRequirementDetail> {
@@ -291,21 +294,12 @@ public class SpecimenRequirementDetail implements Comparable<SpecimenRequirement
 
 	@Override
 	public int compareTo(SpecimenRequirementDetail other) {
-		if (sortOrder != null && other.sortOrder != null) {
-			return sortOrder.compareTo(other.sortOrder);
-		} else if (sortOrder != null) {
-			return -1;
-		} else if (other.sortOrder != null) {
-			return 1;
-		} else if (id != null && other.id != null) {
-			return id.compareTo(other.id);
-		} else if (id != null) {
-			return -1;
-		} else if(other.id != null) {
-			return 1;
-		} else {
-			return 0;
+		int cmp = NumUtil.compareTo(sortOrder, other.sortOrder);
+		if (cmp != 0) {
+			return cmp;
 		}
+
+		return NumUtil.compareTo(id, other.id);
 	}
 	
 	public AliquotSpecimensRequirement toAliquotRequirement(Long parentSrId, int noOfAliquots) {
@@ -385,16 +379,6 @@ public class SpecimenRequirementDetail implements Comparable<SpecimenRequirement
 	}
 	
 	public static List<SpecimenRequirementDetail> from(Collection<SpecimenRequirement> srs, boolean incChildren) {
-		List<SpecimenRequirementDetail> result = new ArrayList<SpecimenRequirementDetail>();
-		if (srs == null) {
-			return result;
-		}
-		
-		for (SpecimenRequirement sr : srs) {
-			result.add(from(sr, incChildren));
-		}
-		
-		Collections.sort(result);
-		return result;		
+		return Utility.nullSafeStream(srs).map(sr -> from(sr, incChildren)).sorted().collect(Collectors.toList());
 	}
 }

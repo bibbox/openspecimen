@@ -1,6 +1,8 @@
 
 package com.krishagni.catissueplus.core.administrative.domain;
 
+import java.math.BigDecimal;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
@@ -14,11 +16,14 @@ import org.hibernate.envers.RelationTargetAuditMode;
 
 import com.krishagni.catissueplus.core.administrative.domain.factory.DistributionProtocolErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.domain.BaseExtensionEntity;
+import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
 import com.krishagni.catissueplus.core.common.CollectionUpdater;
+import com.krishagni.catissueplus.core.common.Pair;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.DependentEntityDetail;
 import com.krishagni.catissueplus.core.common.util.Status;
 import com.krishagni.catissueplus.core.common.util.Utility;
+import com.krishagni.catissueplus.core.de.domain.Form;
 import com.krishagni.catissueplus.core.de.domain.SavedQuery;
 
 @Audited(targetAuditMode = RelationTargetAuditMode.NOT_AUDITED)
@@ -49,12 +54,14 @@ public class DistributionProtocol extends BaseExtensionEntity {
 	private String activityStatus;
 	
 	private SavedQuery report;
+
+	private Form orderExtnForm;
 	
-	private Set<DistributionOrder> distributionOrders = new HashSet<DistributionOrder>();
+	private Set<DistributionOrder> distributionOrders = new HashSet<>();
 	
-	private Set<DpDistributionSite> distributingSites = new HashSet<DpDistributionSite>();
+	private Set<DpDistributionSite> distributingSites = new HashSet<>();
 	
-	private Set<DpRequirement> requirements = new HashSet<DpRequirement>();
+	private Set<DpRequirement> requirements = new HashSet<>();
 	
 	private Set<DpConsentTier> consentTiers = new HashSet<>();
 	
@@ -142,6 +149,10 @@ public class DistributionProtocol extends BaseExtensionEntity {
 		this.activityStatus = activityStatus;
 	}
 
+	public boolean isClosed() {
+		return Status.isClosedStatus(getActivityStatus());
+	}
+
 	public SavedQuery getReport() {
 		return report;
 	}
@@ -150,6 +161,15 @@ public class DistributionProtocol extends BaseExtensionEntity {
 		this.report = report;
 	}
 
+	public Form getOrderExtnForm() {
+		return orderExtnForm;
+	}
+
+	public void setOrderExtnForm(Form orderExtnForm) {
+		this.orderExtnForm = orderExtnForm;
+	}
+
+	@NotAudited
 	public Set<DistributionOrder> getDistributionOrders() {
 		return distributionOrders;
 	}
@@ -166,6 +186,7 @@ public class DistributionProtocol extends BaseExtensionEntity {
 		this.distributingSites = distributingSites;
 	}
 
+	@NotAudited
 	public Set<DpRequirement> getRequirements() {
 		return requirements;
 	}
@@ -191,6 +212,7 @@ public class DistributionProtocol extends BaseExtensionEntity {
 			setShortTitle(dp.getShortTitle());
 			setTitle(dp.getTitle());
 		}
+
 		setIrbId(dp.getIrbId());
 		setInstitute(dp.getInstitute());
 		setDefReceivingSite(dp.getDefReceivingSite());
@@ -199,6 +221,7 @@ public class DistributionProtocol extends BaseExtensionEntity {
 		setEndDate(dp.getEndDate());
 		setActivityStatus(dp.getActivityStatus());
 		setReport(dp.getReport());
+		setOrderExtnForm(dp.getOrderExtnForm());
 		CollectionUpdater.update(getCoordinators(), dp.getCoordinators());
 		CollectionUpdater.update(getDistributingSites(), dp.getDistributingSites());
 		setExtension(dp.getExtension());
@@ -206,7 +229,7 @@ public class DistributionProtocol extends BaseExtensionEntity {
 	
 	public List<DependentEntityDetail> getDependentEntities() {
 		return DependentEntityDetail
-				.singletonList(DistributionOrder.getEntityName(), getDistributionOrders().size());
+			.singletonList(DistributionOrder.getEntityName(), getDistributionOrders().size());
 	}
 	
 	public void delete() {
@@ -221,7 +244,7 @@ public class DistributionProtocol extends BaseExtensionEntity {
 	}
 	
 	public Set<Site> getAllDistributingSites() {
-		Set<Site> sites = new HashSet<Site>();
+		Set<Site> sites = new HashSet<>();
 		for (DpDistributionSite distSite : getDistributingSites()) {
 			if (distSite.getSite() != null) {
 				sites.add(distSite.getSite());
@@ -234,7 +257,7 @@ public class DistributionProtocol extends BaseExtensionEntity {
 	}
 
 	public Set<Institute> getDistributingInstitutes() {
-		return getDistributingSites().stream().map(dpSite -> dpSite.getInstitute()).collect(Collectors.toSet());
+		return getDistributingSites().stream().map(DpDistributionSite::getInstitute).collect(Collectors.toSet());
 	}
 	
 	public boolean hasRequirement(String specimenType, String anatomicSite, Set<String> pathologyStatuses, String clinicalDiagnosis) {
@@ -270,6 +293,20 @@ public class DistributionProtocol extends BaseExtensionEntity {
 		DpConsentTier ct = getConsentTierById(ctId);
 		ct.setActivityStatus(Status.ACTIVITY_STATUS_DISABLED.getStatus());
 		return ct;
+	}
+
+	public DpRequirement getMatchingRequirement(Specimen specimen) {
+		return getRequirements().stream()
+			.map(req -> Pair.make(req, req.getMatchPoints(specimen))) // {req, req-matching-points}
+			.filter(reqPoints -> reqPoints.second() > 0)              // retain only those reqs with more than 0 points
+			.max(Comparator.comparingInt(Pair::second))               // find the req with highest points
+			.map(Pair::first)                                         // unpack req from {req, req-matching-points} tuple
+			.orElse(null);
+	}
+
+	public BigDecimal getCost(Specimen specimen) {
+		DpRequirement dpReq = getMatchingRequirement(specimen);
+		return (dpReq != null) ? dpReq.getCost() : null;
 	}
 
 	private DpConsentTier getConsentTierById(Long ctId) {

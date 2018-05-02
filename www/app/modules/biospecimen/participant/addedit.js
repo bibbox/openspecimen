@@ -2,7 +2,7 @@
 angular.module('os.biospecimen.participant.addedit', ['os.biospecimen.models', 'os.administrative.models'])
   .controller('ParticipantAddEditCtrl', function(
     $scope, $state, $stateParams, $translate, $modal, $q,
-    cp, cpr, extensionCtxt, hasDict, cpDict, twoStepReg,
+    cp, cpr, extensionCtxt, hasDict, cpDict, twoStepReg, layout,
     mrnAccessRestriction, addPatientOnLookupFail, lookupFieldsCfg,
     lockedFields, firstCpEvent,
     CpConfigSvc, CollectionProtocolRegistration, Participant,
@@ -21,7 +21,7 @@ angular.module('os.biospecimen.participant.addedit', ['os.biospecimen.models', '
       $scope.partCtx = {
         cpSites: cp.cpSites.map(function(cpSite) { return cpSite.siteName; }),
         firstCpEvent: firstCpEvent,
-        fieldOpts: {lockedFields: lockedFields},
+        fieldOpts: {lockedFields: lockedFields, layout: layout, mdInput: false},
         twoStep: lookupFieldsCfg.configured,
         edit: !!cpr.id,
         obj: {cpr: $scope.cpr, cp: cp},
@@ -63,7 +63,7 @@ angular.module('os.biospecimen.participant.addedit', ['os.biospecimen.models', '
         fields: getStaticFields(lockedFields),
         customFields: getCustomFields(lockedFields)
       }
-      $scope.partCtx.fieldOpts = {lockedFields: lockedFields};
+      angular.extend($scope.partCtx.fieldOpts, {lockedFields: lockedFields});
     }
 
     function getStaticFields(fields) {
@@ -256,7 +256,7 @@ angular.module('os.biospecimen.participant.addedit', ['os.biospecimen.models', '
           }
 
           match.cpr = {participant: match.participant};
-          match.cps = match.participant.registeredCps.map(function(reg) { return reg.cpShortTitle; });
+          match.cps = (match.participant.registeredCps || []).map(function(reg) { return reg.cpShortTitle; });
         }
       );
 
@@ -295,7 +295,7 @@ angular.module('os.biospecimen.participant.addedit', ['os.biospecimen.models', '
     function useSelectedMatch(match) {
       var matchedCprId = undefined;
       var participant = match.participant;
-      for (var i = 0; i < participant.registeredCps.length; ++i) {
+      for (var i = 0; i < (participant.registeredCps || []).length; ++i) {
         if (participant.registeredCps[i].cpId == cp.id) {
           matchedCprId = participant.registeredCps[i].cprId;
           break;

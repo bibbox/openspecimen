@@ -12,6 +12,7 @@ import java.text.SimpleDateFormat;
 import java.time.LocalDate;
 import java.time.Period;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Calendar;
 import java.util.Collection;
@@ -21,6 +22,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -135,11 +137,13 @@ public class Utility {
 		try {
 			reader = CsvFileReader.createCsvFileReader(new StringReader(value), false);
 
-			String[] row = new String[0];
-			if (reader.next()) {
-				row = reader.getRow();
+			List<String> result = new ArrayList<>();
+			while (reader.next()) {
+				String[] row = reader.getRow();
+				result.addAll(Stream.of(row).map(String::trim).collect(Collectors.toList()));
 			}
-			return Stream.of(row).map(String::trim).collect(Collectors.toList());
+
+			return result;
 		} catch (Exception e) {
 			throw new RuntimeException(e);
 		} finally {
@@ -339,6 +343,10 @@ public class Utility {
 
 	public static <T> List<T> nullSafe(List<T> iterable) {
 		return iterable == null ? Collections.emptyList() : iterable;
+	}
+
+	public static <T> Stream<T> nullSafeStream(Collection<T> collection) {
+		return collection != null ? collection.stream() : Stream.empty();
 	}
 
 	public static <T> boolean isEmptyOrSameAs(Collection<T> collection, T element) {
@@ -622,5 +630,9 @@ public class Utility {
 		}
 
 		return noOfDays;
+	}
+
+	public static <T> Stream<T> stream(Collection<T> coll) {
+		return Optional.ofNullable(coll).map(Collection::stream).orElse(Stream.empty());
 	}
 }

@@ -42,6 +42,7 @@ import com.krishagni.catissueplus.core.common.events.UserSummary;
 import com.krishagni.catissueplus.core.common.util.AuthUtil;
 import com.krishagni.catissueplus.core.common.util.Status;
 import com.krishagni.catissueplus.core.common.util.Utility;
+import com.krishagni.catissueplus.core.importer.services.impl.ImporterContextHolder;
 
 public class ShipmentFactoryImpl implements ShipmentFactory {
 	private DaoFactory daoFactory;
@@ -184,15 +185,12 @@ public class ShipmentFactoryImpl implements ShipmentFactory {
 	
 	private void setShippedDate(ShipmentDetail detail, Shipment shipment, OpenSpecimenException ose) {
 		Date shippedDate = detail.getShippedDate();
-		Date todayDate = Utility.chopTime(Calendar.getInstance().getTime());
+		Date todayDate = Calendar.getInstance().getTime();
 		if (shippedDate == null) {
 			shippedDate = todayDate;
-		} else {
-			shippedDate = Utility.chopTime(shippedDate);
-			if (shippedDate.after(todayDate)) {
-				ose.addError(ShipmentErrorCode.INVALID_SHIPPED_DATE);
-				return;
-			}
+		} else if (shippedDate.after(todayDate)) {
+			ose.addError(ShipmentErrorCode.INVALID_SHIPPED_DATE);
+			return;
 		}
 
 		shipment.setShippedDate(shippedDate);
@@ -218,16 +216,11 @@ public class ShipmentFactoryImpl implements ShipmentFactory {
 		}
 		
 		Date receivedDate = detail.getReceivedDate();
-		Date todayDate = Utility.chopTime(Calendar.getInstance().getTime());
+		Date todayDate = Calendar.getInstance().getTime();
 		if (receivedDate == null) {
 			receivedDate = todayDate;
-		} else {
-			receivedDate = Utility.chopTime(receivedDate);
-			if (receivedDate.before(Utility.chopTime(shipment.getShippedDate())) ||
-				receivedDate.after(todayDate)) {
-				ose.addError(ShipmentErrorCode.INVALID_RECEIVED_DATE);
-				return;
-			}
+		} else if (receivedDate.before(shipment.getShippedDate()) || receivedDate.after(todayDate)) {
+			ose.addError(ShipmentErrorCode.INVALID_RECEIVED_DATE);
 		}
 
 		shipment.setReceivedDate(receivedDate);
@@ -390,6 +383,8 @@ public class ShipmentFactoryImpl implements ShipmentFactory {
 			return null;
 		}
 
+		initSpecimen(shipment, specimen);
+
 		ShipmentSpecimen shipmentSpecimen = new ShipmentSpecimen();
 		shipmentSpecimen.setShipment(shipment);
 		shipmentSpecimen.setSpecimen(specimen);
@@ -486,5 +481,14 @@ public class ShipmentFactoryImpl implements ShipmentFactory {
 		StorageContainer container = containerFactory.createStorageContainer(existing, detail);
 		container.validateRestrictions();
 		return container;
+	}
+
+	//
+	// HSEARCH-1350: https://hibernate.atlassian.net/browse/HSEARCH-1350
+	//
+	private void initSpecimen(Shipment shipment, Specimen specimen) {
+		if (ImporterContextHolder.getInstance().isImportOp()) {
+			specimen.getBiohazards().size();
+		}
 	}
 }

@@ -16,18 +16,10 @@
     http://www.springframework.org/schema/context 
     http://www.springframework.org/schema/context/spring-context-3.2.xsd">
 
-  <bean id="appProps" class="org.springframework.beans.factory.config.PropertiesFactoryBean">
-    <property name="locations">
-      <list>
-        <value>classpath:application.properties</value>
-      </list>
-    </property>
-  </bean>
+  <bean id="placeholderConfig" class="com.krishagni.catissueplus.core.init.AppPropertyPlaceholderConfigurer"/>
 
-  <bean id="placeholderConfig" class="org.springframework.context.support.PropertySourcesPlaceholderConfigurer">
-    <property name="properties" ref="appProps"/>
-  </bean> 
-  
+  <bean id="appProps" class="com.krishagni.catissueplus.core.init.AppProperties" factory-method="getInstance"/>
+
   <bean id="dataSource" class="org.springframework.jndi.JndiObjectFactoryBean">
     <property name="jndiName" value="${datasource.jndi}"/>
   </bean>
@@ -137,6 +129,8 @@
         <bean class="com.krishagni.catissueplus.core.biospecimen.label.visit.EventUniqueIdLabelToken"/>
         <bean class="com.krishagni.catissueplus.core.biospecimen.label.visit.VisitClinicalStatusLabelToken"/>
         <bean class="com.krishagni.catissueplus.core.biospecimen.label.visit.VisitClinicalStatusAbbrToken"/>
+        <bean class="com.krishagni.catissueplus.core.biospecimen.label.visit.VisitSiteCodeLabelToken"/>
+        <bean class="com.krishagni.catissueplus.core.biospecimen.label.visit.VisitCustomFieldLabelToken"/>
         <ref bean="extnPvLabelToken"/>
       </list>
     </property>
@@ -150,6 +144,15 @@
     <property name="messageSource" ref="messageSource"/>
   </bean>
 
+  <bean id="defVisitsLookup" class="com.krishagni.catissueplus.core.biospecimen.matching.DefaultVisitsLookup">
+    <property name="daoFactory" ref="biospecimenDaoFactory"/>
+  </bean>
+
+  <bean id="stagedVisitsLookup" class="com.krishagni.catissueplus.core.biospecimen.matching.StagedVisitsDbLookup">
+    <property name="daoFactory" ref="biospecimenDaoFactory"/>
+    <property name="osVisitsLookup" ref="defVisitsLookup"/>
+  </bean>
+
   <bean id="visitService" class="com.krishagni.catissueplus.core.biospecimen.services.impl.VisitServiceImpl">
     <property name="daoFactory" ref="biospecimenDaoFactory"/>
     <property name="visitFactory" ref="visitFactory"/>
@@ -157,7 +160,12 @@
     <property name="cfgSvc" ref="cfgSvc"/>
     <property name="visitNameGenerator" ref="visitNameGenerator"/>
     <property name="sprText2PdfGenerator" ref="sprText2PdfGenerator"/>
+    <property name="defaultVisitsLookup" ref="defVisitsLookup"/>
     <property name="exportSvc" ref="exportSvc"/>
+  </bean>
+
+  <bean id="stagedVisitSvc" class="com.krishagni.catissueplus.core.biospecimen.services.impl.StagedVisitServiceImpl">
+    <property name="daoFactory" ref="biospecimenDaoFactory"/>
   </bean>
 
   <bean id="cpCopier" class="com.krishagni.catissueplus.core.biospecimen.services.impl.CollectionProtocolCopier"/>
@@ -166,6 +174,7 @@
     <property name="daoFactory" ref="biospecimenDaoFactory"/>
     <property name="ppidGenerator" ref="ppidGenerator"/>
     <property name="specimenLabelGenerator" ref="specimenLabelGenerator"/>
+    <property name="specimenBarcodeGenerator" ref="specimenBarcodeGenerator"/>
     <property name="visitNameGenerator" ref="visitNameGenerator"/>
     <property name="cpCopier" ref="cpCopier"/>
     <property name="containerSelFactory" ref="containerSelectionStrategyFactory"/>
@@ -257,6 +266,7 @@
         <bean class="com.krishagni.catissueplus.core.biospecimen.label.cpr.SiteCodePpidToken"/>
         <bean class="com.krishagni.catissueplus.core.biospecimen.label.cpr.ExternalSubjectIdPpidToken"/>
         <bean class="com.krishagni.catissueplus.core.biospecimen.label.cpr.RegSiteCodePpidToken"/>
+        <bean class="com.krishagni.catissueplus.core.biospecimen.label.cpr.CustomFieldPpidToken"/>
       </list>
     </property>
   </bean>
@@ -306,6 +316,7 @@
     <property name="specimenResolver" ref="specimenResolver"/>
     <property name="cfgSvc" ref="cfgSvc"/>
     <property name="labelGenerator" ref="specimenLabelGenerator"/>
+    <property name="specimenBarcodeGenerator" ref="specimenBarcodeGenerator"/>
     <property name="exportSvc" ref="exportSvc"/>
   </bean>
 
@@ -338,6 +349,8 @@
         <bean class="com.krishagni.catissueplus.core.biospecimen.label.specimen.CpPpidUniqueIdLabelToken"/>
         <bean class="com.krishagni.catissueplus.core.biospecimen.label.specimen.SpecimenCpUniqueIdToken"/>
         <bean class="com.krishagni.catissueplus.core.biospecimen.label.specimen.ParentSpecimenCounterLabelToken"/>
+        <bean class="com.krishagni.catissueplus.core.biospecimen.label.specimen.SpecimenCustomFieldLabelToken"/>
+        <bean class="com.krishagni.catissueplus.core.biospecimen.label.specimen.VisitUidLabelToken"/>
         <ref bean="extnPvLabelToken"/>
       </list>
     </property>
@@ -345,6 +358,19 @@
 
   <bean id="specimenLabelGenerator" class="com.krishagni.catissueplus.core.common.service.impl.LabelGeneratorImpl">
     <property name="tokenRegistrar" ref="specimenTokenRegistrar"/>
+  </bean>
+
+  <bean id="specimenBarcodeTokenRegistrar" class="com.krishagni.catissueplus.core.common.domain.DefaultLabelTmplTokenRegistrar">
+    <property name="tokens">
+      <list>
+        <bean class="com.krishagni.catissueplus.core.biospecimen.barcode.specimen.UniqueBarcodeToken"/>
+        <bean class="com.krishagni.catissueplus.core.biospecimen.barcode.specimen.CpUniqueBarcodeToken"/>
+      </list>
+    </property>
+  </bean>
+
+  <bean id="specimenBarcodeGenerator" class="com.krishagni.catissueplus.core.common.service.impl.LabelGeneratorImpl">
+    <property name="tokenRegistrar" ref="specimenBarcodeTokenRegistrar"/>
   </bean>
   
   <bean id="specimenListFactory" class="com.krishagni.catissueplus.core.biospecimen.domain.factory.impl.SpecimenListFactoryImpl">
@@ -368,7 +394,7 @@
   </bean>
   
   <bean id="formDataMgr" class="edu.common.dynamicextensions.napi.impl.FormDataManagerImpl">
-    <constructor-arg type="boolean" value="false"/>
+    <constructor-arg type="boolean" value="true"/>
   </bean>
 
   <bean id="formDao" class="com.krishagni.catissueplus.core.de.repository.impl.FormDaoImpl">
@@ -377,6 +403,7 @@
   
   <bean id="formSvc" class="com.krishagni.catissueplus.core.de.services.impl.FormServiceImpl">
     <property name="formDao" ref="formDao"/>
+    <property name="formDataMgr" ref="formDataMgr"/>
     <property name="daoFactory" ref="biospecimenDaoFactory"/>
     <property name="exportSvc" ref="exportSvc"/>
     <property name="ctxtProcs">
@@ -511,7 +538,7 @@
     <property name="daoFactory" ref="biospecimenDaoFactory"/>
     <property name="containerTypeFactory" ref="containerTypeFactory"/>
   </bean>
-  
+
   <bean id="distributionProtocolFactory" class="com.krishagni.catissueplus.core.administrative.domain.factory.impl.DistributionProtocolFactoryImpl">
     <property name="daoFactory"   ref="biospecimenDaoFactory"/>
     <property name="deDaoFactory" ref="deDaoFactory"/>
@@ -519,9 +546,11 @@
 
   <bean id="distributionProtocolService" class="com.krishagni.catissueplus.core.administrative.services.impl.DistributionProtocolServiceImpl">
     <property name="daoFactory" ref="biospecimenDaoFactory"/>
+    <property name="deDaoFactory" ref="deDaoFactory"/>
     <property name="distributionProtocolFactory" ref="distributionProtocolFactory" />
     <property name="dprFactory" ref="dpRequirementFactory"/>
     <property name="formSvc" ref="formSvc"/>
+    <property name="cfgSvc" ref="cfgSvc"/>
   </bean>
 	
   <bean id="distributionFactory" class="com.krishagni.catissueplus.core.administrative.domain.factory.impl.DistributionOrderFactoryImpl">
@@ -804,7 +833,6 @@
         <value>com/krishagni/catissueplus/core/administrative/schema/container.xml</value>
         <value>com/krishagni/catissueplus/core/administrative/schema/shipment.xml</value>
         <value>com/krishagni/catissueplus/core/administrative/schema/container-shipment.xml</value>
-        <value>com/krishagni/catissueplus/core/administrative/schema/distribution-order.xml</value>
         <value>com/krishagni/catissueplus/core/administrative/schema/return-specimen.xml</value>
         <value>com/krishagni/catissueplus/core/biospecimen/schema/cp.xml</value>
         <value>com/krishagni/catissueplus/core/biospecimen/schema/cpe.xml</value>
@@ -871,6 +899,25 @@
             <property name="schemaResource"  value="com/krishagni/catissueplus/core/biospecimen/schema/master-specimen.xml"/>
           </bean>
         </entry>
+        <entry key="distributionProtocol">
+          <bean class="com.krishagni.catissueplus.core.de.services.impl.CustomFieldsSchemaBuilder">
+            <property name="templateService" ref="templateService"/>
+            <property name="schemaResource"  value="com/krishagni/catissueplus/core/administrative/schema/distribution-protocol.xml"/>
+          </bean>
+        </entry>
+        <entry key="dpRequirement">
+          <bean class="com.krishagni.catissueplus.core.de.services.impl.CustomFieldsSchemaBuilder">
+            <property name="templateService" ref="templateService"/>
+            <property name="schemaResource"  value="com/krishagni/catissueplus/core/administrative/schema/dp-requirement.xml"/>
+          </bean>
+        </entry>
+        <entry key="distributionOrder">
+          <bean class="com.krishagni.catissueplus.core.de.services.impl.CustomFieldsSchemaBuilder">
+            <property name="templateService" ref="templateService"/>
+            <property name="schemaResource" value="com/krishagni/catissueplus/core/administrative/schema/distribution-order.xml"/>
+          </bean>
+        </entry>
+
       </map>
     </property>
   </bean>
@@ -919,6 +966,18 @@
           <bean class="com.krishagni.catissueplus.core.administrative.services.impl.ShipmentImporter">
             <property name="shipmentSvc" ref="shipmentSvc"/>
             <property name="type" value="CONTAINER"/>
+          </bean>
+        </entry>
+
+        <entry key="distributionProtocol">
+          <bean class="com.krishagni.catissueplus.core.administrative.services.impl.DpImporter">
+            <property name="dpSvc" ref="distributionProtocolService"/>
+          </bean>
+        </entry>
+
+        <entry key="dpRequirement">
+          <bean class="com.krishagni.catissueplus.core.administrative.services.impl.DpRequirementImporter">
+            <property name="dpSvc" ref="distributionProtocolService"/>
           </bean>
         </entry>
 

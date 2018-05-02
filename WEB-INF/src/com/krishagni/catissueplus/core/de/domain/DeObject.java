@@ -3,6 +3,8 @@ package com.krishagni.catissueplus.core.de.domain;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -10,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,7 +34,6 @@ import edu.common.dynamicextensions.domain.nui.Container;
 import edu.common.dynamicextensions.domain.nui.DatePicker;
 import edu.common.dynamicextensions.domain.nui.SubFormControl;
 import edu.common.dynamicextensions.domain.nui.UserContext;
-import edu.common.dynamicextensions.domain.nui.ValidationErrors;
 import edu.common.dynamicextensions.napi.ControlValue;
 import edu.common.dynamicextensions.napi.FileControlValue;
 import edu.common.dynamicextensions.napi.FormData;
@@ -55,7 +57,7 @@ public abstract class DeObject {
 	
 	private boolean useUdn = false;
 	
-	private List<Attr> attrs = new ArrayList<Attr>();
+	private List<Attr> attrs = new ArrayList<>();
 
 	public DeObject() { }
 	
@@ -121,8 +123,6 @@ public abstract class DeObject {
 			
 			attrs.clear();
 			attrs.addAll(getAttrs(formData));
-		} catch (ValidationErrors ve) {
-			throw OpenSpecimenException.userError(FormErrorCode.INVALID_DATA, ve.getMessage());
 		} catch(IllegalArgumentException ex) {
 			throw OpenSpecimenException.userError(FormErrorCode.INVALID_DATA, ex.getMessage());
 		} catch (Exception e) {
@@ -193,37 +193,38 @@ public abstract class DeObject {
 		if (recordLoaded || recordId == null) {
 			return;
 		}
-		
+
+		FormData formData = formDataMgr.getFormData(getForm(), recordId);
+		loadRecord(formData);
+	}
+
+	protected void loadRecord(FormData formData) {
 		recordLoaded = true;
 		attrs.clear();
 
-		FormData formData = formDataMgr.getFormData(getForm(), recordId);
 		if (formData == null) {
 			return;
 		}
-		
+
 		attrs.addAll(getAttrs(formData));
-		
-		Map<String, Object> attrValues = new HashMap<String, Object>();
+
+		Map<String, Object> attrValues = new HashMap<>();
 		for (ControlValue cv : formData.getOrderedFieldValues()) {
 			attrValues.put(cv.getControl().getUserDefinedName(), cv.getValue());
 		}
-		
+
 		setAttrValues(attrValues);
 	}
 
 	protected String getFormNameByEntityType() {
-		return getFormNameByEntityType(-1L);
-	}
-
-	protected String getFormNameByEntityType(Long cpId) {
-		if (cpId == null || cpId <= 0L) {
-			cpId = -1L;
+		Long entityId = isCpBased() ? getCpId() : getEntityId();
+		if (entityId == null || entityId <= 0L) {
+			entityId = -1L;
 		}
 
-		String formName = formInfoCache.getFormName(cpId, getEntityType());
-		if (StringUtils.isBlank(formName) && cpId != -1L) {
-			formName = formInfoCache.getFormName(-1L, getEntityType());
+		String formName = formInfoCache.getFormName(isCpBased(), getEntityType(), entityId);
+		if (StringUtils.isBlank(formName) && entityId != -1L) {
+			formName = formInfoCache.getFormName(isCpBased(), getEntityType(), -1L);
 		}
 
 		return formName;
@@ -236,6 +237,10 @@ public abstract class DeObject {
 	public abstract String getFormName();
 	
 	public abstract Long getCpId();
+
+	public abstract boolean isCpBased();
+
+	public abstract Long getEntityId();
 
 	public abstract void setAttrValues(Map<String, Object> attrValues);
 
@@ -255,6 +260,9 @@ public abstract class DeObject {
 		);
 	}
 
+	//
+	// TODO: Used only by the LE plugin
+	//
 	public static Long saveFormData(
 			final String formName, 
 			final String entityType, 
@@ -275,7 +283,7 @@ public abstract class DeObject {
 			@Override
 			public String getFormName() {
 				if (StringUtils.isBlank(formName)) {
-					return getFormNameByEntityType(getCpId());
+					return getFormNameByEntityType();
 				}
 				return formName;
 			}
@@ -289,7 +297,17 @@ public abstract class DeObject {
 			public Long getCpId() {
 				return cpId;
 			}
-			
+
+			@Override
+			public boolean isCpBased() {
+				return true;
+			}
+
+			@Override
+			public Long getEntityId() {
+				return null;
+			}
+
 			@Override
 			public Map<String, Object> getAttrValues() {
 				return values;
@@ -310,20 +328,20 @@ public abstract class DeObject {
 			return null;
 		}
 		
-		Map<String, Attr> existingAttrs = new HashMap<String, Attr>();
+		Map<String, Attr> existingAttrs = new HashMap<>();
 		for (Attr attr : extension.getAttrs()) {
 			existingAttrs.put(attr.getName(), attr);
 		}
-		
-		List<Attr> attrs = new ArrayList<Attr>();
+
+		Map<String, Object> valueMap = new HashMap<>();
 		for (AttrDetail attrDetail : detail.getAttrs()) {
-			Attr attr = existingAttrs.remove(attrDetail.getName());
-			if (attr == null) {
-				attr = new Attr();
-			} 
-			
-			BeanUtils.copyProperties(attrDetail, attr, new String[]{"caption"});
-			attrs.add(attr);
+			valueMap.put(attrDetail.getName(), attrDetail.getValue());
+		}
+
+		FormData formData = FormData.getFormData(extension.getForm(), valueMap);
+		List<Attr> attrs = extension.getAttrs(formData);
+		for (Attr attr : attrs) {
+			existingAttrs.remove(attr.getName());
 		}
 		
 		attrs.addAll(existingAttrs.values());
@@ -331,14 +349,125 @@ public abstract class DeObject {
 		return extension;
 	}
 
+	public static List<DeObject> createExtensions(boolean cpBased, String entityType, Long entityId, Collection<? extends BaseExtensionEntity> objects) {
+		if (CollectionUtils.isEmpty(objects)) {
+			return Collections.emptyList();
+		}
+
+		DeObject fakeDeObj = fakeObject();
+		Map<Long, BaseExtensionEntity> objectsMap = objects.stream().collect(Collectors.toMap(BaseExtensionEntity::getId, obj -> obj));
+
+		List<DeObject> result = new ArrayList<>();
+		String formName = null;
+
+		Map<String, Object> formInfo = DeObject.getFormInfo(cpBased, entityType, entityId);
+		if (formInfo != null) {
+			Long formCtxtId = (Long) formInfo.get("formCtxtId");
+			formName = (String) formInfo.get("formName");
+
+			Map<Long, List<Long>> objRecordIds = fakeDeObj.daoFactory.getFormDao().getRecordIds(formCtxtId, objectsMap.keySet());
+			Map<Long, Long> recObjIdMap = objRecordIds.entrySet().stream()
+				.collect(Collectors.toMap(re -> re.getValue().get(0), Map.Entry::getKey));
+
+			List<FormData> formDataList = null;
+			if (recObjIdMap.isEmpty()) {
+				formDataList = Collections.emptyList();
+			} else {
+				formDataList = fakeDeObj.formDataMgr.getFormData(getForm(formName), new ArrayList<>(recObjIdMap.keySet()));
+			}
+
+			for (FormData formData : formDataList) {
+				Long objectId = recObjIdMap.get(formData.getRecordId());
+				BaseExtensionEntity object = objectsMap.remove(objectId);
+
+				DeObject extn = newDeObject(formName, object);
+				extn.setId(formData.getRecordId());
+				extn.loadRecord(formData);
+				object.setExtension(extn);
+
+				result.add(extn);
+			}
+		}
+
+		for (BaseExtensionEntity obj : objectsMap.values()) {
+			DeObject extn = newDeObject(formName, obj);
+			extn.setId(null);
+			extn.setRecordLoaded(true);
+			obj.setExtension(extn);
+		}
+
+		return result;
+	}
+
 	public static Map<String, Object> getFormInfo(Long cpId, String entity) {
-		return formInfoCache.getFormInfo(cpId, entity);
+		return getFormInfo(true, entity, cpId);
+	}
+
+	public static Map<String, Object> getFormInfo(boolean cpBased, String entity, Long entityId) {
+		return formInfoCache.getFormInfo(cpBased, entity, entityId);
 	}
 
 	public static Container getForm(String formName) {
 		return formInfoCache.getForm(formName);
 	}
-	
+
+	public static Long getFormContextId(boolean cpBased, String entity, Long entityId, String formName) {
+		return DeObject.fakeObject().getFormContext(cpBased, entity, entityId, formName);
+	}
+
+	public static Long saveRecord(Long formCtxtId, Long objectId, Long recordId) {
+		FormRecordEntryBean re = new FormRecordEntryBean();
+		re.setFormCtxtId(formCtxtId);
+		re.setObjectId(objectId);
+		re.setRecordId(recordId);
+		re.setUpdatedBy(AuthUtil.getCurrentUser().getId());
+		re.setUpdatedTime(Calendar.getInstance().getTime());
+		re.setActivityStatus(Status.ACTIVE);
+		DeObject.fakeObject().daoFactory.getFormDao().saveOrUpdateRecordEntry(re);
+		return re.getIdentifier();
+	}
+
+	private static DeObject fakeObject() {
+		return newDeObject(null, null);
+	}
+
+	private static DeObject newDeObject(String formName, BaseExtensionEntity object) {
+		return new DeObject() {
+			@Override
+			public Long getObjectId() {
+				return object != null ? object.getId() : null;
+			}
+
+			@Override
+			public String getEntityType() {
+				return object != null ? object.getEntityType() : null;
+			}
+
+			@Override
+			public String getFormName() {
+				return formName;
+			}
+
+			@Override
+			public Long getCpId() {
+				return object != null ? object.getCpId() : -1L;
+			}
+
+			@Override
+			public boolean isCpBased() {
+				return object != null && object.isCpBased();
+			}
+
+			@Override
+			public Long getEntityId() {
+				return object != null ? object.getEntityId() : null;
+			}
+
+			@Override
+			public void setAttrValues(Map<String, Object> attrValues) { }
+		};
+	}
+
 	private UserContext getUserCtx() {
 		final User user = AuthUtil.getCurrentUser();
 		return new UserContext() {
@@ -390,17 +519,21 @@ public abstract class DeObject {
 			return null;
 		}
 
-		Long cpId = getCpId();
-		Long formCtxt = formInfoCache.getFormContext(cpId, getEntityType(), formName);
-		if (formCtxt == null && cpId != -1) {
-			formCtxt = formInfoCache.getFormContext(-1L, getEntityType(), formName);
+		Long entityId = isCpBased() ? getCpId() : getEntityId();
+		return getFormContext(isCpBased(), getEntityType(), entityId, formName);
+	}
+
+	private Long getFormContext(boolean cpBased, String entityType, Long entityId, String formName) {
+		Long formCtxt = formInfoCache.getFormContext(cpBased, entityType, entityId, formName);
+		if (formCtxt == null && entityId != -1L) {
+			formCtxt = formInfoCache.getFormContext(cpBased, entityType, -1L, formName);
 		}
 
 		return formCtxt;
 	}
 
 	private List<Attr> getAttrs(FormData formData) {
-		List<Attr> attrs = new ArrayList<Attr>();
+		List<Attr> attrs = new ArrayList<>();
 		for (ControlValue cv : formData.getOrderedFieldValues()) {
 			if (cv == null) {
 				continue;
@@ -411,7 +544,7 @@ public abstract class DeObject {
 				if (sfCtrl.isOneToOne()) {
 					cv.setValue(getAttrs((FormData)cv.getValue()));
 				} else {
-					List<List<Attr>> values = new ArrayList<List<Attr>>();
+					List<List<Attr>> values = new ArrayList<>();
 					for (Object fd : (List)cv.getValue()) {
 						values.add(getAttrs((FormData)fd));
 					}

@@ -5,6 +5,7 @@ angular.module('os.biospecimen.specimenlist')
 
     function init() { 
       $scope.specimenUpdateOpts = {resource: 'VisitAndSpecimen', operations: ['Update']};
+      $scope.orderCreateOpts    = {resource: 'Order', operations: ['Create']};
 
       $scope.ctx = {
         list: list,
@@ -222,10 +223,6 @@ angular.module('os.biospecimen.specimenlist')
 
     $scope.searchContainer = function(name) {
       loadContainerList(name);
-    }
-
-    $scope.transferSpecimens = function() {
-      gotoView('bulk-transfer-specimens', {}, 'no_specimens_to_transfer');
     }
 
     $scope.distributeCart = function() {

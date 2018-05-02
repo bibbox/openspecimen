@@ -145,8 +145,8 @@
     <dropUniqueConstraint tableName="CATISSUE_SPECIMEN" constraintName="BARCODE"/>
   </changeSet>
 
-  <changeSet author="vgaikwad" id="Remove unique constraint to allow duplicate specimen barcode" dbms="oracle">
-    <dropUniqueConstraint tableName="CATISSUE_SPECIMEN" constraintName="SYS_C00107673"/>
+  <changeSet author="vpawar" id="Remove unique constraint to allow duplicate specimen barcodes" dbms="oracle">
+    <sql>call os_drop_unique_constraint('catissue_specimen', 'barcode')</sql>
   </changeSet>
 
   <changeSet author="vgaikwad" id="Unique specimen barcode per collection protocol" dbms="mysql">
@@ -555,6 +555,37 @@
       <column name="POS_ASSIGNMENT" type="${text.type}(32)" defaultValue="HZ_TOP_DOWN_LEFT_RIGHT">
         <constraints nullable="false"/>
       </column>
+    </addColumn>
+  </changeSet>
+
+  <changeSet author="vgaikwad" id="Column to keep track of store list execution retries and errors">
+    <preConditions onFail="MARK_RAN">
+      <not>
+        <changeSetExecuted
+        changeLogFile="db/5.0/schema.xml"
+        author="vgaikwad"
+        id="Column to keep track of store list execution retries and errors"/>
+      </not>
+    </preConditions>
+
+    <addColumn tableName="OS_CONTAINER_STORE_LISTS">
+      <column name="NO_OF_RETRIES" type="${int.type}" defaultValueNumeric="0"/>
+      <column name="ERROR" type="${clob.type}"/>
+    </addColumn>
+  </changeSet>
+
+  <changeSet author="vgaikwad" id="Column to store error encountered for item in automated freezer op">
+    <preConditions onFail="MARK_RAN">
+      <not>
+        <changeSetExecuted
+          changeLogFile="db/5.0/schema.xml"
+          author="vgaikwad"
+          id="Column to store error encountered for item in automated freezer op"/>
+      </not>
+    </preConditions>
+
+    <addColumn tableName="OS_CONTAINER_STORE_LIST_ITEMS">
+      <column name="ERROR" type="${clob.type}"/>
     </addColumn>
   </changeSet>
 </databaseChangeLog>

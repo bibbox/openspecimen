@@ -1,14 +1,43 @@
 
 angular.module('os.administrative.user.dropdown', ['os.administrative.models'])
-  .directive('osUsers', function(AuthorizationService, User) {
-    function loadUsers(scope, searchTerm) {
+  .directive('osUsers', function($filter, AuthorizationService, User) {
+    function loadUsers(scope, searchTerm, ctrl, queryParams) {
       var opts = angular.extend({searchString : searchTerm}, scope.filterOpts || {});
+      if (queryParams) {
+        angular.extend(opts, JSON.parse(queryParams));
+      }
+
+      ctrl.listLoaded = true;
       User.query(opts).then(
         function(result) {
           scope.users = result;
+          loadSelectedUser(scope, result, ctrl);
         }
       );
     };
+
+    function loadSelectedUser(scope, usersList, ctrl) {
+      if (ctrl.onceLoaded) {
+        return;
+      }
+
+      ctrl.onceLoaded = true;
+      var selectProp = ctrl.attrs.selectProp;
+      if (selectProp != 'id' || !scope.ngModel) {
+        return;
+      }
+
+      var selectedUser = usersList.find(function(user) { return user[selectProp] == scope.ngModel; });
+      if (selectedUser) {
+        return;
+      }
+
+      User.getById(scope.ngModel).then(
+        function(user) {
+          usersList.push(user);
+        }
+      );
+    }
 
     return {
       restrict: 'AE',
@@ -23,13 +52,32 @@ angular.module('os.administrative.user.dropdown', ['os.administrative.models'])
 
       replace: true,
 
-      controller: function($scope) {
+      controller: function($scope, $element, $attrs) {
+        var ctrl = this;
+
+        if ($attrs.options) {
+          $scope.users = ctrl.localList = JSON.parse($attrs.options);
+          ctrl.listLoaded = true;
+
+          $scope.searchUsers = function(searchTerm) {
+            if (searchTerm) {
+              $scope.users = $filter('filter')(ctrl.localList, searchTerm);
+            } else {
+              $scope.users = ctrl.localList;
+            }
+          }
+
+          return;
+        }
+
         $scope.searchUsers = function(searchTerm) {
           if (!searchTerm && $scope.defaultList) {
             $scope.users = $scope.defaultList;
+            loadSelectedUser($scope, $scope.users, ctrl);
             return;
           }
-          loadUsers($scope, searchTerm);
+
+          loadUsers($scope, searchTerm, ctrl, $attrs.queryParams);
         };
 
         $scope.$watch('filterOpts', function(newVal, oldVal) {
@@ -37,13 +85,32 @@ angular.module('os.administrative.user.dropdown', ['os.administrative.models'])
             return;
           }
 
-          loadUsers($scope);
+          loadUsers($scope, undefined, ctrl, $attrs.queryParams);
         });
+
+        $attrs.$observe('queryParams',
+          function() {
+            if (!ctrl.listLoaded) {
+              //
+              // this is done to ensure we do not load users list twice
+              // once by the attributes observer and another by the filterOpts watcher
+              //
+              return;
+            }
+
+            loadUsers($scope, undefined, ctrl, $attrs.queryParams);
+          }
+        );
       },
   
       link: function(scope, element, attrs, ctrl) {
+        ctrl.attrs = attrs;
+
         if (!scope.ngModel && attrs.hasOwnProperty('defaultCurrentUser')) {
           var user = angular.copy(AuthorizationService.currentUser() || {});
+          if (attrs.selectProp) {
+            user = user[attrs.selectProp];
+          }
 
           if (attrs.hasOwnProperty('multiple')) {
             scope.ngModel = [user];

@@ -19,8 +19,13 @@
           </span>
           <span class="status" ng-if="visit.status == 'Pending' || !visit.status">
             {{'visits.status.pending' | translate}}
-            <span ng-if="visit.anticipatedVisitDate != null">
-              | {{visit.anticipatedVisitDate | date: global.dateFmt}}
+            <span ng-switch on="!!visit.id && !!visit.visitDate">
+              <span ng-switch-when="true">| {{visit.visitDate | date: global.dateFmt}}</span>
+              <span ng-switch-default>
+                <span ng-if="visit.anticipatedVisitDate != null">
+                  | {{visit.anticipatedVisitDate | date: global.dateFmt}}
+                </span>
+              </span>
             </span>
           </span>
           <span class="status" ng-if="visit.status == 'Complete'">
@@ -41,9 +46,8 @@
 
   <div class="col-xs-9">
     <os-specimen-tree cp="cp" cpr="cpr" visit="visit" specimens="specimens" allowed-ops="specimenAllowedOps" 
-      reload="reload()" collection-date="visit.visitDate" pending-spmns-disp-interval="pendingSpmnsDispInterval">
+      reload="reload()" pending-spmns-disp-interval="pendingSpmnsDispInterval">
     </os-specimen-tree>
-  </div>
   </div>
 </div>
 

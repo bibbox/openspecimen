@@ -6,10 +6,15 @@ import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import com.krishagni.catissueplus.core.administrative.domain.DpRequirement;
+import com.krishagni.catissueplus.core.common.AttributeModifiedSupport;
+import com.krishagni.catissueplus.core.common.ListenAttributeChanges;
+import com.krishagni.catissueplus.core.de.events.ExtensionDetail;
 
-public class DpRequirementDetail {
+@ListenAttributeChanges
+public class DpRequirementDetail extends AttributeModifiedSupport {
 	private Long id;
 	
 	private DistributionProtocolSummary dp;
@@ -21,6 +26,8 @@ public class DpRequirementDetail {
 	private Set<String> pathologyStatuses;
 
 	private String clinicalDiagnosis;
+
+	private BigDecimal cost;
 	
 	private Long specimenCount;
 	
@@ -33,7 +40,9 @@ public class DpRequirementDetail {
 	private String comments;
 	
 	private String activityStatus;
-	
+
+	private ExtensionDetail extensionDetail;
+
 	public Long getId() {
 		return id;
 	}
@@ -80,6 +89,14 @@ public class DpRequirementDetail {
 
 	public void setClinicalDiagnosis(String clinicalDiagnosis) {
 		this.clinicalDiagnosis = clinicalDiagnosis;
+	}
+
+	public BigDecimal getCost() {
+		return cost;
+	}
+
+	public void setCost(BigDecimal cost) {
+		this.cost = cost;
 	}
 
 	public Long getSpecimenCount() {
@@ -129,7 +146,15 @@ public class DpRequirementDetail {
 	public void setActivityStatus(String activityStatus) {
 		this.activityStatus = activityStatus;
 	}
-	
+
+	public ExtensionDetail getExtensionDetail() {
+		return extensionDetail;
+	}
+
+	public void setExtensionDetail(ExtensionDetail extensionDetail) {
+		this.extensionDetail = extensionDetail;
+	}
+
 	public static DpRequirementDetail from(DpRequirement dpr) {
 		DpRequirementDetail detail = new DpRequirementDetail();
 		
@@ -137,23 +162,18 @@ public class DpRequirementDetail {
 		detail.setDp(DistributionProtocolSummary.from(dpr.getDistributionProtocol()));
 		detail.setSpecimenType(dpr.getSpecimenType());
 		detail.setAnatomicSite(dpr.getAnatomicSite());
-		detail.setPathologyStatuses(new HashSet<String>(dpr.getPathologyStatuses()));
+		detail.setPathologyStatuses(new HashSet<>(dpr.getPathologyStatuses()));
 		detail.setClinicalDiagnosis(dpr.getClinicalDiagnosis());
+		detail.setCost(dpr.getCost());
 		detail.setSpecimenCount(dpr.getSpecimenCount());
 		detail.setQuantity(dpr.getQuantity());
 		detail.setComments(dpr.getComments());
 		detail.setActivityStatus(dpr.getActivityStatus());
-		
+		detail.setExtensionDetail(ExtensionDetail.from(dpr.getExtension()));
 		return detail;
 	}
 	
 	public static List<DpRequirementDetail> from(Collection<DpRequirement> dprs) {
-		List<DpRequirementDetail> details = new ArrayList<DpRequirementDetail>();
-		
-		for (DpRequirement dpr : dprs) {
-			details.add(from(dpr));
-		}
-		
-		return details;
+		return dprs.stream().map(DpRequirementDetail::from).collect(Collectors.toList());
 	}
 }

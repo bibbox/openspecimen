@@ -9,10 +9,13 @@ import java.util.Set;
 
 import com.krishagni.catissueplus.core.administrative.domain.DistributionProtocol;
 import com.krishagni.catissueplus.core.administrative.domain.DpDistributionSite;
+import com.krishagni.catissueplus.core.common.ListenAttributeChanges;
 import com.krishagni.catissueplus.core.common.events.UserSummary;
 import com.krishagni.catissueplus.core.de.events.ExtensionDetail;
+import com.krishagni.catissueplus.core.de.events.FormSummary;
 import com.krishagni.catissueplus.core.de.events.SavedQuerySummary;
 
+@ListenAttributeChanges
 public class DistributionProtocolDetail extends DistributionProtocolSummary {
 
 	private List<UserSummary> coordinators;
@@ -24,8 +27,10 @@ public class DistributionProtocolDetail extends DistributionProtocolSummary {
 	private String activityStatus;
 
 	private SavedQuerySummary report;
+
+	private FormSummary orderExtnForm;
 	
-	private Map<String, List<String>> distributingSites = new HashMap<String, List<String>>();
+	private Map<String, List<String>> distributingSites = new HashMap<>();
 
 	private ExtensionDetail extensionDetail;
 
@@ -68,13 +73,33 @@ public class DistributionProtocolDetail extends DistributionProtocolSummary {
 	public void setReport(SavedQuerySummary report) {
 		this.report = report;
 	}
-	
+
+	public FormSummary getOrderExtnForm() {
+		return orderExtnForm;
+	}
+
+	public void setOrderExtnForm(FormSummary orderExtnForm) {
+		this.orderExtnForm = orderExtnForm;
+	}
+
 	public Map<String, List<String>> getDistributingSites() {
 		return distributingSites;
 	}
-	
+
 	public void setDistributingSites(Map<String, List<String>> distributingSites) {
 		this.distributingSites = distributingSites;
+	}
+
+	public void setDistributingSitesMapList(List<Map<String, Object>> input) {
+		Map<String, List<String>> distributingSites = new HashMap<>();
+
+		for (Map<String, Object> site : input) {
+			String institute = (String)site.get("institute");
+			List<String> sites = (List<String>)site.get("site");
+			distributingSites.put(institute, sites);
+		}
+
+		setDistributingSites(distributingSites);
 	}
 
 	public ExtensionDetail getExtensionDetail() {
@@ -97,6 +122,10 @@ public class DistributionProtocolDetail extends DistributionProtocolSummary {
 		if (dp.getReport() != null) {
 			detail.setReport(SavedQuerySummary.fromSavedQuery(dp.getReport()));
 		}
+
+		if (dp.getOrderExtnForm() != null) {
+			detail.setOrderExtnForm(FormSummary.from(dp.getOrderExtnForm()));
+		}
 		
 		Set<DpDistributionSite> distSites = dp.getDistributingSites();
 		detail.setDistributingSites(DpDistributionSite.getInstituteSitesMap(distSites));
@@ -106,7 +135,7 @@ public class DistributionProtocolDetail extends DistributionProtocolSummary {
 	}
 
 	public static List<DistributionProtocolDetail> from(List<DistributionProtocol> distributionProtocols) {
-		List<DistributionProtocolDetail> list = new ArrayList<DistributionProtocolDetail>();
+		List<DistributionProtocolDetail> list = new ArrayList<>();
 		
 		for (DistributionProtocol dp : distributionProtocols) {
 			list.add(from(dp));

@@ -41,18 +41,29 @@ angular.module('os.biospecimen.specimen',
               visitId: $stateParams.visitId, 
               labelFmt: cpr.specimenLabelFmt
             });
+          },
+
+          showSpmnActivity: function(cp, CpConfigSvc) {
+            return CpConfigSvc.getCommonCfg(cp.id, 'showSpmnActivity').then(
+              function(value) {
+                return (value === null || value === undefined || value === '') ? true : (value == true);
+              }
+            );
           }
         },
-        controller: function($scope, specimen) {
+        controller: function($scope, participantSpmnsViewState, specimen) {
           $scope.specimen = $scope.object = specimen;
           $scope.entityType = 'Specimen';
           $scope.extnState = 'specimen-detail.extensions.';
+
+          participantSpmnsViewState.selectSpecimen(specimen);
+          $scope.$on('$destroy', function() { participantSpmnsViewState.unselectSpecimen(); });
         },
         abstract: true,
         parent: 'visit-root'
       })
       .state('specimen-addedit', {
-        url: '/addedit-specimen',
+        url: '/addedit-specimen?reqName',
         templateProvider: function(PluginReg, $q) {
           var defaultTmpl = "modules/biospecimen/participant/specimen/addedit.html";
           return $q.when(PluginReg.getTmpls("specimen-addedit", "page-body", defaultTmpl)).then(
@@ -64,6 +75,23 @@ angular.module('os.biospecimen.specimen',
         resolve: {
           extensionCtxt: function(cp, specimen) {
             return specimen.getExtensionCtxt({cpId: cp.id});
+          },
+
+          spmnReq: function($stateParams, cp, CpConfigSvc) {
+            if (!$stateParams.reqName) {
+              return undefined;
+            }
+
+            return CpConfigSvc.getCommonCfg(cp.id, 'addSpecimen').then(
+              function(data) {
+                var reqs = (data && data.requirements) || [];
+                return reqs.find(function(req) { return req.name == $stateParams.reqName; });
+              }
+            );
+          },
+
+          defSpmns: function(spmnReq) {
+            return (spmnReq && (spmnReq.specimens || [])) || [];
           }
         },
         controller: 'AddEditSpecimenCtrl',
@@ -138,8 +166,10 @@ angular.module('os.biospecimen.specimen',
           postSaveFilters: function() {
             return [
               function(specimen, formName, formData) {
-                if (formName == "SpecimenReceivedEvent") {
-                  specimen.createdOn = formData.time
+                if (formName == 'SpecimenCollectionEvent') {
+                  specimen.setCollectionEvent(formData);
+                } else if (formName == 'SpecimenReceivedEvent') {
+                  specimen.setReceivedEvent(formData);
                 } else if (formName == "SpecimenFrozenEvent" && formData.incrementFreezeThaw == 1) {
                   ++specimen.freezeThawCycles;
                 } else if (formName == "SpecimenThawEvent" && formData.incrementFreezeThaw == 1) {
@@ -258,6 +288,14 @@ angular.module('os.biospecimen.specimen',
                 return (data && data.rules && data.rules.length > 0) ? data.rules : [];
               }
             );
+          },
+
+          aliquotQtyReq: function(SettingUtil) {
+            return SettingUtil.getSetting('biospecimen', 'mandatory_aliquot_qty').then(
+              function(resp) {
+                return resp.value == 'true' || resp.value == true || resp.value == 1 || resp.value == '1';
+              }
+            );
           }
         },
         parent: 'signed-in'
@@ -271,6 +309,19 @@ angular.module('os.biospecimen.specimen',
             var specimens = SpecimensHolder.getSpecimens();
             SpecimensHolder.setSpecimens([]);
             return specimens || [];
+          },
+
+          cp: function(parentSpmns, CollectionProtocol) {
+            if (parentSpmns.length == 0) {
+              return {};
+            }
+
+            var cpId = parentSpmns[0].cpId;
+            if (parentSpmns.every(function(spmn) { return spmn.cpId == cpId })) {
+              return CollectionProtocol.getById(cpId);
+            } else {
+              return {};
+            }
           }
         },
         parent: 'signed-in'

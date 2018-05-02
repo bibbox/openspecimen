@@ -7,6 +7,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.apache.commons.lang3.ObjectUtils;
 import org.codehaus.jackson.map.annotate.JsonSerialize;
 
 import com.krishagni.catissueplus.core.administrative.domain.StorageContainerPosition;
@@ -16,6 +17,7 @@ import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
 import com.krishagni.catissueplus.core.biospecimen.domain.SpecimenRequirement;
 import com.krishagni.catissueplus.core.common.AttributeModifiedSupport;
 import com.krishagni.catissueplus.core.common.ListenAttributeChanges;
+import com.krishagni.catissueplus.core.common.util.NumUtil;
 
 @JsonSerialize(include= JsonSerialize.Inclusion.NON_NULL)
 @ListenAttributeChanges
@@ -40,6 +42,10 @@ public class SpecimenInfo extends AttributeModifiedSupport implements Comparable
 	private Long visitId;
 	
 	private String visitName;
+
+	private String sprNo;
+
+	private Date visitDate;
 	
 	private String cpShortTitle;
 	
@@ -165,6 +171,22 @@ public class SpecimenInfo extends AttributeModifiedSupport implements Comparable
 
 	public void setVisitName(String visitName) {
 		this.visitName = visitName;
+	}
+
+	public String getSprNo() {
+		return sprNo;
+	}
+
+	public void setSprNo(String sprNo) {
+		this.sprNo = sprNo;
+	}
+
+	public Date getVisitDate() {
+		return visitDate;
+	}
+
+	public void setVisitDate(Date visitDate) {
+		this.visitDate = visitDate;
 	}
 
 	public String getCpShortTitle() {
@@ -437,6 +459,8 @@ public class SpecimenInfo extends AttributeModifiedSupport implements Comparable
 		result.setStorageType(sr != null ? sr.getStorageType() : null);
 		result.setVisitId(specimen.getVisit().getId());
 		result.setVisitName(specimen.getVisit().getName());
+		result.setSprNo(specimen.getVisit().getSurgicalPathologyNumber());
+		result.setVisitDate(specimen.getVisit().getVisitDate());
 		result.setCprId(specimen.getRegistration().getId());
 		result.setPpid(specimen.getRegistration().getPpid());
 		result.setCpId(specimen.getCollectionProtocol().getId());
@@ -455,6 +479,7 @@ public class SpecimenInfo extends AttributeModifiedSupport implements Comparable
 	public static SpecimenInfo fromTo(SpecimenRequirement anticipated, SpecimenInfo result) {
 		CollectionProtocolEvent cpe = anticipated.getCollectionProtocolEvent();
 		result.setId(null);
+		result.setCpId(cpe != null ? cpe.getCollectionProtocol().getId() : null);
 		result.setEventId(cpe != null ? cpe.getId() : null);
 		result.setEventCode(cpe != null ? cpe.getCode() : null);
 		result.setEventLabel(cpe != null ? cpe.getEventLabel() : null);
@@ -481,29 +506,16 @@ public class SpecimenInfo extends AttributeModifiedSupport implements Comparable
 	
 	@Override
 	public int compareTo(SpecimenInfo other) {
-		if (sortOrder != null && other.sortOrder != null) {
-			return sortOrder.compareTo(other.sortOrder);
-		} else if (sortOrder != null) {
-			return -1;
-		} else if (other.sortOrder != null) {
-			return 1;
-		} else if (reqId != null && other.reqId != null && reqId != other.reqId) {
-			return reqId.compareTo(other.reqId);
-		} else if (reqId == other.reqId) {
-			return id.compareTo(other.id);
-		} else if (reqId != null) {
-			return -1;
-		} else if (other.reqId != null) {
-			return 1;
-		} else if (id != null && other.id != null) {
-			return id.compareTo(other.id);
+		int cmp = NumUtil.compareTo(sortOrder, other.sortOrder);
+		if (cmp != 0) {
+			return cmp;
 		}
-		
-		// 
-		// TODO: ERROR: need to put a logger here
-		// This scenario should not happen, as this means we neither have
-		// anticipated specimen nor actual specimen
-		//
-		return 0;
-	}	
+
+		cmp = NumUtil.compareTo(reqId, other.reqId);
+		if (cmp != 0) {
+			return cmp;
+		}
+
+		return NumUtil.compareTo(id, other.id);
+	}
 }

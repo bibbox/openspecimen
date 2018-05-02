@@ -13,21 +13,21 @@ import org.hibernate.envers.NotAudited;
 
 import com.krishagni.catissueplus.core.administrative.domain.factory.DistributionOrderErrorCode;
 import com.krishagni.catissueplus.core.administrative.domain.factory.SpecimenRequestErrorCode;
-import com.krishagni.catissueplus.core.biospecimen.domain.BaseEntity;
+import com.krishagni.catissueplus.core.biospecimen.domain.BaseExtensionEntity;
 import com.krishagni.catissueplus.core.biospecimen.domain.SpecimenList;
-import com.krishagni.catissueplus.core.common.CollectionUpdater;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
-import com.krishagni.catissueplus.core.common.util.Status;
 import com.krishagni.catissueplus.core.common.util.Utility;
 
 @Audited
-public class DistributionOrder extends BaseEntity {
+public class DistributionOrder extends BaseExtensionEntity {
 	public enum Status { 
 		PENDING,
 		EXECUTED
 	}
 	
 	private static final String ENTITY_NAME = "distribution_order";
+
+	private static final String EXTN = "OrderExtension";
 	
 	private String name;
 	
@@ -56,10 +56,14 @@ public class DistributionOrder extends BaseEntity {
 	private SpecimenRequest request;
 
 	private SpecimenList specimenList;
+
+	private Boolean allReservedSpecimens;
 	
 	public static String getEntityName() {
 		return ENTITY_NAME;
 	}
+
+	public static String getExtnEntityType() { return EXTN; }
 	
 	public String getName() {
 		return name;
@@ -126,7 +130,17 @@ public class DistributionOrder extends BaseEntity {
 	}
 
 	public Map<Long, DistributionOrderItem> getOrderItemsMap() {
-		return getOrderItems().stream().collect(Collectors.toMap(item -> item.getId(), item -> item));
+		return getOrderItems().stream().collect(Collectors.toMap(DistributionOrderItem::getId, item -> item));
+	}
+
+	public Map<Long, DistributionOrderItem> getOrderItemsMapBySpecimenId() {
+		return getOrderItems().stream().collect(Collectors.toMap(item -> item.getSpecimen().getId(), item -> item));
+	}
+
+	public Map<String, DistributionOrderItem> getOrderItemsMapBySpecimenCpAndLabel() {
+		return getOrderItems().stream().collect(Collectors.toMap(
+			item -> item.getSpecimen().getCollectionProtocol().getShortTitle() + "_" + item.getSpecimen().getLabel(),
+			item -> item));
 	}
 
 	public Status getStatus() {
@@ -178,6 +192,18 @@ public class DistributionOrder extends BaseEntity {
 		this.specimenList = specimenList;
 	}
 
+	public Boolean getAllReservedSpecimens() {
+		return allReservedSpecimens;
+	}
+
+	public void setAllReservedSpecimens(Boolean allReservedSpecimens) {
+		this.allReservedSpecimens = allReservedSpecimens;
+	}
+
+	public boolean isForAllReservedSpecimens() {
+		return Boolean.TRUE.equals(allReservedSpecimens);
+	}
+
 	public Institute getInstitute() {
 		return requester.getInstitute();
 	}
@@ -192,7 +218,9 @@ public class DistributionOrder extends BaseEntity {
 		setExecutionDate(newOrder.getExecutionDate());
 		setTrackingUrl(newOrder.getTrackingUrl());
 		setComments(newOrder.getComments());
+		setExtension(newOrder.getExtension());
 		setSpecimenList(newOrder.getSpecimenList());
+		setAllReservedSpecimens(newOrder.getAllReservedSpecimens());
 
 		updateRequest(newOrder);
 		updateOrderItems(newOrder);
@@ -216,7 +244,7 @@ public class DistributionOrder extends BaseEntity {
 			throw OpenSpecimenException.userError(DistributionOrderErrorCode.ALREADY_EXECUTED);
 		}
 		
-		if (getSpecimenList() == null && CollectionUtils.isEmpty(getOrderItems())) {
+		if (getSpecimenList() == null && !isForAllReservedSpecimens() && CollectionUtils.isEmpty(getOrderItems())) {
 			throw OpenSpecimenException.userError(DistributionOrderErrorCode.NO_SPECIMENS_TO_DIST);
 		}
 
@@ -241,6 +269,21 @@ public class DistributionOrder extends BaseEntity {
 		return Status.EXECUTED == status;
 	}
 
+	@Override
+	public String getEntityType() {
+		return getExtnEntityType();
+	}
+
+	@Override
+	public boolean isCpBased() {
+		return false;
+	}
+
+	@Override
+	public Long getEntityId() {
+		return getDistributionProtocol().getId();
+	}
+
 	private void updateRequest(DistributionOrder other) {
 		if (isOrderExecuted()) {
 			return;
@@ -261,12 +304,21 @@ public class DistributionOrder extends BaseEntity {
 			 */
 			return;
 		}
-		
-		CollectionUpdater.update(getOrderItems(), other.getOrderItems());
-		for (DistributionOrderItem item : getOrderItems()) {
-			item.setOrder(this);
+
+		Map<Long, DistributionOrderItem> existingItems = getOrderItemsMapBySpecimenId();
+		for (DistributionOrderItem item : other.getOrderItems()) {
+			DistributionOrderItem existing = existingItems.remove(item.getSpecimen().getId());
+			if (existing != null) {
+				existing.setQuantity(item.getQuantity());
+				existing.setCost(item.getCost());
+				existing.setStatus(item.getStatus());
+			} else {
+				item.setOrder(this);
+				getOrderItems().add(item);
+			}
 		}
-		
+
+		getOrderItems().removeAll(existingItems.values());
 	}
 	
 	public DistributionOrderItem getItemBySpecimen(String label) {

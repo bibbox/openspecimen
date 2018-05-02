@@ -38,6 +38,7 @@ import com.krishagni.catissueplus.core.common.util.AuthUtil;
 import com.krishagni.catissueplus.core.common.util.NumUtil;
 import com.krishagni.catissueplus.core.common.util.Status;
 import com.krishagni.catissueplus.core.common.util.Utility;
+import com.krishagni.catissueplus.core.de.domain.DeObject;
 
 public class DistributionOrderFactoryImpl implements DistributionOrderFactory {
 	private DaoFactory daoFactory;
@@ -61,6 +62,7 @@ public class DistributionOrderFactoryImpl implements DistributionOrderFactory {
 		setName(detail, order, ose);
 		setRequest(detail, order, ose);
 		setSpecimenList(detail, order, ose);
+		setAllReservedSpecimens(detail, order, ose);
 		setDistributionProtocol(detail, order, ose);		
 		setRequesterAndReceivingSite(detail, order, ose);
 		setDistributionDate(detail, order, ose);
@@ -70,6 +72,7 @@ public class DistributionOrderFactoryImpl implements DistributionOrderFactory {
 		setActivityStatus(detail, order, ose);
 		setTrackingUrl(detail, order, ose);
 		setComments(detail, order, ose);
+		setExtension(detail, order, ose);
 		
 		ose.checkAndThrow();
 		return order;
@@ -120,53 +123,55 @@ public class DistributionOrderFactoryImpl implements DistributionOrderFactory {
 		order.setSpecimenList(specimenList);
 	}
 
+	private void setAllReservedSpecimens(DistributionOrderDetail detail, DistributionOrder order, OpenSpecimenException ose) {
+		if (order.getSpecimenList() != null || detail.getAllReservedSpmns() == null || detail.getAllReservedSpmns().equals(Boolean.FALSE)) {
+			return;
+		}
+
+		order.setAllReservedSpecimens(true);
+	}
+
 	private void setDistributionProtocol(DistributionOrderDetail detail, DistributionOrder order, OpenSpecimenException ose) {
 		if (order.getRequest() != null && order.getRequest().getDp() != null) {
 			//
 			// Use request specified DP, if any
 			//
+			ensureValidDp(order.getRequest().getDp(), ose);
 			order.setDistributionProtocol(order.getRequest().getDp());
 			return;
 		}
 
 		DistributionProtocolDetail dpDetail = detail.getDistributionProtocol();
-		Long dpId = dpDetail != null ? dpDetail.getId() : null;
-		String dpShortTitle = dpDetail != null ? dpDetail.getShortTitle() : null;
-		if (dpId == null && StringUtils.isBlank(dpShortTitle)) {
-			ose.addError(DistributionOrderErrorCode.DP_REQUIRED);
-			return;
-		}
-		
 		DistributionProtocol dp = null;
 		Object key = null;
-		if (dpId != null) {
-			dp = daoFactory.getDistributionProtocolDao().getById(dpId);
-			key = dpId;
-		} else {
-			dp = daoFactory.getDistributionProtocolDao().getByShortTitle(dpShortTitle);
-			key = dpShortTitle;
+		if (dpDetail != null && dpDetail.getId() != null) {
+			dp = daoFactory.getDistributionProtocolDao().getById(dpDetail.getId());
+			key = dpDetail.getId();
+		} else if (dpDetail != null && StringUtils.isNotBlank(dpDetail.getShortTitle())) {
+			dp = daoFactory.getDistributionProtocolDao().getByShortTitle(dpDetail.getShortTitle());
+			key = dpDetail.getShortTitle();
 		}
-		
-		if (dp == null) {
+
+		if (key == null) {
+			ose.addError(DistributionOrderErrorCode.DP_REQUIRED);
+		} else if (dp == null) {
 			ose.addError(DistributionProtocolErrorCode.NOT_FOUND, key, 1);
-			return;
+		} else {
+			ensureValidDp(dp, ose);
+			order.setDistributionProtocol(dp);
+		}
+	}
+
+	private void ensureValidDp(DistributionProtocol dp, OpenSpecimenException ose) {
+		if (dp.isClosed()) {
+			ose.addError(DistributionProtocolErrorCode.CLOSED, dp.getShortTitle());
 		}
 
-		// TODO: Specimen request
-		// SpecimenRequest request = order.getRequest();
-		// if (request != null && !request.getInstitute().equals(dp.getInstitute())) {
-		//   ose.addError(DistributionOrderErrorCode.INVALID_DP_FOR_REQ, dp.getShortTitle(), request.getId());
-		// 	 return;
-		// }
-
-		Date dpEndDate = Utility.chopTime(dp.getEndDate());
 		Date today = Utility.chopTime(Calendar.getInstance().getTime());
+		Date dpEndDate = Utility.chopTime(dp.getEndDate());
 		if (dpEndDate != null && today.after(dpEndDate)) {
 			ose.addError(DistributionProtocolErrorCode.EXPIRED, dp.getShortTitle());
-			return;
 		}
-
-		order.setDistributionProtocol(dp);
 	}
 
 	private void setRequesterAndReceivingSite(DistributionOrderDetail detail, DistributionOrder order, OpenSpecimenException ose) {
@@ -198,7 +203,7 @@ public class DistributionOrderFactoryImpl implements DistributionOrderFactory {
 			return;
 		}
 
-		if (!requestor.getInstitute().equals(site.getInstitute())) {
+		if (requestor != null && !requestor.getInstitute().equals(site.getInstitute())) {
 			ose.addError(DistributionOrderErrorCode.INVALID_REQUESTER_RECV_SITE_INST, requestor.formattedName(), site.getName());
 			return;
 		}
@@ -238,7 +243,7 @@ public class DistributionOrderFactoryImpl implements DistributionOrderFactory {
 	}
 		
 	private void setOrderItems(DistributionOrderDetail detail, DistributionOrder order, OpenSpecimenException ose) {
-		if (order.getSpecimenList() != null) {
+		if (order.getSpecimenList() != null || order.isForAllReservedSpecimens()) {
 			return;
 		}
 
@@ -327,7 +332,12 @@ public class DistributionOrderFactoryImpl implements DistributionOrderFactory {
 	private void setComments(DistributionOrderDetail detail, DistributionOrder order, OpenSpecimenException ose) {
 		order.setComments(detail.getComments());
 	}
-		
+
+	private void setExtension(DistributionOrderDetail detail, DistributionOrder order, OpenSpecimenException ose) {
+		DeObject extension = DeObject.createExtension(detail.getExtensionDetail(), order);
+		order.setExtension(extension);
+	}
+
 	private User getUser(UserSummary userSummary, User defaultUser, OpenSpecimenException ose, ErrorCode error) {
 		if (userSummary == null) {
 			return defaultUser;
@@ -371,20 +381,26 @@ public class DistributionOrderFactoryImpl implements DistributionOrderFactory {
 		}
 
 		if (detail.getQuantity() == null) {
-			ose.addError(DistributionOrderErrorCode.ITEM_QTY_REQ, specimen.getLabel());
-			return null;
+			if (specimen.getAvailableQuantity() != null) {
+				ose.addError(DistributionOrderErrorCode.ITEM_QTY_REQ, specimen.getLabel());
+				return null;
+			}
 		} else if (NumUtil.lessThanZero(detail.getQuantity())) {
 			ose.addError(DistributionOrderErrorCode.ITEM_INVALID_QTY, specimen.getLabel());
 			return null;
 		}
 
+		if (NumUtil.lessThanZero(detail.getCost())) {
+			ose.addError(DistributionOrderErrorCode.INVALID_COST, specimen.getLabel(), detail.getCost());
+		}
+
 		DistributionOrderItem orderItem = new DistributionOrderItem();
 		orderItem.setQuantity(detail.getQuantity());
+		orderItem.setCost(detail.getCost());
 		orderItem.setSpecimen(specimen);
 		orderItem.setOrder(order);
 
 		setOrderItemStatus(detail, orderItem, ose);
-
 		return orderItem;
 	}
 	

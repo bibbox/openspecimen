@@ -43,7 +43,6 @@ import com.krishagni.catissueplus.core.biospecimen.domain.AliquotSpecimensRequir
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolEvent;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolRegistration;
-import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolSite;
 import com.krishagni.catissueplus.core.biospecimen.domain.ConsentStatement;
 import com.krishagni.catissueplus.core.biospecimen.domain.CpConsentTier;
 import com.krishagni.catissueplus.core.biospecimen.domain.CpReportSettings;
@@ -86,6 +85,7 @@ import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
 import com.krishagni.catissueplus.core.biospecimen.services.CollectionProtocolService;
 import com.krishagni.catissueplus.core.common.Pair;
 import com.krishagni.catissueplus.core.common.PlusTransactional;
+import com.krishagni.catissueplus.core.common.Tuple;
 import com.krishagni.catissueplus.core.common.access.AccessCtrlMgr;
 import com.krishagni.catissueplus.core.common.access.AccessCtrlMgr.ParticipantReadAccess;
 import com.krishagni.catissueplus.core.common.domain.Notification;
@@ -757,16 +757,36 @@ public class CollectionProtocolServiceImpl implements CollectionProtocolService,
 		
 	@Override
 	@PlusTransactional
-	public ResponseEvent<List<SpecimenRequirementDetail>> getSpecimenRequirments(RequestEvent<Long> req) {
-		Long cpeId = req.getPayload();
+	public ResponseEvent<List<SpecimenRequirementDetail>> getSpecimenRequirments(RequestEvent<Tuple> req) {
 		try {
-			CollectionProtocolEvent cpe = daoFactory.getCollectionProtocolDao().getCpe(cpeId);
-			if (cpe == null) {
-				return ResponseEvent.userError(CpeErrorCode.NOT_FOUND, cpeId, 1);
+			Tuple tuple = req.getPayload();
+			Long cpId = tuple.element(0);
+			Long cpeId = tuple.element(1);
+			String cpeLabel = tuple.element(2);
+			boolean includeChildren = tuple.element(3) == null || (Boolean) tuple.element(3);
+
+			CollectionProtocolEvent cpe = null;
+			Object key = null;
+			if (cpeId != null) {
+				cpe = daoFactory.getCollectionProtocolDao().getCpe(cpeId);
+				key = cpeId;
+			} else if (StringUtils.isNotBlank(cpeLabel)) {
+				if (cpId == null) {
+					throw OpenSpecimenException.userError(CpErrorCode.REQUIRED);
+				}
+
+				cpe = daoFactory.getCollectionProtocolDao().getCpeByEventLabel(cpId, cpeLabel);
+				key = cpeLabel;
+			}
+
+			if (key == null) {
+				return ResponseEvent.response(Collections.emptyList());
+			} else if (cpe == null) {
+				return ResponseEvent.userError(CpeErrorCode.NOT_FOUND, key, 1);
 			}
 			
 			AccessCtrlMgr.getInstance().ensureReadCpRights(cpe.getCollectionProtocol());
-			return ResponseEvent.response(SpecimenRequirementDetail.from(cpe.getTopLevelAnticipatedSpecimens()));
+			return ResponseEvent.response(SpecimenRequirementDetail.from(cpe.getTopLevelAnticipatedSpecimens(), includeChildren));
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
 		}  catch (Exception e) {

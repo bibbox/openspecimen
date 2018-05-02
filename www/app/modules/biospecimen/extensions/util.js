@@ -52,16 +52,14 @@ angular.module('os.biospecimen.extensions.util', [])
         return;
       }
 
-      extensionDetail.attrsMap = {
-        id: extensionDetail.id,
-        containerId: extensionDetail.formId
-      };
+      extensionDetail.attrsMap = extensionDetail.attrsMap || {};
+      angular.extend(extensionDetail.attrsMap, {id: extensionDetail.id, containerId: extensionDetail.formId});
 
       angular.forEach(extensionDetail.attrs, function(attr) {
         if (attr.type == 'datePicker') {
           if (!isNaN(attr.value) && !isNaN(parseInt(attr.value))) {
             attr.value = parseInt(attr.value);
-          } else if (!!attr.value || attr.value == 0) {
+          } else if (!!attr.value || attr.value === 0) {
             attr.value = new Date(attr.value);
           }
         }
