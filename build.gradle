@@ -216,7 +216,7 @@ def getTodayDate() {
 def getCommitRevision() {
   def revCmd = "git rev-parse --short HEAD"
   def revision = revCmd.execute()
-  revision = "BIBBOX DEV";
+  return "BIBBOX";
   return revision.text.trim()
 }
 
