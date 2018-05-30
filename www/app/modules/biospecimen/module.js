@@ -6,6 +6,7 @@ angular.module('os.biospecimen',
     'os.biospecimen.cp',
     'os.biospecimen.specimenlist',
     'os.biospecimen.common',
-    'os.biospecimen.consentstatement'
+    'os.biospecimen.consentstatement',
+    'ngSanitize'
   ]
 );
