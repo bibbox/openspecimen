@@ -48,8 +48,8 @@
     </span>
     <span ng-switch-default>
       <span ng-switch on="!!attr.displayValue">
-        <span ng-switch-when="true">{{attr.displayValue | osNoValue}}</span>
-        <span ng-switch-default>{{attr.value | osArrayJoin | osNoValue}}</span>
+        <span ng-switch-when="true">{{attr.displayValue | osNoValue | linky}}</span>
+        <span ng-switch-default>{{attr.value | osArrayJoin | osNoValue | linky}}</span>
       </span>
     </span>
   </span>
