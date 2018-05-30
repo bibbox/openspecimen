@@ -53,7 +53,7 @@
         {{field.value | osBoolValue : 'common.yes' : 'common.no' : 'common.not_specified'}}
       </span>
       <span ng-switch-default>
-        {{field.value | linky | osArrayJoin}}
+         <span ng-bind-html="field.value | linky | osArrayJoin"   </span>
       </span>
     </span>
   </span>
