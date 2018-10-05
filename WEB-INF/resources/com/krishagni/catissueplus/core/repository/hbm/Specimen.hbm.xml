@@ -43,6 +43,8 @@
 
     <property name="freezeThawCycles" column="FREEZE_THAW_CYCLES"/>
 
+    <property name="imageId" column="IMAGE_ID"/>
+
     <set name="biohazards" table="OS_SPECIMEN_BIOHAZARDS" cascade="all-delete-orphan" batch-size="25">
       <key column="SPECIMEN_ID" />
       <element column="BIOHAZARD" type="string" />
@@ -68,6 +70,11 @@
       <key column="POOLED_SPECIMEN_ID"/>
       <one-to-many class="com.krishagni.catissueplus.core.biospecimen.domain.Specimen"/>
       <filter name="activeEntity"/>
+    </set>
+
+    <set name="externalIds" table="OS_SPMN_EXTERNAL_IDS" inverse="true" cascade="all-delete-orphan" batch-size="25">
+      <key column="SPECIMEN_ID"/>
+      <one-to-many class="com.krishagni.catissueplus.core.biospecimen.domain.SpecimenExternalIdentifier"/>
     </set>
 
     <many-to-one name="collectionProtocol" column="COLLECTION_PROTOCOL_ID"/>

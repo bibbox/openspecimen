@@ -1,5 +1,6 @@
 package com.krishagni.catissueplus.core.administrative.events;
 
+import java.io.Serializable;
 import java.math.BigDecimal;
 import java.util.Collection;
 import java.util.List;
@@ -8,7 +9,7 @@ import java.util.stream.Collectors;
 import com.krishagni.catissueplus.core.administrative.domain.DistributionOrderItem;
 import com.krishagni.catissueplus.core.biospecimen.events.SpecimenInfo;
 
-public class DistributionOrderItemDetail {
+public class DistributionOrderItemDetail implements Serializable {
 	private Long id;
 
 	private String orderName;
@@ -18,6 +19,12 @@ public class DistributionOrderItemDetail {
 	private BigDecimal quantity;
 
 	private BigDecimal cost;
+
+	private String label;
+
+	private StorageLocationSummary holdingLocation;
+
+	private boolean printLabel;
 	
 	private String status;
 
@@ -61,6 +68,30 @@ public class DistributionOrderItemDetail {
 		this.cost = cost;
 	}
 
+	public String getLabel() {
+		return label;
+	}
+
+	public void setLabel(String label) {
+		this.label = label;
+	}
+
+	public StorageLocationSummary getHoldingLocation() {
+		return holdingLocation;
+	}
+
+	public void setHoldingLocation(StorageLocationSummary holdingLocation) {
+		this.holdingLocation = holdingLocation;
+	}
+
+	public boolean isPrintLabel() {
+		return printLabel;
+	}
+
+	public void setPrintLabel(boolean printLabel) {
+		this.printLabel = printLabel;
+	}
+
 	public String getStatus() {
 		return status;
 	}
@@ -76,6 +107,7 @@ public class DistributionOrderItemDetail {
 		detail.setQuantity(orderItem.getQuantity());
 		detail.setSpecimen(SpecimenInfo.from(orderItem.getSpecimen()));
 		detail.setCost(orderItem.getCost());
+		detail.setLabel(orderItem.getLabel());
 		detail.setStatus(orderItem.getStatus().name());
 		return detail;
 	}

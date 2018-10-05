@@ -49,6 +49,8 @@ public enum SpecimenErrorCode implements ErrorCode {
 	COLL_OR_MISSED_PARENT_REQ,
 	
 	COLL_OR_PENDING_PARENT_REQ,
+
+	COLL_OR_NC_PARENT_REQ,
 	
 	SPECIMEN_CLASS_REQUIRED,
 	
@@ -122,7 +124,13 @@ public enum SpecimenErrorCode implements ErrorCode {
 
 	PARENT_CONTAINER_REQ,
 
-	CONTAINER_TYPE_REQ;
+	CONTAINER_TYPE_REQ,
+
+	EXT_ID_NO_NAME_VALUE,
+
+	EXT_ID_DUP_NAME,
+
+	VISIT_CHG_NOT_ALLOWED;
 
 	public String code() {
 		return "SPECIMEN_" + this.name();

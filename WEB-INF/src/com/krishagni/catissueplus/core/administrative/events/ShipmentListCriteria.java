@@ -2,16 +2,22 @@ package com.krishagni.catissueplus.core.administrative.events;
 
 import java.util.Set;
 
+import com.krishagni.catissueplus.core.administrative.domain.Shipment;
+import com.krishagni.catissueplus.core.common.access.SiteCpPair;
 import com.krishagni.catissueplus.core.common.events.AbstractListCriteria;
 
 public class ShipmentListCriteria extends AbstractListCriteria<ShipmentListCriteria> {
 	private String name;
+
+	private String sendingSite;
 	
 	private String recvInstitute;
 	
 	private String recvSite;
+
+	private Shipment.Status status;
 	
-	private Set<Long> siteIds;
+	private Set<SiteCpPair> sites;
 	
 	@Override
 	public ShipmentListCriteria self() {
@@ -24,6 +30,15 @@ public class ShipmentListCriteria extends AbstractListCriteria<ShipmentListCrite
 	
 	public ShipmentListCriteria name(String name) {
 		this.name = name;
+		return self();
+	}
+
+	public String sendingSite() {
+		return sendingSite;
+	}
+
+	public ShipmentListCriteria sendingSite(String sendingSite) {
+		this.sendingSite = sendingSite;
 		return self();
 	}
 	
@@ -44,14 +59,22 @@ public class ShipmentListCriteria extends AbstractListCriteria<ShipmentListCrite
 		this.recvSite = recvSite;
 		return self();
 	}
-	
-	public Set<Long> siteIds() {
-		return siteIds;
+
+	public Shipment.Status status() {
+		return status;
 	}
-	
-	public ShipmentListCriteria siteIds(Set<Long> siteIds) {
-		this.siteIds = siteIds;
+
+	public ShipmentListCriteria status(Shipment.Status status) {
+		this.status = status;
 		return self();
 	}
 	
+	public Set<SiteCpPair> sites() {
+		return sites;
+	}
+	
+	public ShipmentListCriteria sites(Set<SiteCpPair> sites) {
+		this.sites = sites;
+		return self();
+	}
 }

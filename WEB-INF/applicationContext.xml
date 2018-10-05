@@ -6,15 +6,15 @@
   xmlns:security="http://www.springframework.org/schema/security"
   xmlns:task="http://www.springframework.org/schema/task"
   xsi:schemaLocation="http://www.springframework.org/schema/beans
-    http://www.springframework.org/schema/beans/spring-beans-3.2.xsd
+    http://www.springframework.org/schema/beans/spring-beans-4.3.xsd
     http://www.springframework.org/schema/aop 
-    http://www.springframework.org/schema/aop/spring-aop-3.2.xsd
+    http://www.springframework.org/schema/aop/spring-aop-4.3.xsd
     http://www.springframework.org/schema/security 
-    http://www.springframework.org/schema/security/spring-security-3.2.xsd
+    http://www.springframework.org/schema/security/spring-security-4.2.xsd
     http://www.springframework.org/schema/task
-    http://www.springframework.org/schema/task/spring-task-3.2.xsd
+    http://www.springframework.org/schema/task/spring-task-4.3.xsd
     http://www.springframework.org/schema/context 
-    http://www.springframework.org/schema/context/spring-context-3.2.xsd">
+    http://www.springframework.org/schema/context/spring-context-4.3.xsd">
 
   <bean id="placeholderConfig" class="com.krishagni.catissueplus.core.init.AppPropertyPlaceholderConfigurer"/>
 
@@ -34,7 +34,7 @@
     <property name="changeLog" value="classpath:db/db-os-changelog-master-${datasource.type}.xml" />
   </bean>
 
-  <bean id="sessionFactory" class="org.springframework.orm.hibernate4.LocalSessionFactoryBean">
+  <bean id="sessionFactory" class="org.springframework.orm.hibernate5.LocalSessionFactoryBean">
     <property name="dataSource" ref="dataSource" />
     <property name="mappingLocations">
       <list>
@@ -47,13 +47,14 @@
       <props>
         <prop key="hibernate.dialect">${datasource.dialect}</prop>
         <prop key="hibernate.show_sql">${hibernate.show_sql}</prop>
+        <prop key="hibernate.id.new_generator_mappings">false</prop>
         <prop key="org.hibernate.envers.track_entities_changed_in_revision">true</prop>
         <prop key="org.hibernate.envers.global_with_modified_flag">true</prop>
       </props>
     </property>
   </bean>
 
-  <bean id="transactionManager" class="org.springframework.orm.hibernate4.HibernateTransactionManager">
+  <bean id="transactionManager" class="org.springframework.orm.hibernate5.HibernateTransactionManager">
     <property name="sessionFactory" ref="sessionFactory" />
     <property name="entityInterceptor">
       <bean class="com.krishagni.catissueplus.core.common.TransactionAwareInterceptor"/>
@@ -196,7 +197,7 @@
     <property name="srFactory" ref="srFactory"/>
     <property name="rbacSvc" ref="rbacSvc"/>
     <property name="daoFactory" ref="biospecimenDaoFactory"/>
-    <property name="listGenerator" ref="listGenerator"/>
+    <property name="listSvc" ref="listSvc"/>
     <property name="rptSettingsFactory" ref="reportSettingsFact"/>
   </bean>
   
@@ -299,6 +300,7 @@
   <bean id="auditService" class="com.krishagni.catissueplus.core.audit.services.impl.AuditServiceImpl">
     <property name="daoFactory" ref="biospecimenDaoFactory"/>
     <property name="objectAccessorFactory" ref="objectAccessorFactory"/>
+    <property name="taskExecutor" ref="taskExecutor"/>
   </bean>
 
   <bean id="userAuthService" class="com.krishagni.catissueplus.core.auth.services.impl.UserAuthenticationServiceImpl">
@@ -380,6 +382,9 @@
   <bean id="specimenListSvc" class="com.krishagni.catissueplus.core.biospecimen.services.impl.SpecimenListServiceImpl">
     <property name="daoFactory" ref="biospecimenDaoFactory"/>
     <property name="specimenListFactory" ref="specimenListFactory"/>
+    <property name="listSvc" ref="listSvc"/>
+    <property name="deDaoFactory" ref="deDaoFactory"/>
+    <property name="querySvc" ref="querySvc"/>
   </bean>
 
   <bean id="specimenKitFactory" class="com.krishagni.catissueplus.core.biospecimen.domain.factory.impl.SpecimenKitFactoryImpl">
@@ -539,9 +544,43 @@
     <property name="containerTypeFactory" ref="containerTypeFactory"/>
   </bean>
 
+  <bean id="distributionLabelGenerator" class="com.krishagni.catissueplus.core.common.service.impl.LabelGeneratorImpl">
+    <property name="tokenRegistrar">
+      <bean class="com.krishagni.catissueplus.core.common.domain.DefaultLabelTmplTokenRegistrar">
+        <property name="tokens">
+          <list>
+            <bean class="com.krishagni.catissueplus.core.administrative.label.order.DpIdLabelToken"/>
+            <bean class="com.krishagni.catissueplus.core.administrative.label.order.DpShortTitleLabelToken"/>
+            <bean class="com.krishagni.catissueplus.core.administrative.label.order.DpUniqueIdLabelToken"/>
+            <bean class="com.krishagni.catissueplus.core.administrative.label.order.ItemUniqueIdLabelToken"/>
+            <bean class="com.krishagni.catissueplus.core.administrative.label.order.OrderIdLabelToken"/>
+            <bean class="com.krishagni.catissueplus.core.administrative.label.order.PathStatusLabelToken"/>
+          </list>
+        </property>
+      </bean>
+    </property>
+  </bean>
+
+  <bean id="distributionPrintLabelTokensRegistrar" class="com.krishagni.catissueplus.core.common.domain.DefaultLabelTmplTokenRegistrar">
+    <property name="tokens">
+      <list>
+        <bean class="com.krishagni.catissueplus.core.administrative.print.order.DistributionLabelPrintToken"/>
+        <bean class="com.krishagni.catissueplus.core.administrative.print.order.DpShortTitlePrintToken"/>
+        <bean class="com.krishagni.catissueplus.core.administrative.print.order.PathStatusPrintToken"/>
+      </list>
+    </property>
+  </bean>
+
+  <bean id="defaultDistributionLabelPrinter" class="com.krishagni.catissueplus.core.administrative.services.impl.DefaultDistributionLabelPrinter"
+        depends-on="labelPrintRuleFactoryRegistrar">
+    <property name="daoFactory" ref="biospecimenDaoFactory"/>
+    <property name="printLabelTokensRegistrar" ref="distributionPrintLabelTokensRegistrar"/>
+  </bean>
+
   <bean id="distributionProtocolFactory" class="com.krishagni.catissueplus.core.administrative.domain.factory.impl.DistributionProtocolFactoryImpl">
     <property name="daoFactory"   ref="biospecimenDaoFactory"/>
     <property name="deDaoFactory" ref="deDaoFactory"/>
+    <property name="distributionLabelGenerator" ref="distributionLabelGenerator"/>
   </bean>
 
   <bean id="distributionProtocolService" class="com.krishagni.catissueplus.core.administrative.services.impl.DistributionProtocolServiceImpl">
@@ -551,11 +590,13 @@
     <property name="dprFactory" ref="dpRequirementFactory"/>
     <property name="formSvc" ref="formSvc"/>
     <property name="cfgSvc" ref="cfgSvc"/>
+    <property name="listSvc" ref="listSvc"/>
   </bean>
 	
   <bean id="distributionFactory" class="com.krishagni.catissueplus.core.administrative.domain.factory.impl.DistributionOrderFactoryImpl">
     <property name="daoFactory" ref="biospecimenDaoFactory"/>
     <property name="specimenResolver" ref="specimenResolver"/>
+    <property name="specimenFactory" ref="specimenFactory"/>
   </bean>
 
   <bean id="distributionOrderService" class="com.krishagni.catissueplus.core.administrative.services.impl.DistributionOrderServiceImpl">
@@ -565,6 +606,14 @@
     <property name="emailService"        ref="emailService"/>
     <property name="deDaoFactory"        ref="deDaoFactory"/>
     <property name="taskExecutor"        ref="taskExecutor"/>
+    <property name="labelPrinter"        ref="defaultDistributionLabelPrinter"/>
+    <property name="validators">
+      <list>
+        <bean class="com.krishagni.catissueplus.core.administrative.services.impl.DistributionConsentValidator">
+          <property name="daoFactory" ref="biospecimenDaoFactory"/>
+        </bean>
+      </list>
+    </property>
   </bean>
   
   <bean id="dpRequirementFactory"
@@ -753,9 +802,15 @@
     <property name="printRuleFactories">
       <map>
         <entry key="SPECIMEN">
-          <bean class="com.krishagni.catissueplus.core.common.domain.factory.impl.SpecimenLabelPrintRuleFactoryImpl">
+          <bean class="com.krishagni.catissueplus.core.biospecimen.domain.factory.impl.SpecimenLabelPrintRuleFactoryImpl">
             <property name="daoFactory" ref="biospecimenDaoFactory"/>
             <property name="printLabelTokensRegistrar" ref="specimenPrintLabelTokensRegistrar"/>
+          </bean>
+        </entry>
+        <entry key="ORDER_ITEM">
+          <bean class="com.krishagni.catissueplus.core.administrative.domain.factory.impl.DistributionLabelPrintRuleFactoryImpl">
+            <property name="daoFactory" ref="biospecimenDaoFactory"/>
+            <property name="printLabelTokensRegistrar" ref="distributionPrintLabelTokensRegistrar"/>
           </bean>
         </entry>
       </map>
@@ -831,6 +886,7 @@
         <value>com/krishagni/catissueplus/core/administrative/schema/user.xml</value>
         <value>com/krishagni/catissueplus/core/administrative/schema/user-roles.xml</value>
         <value>com/krishagni/catissueplus/core/administrative/schema/container.xml</value>
+        <value>com/krishagni/catissueplus/core/administrative/schema/container-type.xml</value>
         <value>com/krishagni/catissueplus/core/administrative/schema/shipment.xml</value>
         <value>com/krishagni/catissueplus/core/administrative/schema/container-shipment.xml</value>
         <value>com/krishagni/catissueplus/core/administrative/schema/return-specimen.xml</value>
@@ -952,6 +1008,12 @@
         <entry key="storageContainer">
           <bean class="com.krishagni.catissueplus.core.administrative.services.impl.StorageContainerImporter">
             <property name="containerSvc" ref="storageContainerSvc"/>
+          </bean>
+        </entry>
+
+        <entry key="storageContainerType">
+          <bean class="com.krishagni.catissueplus.core.administrative.services.impl.ContainerTypeImporter">
+            <property name="containerTypeSvc" ref="containerTypeSvc"/>
           </bean>
         </entry>
         
@@ -1107,11 +1169,9 @@
   <bean id="importObjectsSvc" class="com.krishagni.catissueplus.core.importer.services.impl.ImportServiceImpl">
     <property name="cfgSvc" ref="cfgSvc"/>
     <property name="importJobDao" ref="importJobDao"/>
-    <property name="taskExecutor" ref="taskExecutor"/>
     <property name="schemaFactory" ref="objectSchemaFactory"/>
     <property name="importerFactory" ref="objectImporterFactory"/>
     <property name="transactionManager" ref="transactionManager"/>
-    <property name="sessionFactory" ref="sessionFactory"/>
   </bean>
   
   <bean id="importDefaultQueries" class="com.krishagni.catissueplus.core.init.ImportDefaultQueries">
@@ -1157,7 +1217,7 @@
   </bean>
   
   <bean id="upgradeLogUpdater" class="com.krishagni.catissueplus.core.init.UpgradeLogUpdater">
-    <property name="daoFactory" ref="biospecimenDaoFactory" />
+    <property name="daoFactory" ref="biospecimenDaoFactory"/>
     <property name="appProps" ref="appProps"/>
   </bean>
 
@@ -1178,12 +1238,19 @@
         <ref bean="instSvc"/>
         <ref bean="userSvc"/>
         <ref bean="containerTypeSvc"/>
+        <bean class="com.krishagni.catissueplus.core.administrative.services.impl.SpecimenRequestAccessor">
+          <property name="daoFactory" ref="biospecimenDaoFactory"/>
+        </bean>
       </list>
     </property>
   </bean>
 
   <bean id="listGenerator" class="com.krishagni.catissueplus.core.query.DefaultListGenerator">
     <property name="querySvc" ref="querySvc"/>
+  </bean>
+
+  <bean id="listSvc" class="com.krishagni.catissueplus.core.query.DefaultListService">
+    <property name="listGenerator" ref="listGenerator"/>
   </bean>
 
   <bean id="autoFreezerProvidersSvc" class="com.krishagni.catissueplus.core.administrative.services.impl.AutoFreezerProviderServiceImpl">
@@ -1211,4 +1278,5 @@
   <import resource="migrationContext.xml"/>
   <import resource="classpath:com/krishagni/openspecimen/**/context.xml"/>
   <import resource="classpath*:pluginContext.xml"/>
+  <import resource="postInitContext.xml"/>
 </beans>

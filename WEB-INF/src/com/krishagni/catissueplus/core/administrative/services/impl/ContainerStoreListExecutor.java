@@ -12,6 +12,7 @@ import com.krishagni.catissueplus.core.administrative.domain.ContainerStoreList.
 import com.krishagni.catissueplus.core.administrative.domain.ScheduledJobRun;
 import com.krishagni.catissueplus.core.administrative.repository.ContainerStoreListCriteria;
 import com.krishagni.catissueplus.core.administrative.services.ScheduledTask;
+import com.krishagni.catissueplus.core.administrative.services.StorageContainerService;
 import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
 import com.krishagni.catissueplus.core.common.PlusTransactional;
 import com.krishagni.catissueplus.core.common.util.ConfigUtil;
@@ -21,21 +22,19 @@ public class ContainerStoreListExecutor implements ScheduledTask {
 	@Autowired
 	private DaoFactory daoFactory;
 
+	@Autowired
+	private StorageContainerService storageContainerSvc;
+
 	@Override
 	public void doJob(ScheduledJobRun jobRun)
 	throws Exception {
-		boolean hasPendingLists = true;
-		while (hasPendingLists) {
-			List<ContainerStoreList> storeLists = getPendingStoreLists();
-			storeLists.forEach(ContainerStoreList::process);
-			hasPendingLists = (storeLists.size() >= MAX_PENDING_LISTS_TO_FETCH);
-		}
+		storageContainerSvc.processStoreLists(this::getPendingStoreLists);
 	}
 
 	@PlusTransactional
 	private List<ContainerStoreList> getPendingStoreLists() {
 		int retryInterval = ConfigUtil.getInstance().getIntSetting(ADMIN_MOD, RETRY_INTERVAL, DEF_RETRY_INTERVAL);
-		int maxRetries = ConfigUtil.getInstance().getIntSetting(ADMIN_MOD, MAX_RETRIES, DEF_RETRIES);
+		int maxRetries    = ConfigUtil.getInstance().getIntSetting(ADMIN_MOD, MAX_RETRIES, DEF_RETRIES);
 
 		Calendar cal = Calendar.getInstance();
 		cal.add(Calendar.HOUR, -retryInterval);

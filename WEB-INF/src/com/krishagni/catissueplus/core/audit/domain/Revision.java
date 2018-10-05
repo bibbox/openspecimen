@@ -9,29 +9,32 @@ import org.hibernate.envers.RevisionEntity;
 import org.hibernate.envers.RevisionNumber;
 import org.hibernate.envers.RevisionTimestamp;
 
+import com.krishagni.catissueplus.core.administrative.domain.User;
 import com.krishagni.catissueplus.core.audit.services.impl.EntityRevisionListenerImpl;
 
 @RevisionEntity(EntityRevisionListenerImpl.class)
-public class EntityRevision {
+public class Revision {
 	
 	@RevisionNumber
-	private long id;
+	private Long id;
 	  
 	@RevisionTimestamp
 	private Date revtstmp;
 	
-	private Long userId;
+	private User user;
 	
 	private String ipAddress;
 
 	@ModifiedEntityNames
 	private Set<String> entityNames;
 
-	public long getId() {
+	private Set<RevisionEntityRecord> entityRecords = new HashSet<>();
+
+	public Long getId() {
 		return id;
 	}
 
-	public void setId(long id) {
+	public void setId(Long id) {
 		this.id = id;
 	}
 	
@@ -43,12 +46,12 @@ public class EntityRevision {
 		this.revtstmp = revtstmp;
 	}
 
-	public Long getUserId() {
-		return userId;
+	public User getUser() {
+		return user;
 	}
 	
-	public void setUserId(Long userId) {
-		this.userId = userId;
+	public void setUser(User user) {
+		this.user = user;
 	}
 	
 	public String getIpAddress() {
@@ -65,5 +68,17 @@ public class EntityRevision {
 
 	public void setEntityNames(Set<String> entityNames) {
 		this.entityNames = entityNames;
+	}
+
+	public Set<RevisionEntityRecord> getEntityRecords() {
+		return entityRecords;
+	}
+
+	public void setEntityRecords(Set<RevisionEntityRecord> entityRecords) {
+		this.entityRecords = entityRecords;
+	}
+
+	public void addEntityRecord(RevisionEntityRecord record) {
+		entityRecords.add(record);
 	}
 }

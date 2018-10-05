@@ -41,6 +41,11 @@ angular.module('os.biospecimen.cp',
         },
         resolve: {
           cpsCtx: function(currentUser, authInit, AuthorizationService) {
+            var cpCreateAllowed = AuthorizationService.isAllowed({
+              resource: 'CollectionProtocol',
+              operations: ['Create']
+            });
+
             var participantEximAllowed = AuthorizationService.isAllowed({
               resource: 'ParticipantPhi',
               operations: ['Export Import']
@@ -52,6 +57,7 @@ angular.module('os.biospecimen.cp',
             });
 
             return {
+              cpCreateAllowed: cpCreateAllowed,
               participantImportAllowed: participantEximAllowed,
               visitSpecimenImportAllowed: visitSpmnEximAllowed,
               participantExportAllowed: participantEximAllowed,
@@ -318,7 +324,13 @@ angular.module('os.biospecimen.cp',
         templateUrl: 'modules/biospecimen/cp/dp-settings.html',
         parent: 'cp-detail.settings',
         controller: 'CpDpSettingsCtrl'
-      });
+      })
+      .state('cp-detail.settings.import-workflows', {
+        url: '/import-workflows',
+        templateUrl: 'modules/biospecimen/cp/import-workflows.html',
+        parent: 'cp-detail.settings',
+        controller: 'CpImportWorkflowsCtrl'
+      })
     })
 
     .run(function(UrlResolver) {

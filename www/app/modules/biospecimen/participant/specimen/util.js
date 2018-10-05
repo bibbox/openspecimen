@@ -7,6 +7,10 @@ angular.module('os.biospecimen.specimen')
 
     function collectAliquots(scope) {
       var spec = scope.aliquotSpec;
+      if (!spec.type || !spec.specimenClass) {
+        return [];
+      }
+
       var parent = scope.parentSpecimen;
       if (parent.availableQty == '') {
         delete parent.availableQty;
@@ -55,7 +59,8 @@ angular.module('os.biospecimen.specimen')
       parent.storageType = (!parent.storageLocation || !parent.storageLocation.name) && (parent.storageType || 'Virtual');
 
       var derived = undefined;
-      if (spec.specimenClass != parent.specimenClass || spec.type != parent.type) {
+      if ((parent.lineage != 'Derived' && spec.createDerived) ||
+          spec.specimenClass != parent.specimenClass || spec.type != parent.type) {
         derived = getSpmnToSave(
           'Derived', spec, parent,
           Math.round(spec.qtyPerAliquot * spec.noOfAliquots),
@@ -361,7 +366,7 @@ angular.module('os.biospecimen.specimen')
         parentId: parent.id,
         initialQty: qty,
         concentration: concentration,
-        pathology: spec.pathology,
+        pathology: spec.pathology || parent.pathology,
         storageLocation: {name: '', positionX:'', positionY: ''},
         status: 'Pending',
         children: [],
@@ -381,7 +386,7 @@ angular.module('os.biospecimen.specimen')
       });
     }
 
-    function sdeGroupSpecimens(baseFields, groups, specimens, ctxtObjs) {
+    function sdeGroupSpecimens(baseFields, groups, specimens, ctxtObjs, otherOpts) {
       var result = [];
       var unmatched = [].concat(specimens);
 
@@ -407,8 +412,9 @@ angular.module('os.biospecimen.specimen')
 
           var expr = $parse(exprs.join(group.criteria.op == 'AND' ? ' && ' : ' || '));
           for (var j = specimens.length - 1; j >= 0; j--) {
-            if (expr({specimen: specimens[j]})) {
-              selectedSpmns.unshift(sdeGroupInput(ctxtObjs)(specimens[j]));
+            var input = sdeGroupInput(ctxtObjs)(specimens[j]);
+            if (expr(input)) {
+              selectedSpmns.unshift(input);
 
               var uidx = unmatched.indexOf(specimens[j]);
               if (uidx > -1) {
@@ -426,7 +432,7 @@ angular.module('os.biospecimen.specimen')
             fields: { table: group.fields },
             baseFields: baseFields,
             input: selectedSpmns,
-            opts: { static: true, enableCofrc: cofrc, cofrc: cofrc }
+            opts: angular.extend({static: true, enableCofrc: cofrc, cofrc: cofrc}, otherOpts || {})
           });
         }
       }
@@ -434,7 +440,8 @@ angular.module('os.biospecimen.specimen')
       if (unmatched.length > 0) {
         result.push({
           input: unmatched.map(sdeGroupInput(ctxtObjs)),
-          noMatch: true
+          noMatch: true,
+          opts: otherOpts || {}
         });
       }
 
@@ -445,6 +452,66 @@ angular.module('os.biospecimen.specimen')
       return function(specimen) {
         return angular.extend({specimen: specimen}, ctxtObjs);
       };
+    }
+
+    function getAllDescendantsByProp0(groups, parentIdProp, parentId) {
+      var result = [];
+      angular.forEach(groups,
+        function(group) {
+          angular.forEach(group.input,
+            function(obj) {
+              if (obj.specimen && obj.specimen[parentIdProp] == parentId) {
+                result.push(obj);
+              }
+            }
+          );
+        }
+      );
+
+      return result;
+    }
+
+    function getAllDescendantsByProp(groups, id, idProp, parentIdProp, allDescendants) {
+      var result = getAllDescendantsByProp0(groups, parentIdProp, id);
+      if (allDescendants) {
+        var childrenIds = result.map(function(obj) { return obj.specimen[idProp]; });
+        angular.forEach(childrenIds,
+          function(childId) {
+            result = result.concat(getAllDescendantsByProp(groups, childId, idProp, parentIdProp, allDescendants));
+          }
+        )
+      }
+
+      return result;
+    }
+
+    function sdeGroupSetChildrenValue(groups, object, prop, value, allDescendants) {
+      var spmn = object.specimen;
+
+      var idProp, parentIdProp;
+      if (spmn.uid !== undefined && spmn.uid !== null) {
+        idProp = 'uid';
+        parentIdProp = 'parentUid';
+      } else {
+        idProp = 'id';
+        parentIdProp = 'parentId';
+      }
+
+      var descendants = getAllDescendantsByProp(groups, spmn[idProp], idProp, parentIdProp, allDescendants);
+      if (descendants.length == 0) {
+        return;
+      }
+
+      var expr = $parse(prop);
+      if (angular.isObject(value)) {
+        value = angular.copy(value);
+      }
+
+      angular.forEach(descendants,
+        function(descendant) {
+          expr.assign(descendant, value);
+        }
+      );
     }
 
     return {
@@ -466,7 +533,9 @@ angular.module('os.biospecimen.specimen')
 
       showInsufficientQtyWarning: showInsufficientQtyWarning,
 
-      sdeGroupSpecimens: sdeGroupSpecimens
+      sdeGroupSpecimens: sdeGroupSpecimens,
+
+      sdeGroupSetChildrenValue: sdeGroupSetChildrenValue
     };
   })
   .controller('ResolveSpecimensCtrl', function($scope, $modalInstance, labels, attr, Alerts) {

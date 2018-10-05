@@ -30,6 +30,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ser.FilterProvider;
 import com.fasterxml.jackson.databind.ser.impl.SimpleBeanPropertyFilter;
@@ -49,6 +50,8 @@ import com.krishagni.catissueplus.core.biospecimen.events.FileDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.MergeCpDetail;
 import com.krishagni.catissueplus.core.biospecimen.repository.CpListCriteria;
 import com.krishagni.catissueplus.core.biospecimen.services.CollectionProtocolService;
+import com.krishagni.catissueplus.core.common.errors.CommonErrorCode;
+import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.BulkDeleteEntityOp;
 import com.krishagni.catissueplus.core.common.events.BulkDeleteEntityResp;
 import com.krishagni.catissueplus.core.common.events.DependentEntityDetail;
@@ -203,8 +206,7 @@ public class CollectionProtocolsController {
 	public CollectionProtocolDetail importCpDef(@PathVariable("file") MultipartFile file) 
 	throws IOException {
 		CollectionProtocolDetail cp = new ObjectMapper().readValue(file.getBytes(), CollectionProtocolDetail.class);
-		RequestEvent<CollectionProtocolDetail> req = new RequestEvent<CollectionProtocolDetail>(cp);
-		ResponseEvent<CollectionProtocolDetail> resp = cpSvc.importCollectionProtocol(req);
+		ResponseEvent<CollectionProtocolDetail> resp = cpSvc.importCollectionProtocol(new RequestEvent<>(cp));
 		resp.throwErrorIfUnsuccessful();
 		
 		return resp.getPayload();
@@ -311,11 +313,15 @@ public class CollectionProtocolsController {
 			Long id,
 
 			@RequestParam(value = "forceDelete", required = false, defaultValue = "false")
-			boolean forceDelete) {
+			boolean forceDelete,
+
+			@RequestParam(value = "reason", required = false, defaultValue = "")
+			String reason) {
 
 		BulkDeleteEntityOp crit = new BulkDeleteEntityOp();
 		crit.setIds(Collections.singleton(id));
 		crit.setForceDelete(forceDelete);
+		crit.setReason(reason);
 
 		ResponseEvent<BulkDeleteEntityResp<CollectionProtocolDetail>> resp = cpSvc.deleteCollectionProtocols(request(crit));
 		resp.throwErrorIfUnsuccessful();
@@ -331,11 +337,15 @@ public class CollectionProtocolsController {
 			Long[] ids,
 			
 			@RequestParam(value = "forceDelete", required = false, defaultValue = "false") 
-			boolean forceDelete) {
+			boolean forceDelete,
+
+			@RequestParam(value = "reason", required = false, defaultValue = "")
+			String reason) {
 
 		BulkDeleteEntityOp crit = new BulkDeleteEntityOp();
 		crit.setIds(new HashSet<>(Arrays.asList(ids)));
 		crit.setForceDelete(forceDelete);
+		crit.setReason(reason);
 
 		ResponseEvent<BulkDeleteEntityResp<CollectionProtocolDetail>> resp = cpSvc.deleteCollectionProtocols(request(crit));
 		resp.throwErrorIfUnsuccessful();
@@ -425,11 +435,53 @@ public class CollectionProtocolsController {
 		resp.throwErrorIfUnsuccessful();
 		return resp.getPayload();
 	}
-	
+
+	@RequestMapping(method = RequestMethod.GET, value="/{id}/workflows-file")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public void getWorkflowCfg(@PathVariable("id") Long cpId, HttpServletResponse httpResp) {
+		ResponseEvent<CpWorkflowCfgDetail> resp = cpSvc.getWorkflows(new RequestEvent<>(cpId));
+		resp.throwErrorIfUnsuccessful();
+
+		InputStream in = null;
+		try {
+			CpWorkflowCfgDetail workflowDetail = resp.getPayload();
+			String filename = (workflowDetail.getShortTitle() +  "_workflows.json")
+				.replaceAll("\\\\", "_")  // replace backslash with _
+				.replaceAll("/", "_")     // replace forward slash with _
+				.replaceAll("\\s+", "_"); // replace whitespace with _
+
+			String workflowsJson = new ObjectMapper().writerWithDefaultPrettyPrinter()
+				.writeValueAsString(resp.getPayload().getWorkflows().values());
+			in = new ByteArrayInputStream(workflowsJson.getBytes());
+			Utility.sendToClient(httpResp, filename, "application/json", in);
+		} catch (Exception e) {
+			throw OpenSpecimenException.userError(CommonErrorCode.FILE_SEND_ERROR, e.getMessage());
+		} finally {
+			IOUtils.closeQuietly(in);
+		}
+	}
+
 	@RequestMapping(method = RequestMethod.PUT, value="/{id}/workflows")
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody		
 	public CpWorkflowCfgDetail saveWorkflowCfg(@PathVariable("id") Long cpId, @RequestBody List<WorkflowDetail> workflows) {
+		return saveWorkflows(cpId, workflows, false);
+	}
+
+	@RequestMapping(method = RequestMethod.POST, value="/{id}/workflows-file")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public CpWorkflowCfgDetail saveWorkflowCfg(@PathVariable("id") Long cpId, @PathVariable("file") MultipartFile file) {
+		List<WorkflowDetail> workflows;
+
+		try {
+			ObjectMapper mapper = new ObjectMapper();
+			workflows = mapper.readValue(file.getInputStream(), new TypeReference<List<WorkflowDetail>>() {});
+		} catch (Exception e) {
+			throw OpenSpecimenException.userError(CommonErrorCode.INVALID_REQUEST, e.getMessage());
+		}
+
 		return saveWorkflows(cpId, workflows, false);
 	}
 

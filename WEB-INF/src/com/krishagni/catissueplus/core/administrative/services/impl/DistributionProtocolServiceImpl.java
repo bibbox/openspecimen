@@ -8,17 +8,18 @@ import java.util.Calendar;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.BeanUtils;
+import org.springframework.beans.factory.InitializingBean;
 
 import com.krishagni.catissueplus.core.administrative.domain.DistributionOrder;
 import com.krishagni.catissueplus.core.administrative.domain.DistributionProtocol;
@@ -27,6 +28,7 @@ import com.krishagni.catissueplus.core.administrative.domain.DpDistributionSite;
 import com.krishagni.catissueplus.core.administrative.domain.DpRequirement;
 import com.krishagni.catissueplus.core.administrative.domain.Institute;
 import com.krishagni.catissueplus.core.administrative.domain.Site;
+import com.krishagni.catissueplus.core.administrative.domain.StorageContainer;
 import com.krishagni.catissueplus.core.administrative.domain.User;
 import com.krishagni.catissueplus.core.administrative.domain.factory.DistributionProtocolErrorCode;
 import com.krishagni.catissueplus.core.administrative.domain.factory.DistributionProtocolFactory;
@@ -43,12 +45,16 @@ import com.krishagni.catissueplus.core.administrative.repository.DpRequirementDa
 import com.krishagni.catissueplus.core.administrative.repository.UserListCriteria;
 import com.krishagni.catissueplus.core.administrative.services.DistributionProtocolService;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
+import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolSite;
 import com.krishagni.catissueplus.core.biospecimen.domain.ConsentStatement;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.ConsentStatementErrorCode;
+import com.krishagni.catissueplus.core.biospecimen.domain.factory.SpecimenListErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.events.CollectionProtocolSummary;
 import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
+import com.krishagni.catissueplus.core.biospecimen.repository.impl.BiospecimenDaoHelper;
 import com.krishagni.catissueplus.core.common.PlusTransactional;
 import com.krishagni.catissueplus.core.common.access.AccessCtrlMgr;
+import com.krishagni.catissueplus.core.common.access.SiteCpPair;
 import com.krishagni.catissueplus.core.common.domain.Notification;
 import com.krishagni.catissueplus.core.common.errors.ActivityStatusErrorCode;
 import com.krishagni.catissueplus.core.common.errors.ErrorType;
@@ -72,11 +78,15 @@ import com.krishagni.catissueplus.core.de.domain.Form;
 import com.krishagni.catissueplus.core.de.events.FormContextDetail;
 import com.krishagni.catissueplus.core.de.events.RemoveFormContextOp;
 import com.krishagni.catissueplus.core.de.services.FormService;
+import com.krishagni.catissueplus.core.query.Column;
+import com.krishagni.catissueplus.core.query.ListConfig;
+import com.krishagni.catissueplus.core.query.ListService;
+import com.krishagni.catissueplus.core.query.ListUtil;
 import com.krishagni.rbac.common.errors.RbacErrorCode;
 
 import krishagni.catissueplus.beans.FormContextBean;
 
-public class DistributionProtocolServiceImpl implements DistributionProtocolService, ObjectAccessor {
+public class DistributionProtocolServiceImpl implements DistributionProtocolService, ObjectAccessor, InitializingBean {
 	
 	private static final Map<String, String> attrDisplayKeys = new HashMap<String, String>() {
 		{
@@ -99,6 +109,8 @@ public class DistributionProtocolServiceImpl implements DistributionProtocolServ
 	private FormService formSvc;
 
 	private ConfigurationService cfgSvc;
+
+	private ListService listSvc;
 
 	public void setDaoFactory(DaoFactory daoFactory) {
 		this.daoFactory = daoFactory;
@@ -132,8 +144,8 @@ public class DistributionProtocolServiceImpl implements DistributionProtocolServ
 		});
 	}
 
-	private DpRequirementDao getDprDao() {
-		return daoFactory.getDistributionProtocolRequirementDao();
+	public void setListSvc(ListService listSvc) {
+		this.listSvc = listSvc;
 	}
 
 	@Override
@@ -470,32 +482,6 @@ public class DistributionProtocolServiceImpl implements DistributionProtocolServ
 	}
 
 	@Override
-	public String getObjectName() {
-		return DistributionProtocol.getEntityName();
-	}
-
-	@Override
-	@PlusTransactional
-	public Map<String, Object> resolveUrl(String key, Object value) {
-		if (key.equals("id")) {
-			value = Long.valueOf(value.toString());
-		}
-
-		return daoFactory.getDistributionProtocolDao().getDpIds(key, value);
-	}
-
-	@Override
-	public String getAuditTable() {
-		return "CAT_DISTRIBUTION_PROTOCOL_AUD";
-	}
-
-	@Override
-	public void ensureReadAllowed(Long id) {
-		DistributionProtocol dp = getDistributionProtocol(id);
-		AccessCtrlMgr.getInstance().ensureReadDpRights(dp);
-	}
-
-	@Override
 	@PlusTransactional
 	public ResponseEvent<List<DpConsentTierDetail>> getConsentTiers(RequestEvent<EntityQueryCriteria> req) {
 		try {
@@ -571,31 +557,70 @@ public class DistributionProtocolServiceImpl implements DistributionProtocolServ
 		}
 	}
 
+	@Override
+	public String getObjectName() {
+		return DistributionProtocol.getEntityName();
+	}
+
+	@Override
+	@PlusTransactional
+	public Map<String, Object> resolveUrl(String key, Object value) {
+		if (key.equals("id")) {
+			value = Long.valueOf(value.toString());
+		}
+
+		return daoFactory.getDistributionProtocolDao().getDpIds(key, value);
+	}
+
+	@Override
+	public String getAuditTable() {
+		return "CAT_DISTRIBUTION_PROTOCOL_AUD";
+	}
+
+	@Override
+	public void ensureReadAllowed(Long id) {
+		DistributionProtocol dp = getDistributionProtocol(id);
+		AccessCtrlMgr.getInstance().ensureReadDpRights(dp);
+	}
+
+	@Override
+	public void afterPropertiesSet()
+	throws Exception {
+		listSvc.registerListConfigurator(RESV_SPMNS_LIST_NAME, this::getReservedSpecimensConfig);
+	}
+
 	private DpListCriteria addDpListCriteria(DpListCriteria crit) {
-		Set<Long> siteIds = AccessCtrlMgr.getInstance().getReadAccessDistributionProtocolSites();
-		if (siteIds != null && CollectionUtils.isEmpty(siteIds)) {
+		Set<SiteCpPair> sites = AccessCtrlMgr.getInstance().getReadAccessDistributionProtocolSites();
+		if (sites != null && sites.isEmpty()) {
 			throw OpenSpecimenException.userError(RbacErrorCode.ACCESS_DENIED);
 		}
 
+		Set<SiteCpPair> result = sites;
 		if (StringUtils.isNotBlank(crit.cpShortTitle())) {
 			CollectionProtocol cp = daoFactory.getCollectionProtocolDao().getCpByShortTitle(crit.cpShortTitle());
 			if (cp == null) {
 				return null;
 			}
 
-			Set<Long> cpSiteIds = Utility.collect(cp.getSites(), "site.id", true);
-			if (siteIds != null) {
-				siteIds = new HashSet<>(CollectionUtils.intersection(siteIds, cpSiteIds));
-				if (siteIds.isEmpty()) {
+			Set<SiteCpPair> cpSites = cp.getSites().stream()
+				.map(CollectionProtocolSite::getSite)
+				.map(site -> SiteCpPair.make(site.getInstitute().getId(), site.getId(), null))
+				.collect(Collectors.toSet());
+
+			if (sites != null) {
+				result = cpSites.stream()
+					.filter(siteCp -> sites.stream().anyMatch(s -> s.isAllowed(siteCp)))
+					.collect(Collectors.toSet());
+				if (result.isEmpty()) {
 					return null;
 				}
 			} else {
-				siteIds = cpSiteIds;
+				result = cpSites;
 			}
 		}
 
-		if (siteIds != null) {
-			crit.siteIds(siteIds);
+		if (result != null) {
+			crit.sites(result);
 		}
 		
 		return crit;
@@ -604,6 +629,8 @@ public class DistributionProtocolServiceImpl implements DistributionProtocolServ
 	private void deleteDistributionProtocol(DistributionProtocol dp) {
 		DistributionProtocol deletedDp = new DistributionProtocol();
 		BeanUtils.copyProperties(dp, deletedDp);
+
+		removeContainerRestrictions(dp);
 		dp.delete();
 		notifyOnDpDelete(deletedDp);
 	}
@@ -751,13 +778,13 @@ public class DistributionProtocolServiceImpl implements DistributionProtocolServ
 			DistributionProtocol dp = getDistributionProtocol(crit.dpId());
 			AccessCtrlMgr.getInstance().ensureReadDpRights(dp);
 		} else {
-			Set<Long> siteIds = AccessCtrlMgr.getInstance().getCreateUpdateAccessDistributionOrderSiteIds();
-			if (siteIds != null && CollectionUtils.isEmpty(siteIds)) {
+			Set<SiteCpPair> sites = AccessCtrlMgr.getInstance().getCreateUpdateAccessDistributionOrderSites();
+			if (sites != null && sites.isEmpty()) {
 				throw OpenSpecimenException.userError(RbacErrorCode.ACCESS_DENIED);
 			}
 			
-			if (siteIds != null) {
-				crit.siteIds(siteIds);
+			if (sites != null) {
+				crit.sites(sites);
 			}
 		}
 		
@@ -872,6 +899,15 @@ public class DistributionProtocolServiceImpl implements DistributionProtocolServ
 		if (tier != null && !tier.getId().equals(consentTierDetail.getId())) {
 			throw OpenSpecimenException.userError(DistributionProtocolErrorCode.DUP_CONSENT, tier.getStatement().getCode(), dp.getShortTitle());
 		}
+	}
+
+	private void removeContainerRestrictions(DistributionProtocol dp) {
+		Set<StorageContainer> containers = dp.getDistributionContainers();
+		for (StorageContainer container : containers) {
+			container.removeDpRestriction(dp);
+		}
+
+		dp.setDistributionContainers(Collections.emptySet());
 	}
 
 	private void notifyOnDpCreate(DistributionProtocol dp) {
@@ -1087,6 +1123,48 @@ public class DistributionProtocolServiceImpl implements DistributionProtocolServ
 		}
 	}
 
+	private ListConfig getReservedSpecimensConfig(Map<String, Object> listReq) {
+		Number dpId = (Number) listReq.get("dpId");
+		if (dpId == null) {
+			dpId = (Number) listReq.get("objectId");
+		}
+
+		DistributionProtocol dp = getDistributionProtocol(dpId != null ? dpId.longValue() : null);
+
+		ListConfig cfg = ListUtil.getSpecimensListConfig(RESV_SPMNS_LIST_NAME, true);
+		ListUtil.addHiddenFieldsOfSpecimen(cfg);
+		if (cfg == null) {
+			return null;
+		}
+
+		List<SiteCpPair> siteCps = AccessCtrlMgr.getInstance().getReadAccessSpecimenSiteCps();
+		if (siteCps != null && siteCps.isEmpty()) {
+			throw OpenSpecimenException.userError(SpecimenListErrorCode.ACCESS_NOT_ALLOWED);
+		}
+
+		String restriction = "Specimen.specimenResv.dpShortTitle = \"" + dp.getShortTitle() + "\"";
+
+		boolean useMrnSites = AccessCtrlMgr.getInstance().isAccessRestrictedBasedOnMrn();
+		String cpSitesCond = BiospecimenDaoHelper.getInstance().getSiteCpsCondAql(siteCps, useMrnSites);
+		if (StringUtils.isNotBlank(cpSitesCond)) {
+			restriction += " and " + cpSitesCond;
+		}
+
+		Column orderBy = new Column();
+		orderBy.setExpr("Specimen.specimenResv.id");
+		orderBy.setDirection("asc");
+
+		cfg.setDrivingForm("Specimen");
+		cfg.setRestriction(restriction);
+		cfg.setDistinct(true);
+		cfg.setOrderBy(Collections.singletonList(orderBy));
+		return ListUtil.setListLimit(cfg, listReq);
+	}
+
+	private DpRequirementDao getDprDao() {
+		return daoFactory.getDistributionProtocolRequirementDao();
+	}
+
 	private static final String ROLE_UPDATED_EMAIL_TMPL = "users_dp_role_updated";
 
 	private static final int N_USER = 0;
@@ -1103,4 +1181,5 @@ public class DistributionProtocolServiceImpl implements DistributionProtocolServ
 
 	private static final int N_DP_RECV_SITE = 2;
 
+	private static final String RESV_SPMNS_LIST_NAME =  "reserved-specimens-list-view";
 }

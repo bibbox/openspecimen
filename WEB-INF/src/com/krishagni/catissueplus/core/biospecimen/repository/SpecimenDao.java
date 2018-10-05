@@ -9,10 +9,13 @@ import java.util.Set;
 import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
 import com.krishagni.catissueplus.core.biospecimen.domain.Visit;
 import com.krishagni.catissueplus.core.common.Pair;
+import com.krishagni.catissueplus.core.common.access.SiteCpPair;
 import com.krishagni.catissueplus.core.common.repository.Dao;
 
 public interface SpecimenDao extends Dao<Specimen> {
 	List<Specimen> getSpecimens(SpecimenListCriteria crit);
+
+	Integer getSpecimensCount(SpecimenListCriteria crit);
 
 	List<Long> getSpecimenIds(SpecimenListCriteria crit);
 	
@@ -44,7 +47,7 @@ public interface SpecimenDao extends Dao<Specimen> {
 
 	Map<String, Object> getCprAndVisitIds(String key, Object value);
 	
-	Map<Long, Set<Long>> getSpecimenSites(Set<Long> specimenIds);
+	Map<Long, Set<SiteCpPair>> getSpecimenSites(Set<Long> specimenIds);
 
 	Map<Long, String> getDistributionStatus(List<Long> specimenIds);
 

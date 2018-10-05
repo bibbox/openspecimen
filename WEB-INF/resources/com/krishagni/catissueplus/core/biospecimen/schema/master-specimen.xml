@@ -22,6 +22,16 @@
       <attribute>registrationDate</attribute>
     </field>
 
+    <field>
+      <caption>#getMessage("participant_reg_site")</caption>
+      <attribute>regSite</attribute>
+    </field>
+
+    <field>
+      <caption>#getMessage("participant_external_id")</caption>
+      <attribute>externalSubjectId</attribute>
+    </field>
+
     #parse( 'com/krishagni/catissueplus/core/biospecimen/schema/participant-static-fields.xml' )
 
     <field>
@@ -136,6 +146,13 @@
       <caption>#getMessage("specimen_created_on")</caption>
       <attribute>createdOn</attribute>
     </field>
+
+    #if ($cfg.getBoolSetting("biospecimen", "imaging", false))
+    <field>
+      <caption>#getMessage("specimen_image_id")</caption>
+      <attribute>imageId</attribute>
+    </field>
+    #end
 
     <field>
       <caption>#getMessage("specimen_comments")</caption>

@@ -207,6 +207,22 @@
     </row>
 
     <row>
+      <listBox>
+        <name>biohazards</name>
+        <udn>biohazards</udn>
+        <caption>#getMessage("specimen_biohazard")</caption>
+        <multiSelect>true</multiSelect>
+        <table>OS_SPECIMEN_BIOHAZARDS</table>
+        <column>BIOHAZARD</column>
+        <foreignKey>SPECIMEN_ID</foreignKey>
+        <parentKey>IDENTIFIER</parentKey>
+        <options>
+          <sql>select value from catissue_permissible_value where public_id = 'specimen_biohazard' order by value</sql>
+        </options>
+      </listBox>
+    </row>
+
+    <row>
       <dropDown>
         <name>collectionStatus</name>
         <udn>collectionStatus</udn>
@@ -350,6 +366,32 @@
               </numberField>
             </row>
           </subForm>
+        </row>
+      </subForm>
+    </row>
+
+    <row>
+      <subForm>
+        <name>externalIds</name>
+        <udn>externalIds</udn>
+        <caption>#getMessage("specimen_external_ids")</caption>
+        <table>OS_SPMN_EXTERNAL_IDS</table>
+        <primaryKey>IDENTIFIER</primaryKey>
+        <foreignKey>SPECIMEN_ID</foreignKey>
+        <parentKey>IDENTIFIER</parentKey>
+        <row>
+          <textField>
+            <name>name</name>
+            <udn>name</udn>
+            <caption>#getMessage("specimen_external_id_name")</caption>
+            <column>NAME</column>
+          </textField>
+          <textField>
+            <name>value</name>
+            <udn>value</udn>
+            <caption>#getMessage("specimen_external_id_value")</caption>
+            <column>VALUE</column>
+          </textField>
         </row>
       </subForm>
     </row>
@@ -528,22 +570,6 @@
     </row>
     
     <row>
-      <listBox>
-        <name>biohazards</name>
-        <udn>biohazards</udn>
-        <caption>#getMessage("specimen_biohazard")</caption>
-        <multiSelect>true</multiSelect>
-        <table>OS_SPECIMEN_BIOHAZARDS</table>
-        <column>BIOHAZARD</column>
-        <foreignKey>SPECIMEN_ID</foreignKey>
-        <parentKey>IDENTIFIER</parentKey>
-        <options>
-          <sql>select value from catissue_permissible_value where public_id = 'specimen_biohazard' order by value</sql>
-        </options>
-      </listBox>
-    </row>
-
-    <row>
       <subForm>
         <name>specimenResv</name>
         <udn>specimenResv</udn>
@@ -551,6 +577,15 @@
         <table>OS_SPECIMEN_RESV_VIEW</table>
         <foreignKey>SPECIMEN_ID</foreignKey>
         <parentKey>IDENTIFIER</parentKey>
+
+        <row>
+          <numberField>
+            <name>id</name>
+            <udn>id</udn>
+            <caption>#getMessage("specimen_reservation_id")</caption>
+            <column>IDENTIFIER</column>
+          </numberField>
+        </row>
 
         <row>
           <dropDown>
@@ -573,6 +608,112 @@
             <column>EVENT_TIME</column>
             <format>MM-dd-yyyy</format>
           </datePicker>
+        </row>
+      </subForm>
+    </row>
+
+    <row>
+      <subForm>
+        <name>specimenRequests</name>
+        <udn>specimenRequests</udn>
+        <caption>#getMessage("specimen_requests")</caption>
+        <table>OS_SPECIMEN_REQUESTS_VIEW</table>
+        <foreignKey>SPECIMEN_ID</foreignKey>
+        <parentKey>IDENTIFIER</parentKey>
+
+        <row>
+          <numberField>
+            <name>id</name>
+            <udn>id</udn>
+            <caption>#getMessage("specimen_request_id")</caption>
+            <column>REQUEST_ID</column>
+            <recordUrl>#/object-state-params-resolver?stateName=sc-req-detail.overview&amp;objectName=specimen_request&amp;key=id&amp;value={{$value}}</recordUrl>
+          </numberField>
+        </row>
+
+        <row>
+          <textField>
+            <name>requestorEmailId</name>
+            <udn>requestorEmailId</udn>
+            <caption>#getMessage("specimen_request_requestor_email")</caption>
+            <column>REQUESTOR_EMAIL_ID</column>
+          </textField>
+        </row>
+
+        <row>
+          <subForm>
+            <name>requestor</name>
+            <udn>requestor</udn>
+            <caption>#getMessage("specimen_request_requestor")</caption>
+            <table>USER_VIEW</table>
+            <foreignKey>IDENTIFIER</foreignKey>
+            <parentKey>REQUESTOR_ID</parentKey>
+            <row>
+              <userField>
+                <name>name</name>
+                <udn>name</udn>
+                <caption>#getMessage("specimen_request_requestor_name")</caption>
+                <column>IDENTIFIER</column>
+              </userField>
+            </row>
+          </subForm>
+        </row>
+
+        <row>
+          <datePicker>
+            <name>requestDate</name>
+            <udn>requestDate</udn>
+            <caption>#getMessage("specimen_request_date")</caption>
+            <column>REQ_DATE</column>
+            <format>MM-dd-yyyy</format>
+          </datePicker>
+        </row>
+
+        <row>
+          <dropDown>
+            <name>screeningStatus</name>
+            <udn>screeningStatus</udn>
+            <caption>#getMessage("specimen_request_screening_status")</caption>
+            <column>SCREENING_STATUS</column>
+            <options>
+              <option><value>Pending</value></option>
+              <option><value>Approved</value></option>
+              <option><value>Rejected</value></option>
+            </options>
+          </dropDown>
+        </row>
+
+        <row>
+          <datePicker>
+            <name>screeningDate</name>
+            <udn>screeningDate</udn>
+            <caption>#getMessage("specimen_request_screening_date")</caption>
+            <column>SCREENING_DATE</column>
+            <format>MM-dd-yyyy</format>
+          </datePicker>
+        </row>
+
+        <row>
+          <datePicker>
+            <name>processingDate</name>
+            <udn>processingDate</udn>
+            <caption>#getMessage("specimen_request_processing_date")</caption>
+            <column>PROCESSING_DATE</column>
+            <format>MM-dd-yyyy</format>
+          </datePicker>
+        </row>
+
+        <row>
+          <dropDown>
+            <name>status</name>
+            <udn>status</udn>
+            <caption>#getMessage("specimen_request_status")</caption>
+            <column>ACTIVITY_STATUS</column>
+            <options>
+              <option><value>Active</value></option>
+              <option><value>Closed</value></option>
+            </options>
+          </dropDown>
         </row>
       </subForm>
     </row>
@@ -950,8 +1091,7 @@
             <caption>#getMessage("specimen_shipment_recv_quality")</caption>
             <column>RECEIVED_QUALITY</column>
             <options>
-              <option><value>Acceptable</value></option>
-              <option><value>Unacceptable</value></option>
+              <sql>select value from catissue_permissible_value where public_id = 'shipment_item_received_quality' order by value</sql>
             </options>
           </dropDown>
         </row>
@@ -988,6 +1128,36 @@
               <option><value>Received</value></option>
             </options>
           </dropDown>
+        </row>
+      </subForm>
+    </row>
+
+    <row>
+      <subForm>
+        <name>specimenCarts</name>
+        <udn>specimenCarts</udn>
+        <caption>#getMessage("specimen_carts")</caption>
+        <table>OS_SPECIMEN_CARTS_VIEW</table>
+        <foreignKey>SPECIMEN_ID</foreignKey>
+        <parentKey>IDENTIFIER</parentKey>
+        <primaryKey>SPECIMEN_ID</primaryKey>
+
+        <row>
+          <textField>
+            <name>name</name>
+            <udn>name</udn>
+            <caption>#getMessage("specimen_cart_name")</caption>
+            <column>NAME</column>
+          </textField>
+        </row>
+
+        <row>
+          <numberField>
+            <name>itemId</name>
+            <udn>itemId</udn>
+            <caption>#getMessage("specimen_cart_item_id")</caption>
+            <column>ITEM_ID</column>
+          </numberField>
         </row>
       </subForm>
     </row>

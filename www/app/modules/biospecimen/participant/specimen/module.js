@@ -12,6 +12,19 @@ angular.module('os.biospecimen.specimen',
     'os.biospecimen.specimen.search'
   ])
   .config(function($stateProvider) {
+
+    function createDerived(cp, CpConfigSvc) {
+      if (!cp || !cp.id) {
+        return false;
+      }
+
+      return CpConfigSvc.getCommonCfg(cp.id, 'addSpecimen').then(
+        function(cfg) {
+          return cfg && (cfg.aliquotDerivativesOnly == 'true' || cfg.aliquotDerivativesOnly == true)
+        }
+      );
+    }
+
     $stateProvider
       .state('specimen', {
         url: '/specimens/:specimenId',
@@ -49,12 +62,21 @@ angular.module('os.biospecimen.specimen',
                 return (value === null || value === undefined || value === '') ? true : (value == true);
               }
             );
+          },
+
+          imagingEnabled: function(SettingUtil) {
+            return SettingUtil.getSetting('biospecimen', 'imaging').then(
+              function(setting) {
+                return setting.value == 'true' || setting.value == true;
+              }
+            );
           }
         },
-        controller: function($scope, participantSpmnsViewState, specimen) {
+        controller: function($scope, participantSpmnsViewState, specimen, imagingEnabled) {
           $scope.specimen = $scope.object = specimen;
           $scope.entityType = 'Specimen';
           $scope.extnState = 'specimen-detail.extensions.';
+          $scope.imagingEnabled = imagingEnabled;
 
           participantSpmnsViewState.selectSpecimen(specimen);
           $scope.$on('$destroy', function() { participantSpmnsViewState.unselectSpecimen(); });
@@ -83,8 +105,8 @@ angular.module('os.biospecimen.specimen',
             }
 
             return CpConfigSvc.getCommonCfg(cp.id, 'addSpecimen').then(
-              function(data) {
-                var reqs = (data && data.requirements) || [];
+              function(addSpmnCfg) {
+                var reqs = (addSpmnCfg && addSpmnCfg.requirements) || [];
                 return reqs.find(function(req) { return req.name == $stateParams.reqName; });
               }
             );
@@ -92,7 +114,9 @@ angular.module('os.biospecimen.specimen',
 
           defSpmns: function(spmnReq) {
             return (spmnReq && (spmnReq.specimens || [])) || [];
-          }
+          },
+
+          createDerived: createDerived
         },
         controller: 'AddEditSpecimenCtrl',
         parent: 'specimen-root'
@@ -249,7 +273,9 @@ angular.module('os.biospecimen.specimen',
         resolve: {
           extensionCtxt: function(cp, Specimen) {
             return Specimen.getExtensionCtxt({cpId: cp.id});
-          }
+          },
+
+          createDerived: createDerived
         },
         controller: 'AddAliquotsCtrl',
         parent: 'specimen-root'
@@ -296,7 +322,9 @@ angular.module('os.biospecimen.specimen',
                 return resp.value == 'true' || resp.value == true || resp.value == 1 || resp.value == '1';
               }
             );
-          }
+          },
+
+          createDerived: createDerived
         },
         parent: 'signed-in'
       })

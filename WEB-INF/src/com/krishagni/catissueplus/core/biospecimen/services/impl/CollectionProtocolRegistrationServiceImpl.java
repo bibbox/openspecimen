@@ -26,6 +26,7 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.factory.InitializingBean;
 
+import com.krishagni.catissueplus.core.audit.services.impl.DeleteLogUtil;
 import com.krishagni.catissueplus.core.biospecimen.ConfigParams;
 import com.krishagni.catissueplus.core.biospecimen.domain.AnonymizeEvent;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
@@ -276,8 +277,11 @@ public class CollectionProtocolRegistrationServiceImpl implements CollectionProt
 			CpEntityDeleteCriteria crit = req.getPayload();
 			CollectionProtocolRegistration cpr = getCpr(crit.getId(), null, crit.getCpShortTitle(), crit.getName());
 			raiseErrorIfSpecimenCentric(cpr);
+
 			AccessCtrlMgr.getInstance().ensureDeleteCprRights(cpr);
+			cpr.setOpComments(crit.getReason());
 			cpr.delete(!crit.isForceDelete());
+			DeleteLogUtil.getInstance().log(cpr);
 			return ResponseEvent.response(CollectionProtocolRegistrationDetail.from(cpr, false));
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
@@ -644,6 +648,10 @@ public class CollectionProtocolRegistrationServiceImpl implements CollectionProt
 			addVisits(cpr, cpes == null ? cpr.getCollectionProtocol().getOrderedCpeList() : cpes, collectionSite);
 		}
 
+		if (cpr.isDeleted()) {
+			DeleteLogUtil.getInstance().log(cpr);
+		}
+
 		return cpr;
 	}
 
@@ -656,7 +664,7 @@ public class CollectionProtocolRegistrationServiceImpl implements CollectionProt
 		if (update) {
 			Participant existing = getParticipant(input);
 			if (Status.isDisabledStatus(inputParticipant.getActivityStatus())) {
-				return deleteParticipant(existing, inputParticipant.isForceDelete());
+				return deleteParticipant(existing, inputParticipant.isForceDelete(), inputParticipant.getOpComments());
 			}
 
 			AccessCtrlMgr.getInstance().ensureUpdateParticipantRights(existing);
@@ -838,11 +846,15 @@ public class CollectionProtocolRegistrationServiceImpl implements CollectionProt
 	//
 	// Deletes all registrations of participant
 	//
-	private ParticipantRegistrationsList deleteParticipant(Participant participant, boolean forceDelete) {
+	private ParticipantRegistrationsList deleteParticipant(Participant participant, boolean forceDelete, String reason) {
 		List<CollectionProtocolRegistrationDetail> registrations = new ArrayList<>();
 		for (CollectionProtocolRegistration cpr : participant.getCprs()) {
 			AccessCtrlMgr.getInstance().ensureDeleteCprRights(cpr);
+
 			cpr.delete(!forceDelete);
+			cpr.setOpComments(reason);
+			DeleteLogUtil.getInstance().log(cpr);
+
 			registrations.add(CollectionProtocolRegistrationDetail.from(cpr, true));
 		}
 
@@ -1093,6 +1105,22 @@ public class CollectionProtocolRegistrationServiceImpl implements CollectionProt
 			return;
 		}
 
+		Integer minOffset = null, maxOffset = null;
+		for (CollectionProtocolEvent cpe : cpes) {
+			Integer offset = Utility.getNoOfDays(cpe.getEventPoint(), cpe.getEventPointUnit());
+			if (offset == null) {
+				continue;
+			}
+
+			if (minOffset == null || offset < minOffset) {
+				minOffset = offset;
+			}
+
+			if (maxOffset == null || offset > maxOffset) {
+				maxOffset = offset;
+			}
+		}
+
 		boolean checkPermission = true;
 		for (CollectionProtocolEvent cpe : cpes) {
 			VisitDetail visitDetail = new VisitDetail();
@@ -1102,6 +1130,21 @@ public class CollectionProtocolRegistrationServiceImpl implements CollectionProt
 			visitDetail.setClinicalDiagnoses(Collections.singleton(cpe.getClinicalDiagnosis()));
 			visitDetail.setClinicalStatus(cpe.getClinicalStatus());
 			visitDetail.setStatus(Visit.VISIT_STATUS_PENDING);
+
+			int interval = 0;
+			if (minOffset != null) {
+				Integer offset = Utility.getNoOfDays(cpe.getEventPoint(), cpe.getEventPointUnit());
+				if (offset != null) {
+					interval = offset - minOffset;
+				} else {
+					interval = (maxOffset - minOffset) + 1;
+				}
+			}
+
+			Calendar cal = Calendar.getInstance();
+			cal.setTime(cpr.getRegistrationDate());
+			cal.add(Calendar.DATE, interval);
+			visitDetail.setVisitDate(cal.getTime());
 
 			cpr.addVisit(visitSvc.addVisit(visitDetail, checkPermission));
 			checkPermission = false;
@@ -1187,7 +1230,7 @@ public class CollectionProtocolRegistrationServiceImpl implements CollectionProt
 
 		private CprListCriteria crit;
 
-		private int startAt;
+		private Long lastId;
 
 		private boolean paramsInited;
 
@@ -1198,10 +1241,13 @@ public class CollectionProtocolRegistrationServiceImpl implements CollectionProt
 				return Collections.emptyList();
 			}
 
-			List<CollectionProtocolRegistration> cprs = daoFactory.getCprDao().getCprs(crit.startAt(startAt));
-			startAt += cprs.size();
+			List<CollectionProtocolRegistration> cprs = daoFactory.getCprDao().getCprs(crit.lastId(lastId));
 			if (CollectionUtils.isNotEmpty(crit.ppids()) || cprs.size() < 100) {
 				endOfCprs = true;
+			}
+
+			if (!cprs.isEmpty()) {
+				lastId = cprs.get(cprs.size() - 1).getId();
 			}
 
 			return cprs;

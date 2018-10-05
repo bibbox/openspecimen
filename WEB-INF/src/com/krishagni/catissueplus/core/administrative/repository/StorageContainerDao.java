@@ -11,7 +11,7 @@ import com.krishagni.catissueplus.core.administrative.domain.StorageContainerPos
 import com.krishagni.catissueplus.core.administrative.events.StorageContainerSummary;
 import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
 import com.krishagni.catissueplus.core.biospecimen.repository.SpecimenListCriteria;
-import com.krishagni.catissueplus.core.common.Pair;
+import com.krishagni.catissueplus.core.common.access.SiteCpPair;
 import com.krishagni.catissueplus.core.common.repository.Dao;
 
 public interface StorageContainerDao extends Dao<StorageContainer> {
@@ -30,6 +30,8 @@ public interface StorageContainerDao extends Dao<StorageContainer> {
 	List<String> getNonCompliantContainers(ContainerRestrictionsCriteria crit);
 
 	List<String> getNonCompliantSpecimens(ContainerRestrictionsCriteria crit);
+
+	List<String> getNonCompliantDistributedSpecimens(ContainerRestrictionsCriteria crit);
 
 	int getSpecimensCount(Long containerId);
 
@@ -55,7 +57,7 @@ public interface StorageContainerDao extends Dao<StorageContainer> {
 
 	List<Long> getLeafContainerIds(Long containerId, int startAt, int maxContainers);
 
-	Map<String, List<String>> getInaccessibleSpecimens(List<Long> containerIds, List<Pair<Long, Long>> siteCps, boolean useMrnSites, int firstN);
+	Map<String, List<String>> getInaccessibleSpecimens(List<Long> containerIds, List<SiteCpPair> siteCps, boolean useMrnSites, int firstN);
 
 	Map<String, List<String>> getInvalidSpecimensForSite(List<Long> containerIds, Long siteId, int firstN);
 

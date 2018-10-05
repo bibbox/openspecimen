@@ -69,7 +69,8 @@ angular.module('os.biospecimen.specimen.detail', [])
               $state.go('specimen-detail.overview', angular.extend({specimenId: parentId}, params));
             }
           },
-          forceDelete: true
+          forceDelete: true,
+          askReason: true
         }
       );
     }
@@ -90,10 +91,6 @@ angular.module('os.biospecimen.specimen.detail', [])
         }
       );
     }
-
-    $scope.printSpecimenLabels = function() {
-      SpecimenLabelPrinter.printLabels({specimenIds: [specimen.id]});
-    };
 
     $scope.addSpecimensToSpecimenList = function(list) {
       var selectedSpecimens = [{id: $scope.specimen.id}];

@@ -1,11 +1,11 @@
 
 package com.krishagni.catissueplus.core.biospecimen.domain;
 
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -38,6 +38,7 @@ public class CollectionProtocol extends BaseExtensionEntity {
 	public enum SpecimenLabelPrePrintMode {
 		ON_REGISTRATION,
 		ON_VISIT,
+		ON_PRIMARY_COLL,
 		NONE
 	}
 
@@ -137,13 +138,13 @@ public class CollectionProtocol extends BaseExtensionEntity {
 	
 	private Boolean consentsWaived;
 
-	private Set<CpConsentTier> consentTier = new HashSet<>();
+	private Set<CpConsentTier> consentTier = new LinkedHashSet<>();
 	
 	private Set<User> coordinators = new HashSet<>();
 	
 	private Set<CollectionProtocolSite> sites = new HashSet<>();
 	
-	private Set<CollectionProtocolEvent> collectionProtocolEvents = new HashSet<>();
+	private Set<CollectionProtocolEvent> collectionProtocolEvents = new LinkedHashSet<>();
 
 	private Set<StorageContainer> storageContainers = new HashSet<>();
 	
@@ -590,7 +591,7 @@ public class CollectionProtocol extends BaseExtensionEntity {
 		setVisitNamePrintCopies(cp.getVisitNamePrintCopies());
 		setUnsignedConsentDocumentURL(cp.getUnsignedConsentDocumentURL());
 		setExtension(cp.getExtension());
-		setCatalogId(cp.getCatalogId());
+//		setCatalogId(cp.getCatalogId());
 		
 		updateSites(cp.getSites());
 		updateSpecimenLabelPrintSettings(cp.getSpmnLabelPrintSettings());
@@ -668,7 +669,7 @@ public class CollectionProtocol extends BaseExtensionEntity {
 	}
 	
 	public void copyEventsTo(CollectionProtocol cp) {
-		for (CollectionProtocolEvent cpe : getCollectionProtocolEvents()) {
+		for (CollectionProtocolEvent cpe : getOrderedCpeList()) {
 			cp.addCpe(cpe.deepCopy());
 		}
 	}
@@ -804,9 +805,7 @@ public class CollectionProtocol extends BaseExtensionEntity {
 	}
 	
 	public List<CollectionProtocolEvent> getOrderedCpeList() {
-		List<CollectionProtocolEvent> events = new ArrayList<CollectionProtocolEvent>(getCollectionProtocolEvents());
-		Collections.sort(events);
-		return events;
+		return getCollectionProtocolEvents().stream().sorted().collect(Collectors.toList());
 	}
 
 	public String getPpid() {

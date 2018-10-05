@@ -1,9 +1,11 @@
 
 angular.module('os.biospecimen.specimen.addedit', [])
   .controller('AddEditSpecimenCtrl', function(
-    $scope, $state, $parse, cp, cpr, visit, specimen, extensionCtxt, aliquotQtyReq,
-    barcodingEnabled, spmnBarcodesAutoGen, hasDict, sysDict, cpDict, layout, spmnReq, defSpmns,
-    Alerts, CpConfigSvc, Util, ParticipantSpecimensViewState, Specimen, CollectSpecimensSvc) {
+    $scope, $state, $parse, cp, cpr, visit, specimen, extensionCtxt,
+    aliquotQtyReq, barcodingEnabled, spmnBarcodesAutoGen, hasDict, sysDict,
+    cpDict, layout, onValueChangeCb, spmnReq, defSpmns, createDerived, imagingEnabled,
+    Alerts, CpConfigSvc, PluginReg, Util, ParticipantSpecimensViewState,
+    Specimen, CollectSpecimensSvc) {
 
     var inputCtxts;
 
@@ -14,7 +16,9 @@ angular.module('os.biospecimen.specimen.addedit', [])
         sysDict: sysDict, cpDict: cpDict,
         barcodingEnabled: barcodingEnabled, spmnBarcodesAutoGen: spmnBarcodesAutoGen,
         editMode: !!specimen.id, reqId: specimen.reqId, aliquotQtyReq: aliquotQtyReq,
-        layout: layout, mdInput: false
+        layout: layout, onValueChange: onValueChangeCb, mdInput: false,
+        hasInfo: PluginReg.getTmpls('specimen-addedit', 'info').length > 0,
+        createDerived: createDerived, imagingEnabled: imagingEnabled
       }
 
       CpConfigSvc.getCommonCfg(cp.id, 'addSpecimen').then(
@@ -197,7 +201,7 @@ angular.module('os.biospecimen.specimen.addedit', [])
       parent.children = parent.children.concat(children);
     }
 
-    function getAliquots(cpr, primarySpmn, types, typeSpecs) {
+    function getAliquots(opts, primarySpmn, types, typeSpecs) {
       var result = [], children = [], derived = undefined;
 
       angular.forEach(types,
@@ -206,7 +210,8 @@ angular.module('os.biospecimen.specimen.addedit', [])
           angular.forEach(typeSpecs[type],
             function(aliquotSpec) {
               var detail = angular.copy({aliquotSpec: aliquotSpec});
-              angular.extend(detail, {parentSpecimen: primarySpmn, deFormCtrl: {}, cpr: cpr});
+              angular.extend(detail, {parentSpecimen: primarySpmn, deFormCtrl: {}, cpr: opts.cpr});
+              detail.aliquotSpec.createDerived = opts.createDerived;
 
               var tree = SpecimenUtil.collectAliquots(detail);
               tree.splice(0, 1); // remove parent as it is already in our final list
@@ -266,6 +271,10 @@ angular.module('os.biospecimen.specimen.addedit', [])
             var types = [], typeSpecs = {};
             angular.forEach(spmnCtx.aliquots,
               function(spec) {
+                if (!spec.type) {
+                  return;
+                }
+
                 if (types.indexOf(spec.type) == -1) {
                   types.push(spec.type);
                 }
@@ -275,7 +284,7 @@ angular.module('os.biospecimen.specimen.addedit', [])
               }
             );
 
-            var tree = getAliquots($scope.opts.cpr, primarySpmn, types, typeSpecs);
+            var tree = getAliquots($scope.opts, primarySpmn, types, typeSpecs);
             Array.prototype.push.apply(result, tree);
           } else {
             primarySpmn.children = [];
@@ -345,6 +354,7 @@ angular.module('os.biospecimen.specimen.addedit', [])
         var spmnCtx = scope.spmnCtx = {
           currentDate: new Date(),
           obj: {specimen: inputSpmn, cpr: opts.cpr, visit: opts.visit, cp: opts.cp},
+          opts: angular.extend({viewCtx: scope}, opts),
           inObjs: ['specimen'], exObjs: exObjs,
           isVirtual: inputSpmn.showVirtual(),
           manualSpecLabelReq: !!inputSpmn.label || !inputSpmn.labelFmt || opts.cp.manualSpecLabelEnabled,
@@ -364,13 +374,28 @@ angular.module('os.biospecimen.specimen.addedit', [])
         }
 
         scope.addAnotherAliquot = function() {
-          spmnCtx.aliquots.push(new Specimen({lineage: 'Aliquot'}));
+          var aliquot = new Specimen({lineage: 'Aliquot'});
+          spmnCtx.aliquots.push(aliquot);
+
+          if (spmnCtx.opts.$$sdeFormFields) {
+            spmnCtx.opts.$$sdeFormFields.valueChanged(spmnCtx.obj, aliquot, 'aliquots.$onAdd', 'aliquots');
+          }
         }
 
         scope.removeAliquot = function(idx) {
-          spmnCtx.aliquots.splice(idx, 1);
+          var aliquots = spmnCtx.aliquots.splice(idx, 1);
+          if (spmnCtx.opts.$$sdeFormFields && aliquots.length > 0) {
+            spmnCtx.opts.$$sdeFormFields.valueChanged(spmnCtx.obj, aliquots[0], 'aliquots.$onRemove', 'aliquots');
+          }
+
           if (spmnCtx.aliquots.length == 0) {
-            spmnCtx.aliquots.push(new Specimen({lineage: 'Aliquot'}));
+            scope.addAnotherAliquot();
+          }
+        }
+
+        scope.addIfLastAliquot = function(idx) {
+          if (idx == (spmnCtx.aliquots.length - 1)) {
+            scope.addAnotherAliquot();
           }
         }
       }

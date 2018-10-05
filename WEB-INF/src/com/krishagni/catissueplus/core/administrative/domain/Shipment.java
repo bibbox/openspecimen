@@ -60,10 +60,6 @@ public class Shipment extends BaseEntity {
 		SPECIMEN, CONTAINER
 	}
 
-	public enum ItemReceiveQuality {
-		ACCEPTABLE, UNACCEPTABLE
-	}
-
 	private String name;
 
 	private Type type;
@@ -369,9 +365,9 @@ public class Shipment extends BaseEntity {
 	}
 
 	private void ensureShippedSpecimens(Shipment other) {
-		Function<ShipmentSpecimen, String> fn = (ss) -> ss.getSpecimen().getLabel();
-		List<String> existingSpecimens = getShipmentSpecimens().stream().map(fn).collect(Collectors.toList());
-		List<String> newSpecimens = other.getShipmentSpecimens().stream().map(fn).collect(Collectors.toList());
+		Function<ShipmentSpecimen, Long> fn = (ss) -> ss.getSpecimen().getId();
+		List<Long> existingSpecimens = getShipmentSpecimens().stream().map(fn).collect(Collectors.toList());
+		List<Long> newSpecimens = other.getShipmentSpecimens().stream().map(fn).collect(Collectors.toList());
 
 		if (!CollectionUtils.isEqualCollection(existingSpecimens, newSpecimens)) {
 			throw OpenSpecimenException.userError(ShipmentErrorCode.INVALID_SHIPPED_SPECIMENS);
@@ -402,12 +398,6 @@ public class Shipment extends BaseEntity {
 		for (ShipmentContainer newItem : other.getShipmentContainers()) {
 			ShipmentContainer oldItem = existingItems.get(newItem.getContainer());
 			oldItem.receive(newItem);
-		}
-
-		for (ShipmentSpecimen shipmentSpecimen : getShipmentSpecimens()) {
-			Specimen spmn = shipmentSpecimen.getSpecimen();
-			StorageContainer container = spmn.getPosition().getContainer();
-			shipmentSpecimen.receive(existingItems.get(container).getReceivedQuality());
 		}
 	}
 

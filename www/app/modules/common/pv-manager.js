@@ -50,12 +50,14 @@ angular.module('openspecimen')
     var visitStatuses = [
       'Complete',
       'Pending',
-      'Missed Collection'
+      'Missed Collection',
+      'Not Collected'
     ];
 
     var specimenStatuses = [
       'Collected',
       'Missed Collection',
+      'Not Collected',
       'Pending'
     ];
 
@@ -64,11 +66,6 @@ angular.module('openspecimen')
       'Pending',
       'Disabled',
       'Closed'
-    ];
-
-    var qualityStatuses = [
-      'Acceptable',
-      'Unacceptable'
     ];
 
     var visitNamePrintModes = [
@@ -80,6 +77,7 @@ angular.module('openspecimen')
     var spmnLabelPrePrintModes = [
       {name: 'ON_REGISTRATION', displayKey:'cp.spmn_label_pre_print_modes.ON_REGISTRATION'},
       {name: 'ON_VISIT', displayKey:'cp.spmn_label_pre_print_modes.ON_VISIT'},
+      {name: 'ON_PRIMARY_COLL', displayKey: 'cp.spmn_label_pre_print_modes.ON_PRIMARY_COLL'},
       {name: 'NONE', displayKey:'cp.spmn_label_pre_print_modes.NONE'}
     ];
 
@@ -114,7 +112,6 @@ angular.module('openspecimen')
       'specimen-status': specimenStatuses,
       'container-position-labeling-schemes': positionLabelingSchemes,
       'activity-status': activityStatuses,
-      'quality-status': qualityStatuses,
       'visit-name-print-modes': visitNamePrintModes,
       'specimen-label-pre-print-modes': spmnLabelPrePrintModes,
       'specimen-label-auto-print-modes': spmnLabelAutoPrintModes,

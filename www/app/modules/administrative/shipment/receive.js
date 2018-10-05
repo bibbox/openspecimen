@@ -1,11 +1,10 @@
 angular.module('os.administrative.shipment.receive', ['os.administrative.models'])
-  .controller('ShipmentReceiveCtrl', function($scope, $state, shipment, shipmentItems, Specimen, Container, PvManager) {
-
-    function loadPvs() {
-      $scope.qualityStatuses = PvManager.getPvs('quality-status');
-    }
+  .controller('ShipmentReceiveCtrl', function(
+    $scope, $state, shipment, shipmentItems, isSpmnRelabelingAllowed, ShipmentUtil, Specimen, Container) {
 
     function init() {
+      $scope.ctx = {relabelSpmns: isSpmnRelabelingAllowed};
+
       var attrs = getItemAttrs();
       angular.forEach(shipmentItems,
         function(item) {
@@ -20,7 +19,7 @@ angular.module('os.administrative.shipment.receive', ['os.administrative.models'
         shipment.receivedDate = new Date();
       }
       
-      loadPvs();
+      showOrHidePpidAndExtIds();
     }
 
     function getItemAttrs() {
@@ -29,6 +28,15 @@ angular.module('os.administrative.shipment.receive', ['os.administrative.models'
       } else {
         return {collName: 'shipmentContainers', itemKey: 'container', newItem: function(i) { return new Container(i) }};
       }
+    }
+
+    function showOrHidePpidAndExtIds() {
+      if (!shipment.isSpecimenShipment()) {
+        return;
+      }
+
+      var result = ShipmentUtil.hasPpidAndExtIds(shipment.shipmentSpmns);
+      angular.extend($scope.ctx, result);
     }
 
     $scope.passThrough = function() {
@@ -72,7 +80,9 @@ angular.module('os.administrative.shipment.receive', ['os.administrative.models'
     }
 
     $scope.copyFirstQualityToAll = function() {
+      var attrs = getItemAttrs();
       var quality = shipment[attrs.collName][0].receivedQuality;
+
       angular.forEach(shipment[attrs.collName],
         function(item) {
           item.receivedQuality = quality;

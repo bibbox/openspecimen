@@ -173,11 +173,6 @@ angular.module('os.biospecimen.participant',
         url: '/participants?filters',
         templateUrl: 'modules/biospecimen/participant/list.html',
         controller: 'ParticipantListCtrl',
-        resolve: {
-          participantListCfg: function(cp, CpConfigSvc) {
-            return CpConfigSvc.getListConfig(cp, 'participant-list-view');
-          }
-        },
         metaInfo: {
           button: {
             icon: 'fa-group',
@@ -344,6 +339,14 @@ angular.module('os.biospecimen.participant',
             }
 
             return CpConfigSvc.getLayout($stateParams.cpId, []);
+          },
+
+          onValueChangeCb: function($stateParams, hasSde, CpConfigSvc) {
+            if (!hasSde) {
+              return undefined;
+            }
+
+            return CpConfigSvc.getOnValueChangeCallbacks($stateParams.cpId, ['dictionary']);
           },
 
           hasDict: function(hasSde, sysDict, cpDict) {
@@ -609,7 +612,15 @@ angular.module('os.biospecimen.participant',
 
             return CpConfigSvc.getWorkflowData(cp.id, 'specimenCollection').then(
               function(data) {
-                return data || {};
+                if (data && !angular.equals(data, {})) {
+                  return data;
+                }
+
+                return CpConfigSvc.getWorkflowData(-1, 'specimenCollection').then(
+                  function(data) {
+                    return data || {};
+                  }
+                );
               }
             );
           }

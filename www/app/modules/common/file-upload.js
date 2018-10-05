@@ -34,15 +34,19 @@ angular.module('openspecimen')
         this.fail = function(resp) {
           var xhr = resp.xhr('responseText');
           var status = Math.floor(xhr.status / 100);
-          if (status == 4) {
-            var responses = eval(xhr.response);
-            var errMsgs = [];
-            angular.forEach(responses, function(err) {
-              errMsgs.push(err.message + "(" + err.code + ")");
-            });
+
+          var responses = eval(xhr.response);
+          var errMsgs = [];
+          angular.forEach(responses, function(err) {
+            errMsgs.push(err.message + "(" + err.code + ")");
+          });
+
+          if (errMsgs.length > 0) {
             Alerts.errorText(errMsgs);
+          } else if (status == 4) {
+            Alerts.error('common.ui_error');
           } else if (status == 5) {
-            Alerts.error("common.server_error");
+            Alerts.error('common.server_error');
           }
 
           this.q.reject(resp);
@@ -63,7 +67,9 @@ angular.module('openspecimen')
           element.find('input').fileupload({
             dataType: 'json',
             beforeSend: function(xhr) {
-              xhr.setRequestHeader('X-OS-API-TOKEN', $http.defaults.headers.common['X-OS-API-TOKEN']);
+              if ($http.defaults.headers.common['X-OS-API-TOKEN']) {
+                xhr.setRequestHeader('X-OS-API-TOKEN', $http.defaults.headers.common['X-OS-API-TOKEN']);
+              }
             },
             add: function (e, data) {
               element.find('span').text(data.files[0].name);

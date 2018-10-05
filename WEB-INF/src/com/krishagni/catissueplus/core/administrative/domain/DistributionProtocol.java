@@ -19,6 +19,7 @@ import com.krishagni.catissueplus.core.biospecimen.domain.BaseExtensionEntity;
 import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
 import com.krishagni.catissueplus.core.common.CollectionUpdater;
 import com.krishagni.catissueplus.core.common.Pair;
+import com.krishagni.catissueplus.core.common.access.SiteCpPair;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.DependentEntityDetail;
 import com.krishagni.catissueplus.core.common.util.Status;
@@ -56,6 +57,10 @@ public class DistributionProtocol extends BaseExtensionEntity {
 	private SavedQuery report;
 
 	private Form orderExtnForm;
+
+	private Boolean disableEmailNotifs;
+
+	private String orderItemLabelFormat;
 	
 	private Set<DistributionOrder> distributionOrders = new HashSet<>();
 	
@@ -64,6 +69,8 @@ public class DistributionProtocol extends BaseExtensionEntity {
 	private Set<DpRequirement> requirements = new HashSet<>();
 	
 	private Set<DpConsentTier> consentTiers = new HashSet<>();
+
+	private Set<StorageContainer> distributionContainers = new HashSet<>();
 	
 	public static String getEntityName() {
 		return ENTITY_NAME;
@@ -169,6 +176,22 @@ public class DistributionProtocol extends BaseExtensionEntity {
 		this.orderExtnForm = orderExtnForm;
 	}
 
+	public Boolean getDisableEmailNotifs() {
+		return disableEmailNotifs;
+	}
+
+	public void setDisableEmailNotifs(Boolean disableEmailNotifs) {
+		this.disableEmailNotifs = disableEmailNotifs;
+	}
+
+	public String getOrderItemLabelFormat() {
+		return orderItemLabelFormat;
+	}
+
+	public void setOrderItemLabelFormat(String orderItemLabelFormat) {
+		this.orderItemLabelFormat = orderItemLabelFormat;
+	}
+
 	@NotAudited
 	public Set<DistributionOrder> getDistributionOrders() {
 		return distributionOrders;
@@ -184,6 +207,16 @@ public class DistributionProtocol extends BaseExtensionEntity {
 	
 	public void setDistributingSites(Set<DpDistributionSite> distributingSites) {
 		this.distributingSites = distributingSites;
+	}
+
+	@NotAudited
+	public Set<SiteCpPair> getAllowedDistributingSites() {
+		return getDistributingSites().stream().map(
+			(distSite) -> {
+				Long siteId = distSite.getSite() != null ? distSite.getSite().getId() : null;
+				return SiteCpPair.make(distSite.getInstitute().getId(), siteId, null);
+			}
+		).collect(Collectors.toSet());
 	}
 
 	@NotAudited
@@ -204,6 +237,15 @@ public class DistributionProtocol extends BaseExtensionEntity {
 		this.consentTiers = consentTiers;
 	}
 
+	@NotAudited
+	public Set<StorageContainer> getDistributionContainers() {
+		return distributionContainers;
+	}
+
+	public void setDistributionContainers(Set<StorageContainer> distributionContainers) {
+		this.distributionContainers = distributionContainers;
+	}
+
 	public void update(DistributionProtocol dp) {
 		if (dp.getActivityStatus().equals(Status.ACTIVITY_STATUS_DISABLED.getStatus())) {
 			setShortTitle(Utility.getDisabledValue(dp.getShortTitle(), 50));
@@ -222,6 +264,8 @@ public class DistributionProtocol extends BaseExtensionEntity {
 		setActivityStatus(dp.getActivityStatus());
 		setReport(dp.getReport());
 		setOrderExtnForm(dp.getOrderExtnForm());
+		setDisableEmailNotifs(dp.getDisableEmailNotifs());
+		setOrderItemLabelFormat(dp.getOrderItemLabelFormat());
 		CollectionUpdater.update(getCoordinators(), dp.getCoordinators());
 		CollectionUpdater.update(getDistributingSites(), dp.getDistributingSites());
 		setExtension(dp.getExtension());
@@ -229,7 +273,10 @@ public class DistributionProtocol extends BaseExtensionEntity {
 	
 	public List<DependentEntityDetail> getDependentEntities() {
 		return DependentEntityDetail
-			.singletonList(DistributionOrder.getEntityName(), getDistributionOrders().size());
+			.listBuilder()
+			.add(DistributionOrder.getEntityName(), getDistributionOrders().size())
+			.add(StorageContainer.getEntityName(), getDistributionContainers().size())
+			.build();
 	}
 	
 	public void delete() {
@@ -243,19 +290,6 @@ public class DistributionProtocol extends BaseExtensionEntity {
 		setActivityStatus(Status.ACTIVITY_STATUS_DISABLED.getStatus());
 	}
 	
-	public Set<Site> getAllDistributingSites() {
-		Set<Site> sites = new HashSet<>();
-		for (DpDistributionSite distSite : getDistributingSites()) {
-			if (distSite.getSite() != null) {
-				sites.add(distSite.getSite());
-			} else {
-				sites.addAll(distSite.getInstitute().getSites());
-			}
-		}
-		
-		return sites;
-	}
-
 	public Set<Institute> getDistributingInstitutes() {
 		return getDistributingSites().stream().map(DpDistributionSite::getInstitute).collect(Collectors.toSet());
 	}

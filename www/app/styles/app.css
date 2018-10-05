@@ -219,6 +219,14 @@ body {
   border-bottom: none;
 }
 
+.os-group-controls .os-select-container.os-no-border-top span.form-control {
+  border-top: none;
+}
+
+.os-group-controls .os-select-container.os-no-border-bottom span.form-control {
+  border-bottom: none;
+}
+
 .os-error-msg {
   color: #dd4b39;
   line-height: 17px;
@@ -280,9 +288,10 @@ h4 + .btn-group {
   top: 25px;
 }
 
+.os-detail-sublist .os-container-wrapper .container,
 .os-detail-sublist .container {
   position: absolute;
-  top: 45px !important;
+  top: 45px!important;
   padding-top: 0px;
   bottom: 0px;
   height: auto;
@@ -559,6 +568,10 @@ h4.os-sub-section-title, h5.os-sub-section-title, h6.os-sub-section-title {
   /*float: left;*/
   position: relative;
   padding-left: 150px;
+  -webkit-column-break-inside: avoid;
+  page-break-inside: avoid;
+  break-inside: avoid-column;
+  display: table;
 }
 
 .os-key-values.bg-col .item {
@@ -693,6 +706,8 @@ h4.os-sub-section-title, h5.os-sub-section-title, h6.os-sub-section-title {
 .os-section pre {
   background: transparent;
   border: none;
+  font: inherit;
+  font-size: inherit;
 }
 
 .os-line-section .os-btn-section-collapse {
@@ -1228,8 +1243,32 @@ h4.os-sub-section-title, h5.os-sub-section-title, h6.os-sub-section-title {
 
 
 /** Min width classes **/
+.os-mw-260 {
+  min-width: 260px;
+}
+
+.os-mw-240 {
+  min-width: 240px;
+}
+
+.os-mw-220 {
+  min-width: 220px;
+}
+
 .os-mw-200 {
   min-width: 200px;
+}
+
+.os-mw-140 {
+  min-width: 140px;
+}
+
+.os-mw-120 {
+  min-width: 120px;
+}
+
+.os-mw-100 {
+  min-width: 100px;
 }
 
 .os-no-border {
@@ -1302,9 +1341,59 @@ form .form-group:empty {
   opacity: 0;
 }
 
+.ui-select-container.ng-invalid-required .ui-select-placeholder,
+.os-select-container.ng-invalid-required .ui-select-placeholder,
+.ng-invalid-required.form-control::placeholder {
+  opacity: 1;
+}
+
+.os-italic.ui-select-placeholder,
+.os-italic::placeholder {
+  font-style: italic;
+}
+
 .os-no-label-form *::placeholder,
 .os-no-label-form .ui-select-placeholder,
 .os-md-input .ui-select-placeholder,
 .os-md-input *::placeholder {
   opacity: 1;
+}
+
+.os-multi-parts-control label.control-label {
+  padding-top: 30px;
+}
+
+.os-multi-parts-control label.part-label {
+  font-size: 0.8em;
+  font-weight: normal;
+  color: #666;
+}
+
+.os-width-100 {
+  width: 100px;
+}
+
+/** Page header tags **/
+.os-page-header .os-tag-success,
+.os-page-header .os-tag-danger {
+  padding: 0px 4px;
+  color: #fff;
+  font-weight: bold;
+  border-radius: 4px;
+  font-size: 14px;
+  margin-bottom: 5px;
+  vertical-align: middle;
+  text-align: center;
+  display: inline-block;
+  line-height: 1.42857143;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.os-page-header .os-tag-success {
+  background: #5cb85c!important;
+}
+
+.os-page-header .os-tag-danger {
+  background: #d9534f!important;
 }

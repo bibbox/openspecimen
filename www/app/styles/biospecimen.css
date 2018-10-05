@@ -146,6 +146,11 @@
 }
 
 /** Used in CP events **/
+
+.os-cpe-container {
+  height: calc(100% - 10px);
+}
+
 .os-cpe-item {
   position: relative;
 }
@@ -451,3 +456,7 @@
   border: 1px solid #ddd;
 }
 
+.os-tree-image-icon {
+  color: inherit;
+  padding-right: 4px;
+}

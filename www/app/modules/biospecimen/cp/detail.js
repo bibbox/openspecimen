@@ -15,6 +15,7 @@ angular.module('os.biospecimen.cp.detail', ['os.biospecimen.models'])
       $scope.cp = cp;
       $scope.cp.repositoryNames = cp.getRepositoryNames();
       $scope.downloadUri = CollectionProtocol.url() + cp.id + '/definition';
+      $scope.workflowUri = CollectionProtocol.url() + cp.id + '/workflows-file';
       $scope.sites = PvManager.getSites();
       $scope.sysStoreSpr  = true;
 
@@ -42,7 +43,7 @@ angular.module('os.biospecimen.cp.detail', ['os.biospecimen.models'])
     }
 
     $scope.deleteCp = function() {
-      DeleteUtil.delete($scope.cp, {onDeleteState: 'cp-list', forceDelete: true});
+      DeleteUtil.delete($scope.cp, {onDeleteState: 'cp-list', forceDelete: true, askReason: true});
     }
 
     init();

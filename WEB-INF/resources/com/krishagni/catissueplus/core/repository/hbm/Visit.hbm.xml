@@ -51,15 +51,12 @@
       column="SITE_ID" />
 
     <set name="specimens" table="CATISSUE_SPECIMEN" inverse="true" cascade="save-update">
-      <key column="SPECIMEN_COLLECTION_GROUP_ID"></key>
+      <key column="SPECIMEN_COLLECTION_GROUP_ID"/>
       <one-to-many class="com.krishagni.catissueplus.core.biospecimen.domain.Specimen" />
       <filter name="activeEntity"/>
     </set>
 
-    <many-to-one name="missedBy"
-      class="com.krishagni.catissueplus.core.administrative.domain.User"
-      column="MISSED_BY"
-    />
+    <many-to-one name="missedBy" column="MISSED_BY"/>
     
     <property name="cohort" column="COHORT"/>
 
@@ -197,7 +194,7 @@
           as plannedPrimarySpmnsColl,
         count(distinct case when t.lineage = 'New' and t.planned = 'N' and t.status = 'Collected' then t.id else null end)
           as unplannedPrimarySpmnsColl,
-        count(distinct case when t.lineage = 'New' and t.status = 'Missed Collection' then t.id else null end)
+        count(distinct case when t.lineage = 'New' and (t.status = 'Missed Collection' or t.status = 'Not Collected') then t.id else null end)
           as missedPrimarySpmnsColl,
         count(distinct case when t.spmn_stored = 'Y' then t.id else null end) as storedSpmns,
         count(distinct case when t.activity_status != 'Closed' and t.status = 'Collected' and

@@ -9,12 +9,16 @@ import com.krishagni.catissueplus.core.administrative.events.DistributionOrderIt
 import com.krishagni.catissueplus.core.administrative.events.DistributionOrderItemListCriteria;
 import com.krishagni.catissueplus.core.administrative.events.DistributionOrderListCriteria;
 import com.krishagni.catissueplus.core.administrative.events.DistributionOrderSummary;
+import com.krishagni.catissueplus.core.administrative.events.PrintDistributionLabelDetail;
 import com.krishagni.catissueplus.core.administrative.events.ReserveSpecimensDetail;
+import com.krishagni.catissueplus.core.administrative.events.RetrieveSpecimensOp;
 import com.krishagni.catissueplus.core.administrative.events.ReturnedSpecimenDetail;
 import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
 import com.krishagni.catissueplus.core.biospecimen.events.SpecimenInfo;
 import com.krishagni.catissueplus.core.biospecimen.repository.SpecimenListCriteria;
 import com.krishagni.catissueplus.core.common.EntityCrudListener;
+import com.krishagni.catissueplus.core.common.events.LabelPrintJobSummary;
+import com.krishagni.catissueplus.core.common.events.LabelTokenDetail;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
 import com.krishagni.catissueplus.core.common.events.ResponseEvent;
 import com.krishagni.catissueplus.core.de.events.QueryDataExportResult;
@@ -42,7 +46,22 @@ public interface DistributionOrderService {
 
 	ResponseEvent<List<SpecimenInfo>> getReservedSpecimens(RequestEvent<SpecimenListCriteria> req);
 
+	ResponseEvent<Integer> getReservedSpecimensCount(RequestEvent<SpecimenListCriteria> req);
+
 	ResponseEvent<Integer> reserveSpecimens(RequestEvent<ReserveSpecimensDetail> req);
+
+	ResponseEvent<Integer> retrieveSpecimens(RequestEvent<RetrieveSpecimensOp> req);
+
+	ResponseEvent<LabelPrintJobSummary> printDistributionLabels(RequestEvent<PrintDistributionLabelDetail> req);
+
+	ResponseEvent<List<LabelTokenDetail>> getPrintLabelTokens();
+
+	//
+	// Validators
+	//
+	void addValidator(DistributionValidator validator);
+
+	void removeValidator(String name);
 
 	//
 	// Internal APIs for use by plugins and service extenders...

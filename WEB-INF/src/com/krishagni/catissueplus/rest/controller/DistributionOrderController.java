@@ -25,6 +25,7 @@ import com.krishagni.catissueplus.core.administrative.events.DistributionOrderIt
 import com.krishagni.catissueplus.core.administrative.events.DistributionOrderItemListCriteria;
 import com.krishagni.catissueplus.core.administrative.events.DistributionOrderListCriteria;
 import com.krishagni.catissueplus.core.administrative.events.DistributionOrderSummary;
+import com.krishagni.catissueplus.core.administrative.events.RetrieveSpecimensOp;
 import com.krishagni.catissueplus.core.administrative.events.ReturnedSpecimenDetail;
 import com.krishagni.catissueplus.core.administrative.services.DistributionOrderService;
 import com.krishagni.catissueplus.core.biospecimen.events.SpecimenInfo;
@@ -60,6 +61,9 @@ public class DistributionOrderController {
 		
 		@RequestParam(value = "requestorId", required = false)
 		Long requestorId,
+
+		@RequestParam(value = "requestId", required = false)
+		Long requestId,
 		
 		@RequestParam(value = "executionDate", required = false) 
 		@DateTimeFormat(pattern="yyyy-MM-dd")
@@ -87,6 +91,7 @@ public class DistributionOrderController {
 			.dpId(dpId)
 			.requestor(requestor)
 			.requestorId(requestorId)
+			.requestId(requestId)
 			.executionDate(executionDate)
 			.receivingSite(receivingSite)
 			.receivingInstitute(receivingInstitute)
@@ -117,7 +122,10 @@ public class DistributionOrderController {
 		
 		@RequestParam(value = "requestorId", required = false)
 		Long requestorId,
-		
+
+		@RequestParam(value = "requestId", required = false)
+		Long requestId,
+
 		@RequestParam(value = "executionDate", required = false)
 		@DateTimeFormat(pattern="yyyy-MM-dd")
 		Date executionDate,
@@ -135,6 +143,7 @@ public class DistributionOrderController {
 			.dpId(dpId)
 			.requestor(requestor)
 			.requestorId(requestorId)
+			.requestId(requestId)
 			.executionDate(executionDate)
 			.receivingSite(receivingSite)
 			.receivingInstitute(receivingInstitute);
@@ -204,6 +213,9 @@ public class DistributionOrderController {
 		@PathVariable("id")
 		Long orderId,
 
+		@RequestParam(value = "storedInDistributionContainer", required = false, defaultValue = "false")
+		boolean storedInDistributionContainer,
+
 		@RequestParam(value = "startAt", required = false, defaultValue = "0")
 		int startAt,
 
@@ -211,12 +223,29 @@ public class DistributionOrderController {
 		int maxResults) {
 		DistributionOrderItemListCriteria crit = new DistributionOrderItemListCriteria()
 			.orderId(orderId)
+			.storedInContainers(storedInDistributionContainer)
 			.startAt(startAt)
 			.maxResults(maxResults);
 
 		ResponseEvent<List<DistributionOrderItemDetail>> resp = distributionService.getOrderItems(getRequest(crit));
 		resp.throwErrorIfUnsuccessful();
 		return resp.getPayload();
+	}
+
+	@RequestMapping(method =  RequestMethod.POST, value = "/{id}/retrieve")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public Map<String, Integer> retrieveOrderItems(
+		@PathVariable("id")
+		Long orderId,
+
+		@RequestBody
+		RetrieveSpecimensOp detail) {
+
+		detail.setListId(orderId);
+		ResponseEvent<Integer> resp = distributionService.retrieveSpecimens(getRequest(detail));
+		resp.throwErrorIfUnsuccessful();
+		return Collections.singletonMap("count", resp.getPayload());
 	}
 
 	@RequestMapping(method = RequestMethod.GET, value="/specimens")

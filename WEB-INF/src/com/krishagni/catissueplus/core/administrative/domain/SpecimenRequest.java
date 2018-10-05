@@ -10,11 +10,14 @@ import java.util.stream.Collectors;
 
 import com.krishagni.catissueplus.core.administrative.domain.factory.SpecimenRequestErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.domain.BaseExtensionEntity;
+import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.util.AuthUtil;
 import com.krishagni.catissueplus.core.common.util.Status;
 
 public class SpecimenRequest extends BaseExtensionEntity {
+	private static final String ENTITY_NAME = "specimen_request";
+
 	public enum ScreeningStatus {
 		PENDING,
 		APPROVED,
@@ -24,6 +27,8 @@ public class SpecimenRequest extends BaseExtensionEntity {
 	private Long catalogId;
 
 	private String catalogQueryDef;
+
+	private User requestor;
 
 	private String requestorEmailId;
 
@@ -42,6 +47,8 @@ public class SpecimenRequest extends BaseExtensionEntity {
 	private User processedBy;
 
 	private Date dateOfProcessing;
+
+	private CollectionProtocol cp;
 
 	private DistributionProtocol dp;
 
@@ -71,8 +78,16 @@ public class SpecimenRequest extends BaseExtensionEntity {
 		this.catalogQueryDef = catalogQueryDef;
 	}
 
+	public User getRequestor() {
+		return requestor;
+	}
+
+	public void setRequestor(User requestor) {
+		this.requestor = requestor;
+	}
+
 	public String getRequestorEmailId() {
-		return requestorEmailId;
+		return requestor != null ? requestor.getEmailAddress() : requestorEmailId;
 	}
 
 	public void setRequestorEmailId(String requestorEmailId) {
@@ -141,6 +156,14 @@ public class SpecimenRequest extends BaseExtensionEntity {
 
 	public void setDateOfProcessing(Date dateOfProcessing) {
 		this.dateOfProcessing = dateOfProcessing;
+	}
+
+	public CollectionProtocol getCp() {
+		return cp;
+	}
+
+	public void setCp(CollectionProtocol cp) {
+		this.cp = cp;
 	}
 
 	public DistributionProtocol getDp() {
@@ -263,6 +286,10 @@ public class SpecimenRequest extends BaseExtensionEntity {
 		}
 
 		updateScreeningStatus(ScreeningStatus.PENDING, null, null, null);
+	}
+
+	public static String getEntityName() {
+		return ENTITY_NAME;
 	}
 
 	private void updateScreeningStatus(ScreeningStatus inputStatus, User user, Date time, String comments) {

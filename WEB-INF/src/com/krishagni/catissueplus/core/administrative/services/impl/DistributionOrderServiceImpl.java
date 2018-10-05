@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -30,7 +31,6 @@ import com.krishagni.catissueplus.core.administrative.domain.DistributionOrder;
 import com.krishagni.catissueplus.core.administrative.domain.DistributionOrder.Status;
 import com.krishagni.catissueplus.core.administrative.domain.DistributionOrderItem;
 import com.krishagni.catissueplus.core.administrative.domain.DistributionProtocol;
-import com.krishagni.catissueplus.core.administrative.domain.Site;
 import com.krishagni.catissueplus.core.administrative.domain.SpecimenRequest;
 import com.krishagni.catissueplus.core.administrative.domain.SpecimenReservedEvent;
 import com.krishagni.catissueplus.core.administrative.domain.StorageContainer;
@@ -47,10 +47,13 @@ import com.krishagni.catissueplus.core.administrative.events.DistributionOrderIt
 import com.krishagni.catissueplus.core.administrative.events.DistributionOrderItemListCriteria;
 import com.krishagni.catissueplus.core.administrative.events.DistributionOrderListCriteria;
 import com.krishagni.catissueplus.core.administrative.events.DistributionOrderSummary;
+import com.krishagni.catissueplus.core.administrative.events.PrintDistributionLabelDetail;
 import com.krishagni.catissueplus.core.administrative.events.ReserveSpecimensDetail;
+import com.krishagni.catissueplus.core.administrative.events.RetrieveSpecimensOp;
 import com.krishagni.catissueplus.core.administrative.events.ReturnedSpecimenDetail;
 import com.krishagni.catissueplus.core.administrative.events.StorageLocationSummary;
 import com.krishagni.catissueplus.core.administrative.services.DistributionOrderService;
+import com.krishagni.catissueplus.core.administrative.services.DistributionValidator;
 import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
 import com.krishagni.catissueplus.core.biospecimen.domain.SpecimenList;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.SpecimenErrorCode;
@@ -62,14 +65,20 @@ import com.krishagni.catissueplus.core.common.EntityCrudListener;
 import com.krishagni.catissueplus.core.common.Pair;
 import com.krishagni.catissueplus.core.common.PlusTransactional;
 import com.krishagni.catissueplus.core.common.access.AccessCtrlMgr;
+import com.krishagni.catissueplus.core.common.access.SiteCpPair;
+import com.krishagni.catissueplus.core.common.domain.LabelPrintJob;
 import com.krishagni.catissueplus.core.common.domain.Notification;
+import com.krishagni.catissueplus.core.common.domain.PrintItem;
 import com.krishagni.catissueplus.core.common.errors.ErrorCode;
 import com.krishagni.catissueplus.core.common.errors.ErrorType;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
+import com.krishagni.catissueplus.core.common.events.LabelPrintJobSummary;
+import com.krishagni.catissueplus.core.common.events.LabelTokenDetail;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
 import com.krishagni.catissueplus.core.common.events.ResponseEvent;
 import com.krishagni.catissueplus.core.common.events.UserSummary;
 import com.krishagni.catissueplus.core.common.service.EmailService;
+import com.krishagni.catissueplus.core.common.service.LabelPrinter;
 import com.krishagni.catissueplus.core.common.service.ObjectAccessor;
 import com.krishagni.catissueplus.core.common.util.AuthUtil;
 import com.krishagni.catissueplus.core.common.util.ConfigUtil;
@@ -92,7 +101,7 @@ import edu.common.dynamicextensions.query.WideRowMode;
 public class DistributionOrderServiceImpl implements DistributionOrderService, ObjectAccessor {
 	private static final Log logger = LogFactory.getLog(DistributionOrderServiceImpl.class);
 
-	private static final long ASYNC_CALL_TIMEOUT = 5000;
+	private static final long ASYNC_CALL_TIMEOUT = 5000L;
 
 	private DaoFactory daoFactory;
 
@@ -106,7 +115,11 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 
 	private AsyncTaskExecutor taskExecutor;
 
+	private Map<String, DistributionValidator> validators = new LinkedHashMap<>();
+
 	private List<EntityCrudListener<DistributionOrderDetail, DistributionOrder>> listeners = new ArrayList<>();
+
+	private LabelPrinter<DistributionOrderItem> labelPrinter;
 
 	public void setDaoFactory(DaoFactory daoFactory) {
 		this.daoFactory = daoFactory;
@@ -130,6 +143,26 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 
 	public void setTaskExecutor(AsyncTaskExecutor taskExecutor) {
 		this.taskExecutor = taskExecutor;
+	}
+
+	public void setValidators(List<DistributionValidator> validators) {
+		for (DistributionValidator validator : validators) {
+			this.validators.put(validator.getName(), validator);
+		}
+	}
+
+	@Override
+	public void addValidator(DistributionValidator validator) {
+		this.validators.put(validator.getName(), validator);
+	}
+
+	@Override
+	public void removeValidator(String name) {
+		this.validators.remove(name);
+	}
+
+	public void setLabelPrinter(LabelPrinter<DistributionOrderItem> labelPrinter) {
+		this.labelPrinter = labelPrinter;
 	}
 
 	@Override
@@ -296,21 +329,23 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 	@PlusTransactional
 	public ResponseEvent<List<SpecimenInfo>> getReservedSpecimens(RequestEvent<SpecimenListCriteria> req) {
 		try {
-			SpecimenListCriteria criteria = req.getPayload();
-			DistributionProtocol dp = getDp(criteria.reservedForDp(), null);
-			AccessCtrlMgr.getInstance().ensureReadDpRights(dp);
-
-			//
-			// Ensure user has specimen read rights
-			//
-			List<Pair<Long, Long>> siteCps = AccessCtrlMgr.getInstance().getReadAccessSpecimenSiteCps();
-			if (siteCps != null && siteCps.isEmpty()) {
-				return ResponseEvent.userError(RbacErrorCode.ACCESS_DENIED);
-			}
-			criteria.siteCps(siteCps);
-
+			SpecimenListCriteria criteria = getReservedSpecimensCriteria(req.getPayload());
 			List<Specimen> spmns = daoFactory.getSpecimenDao().getSpecimens(criteria);
 			return ResponseEvent.response(SpecimenInfo.from(spmns));
+		} catch (OpenSpecimenException ose) {
+			return ResponseEvent.error(ose);
+		} catch (Exception e) {
+			return ResponseEvent.serverError(e);
+		}
+	}
+
+	@Override
+	@PlusTransactional
+	public ResponseEvent<Integer> getReservedSpecimensCount(RequestEvent<SpecimenListCriteria> req) {
+		try {
+			SpecimenListCriteria criteria = getReservedSpecimensCriteria(req.getPayload());
+			Integer count = daoFactory.getSpecimenDao().getSpecimensCount(criteria);
+			return ResponseEvent.response(count);
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
 		} catch (Exception e) {
@@ -337,7 +372,7 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 			//
 			// Step 3: Ensure user has specimen read rights
 			//
-			List<Pair<Long, Long>> siteCps = AccessCtrlMgr.getInstance().getReadAccessSpecimenSiteCps();
+			List<SiteCpPair> siteCps = AccessCtrlMgr.getInstance().getReadAccessSpecimenSiteCps();
 			if (siteCps != null && siteCps.isEmpty()) {
 				return ResponseEvent.userError(RbacErrorCode.ACCESS_DENIED);
 			}
@@ -381,6 +416,91 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 	}
 
 	@Override
+	@PlusTransactional
+	public ResponseEvent<Integer> retrieveSpecimens(RequestEvent<RetrieveSpecimensOp> req) {
+		try {
+			RetrieveSpecimensOp detail = req.getPayload();
+			DistributionOrder order = daoFactory.getDistributionOrderDao().getById(detail.getListId());
+			if (order == null) {
+				return ResponseEvent.userError(DistributionOrderErrorCode.NOT_FOUND, detail.getListId());
+			}
+
+			ensureUserCanRetrieveSpecimens(order);
+
+			User retrievedBy = null;
+			if (detail.getUser() != null) {
+				retrievedBy = getUser(detail.getUser().getId(), detail.getUser().getEmailAddress());
+			}
+
+			if (retrievedBy == null) {
+				retrievedBy = AuthUtil.getCurrentUser();
+			}
+
+			Date retrieveDate = detail.getTime();
+			if (retrieveDate == null) {
+				retrieveDate = Calendar.getInstance().getTime();
+			}
+
+			int retrievedSpmnsCount = 0;
+			DistributionOrderItemListCriteria itemsCrit = new DistributionOrderItemListCriteria()
+				.orderId(order.getId())
+				.storedInContainers(true);
+			boolean endOfItems = false;
+			while (!endOfItems) {
+				// startAt is not set. The idea is the previously retrieved specimens won't appear in next chunk.
+				List<DistributionOrderItem> items = daoFactory.getDistributionOrderDao().getOrderItems(itemsCrit);
+				endOfItems = (items.size() < itemsCrit.maxResults());
+
+				for (DistributionOrderItem item : items) {
+					item.getSpecimen().updatePosition(null, retrievedBy, retrieveDate, detail.getComments());
+					item.getSpecimen().initCollections(); // HSEARCH-1350
+				}
+
+				retrievedSpmnsCount += items.size();
+				items.clear();
+				SessionUtil.getInstance().clearSession();
+			}
+
+			return ResponseEvent.response(retrievedSpmnsCount);
+		} catch (OpenSpecimenException ose) {
+			return ResponseEvent.error(ose);
+		} catch (Exception e) {
+			return ResponseEvent.serverError(e);
+		}
+	}
+
+	@Override
+	@PlusTransactional
+	public ResponseEvent<LabelPrintJobSummary> printDistributionLabels(RequestEvent<PrintDistributionLabelDetail> req) {
+		try {
+			PrintDistributionLabelDetail input = req.getPayload();
+
+			DistributionOrder order = getOrder(input.getOrderId(), input.getOrderName());
+			AccessCtrlMgr.getInstance().ensureReadDistributionOrderRights(order);
+
+			List<DistributionOrderItem> orderItems = daoFactory.getDistributionOrderDao()
+				.getOrderItems(new DistributionOrderItemListCriteria().orderId(order.getId()).ids(input.getItemIds()));
+
+			LabelPrintJob job = printDistributionLabels(orderItems, input.getCopies());
+			if (job == null) {
+				return ResponseEvent.userError(DistributionOrderErrorCode.NO_ITEMS_PRINTED);
+			}
+
+			job.generateLabelsDataFile();
+			return ResponseEvent.response(LabelPrintJobSummary.from(job));
+		} catch (OpenSpecimenException ose) {
+			return ResponseEvent.error(ose);
+		} catch (Exception e) {
+			return ResponseEvent.serverError(e);
+		}
+	}
+
+	@Override
+	public ResponseEvent<List<LabelTokenDetail>> getPrintLabelTokens() {
+		return ResponseEvent.response(LabelTokenDetail.from("print_", labelPrinter.getTokens()));
+	}
+
+	@Override
 	public void addListener(EntityCrudListener<DistributionOrderDetail, DistributionOrder> listener) {
 		listeners.add(listener);
 	}
@@ -388,7 +508,7 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 	@Override
 	@PlusTransactional
 	public void validateSpecimens(DistributionProtocol dp, List<Specimen> specimens) {
-		List<Pair<Long, Long>> siteCps = AccessCtrlMgr.getInstance().getReadAccessSpecimenSiteCps();
+		List<SiteCpPair> siteCps = AccessCtrlMgr.getInstance().getReadAccessSpecimenSiteCps();
 		if (siteCps != null && siteCps.isEmpty()) {
 			throw OpenSpecimenException.userError(RbacErrorCode.ACCESS_DENIED);
 		}
@@ -425,13 +545,13 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 	}
 
 	private DistributionOrderListCriteria addOrderListCriteria(DistributionOrderListCriteria crit) {
-		Set<Long> siteIds = AccessCtrlMgr.getInstance().getReadAccessDistributionOrderSites();
-		if (siteIds != null && siteIds.isEmpty()) {
+		Set<SiteCpPair> sites = AccessCtrlMgr.getInstance().getReadAccessDistributionOrderSites();
+		if (sites != null && sites.isEmpty()) {
 			throw OpenSpecimenException.userError(RbacErrorCode.ACCESS_DENIED);
 		}
 
-		if (siteIds != null) {
-			crit.siteIds(siteIds);
+		if (sites != null) {
+			crit.sites(sites);
 		}
 
 		return crit;
@@ -463,7 +583,7 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 				return ResponseEvent.userError(SpecimenRequestErrorCode.CLOSED, request.getId());
 			}
 
-			List<Pair<Long, Long>> siteCps = AccessCtrlMgr.getInstance().getReadAccessSpecimenSiteCps();
+			List<SiteCpPair> siteCps = AccessCtrlMgr.getInstance().getReadAccessSpecimenSiteCps();
 			if (siteCps != null && siteCps.isEmpty()) {
 				return ResponseEvent.userError(RbacErrorCode.ACCESS_DENIED);
 			}
@@ -513,7 +633,7 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 			ensureValidSpecimenList(newOrder, ose);
 			ose.checkAndThrow();
 
-			List<Pair<Long, Long>> siteCps = AccessCtrlMgr.getInstance().getReadAccessSpecimenSiteCps();
+			List<SiteCpPair> siteCps = AccessCtrlMgr.getInstance().getReadAccessSpecimenSiteCps();
 			if (siteCps != null && siteCps.isEmpty()) {
 				return ResponseEvent.userError(RbacErrorCode.ACCESS_DENIED);
 			}
@@ -547,19 +667,31 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 	}
 
 	private ResponseEvent<DistributionOrderDetail> saveOrUpdateOrder(Function<DistributionOrderDetail, ResponseEvent<DistributionOrderDetail>> workFn, DistributionOrderDetail input) {
+		long timeout = input.isAsync() ? ASYNC_CALL_TIMEOUT : 0L;
 		User currentUser = AuthUtil.getCurrentUser();
 		Future<ResponseEvent<DistributionOrderDetail>> result = taskExecutor.submit(
 				() -> {
 					try {
+						long t1 = System.currentTimeMillis();
 						AuthUtil.setCurrentUser(currentUser);
-						return workFn.apply(input);
+
+						ResponseEvent<DistributionOrderDetail> resp = workFn.apply(input);
+						if (!resp.isSuccessful() && timeout > 0 && (System.currentTimeMillis() - t1) > (timeout - 500)) {
+							//
+							// if the request was async and it took round about same time (+/- 500 ms) as the wait time
+							// then notify users about the errors via email notifications.
+							//
+							notifyFailedOrder(resp);
+						}
+
+						return resp;
 					} finally {
 						AuthUtil.clearCurrentUser();
 					}
 				}
 		);
 
-		return unwrap(result, input.isAsync() ? ASYNC_CALL_TIMEOUT : 0);
+		return unwrap(result, timeout);
 	}
 
 	private ResponseEvent<DistributionOrderDetail> unwrap(Future<ResponseEvent<DistributionOrderDetail>> result, long timeout) {
@@ -599,15 +731,15 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 	}
 
 	private List<Specimen> getReadAccessSpecimens(SpecimenListCriteria crit) {
-		List<Pair<Long, Long>> siteCpPairs = AccessCtrlMgr.getInstance().getReadAccessSpecimenSiteCps();
-		if (siteCpPairs != null && siteCpPairs.isEmpty()) {
+		List<SiteCpPair> siteCps = AccessCtrlMgr.getInstance().getReadAccessSpecimenSiteCps();
+		if (siteCps != null && siteCps.isEmpty()) {
 			return null;
 		}
 
-		return daoFactory.getSpecimenDao().getSpecimens(crit.siteCps(siteCpPairs));
+		return daoFactory.getSpecimenDao().getSpecimens(crit.siteCps(siteCps));
 	}
 
-	private void ensureValidSpecimens(DistributionOrder order, List<Pair<Long, Long>> siteCps, OpenSpecimenException ose) {
+	private void ensureValidSpecimens(DistributionOrder order, List<SiteCpPair> siteCps, OpenSpecimenException ose) {
 		if (order.getSpecimenList() != null || order.isForAllReservedSpecimens()) {
 			int startAt = 0, maxSpmns = 100;
 			Long orderId = order.getId();
@@ -644,7 +776,7 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 		}
 	}
 
-	private Function<Integer, List<Specimen>> getSpecimensFn(DistributionOrder order, List<Pair<Long, Long>> siteCps, int maxSpmns) {
+	private Function<Integer, List<Specimen>> getSpecimensFn(DistributionOrder order, List<SiteCpPair> siteCps, int maxSpmns) {
 		Long specimenListId = order.getSpecimenList() != null ? order.getSpecimenList().getId() : null;
 		Long reservedForDp  = specimenListId != null ? null : order.getDistributionProtocol().getId();
 
@@ -658,14 +790,14 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 	}
 
 	private void ensureValidSpecimens(
-		List<Specimen> inputSpmns, DistributionProtocol dp, List<Pair<Long, Long>> siteCpPairs, OpenSpecimenException ose) {
+		List<Specimen> inputSpmns, DistributionProtocol dp, List<SiteCpPair> siteCps, OpenSpecimenException ose) {
 
 		if (CollectionUtils.isEmpty(inputSpmns)) {
 			return;
 		}
 
 		List<Long> specimenIds = inputSpmns.stream().map(Specimen::getId).collect(Collectors.toList());
-		ensureSpecimensAccessibility(specimenIds, siteCpPairs, ose);
+		ensureSpecimensAccessibility(specimenIds, siteCps, ose);
 
 		List<String> closedSpmns = inputSpmns.stream()
 			.filter(spmn -> !spmn.isActive()).map(Specimen::getLabel)
@@ -678,20 +810,24 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 
 		ensureDpValidity(inputSpmns, dp, ose);
 
-		int stmtsCount = dp.getConsentTiers().size();
-		if (stmtsCount > 0) {
-			List<String> nonConsentingLabels = daoFactory.getDistributionProtocolDao()
-				.getNonConsentingSpecimens(dp.getId(), specimenIds, stmtsCount);
-			if (!nonConsentingLabels.isEmpty()) {
-				ose.addError(DistributionOrderErrorCode.NON_CONSENTING_SPECIMENS, nonConsentingLabels);
+		Map<String, Object> ctxt = Collections.singletonMap("siteCpPairs", siteCps);
+		for (DistributionValidator validator : validators.values()) {
+			try {
+				validator.validate(dp, inputSpmns, ctxt);
+			} catch (OpenSpecimenException ve) {
+				if (ve.getException() == null) {
+					ose.addErrors(ve.getErrors());
+				} else {
+					throw ve;
+				}
+
+				break;
 			}
 		}
 	}
 
-	private void ensureSpecimensAccessibility(
-		List<Long> specimenIds, List<Pair<Long, Long>> siteCpPairs, OpenSpecimenException ose) {
-
-		SpecimenListCriteria crit = new SpecimenListCriteria().siteCps(siteCpPairs).ids(specimenIds);
+	private void ensureSpecimensAccessibility(List<Long> specimenIds, List<SiteCpPair> siteCps, OpenSpecimenException ose) {
+		SpecimenListCriteria crit = new SpecimenListCriteria().siteCps(siteCps).ids(specimenIds);
 		String nonCompliantSpmnLabels = daoFactory.getSpecimenDao().getNonCompliantSpecimens(crit)
 			.stream().limit(10).collect(Collectors.joining(", "));
 		if (!nonCompliantSpmnLabels.isEmpty()) {
@@ -726,10 +862,9 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 		// This implicitly means specimens with DPs have been pre-validated
 		//
 		Map<Long, Specimen> specimenMap = spmnWithoutDps.stream().collect(Collectors.toMap(Specimen::getId, Function.identity()));
-		Map<Long, Set<Long>> spmnSitesMap = daoFactory.getSpecimenDao().getSpecimenSites(spmnWithoutDps.stream().map(Specimen::getId).collect(Collectors.toSet()));
+		Map<Long, Set<SiteCpPair>> spmnSites = daoFactory.getSpecimenDao().getSpecimenSites(spmnWithoutDps.stream().map(Specimen::getId).collect(Collectors.toSet()));
 
-		Set<Long> dpSites = dp.getAllDistributingSites().stream().map(Site::getId).collect(Collectors.toSet());
-		String errorLabels = notAllowedSpecimenLabels(specimenMap, spmnSitesMap, dpSites);
+		String errorLabels = notAllowedSpecimenLabels(specimenMap, spmnSites, dp.getAllowedDistributingSites());
 		if (StringUtils.isNotBlank(errorLabels)) {
 			ose.addError(DistributionOrderErrorCode.INVALID_SPECIMENS_FOR_DP, errorLabels, dp.getShortTitle());
 			return;
@@ -739,17 +874,17 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 			return;
 		}
 
-		Set<Long> allowedSites = AccessCtrlMgr.getInstance().getDistributionOrderAllowedSites(dp);
-		errorLabels = notAllowedSpecimenLabels(specimenMap, spmnSitesMap, allowedSites);
+		Set<SiteCpPair> allowedSites = AccessCtrlMgr.getInstance().getDistributionOrderAllowedSites(dp);
+		errorLabels = notAllowedSpecimenLabels(specimenMap, spmnSites, allowedSites);
 		if (StringUtils.isNotBlank(errorLabels)) {
 			ose.addError(DistributionOrderErrorCode.SPMNS_DENIED, errorLabels);
 		}
 	}
 
-	private String notAllowedSpecimenLabels(Map<Long, Specimen> specimenMap, Map<Long, Set<Long>> spmnSitesMap, Set<Long> allowedSites) {
-		return spmnSitesMap.entrySet().stream()
-			.filter(spmnSites -> CollectionUtils.intersection(spmnSites.getValue(), allowedSites).isEmpty())
-			.map(spmnSites -> specimenMap.get(spmnSites.getKey()).getLabel())
+	private String notAllowedSpecimenLabels(Map<Long, Specimen> specimenMap, Map<Long, Set<SiteCpPair>> spmnSites, Set<SiteCpPair> allowedSites) {
+		return spmnSites.entrySet().stream()
+			.filter(spmnSite -> !SiteCpPair.contains(allowedSites, spmnSite.getValue()))
+			.map(spmnSite -> specimenMap.get(spmnSite.getKey()).getLabel())
 			.limit(10)
 			.collect(Collectors.joining(", "));
 	}
@@ -866,9 +1001,24 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 		return result;
 	}
 
+	private SpecimenListCriteria getReservedSpecimensCriteria(SpecimenListCriteria criteria) {
+		DistributionProtocol dp = getDp(criteria.reservedForDp(), null);
+		AccessCtrlMgr.getInstance().ensureReadDpRights(dp);
+
+		//
+		// Ensure user has specimen read rights
+		//
+		List<SiteCpPair> siteCps = AccessCtrlMgr.getInstance().getReadAccessSpecimenSiteCps();
+		if (siteCps != null && siteCps.isEmpty()) {
+			throw OpenSpecimenException.userError(RbacErrorCode.ACCESS_DENIED);
+		}
+
+		return criteria.siteCps(siteCps);
+	}
+
 	private int reserveSpecimens(
 		Collection<Specimen> specimens, DistributionProtocol dp, User user, Date time, String comments,
-		List<Pair<Long, Long>> siteCps) {
+		List<SiteCpPair> siteCps) {
 
 		//
 		// Filter out the specimens that have been already reserved for the DP
@@ -907,7 +1057,7 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 
 	private int cancelSpecimenReservation(
 		Collection<Specimen> specimens, DistributionProtocol dp, User user, Date time, String comments,
-		List<Pair<Long, Long>> siteCps) {
+		List<SiteCpPair> siteCps) {
 
 		//
 		// Ensure specimens are read accessible
@@ -971,7 +1121,7 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 		return item;
 	}
 
-	private void distributeOrder(DistributionOrder order, List<Pair<Long, Long>> siteCps, Status status) {
+	private void distributeOrder(DistributionOrder order, List<SiteCpPair> siteCps, Status status) {
 		if (!Status.EXECUTED.equals(status)) {
 			return;
 		}
@@ -979,6 +1129,7 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 		order.distribute();
 		daoFactory.getDistributionOrderDao().saveOrUpdate(order);
 		if (order.getSpecimenList() == null && !order.isForAllReservedSpecimens()) {
+			printDistributionLabels(order.getOrderItems());
 			return;
 		}
 
@@ -988,7 +1139,13 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 		List<Specimen> specimens;
 		while (!endOfSpecimens) {
 			specimens = getSpecimens.apply(starAt);
-			specimens.forEach(spmn -> distributeSpecimen(order, spmn));
+
+			List<DistributionOrderItem> orderItems = new ArrayList<>();
+			for (Specimen specimen : specimens) {
+				orderItems.add(distributeSpecimen(order, specimen));
+			}
+
+			printDistributionLabels(orderItems);
 
 			starAt += specimens.size();
 			endOfSpecimens = (specimens.size() < maxSpmns);
@@ -998,10 +1155,27 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 		}
 	}
 
-	private void distributeSpecimen(DistributionOrder order, Specimen specimen) {
+	private DistributionOrderItem distributeSpecimen(DistributionOrder order, Specimen specimen) {
 		DistributionOrderItem item = addRate(order, DistributionOrderItem.createOrderItem(order, specimen));
 		daoFactory.getDistributionOrderDao().saveOrUpdateOrderItem(item);
 		item.distribute();
+		return item;
+	}
+
+	private LabelPrintJob printDistributionLabels(Collection<DistributionOrderItem> orderItems) {
+		List<DistributionOrderItem> toPrintItems = orderItems.stream()
+			.filter(DistributionOrderItem::isPrintLabel)
+			.sorted(Comparator.comparing(DistributionOrderItem::getId))
+			.collect(Collectors.toList());
+		return printDistributionLabels(toPrintItems, 1);
+	}
+
+	private LabelPrintJob printDistributionLabels(List<DistributionOrderItem> orderItems, int copies) {
+		if (CollectionUtils.isEmpty(orderItems)) {
+			return null;
+		}
+
+		return labelPrinter.print(PrintItem.make(orderItems, copies));
 	}
 
 	private SavedQuery getReportQuery(DistributionOrder order) {
@@ -1090,6 +1264,7 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 		}
 
 		Set<User> rcpts = new HashSet<>();
+		rcpts.add(AuthUtil.getCurrentUser());
 		if (newStatus.equals(Status.EXECUTED)) {
 			rcpts.add(order.getDistributor());
 			rcpts.add(order.getRequester());
@@ -1101,19 +1276,18 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 			}
 		}
 
-		if (!rcpts.contains(AuthUtil.getCurrentUser())) {
-			rcpts.add(AuthUtil.getCurrentUser());
-		}
-
 		Object[] subjectParams = { order.getName(), newStatus.equals(Status.EXECUTED) ? 1 : 2 };
-
-		// Send email notification
-		Map<String, Object> emailProps = new HashMap<>();
-		emailProps.put("$subject", subjectParams);
-		emailProps.put("order", order);
-		for (User rcpt : rcpts) {
-			emailProps.put("rcpt", rcpt);
-			emailService.sendEmail(ORDER_DISTRIBUTED_EMAIL_TMPL, new String[] { rcpt.getEmailAddress() }, null, emailProps);
+		if (!Boolean.TRUE.equals(order.getDistributionProtocol().getDisableEmailNotifs())) {
+			//
+			// Send email notification
+			//
+			Map<String, Object> emailProps = new HashMap<>();
+			emailProps.put("$subject", subjectParams);
+			emailProps.put("order", order);
+			for (User rcpt : rcpts) {
+				emailProps.put("rcpt", rcpt);
+				emailService.sendEmail(ORDER_DISTRIBUTED_EMAIL_TMPL, new String[] { rcpt.getEmailAddress() }, null, emailProps);
+			}
 		}
 
 		// UI notification
@@ -1126,6 +1300,24 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 		notif.setCreationTime(Calendar.getInstance().getTime());
 		notif.setMessage(msg);
 		NotifUtil.getInstance().notify(notif, Collections.singletonMap("order-overview", rcpts));
+	}
+
+	private void notifyFailedOrder(ResponseEvent<?> resp) {
+		if (resp.isSuccessful()) {
+			return;
+		}
+
+		logger.error("Error saving/updating the order: " + resp.getError().getMessage());
+		User currentUser = AuthUtil.getCurrentUser();
+		if (currentUser == null || StringUtils.isBlank(currentUser.getEmailAddress())) {
+			return;
+		}
+
+		Map<String, Object> emailProps = new HashMap<>();
+		emailProps.put("$subject", new Object[0]);
+		emailProps.put("errorMsg", resp.getError().getMessage());
+		emailProps.put("rcpt", currentUser.formattedName());
+		emailService.sendEmail(ORDER_FAILED_EMAIL_TMPL, new String[] { currentUser.getEmailAddress() }, null, emailProps);
 	}
 
 	private DistributionOrder getOrder(Long orderId, String orderName) {
@@ -1315,9 +1507,29 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 		item.setReturnedBy(user);
 	}
 
+	private void ensureUserCanRetrieveSpecimens(DistributionOrder order) {
+		try {
+			AccessCtrlMgr.getInstance().ensureUpdateDistributionOrderRights(order);
+		} catch (OpenSpecimenException ose) {
+			if (ose.getErrors().size() > 1 || !ose.containsError(RbacErrorCode.ACCESS_DENIED)) {
+				throw ose;
+			}
+
+			User currentUser = AuthUtil.getCurrentUser();
+			DistributionProtocol dp = order.getDistributionProtocol();
+			if (!order.getRequester().equals(currentUser) &&
+				!dp.getPrincipalInvestigator().equals(currentUser) &&
+				!dp.getCoordinators().contains(currentUser)) {
+				throw OpenSpecimenException.userError(RbacErrorCode.ACCESS_DENIED);
+			}
+		}
+	}
+
 	private void raiseError(ErrorCode error, Object ... args) {
 		throw OpenSpecimenException.userError(error, args);
 	}
 
 	private static final String ORDER_DISTRIBUTED_EMAIL_TMPL = "order_distributed";
+
+	private static final String ORDER_FAILED_EMAIL_TMPL = "order_failed";
 }

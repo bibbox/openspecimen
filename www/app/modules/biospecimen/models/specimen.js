@@ -13,6 +13,8 @@ angular.module('os.biospecimen.models.specimen', ['os.common.models', 'os.biospe
     var Specimen = osModel(
       'specimens',
       function(specimen) {
+        specimen.externalIds = specimen.externalIds || [];
+
         if (specimen.specimensPool) {
           specimen.specimensPool = specimen.specimensPool.map(
             function(poolSpmn) {
@@ -80,6 +82,14 @@ angular.module('os.biospecimen.models.specimen', ['os.common.models', 'os.biospe
         if (specimen.hasOnlyPendingChildren) {
           specimen.hasOnlyPendingChildren = hasOnlyPendingChildren(specimen.specimensPool);
         }
+
+        if (hasSpecimensPool) {
+          specimen.$$childrenHaveImg = hasImage(specimen.specimensPool);
+        }
+
+        if (!specimen.$$childrenHaveImg && hasChildren) {
+          specimen.$$childrenHaveImg = hasImage(specimen.children);
+        }
       });
 
       return result;
@@ -127,8 +137,8 @@ angular.module('os.biospecimen.models.specimen', ['os.common.models', 'os.biospe
       );
     }
 
-    Specimen.bulkDelete = function(specimenIds) {
-      return $http.delete(Specimen.url(), {params: {id: specimenIds}}).then(
+    Specimen.bulkDelete = function(specimenIds, reason) {
+      return $http.delete(Specimen.url(), {params: {id: specimenIds, reason: reason}}).then(
         function(result) {
           return result.data;
         }
@@ -315,6 +325,11 @@ angular.module('os.biospecimen.models.specimen', ['os.common.models', 'os.biospe
       sr.reqLabel = sr.name;
       sr.poolSpecimen = !!sr.pooledSpecimenReqId;
 
+      if (sr.lineage == 'New' && !sr.poolSpecimen) {
+        sr.collectionEvent = {user: sr.collector, procedure: sr.collectionProcedure, container: sr.collectionContainer};
+        sr.receivedEvent   = {user: sr.receiver, receivedQuality: 'Acceptable'};
+      }
+
       var attrs = [
         'id', 'name', 'pooledSpecimenReqId',
         'collector', 'collectionProcedure', 'collectionContainer',
@@ -389,6 +404,14 @@ angular.module('os.biospecimen.models.specimen', ['os.common.models', 'os.biospe
       return specimens.every(
         function(spmn) {
           return !spmn.status || spmn.status == 'Pending';
+        }
+      );
+    }
+
+    function hasImage(specimens) {
+      return (specimens || []).some(
+        function(spmn) {
+          return !!spmn.imageId || !!spmn.$$childrenHaveImg;
         }
       );
     }

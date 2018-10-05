@@ -96,16 +96,29 @@ angular.module('os.biospecimen.participant.collect-specimens', ['os.biospecimen.
     function allocatePositions(visit, specimens, reservationToCancel) {
       return CpConfigSvc.getWorkflowData(visit.cpId, 'auto-allocation').then(
         function(data) {
-          var resvOp = getReservePositionsOp(visit.cpId, visit.cprId, data.rules || [], specimens);
-          resvOp.reservationToCancel = reservationToCancel;
-          return Container.getReservedPositions(resvOp).then(
-            function(positions) {
-              if (positions.length > 0) {
-                assignReservedPositions(resvOp, positions);
-              }
-              return true;
+          if (!angular.equals(data, {})) {
+            return allocatePositions0(visit, specimens, reservationToCancel, data);
+          }
+
+          return CpConfigSvc.getWorkflowData(-1, 'auto-allocation').then(
+            function(sysData) {
+              return allocatePositions0(visit, specimens, reservationToCancel, sysData);
             }
-          )
+          );
+        }
+      );
+    }
+
+    function allocatePositions0(visit, specimens, reservationToCancel, data) {
+      var resvOp = getReservePositionsOp(visit.cpId, visit.cprId, data.rules || [], specimens);
+      resvOp.reservationToCancel = reservationToCancel;
+      return Container.getReservedPositions(resvOp).then(
+        function(positions) {
+          if (positions.length > 0) {
+            assignReservedPositions(resvOp, positions);
+          }
+
+          return true;
         }
       );
     }
@@ -128,16 +141,29 @@ angular.module('os.biospecimen.participant.collect-specimens', ['os.biospecimen.
     function gotoCollectionPage(visit) {
       CpConfigSvc.getWorkflowData(visit.cpId, 'specimenCollection').then(
         function(wfData) {
-          var params = {cprId: visit.cprId, visitId: visit.id, eventId: visit.eventId};
-          var state = 'tree';
-          if (wfData.showCollectionTree == false || wfData.showCollectionTree == 'false') {
-            state = 'nth-step';
-            data.opts.hierarchical =  true;
+          if (wfData && !angular.equals(wfData, {})) {
+            gotoCollectionPage0(visit, wfData);
+            return;
           }
 
-          $state.go('participant-detail.collect-specimens.' + state, params);
+          CpConfigSvc.getWorkflowData(-1, 'specimenCollection').then(
+            function(wfData) {
+              gotoCollectionPage0(visit, wfData);
+            }
+          );
         }
       );
+    }
+
+    function gotoCollectionPage0(visit, wfData) {
+      var params = {cprId: visit.cprId, visitId: visit.id, eventId: visit.eventId};
+      var state = 'tree';
+      if (wfData.showCollectionTree == false || wfData.showCollectionTree == 'false') {
+        state = 'nth-step';
+        data.opts.hierarchical =  true;
+      }
+
+      $state.go('participant-detail.collect-specimens.' + state, params);
     }
 
     function isAnyChildOrPoolSpecimenPending(spmn) {
@@ -1021,8 +1047,13 @@ angular.module('os.biospecimen.participant.collect-specimens', ['os.biospecimen.
 
       $scope.reallocatePositions = function() {
         var specimens = [];
+        var reservationId = undefined;
         for (var i = 0; i < $scope.specimens.length; ++i) {
           var spmn = $scope.specimens[i];
+          if (!reservationId && spmn.storageLocation) {
+            reservationId = spmn.storageLocation.reservationId
+          }
+
           if (spmn.existingStatus == 'Collected') {
             continue;
           }
@@ -1039,12 +1070,12 @@ angular.module('os.biospecimen.participant.collect-specimens', ['os.biospecimen.
           angular.forEach(specimens, function(spmn) { spmn.status = 'Collected'; });
         }
 
-        CollectSpecimensSvc.allocatePositions(visit, specimens, getReservationToCancel())
+        CollectSpecimensSvc.allocatePositions(visit, specimens, reservationId)
           .then(reassignSelectedStatus, reassignSelectedStatus);
       }
 
       $scope.selectPositionsManually = function(clearPositions) {
-        $q.when(vacateReservedPositions()).then(
+        $q.when(CollectSpecimensSvc.cancelReservation($scope.specimens)).then(
           function() {
             $scope.autoPosAllocate = false;
             angular.forEach($scope.specimens,
@@ -1091,7 +1122,7 @@ angular.module('os.biospecimen.participant.collect-specimens', ['os.biospecimen.
     })
 
   .controller('CollectSpecimensNthStepCtrl', function(
-      $scope, $state, $injector, cp, cpr, visit, cpDict, spmnCollFields, latestVisit,
+      $scope, $state, $injector, cp, cpr, visit, cpDict, spmnCollFields, latestVisit, onValueChangeCb,
       CollectSpecimensSvc, ExtensionsUtil, SpecimenUtil) {
 
       var isVisitCompleted;
@@ -1101,8 +1132,9 @@ angular.module('os.biospecimen.participant.collect-specimens', ['os.biospecimen.
         CollectSpecimensSvc.cleanupSpecimens(specimens);
         specimens.forEach(function(spmn) { spmn.status = 'Collected'; });
 
+        var opts = $scope.opts = {viewCtx: $scope, onValueChange: onValueChangeCb};
         var groups = $scope.customFieldGroups = SpecimenUtil.sdeGroupSpecimens(
-          cpDict, spmnCollFields.fieldGroups || [], specimens, {cpr: cpr, visit: visit});
+          cpDict, spmnCollFields.fieldGroups || [], specimens, {cpr: cpr, visit: visit}, opts);
 
         $scope.visit = visit;
         if (visit) {
@@ -1224,6 +1256,10 @@ angular.module('os.biospecimen.participant.collect-specimens', ['os.biospecimen.
         }
 
         sdeSampleSvc.collectVisitSpecimens(samples).then(function(resp) { navigateTo({id: resp[0].visitId}) });
+      }
+
+      $scope.setToAllChildren = function(object, prop, value, allDescendants) {
+        SpecimenUtil.sdeGroupSetChildrenValue($scope.customFieldGroups, object, prop, value, allDescendants);
       }
 
       $scope.updateSpecimens = function() {

@@ -69,6 +69,7 @@ angular.module('os.biospecimen.common')
       scope.onTypeSelect = function(type) {
         type = type || {specimenClass: '', type: ''};
         angular.extend(scope.specimen, type);
+        scope.onSelect({type: type});
       }
 
       SpecimenTypeUtil.setClass(formCtrl, [scope.specimen], scope.options);
@@ -92,7 +93,8 @@ angular.module('os.biospecimen.common')
 
       scope: {
         specimen: '=',
-        options:  '=?'
+        options:  '=?',
+        onSelect: '&'
       },
 
       replace: true,
@@ -108,6 +110,10 @@ angular.module('os.biospecimen.common')
         var selectEl = tElem.find('os-select');
         if (tAttrs.hasOwnProperty('mdInput')) {
           selectEl.attr('os-md-input', '');
+        }
+
+        if (tAttrs.ngRequired) {
+          selectEl.attr('ng-required', tAttrs.ngRequired);
         }
 
         angular.forEach(tAttrs,

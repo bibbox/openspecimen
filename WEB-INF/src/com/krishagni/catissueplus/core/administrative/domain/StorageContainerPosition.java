@@ -33,6 +33,8 @@ public class StorageContainerPosition implements Comparable<StorageContainerPosi
 
 	private Boolean blocked;
 
+	private boolean supressAccessChecks;
+
 	public Long getId() {
 		return id;
 	}
@@ -129,8 +131,16 @@ public class StorageContainerPosition implements Comparable<StorageContainerPosi
 		this.blocked = blocked;
 	}
 
-	public boolean isBlocked() {
+	public Boolean isBlocked() {
 		return blocked != null && blocked;
+	}
+
+	public boolean isSupressAccessChecks() {
+		return supressAccessChecks;
+	}
+
+	public void setSupressAccessChecks(boolean supressAccessChecks) {
+		this.supressAccessChecks = supressAccessChecks;
 	}
 
 	public void update(StorageContainerPosition other) {

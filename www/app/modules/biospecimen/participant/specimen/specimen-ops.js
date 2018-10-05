@@ -1,7 +1,7 @@
 angular.module('os.biospecimen.specimen')
   .directive('osSpecimenOps', function(
-    $state, $rootScope, $modal, $q, Util, DistributionProtocol, DistributionOrder,
-    Specimen, SpecimensHolder, Alerts, CommentsUtil, DeleteUtil, ParticipantSpecimensViewState) {
+    $state, $rootScope, $modal, $q, Util, DistributionProtocol, DistributionOrder, Specimen,
+    SpecimensHolder, Alerts, CommentsUtil, DeleteUtil, SpecimenLabelPrinter, ParticipantSpecimensViewState) {
 
     function initOpts(scope, element, attrs) {
       scope.title = attrs.title || 'specimens.ops';
@@ -77,7 +77,7 @@ angular.module('os.biospecimen.specimen')
               cpShortTitle = scope.cp.shortTitle;
             }
 
-            if (ctx.defDps && (!searchTerm || ctx.defDps.length <= 100)) {
+            if (ctx.defDps && (!searchTerm || ctx.defDps.length < 100)) {
               ctx.dps = ctx.defDps;
               return;
             }
@@ -149,7 +149,7 @@ angular.module('os.biospecimen.specimen')
 
     function distributeSpmns(scope, details, specimens) {
       if (details.editOrder) {
-        SpecimensHolder.setSpecimens(specimens, details.comments);
+        SpecimensHolder.setSpecimens(specimens, details);
         $state.go('order-addedit', {dpId: details.dp.id});
         return;
       }
@@ -163,7 +163,7 @@ angular.module('os.biospecimen.specimen')
         distributionProtocol: dp,
         requester: dp.principalInvestigator,
         siteName: dp.defReceivingSiteName,
-        orderItems: getOrderItems(specimens),
+        orderItems: getOrderItems(specimens, details.printLabels),
         comments: details.comments,
         status: 'EXECUTED'
       }).$saveOrUpdate().then(
@@ -175,13 +175,14 @@ angular.module('os.biospecimen.specimen')
       );
     }
 
-    function getOrderItems(specimens) {
+    function getOrderItems(specimens, printLabel) {
       return specimens.map(
         function(specimen) {
           return {
             specimen: specimen,
             quantity: specimen.availableQty,
-            status: 'DISTRIBUTED_AND_CLOSED'
+            status: 'DISTRIBUTED_AND_CLOSED',
+            printLabel: printLabel
           }
         }
       );
@@ -219,6 +220,8 @@ angular.module('os.biospecimen.specimen')
       templateUrl: 'modules/biospecimen/participant/specimen/specimen-ops.html',
 
       link: function(scope, element, attrs) {
+        scope.dropdownRight = attrs.hasOwnProperty('dropdownRight');
+
         initOpts(scope, element, attrs);
 
         function gotoView(state, params, msgCode, anyStatus) {
@@ -248,6 +251,26 @@ angular.module('os.biospecimen.specimen')
           $state.go('specimen-bulk-edit');
         }
 
+        scope.printSpecimenLabels = function() {
+          var spmns = scope.specimens({anyStatus: true});
+          if (!spmns || spmns.length == 0) {
+            Alerts.error('specimens.no_specimens_for_print');
+            return;
+          }
+
+          var parts = [Util.formatDate(Date.now(), 'yyyyMMdd_HHmmss')];
+          if (scope.cpr) {
+            parts.unshift(scope.cpr.ppid);
+            parts.unshift(scope.cpr.cpShortTitle);
+          } else if (scope.cp) {
+            parts.unshift(scope.cp.shortTitle);
+          }
+
+          var outputFilename = parts.join('_') + '.csv';
+          var specimenIds = spmns.map(function(s) { return s.id; });
+          SpecimenLabelPrinter.printLabels({specimenIds: specimenIds}, outputFilename);
+        }
+
         scope.deleteSpecimens = function() {
           var spmns = scope.specimens({anyStatus: true});
           if (!spmns || spmns.length == 0) {
@@ -262,7 +285,8 @@ angular.module('os.biospecimen.specimen')
             onBulkDeletion: function() {
               ParticipantSpecimensViewState.specimensUpdated(scope, {inline: true});
               scope.initList();
-            }
+            },
+            askReason: true
           }
           DeleteUtil.bulkDelete({bulkDelete: Specimen.bulkDelete}, specimenIds, opts);
         }

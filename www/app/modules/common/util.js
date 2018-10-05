@@ -5,6 +5,12 @@ angular.module('openspecimen')
     $parse, $modal, $translate, $http, osRightDrawerSvc, ApiUrls, Alerts) {
 
     var isoDateRe = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2}(?:\.\d*))(?:Z|(\+|-)([\d|:]*))?$/;
+
+    var fileTypes = [
+      'bmp', 'csv', 'css', 'doc', 'docx', 'gif', 'html', 'jar', 'java', 'jpeg', 'jpg',
+      'js', 'json', 'pdf', 'png', 'tif', 'tiff', 'txt', 'xls', 'xlsx', 'xml', 'zip'
+    ];
+
     function clear(input) {
       input.splice(0, input.length);
     };
@@ -25,7 +31,7 @@ angular.module('openspecimen')
 
       if (!!filters) {
         try {
-          angular.extend(opts, angular.fromJson(atob(filters)));
+          angular.extend(opts, angular.fromJson(decodeURIComponent(atob(filters))));
           osRightDrawerSvc.open();
         } catch (e) {
           console.log("Invalid filter");
@@ -60,7 +66,7 @@ angular.module('openspecimen')
 
             var fb = undefined;
             if (Object.keys(filters).length > 0) {
-              fb = btoa(JSON.stringify(filters));
+              fb = btoa(encodeURIComponent(JSON.stringify(filters)));
             }
 
             $stateParams.filters = fb;
@@ -207,15 +213,22 @@ angular.module('openspecimen')
       return value;
     }
 
-    function downloadReport(entity, msgClass, filename) {
+    function downloadReport(entity, msgClass, filename, params) {
       var alert = Alerts.info(msgClass + '.report_gen_initiated', {}, false);
-      entity.generateReport().then(
+      entity.generateReport(params).then(
         function(result) {
           Alerts.remove(alert);
           if (result.completed) {
             Alerts.info(msgClass + '.downloading_report');
 
-            filename = (filename || entity.name) + '.csv';
+            filename = (filename || entity.name);
+
+            var extn = filename.substr(filename.lastIndexOf('.') + 1).toLowerCase();
+            if (fileTypes.indexOf(extn) == -1) {
+              // no known extension, by default, append .csv
+              filename += '.csv';
+            }
+
             downloadFile(ApiUrls.getBaseUrl() + 'query/export?fileId=' + result.dataFile + '&filename=' + filename);
           } else if (result.dataFile) {
             Alerts.info(msgClass + '.report_will_be_emailed');
@@ -229,27 +242,9 @@ angular.module('openspecimen')
     }
 
     function downloadFile(fileUrl) {
-      $http({method: 'GET', url: fileUrl, responseType: 'arraybuffer'}).then(
-        function(resp) {
-          var headers = resp.headers;
-
-          var contentType = headers('content-type');
-          var filename = headers('content-disposition');
-          filename = filename.substr(filename.indexOf('=') + 1);
-
-          var link = angular.element('<a/>');
-          try {
-            var blob = new Blob([resp.data], { type: contentType });
-            var url = window.URL.createObjectURL(blob);
-
-            link.attr({href: url, download: filename});
-            var clickEvent = new MouseEvent("click", {"view": window, "bubbles": true, "cancelable": false});
-            link[0].dispatchEvent(clickEvent);
-          } catch (ex) {
-            console.log(ex);
-          }
-        }
-      );
+      var link = angular.element('<a/>').attr({href: fileUrl});
+      var clickEvent = new MouseEvent('click', {view: window, bubbles: true, cancelable: false});
+      link[0].dispatchEvent(clickEvent);
     }
 
     function booleanPromise(condition) {
@@ -498,6 +493,15 @@ angular.module('openspecimen')
      * List of in-built functions available in evaluation of expressions
      */
     var fns = {
+      set: function(object, expr, value) {
+        $parse(expr).assign(object, value);
+        return object;
+      },
+
+      get: function(object, expr) {
+        return $parse(expr)(object);
+      },
+
       ifnull: function(cond, truth, falsy) {
         return (cond == null || cond == undefined) ? truth : falsy;
       },
@@ -508,6 +512,14 @@ angular.module('openspecimen')
 
       ifNotNull: function(cond, truth, falsy) {
         return (cond !== null && cond !== undefined) ? truth : falsy;
+      },
+
+      split: function(inputStr, regex, limit) {
+        return (inputStr || '' ).split(regex, limit);
+      },
+
+      join: function(inputStrs, separator) {
+        return (inputStrs || []).join(separator);
       },
 
       concatList: function(list, expr, separator) {
@@ -619,6 +631,10 @@ angular.module('openspecimen')
       }
     }
 
+    function formatDate(date, format) {
+      return $filter('date')(date, format);
+    }
+
     return {
       clear: clear,
 
@@ -673,6 +689,8 @@ angular.module('openspecimen')
         }
 
         return $filter('date')(input, fmt);
-      }
+      },
+
+      formatDate: formatDate
     };
   });

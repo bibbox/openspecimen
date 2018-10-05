@@ -136,6 +136,40 @@ angular.module('openspecimen')
       return result;
     }
 
+    function getOnValueChangeFns(cpId, wfOrder, result) {
+      if (wfOrder.length == 0) {
+        return result;
+      }
+
+      return getWorkflowData(cpId, wfOrder[0], {}).then(
+        function(data) {
+          result = angular.extend(result, data.onValueChange || {});
+          return getOnValueChangeFns(cpId, wfOrder.slice(1), result);
+        }
+      );
+    }
+
+    function setWorkflows(cp, workflows) {
+      cpWorkflowsMap[cp.id] = workflows;
+      delete cpWorkflowsQ[cp.id];
+
+      var pattern = 'cp-' + cp.id + '-';
+      var matchingKeys = [];
+      angular.forEach(listCfgsMap,
+        function(value, key) {
+          if (key.indexOf(pattern) == 0) {
+            matchingKeys.push(key);
+          }
+        }
+      );
+
+      angular.forEach(matchingKeys,
+        function(key) {
+          delete listCfgsMap[key];
+        }
+      );
+    }
+
     return {
       getRegParticipantTmpl: function(cpId, cprId) {
         if (cprId != -1) { //edit case
@@ -209,6 +243,15 @@ angular.module('openspecimen')
         );
       },
 
+      getOnValueChangeCallbacks: function(cpId, wfLuOrder) {
+        return getWorkflowData(-1, 'dictionary', {}).then(
+          function(data) {
+            var result = angular.extend({}, data.onValueChange || {});
+            return getOnValueChangeFns(cpId, (wfLuOrder || []).slice().reverse(), result);
+          }
+        );
+      },
+
       setSummaryState: function(summaryState) {
         summarySt = summaryState;
       },
@@ -254,6 +297,8 @@ angular.module('openspecimen')
 
       getCommonCfg: getCommonCfg,
 
-      getValue: getValue
+      getValue: getValue,
+
+      setWorkflows: setWorkflows
     }
   });

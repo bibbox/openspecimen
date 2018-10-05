@@ -1,7 +1,8 @@
 
 angular.module('os.biospecimen.specimen.addaliquots', [])
   .controller('AddAliquotsCtrl', function(
-    $scope, $rootScope, $state, $stateParams, specimen, cpr, visit, extensionCtxt, hasDict,
+    $scope, $rootScope, $state, $stateParams, specimen, cpr,
+    visit, extensionCtxt, hasDict, onValueChangeCb, createDerived,
     CollectSpecimensSvc, SpecimenUtil, ExtensionsUtil, Alerts) {
 
     function init() {
@@ -16,7 +17,8 @@ angular.module('os.biospecimen.specimen.addaliquots', [])
         createdOn : Date.now(),
         freezeThawCycles: specimen.freezeThawCycles + 1,
         incrParentFreezeThaw: 1,
-        labelFmt: cpr.aliquotLabelFmt
+        labelFmt: cpr.aliquotLabelFmt,
+        createDerived: createDerived
       };
 
       //
@@ -37,7 +39,9 @@ angular.module('os.biospecimen.specimen.addaliquots', [])
 
       if (hasDict) {
         $scope.spmnCtx = {
-          aobj: {specimen: $scope.aliquotSpec}, ainObjs: ['specimen'], aexObjs: exObjs
+          aobj: {cpr: cpr, visit: visit, specimen: $scope.aliquotSpec},
+          ainObjs: ['specimen'], aexObjs: exObjs,
+          aopts: {onValueChange: onValueChangeCb}
         }
       } else {
         $scope.aextnOpts = ExtensionsUtil.getExtnOpts($scope.aliquotSpec, extensionCtxt);
@@ -47,7 +51,12 @@ angular.module('os.biospecimen.specimen.addaliquots', [])
     }
 
     function getState() {
-      return {state: $state.current, params: $stateParams};
+      var stateInfo = $scope.stateChangeInfo;
+      if (stateInfo && stateInfo.fromState) {
+        return {state: stateInfo.fromState, params: stateInfo.fromParams};
+      } else {
+        return {state: $state.current, params: $stateParams};
+      }
     }
 
     $scope.toggleIncrParentFreezeThaw = function() {
@@ -59,6 +68,13 @@ angular.module('os.biospecimen.specimen.addaliquots', [])
         if (($scope.parentSpecimen.freezeThawCycles + 1) == $scope.aliquotSpec.freezeThawCycles) {
           $scope.aliquotSpec.freezeThawCycles = $scope.parentSpecimen.freezeThawCycles;
         }
+      }
+    }
+
+    $scope.onChange = function(fieldName) {
+      var ctx = $scope.spmnCtx;
+      if (ctx.aopts.$$sdeFormFields) {
+        ctx.aopts.$$sdeFormFields.valueChanged(undefined, ctx.aobj, 'specimen.' + fieldName, undefined);
       }
     }
 

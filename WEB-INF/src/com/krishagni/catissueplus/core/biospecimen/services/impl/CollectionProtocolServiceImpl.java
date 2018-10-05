@@ -20,7 +20,6 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
@@ -29,6 +28,7 @@ import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.springframework.beans.BeanUtils;
+import org.springframework.beans.factory.InitializingBean;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -37,6 +37,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.krishagni.catissueplus.core.administrative.domain.Site;
 import com.krishagni.catissueplus.core.administrative.domain.StorageContainer;
 import com.krishagni.catissueplus.core.administrative.domain.User;
+import com.krishagni.catissueplus.core.audit.services.impl.DeleteLogUtil;
 import com.krishagni.catissueplus.core.biospecimen.ConfigParams;
 import com.krishagni.catissueplus.core.biospecimen.WorkflowUtil;
 import com.krishagni.catissueplus.core.biospecimen.domain.AliquotSpecimensRequirement;
@@ -83,11 +84,11 @@ import com.krishagni.catissueplus.core.biospecimen.repository.CpListCriteria;
 import com.krishagni.catissueplus.core.biospecimen.repository.CprListCriteria;
 import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
 import com.krishagni.catissueplus.core.biospecimen.services.CollectionProtocolService;
-import com.krishagni.catissueplus.core.common.Pair;
 import com.krishagni.catissueplus.core.common.PlusTransactional;
 import com.krishagni.catissueplus.core.common.Tuple;
 import com.krishagni.catissueplus.core.common.access.AccessCtrlMgr;
 import com.krishagni.catissueplus.core.common.access.AccessCtrlMgr.ParticipantReadAccess;
+import com.krishagni.catissueplus.core.common.access.SiteCpPair;
 import com.krishagni.catissueplus.core.common.domain.Notification;
 import com.krishagni.catissueplus.core.common.errors.ErrorType;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
@@ -106,13 +107,12 @@ import com.krishagni.catissueplus.core.common.util.Utility;
 import com.krishagni.catissueplus.core.query.Column;
 import com.krishagni.catissueplus.core.query.ListConfig;
 import com.krishagni.catissueplus.core.query.ListDetail;
-import com.krishagni.catissueplus.core.query.ListGenerator;
+import com.krishagni.catissueplus.core.query.ListService;
 import com.krishagni.rbac.common.errors.RbacErrorCode;
 import com.krishagni.rbac.events.SubjectRoleOpNotif;
 import com.krishagni.rbac.service.RbacService;
 
-
-public class CollectionProtocolServiceImpl implements CollectionProtocolService, ObjectAccessor {
+public class CollectionProtocolServiceImpl implements CollectionProtocolService, ObjectAccessor, InitializingBean {
 
 	private ThreadPoolTaskExecutor taskExecutor;
 
@@ -126,11 +126,9 @@ public class CollectionProtocolServiceImpl implements CollectionProtocolService,
 	
 	private RbacService rbacSvc;
 
-	private ListGenerator listGenerator;
+	private ListService listSvc;
 
 	private CpReportSettingsFactory rptSettingsFactory;
-
-	private Map<String, Function<Map<String, Object>, ListConfig>> listConfigFns = new HashMap<>();
 
 	public void setTaskExecutor(ThreadPoolTaskExecutor taskExecutor) {
 		this.taskExecutor = taskExecutor;
@@ -156,17 +154,12 @@ public class CollectionProtocolServiceImpl implements CollectionProtocolService,
 		this.rbacSvc = rbacSvc;
 	}
 
-	public void setListGenerator(ListGenerator listGenerator) {
-		this.listGenerator = listGenerator;
+	public void setListSvc(ListService listSvc) {
+		this.listSvc = listSvc;
 	}
 
 	public void setRptSettingsFactory(CpReportSettingsFactory rptSettingsFactory) {
 		this.rptSettingsFactory = rptSettingsFactory;
-	}
-
-	public CollectionProtocolServiceImpl() {
-		listConfigFns.put("participant-list-view", this::getParticipantsListConfig);
-		listConfigFns.put("specimen-list-view", this::getSpecimenListConfig);
 	}
 
 	@Override
@@ -417,7 +410,7 @@ public class CollectionProtocolServiceImpl implements CollectionProtocolService,
 				AccessCtrlMgr.getInstance().ensureDeleteCpRights(cp);
 			}
 
-			boolean completed = crit.isForceDelete() ? forceDeleteCps(cps) : deleteCps(cps);
+			boolean completed = crit.isForceDelete() ? forceDeleteCps(cps, crit.getReason()) : deleteCps(cps, crit.getReason());
 			BulkDeleteEntityResp<CollectionProtocolDetail> resp = new BulkDeleteEntityResp<>();
 			resp.setCompleted(completed);
 			resp.setEntities(CollectionProtocolDetail.from(cps));
@@ -493,9 +486,11 @@ public class CollectionProtocolServiceImpl implements CollectionProtocolService,
 			
 			ResponseEvent<CollectionProtocolDetail> resp = createCollectionProtocol(req);
 			resp.throwErrorIfUnsuccessful();
-						
-			importConsents(resp.getPayload().getId(), cpDetail.getConsents());
+
+			Long cpId = resp.getPayload().getId();
+			importConsents(cpId, cpDetail.getConsents());
 			importEvents(cpDetail.getTitle(), cpDetail.getEvents());
+			importWorkflows(cpId, cpDetail.getWorkflows());
 			
 			return resp;
 		} catch (OpenSpecimenException ose) {
@@ -1165,99 +1160,25 @@ public class CollectionProtocolServiceImpl implements CollectionProtocolService,
 	@Override
 	@PlusTransactional
 	public ResponseEvent<ListConfig> getCpListCfg(RequestEvent<Map<String, Object>> req) {
-		try {
-			Map<String, Object> input = req.getPayload();
-			String listName = (String)input.get("listName");
-
-			ListConfig cfg = getListConfig(input, listName, null);
-			if (cfg == null) {
-				//
-				// TODO: return appropriate error code
-				//
-				return ResponseEvent.response(null);
-			}
-
-			cfg.setFilters(listGenerator.getFilters(cfg));
-			return ResponseEvent.response(cfg);
-		} catch (OpenSpecimenException ose) {
-			return ResponseEvent.error(ose);
-		} catch (Exception e) {
-			return ResponseEvent.serverError(e);
-		}
+		return listSvc.getListCfg(req);
 	}
 
 	@Override
 	@PlusTransactional
 	public ResponseEvent<ListDetail> getList(RequestEvent<Map<String, Object>> req) {
-		try {
-			Map<String, Object> listReq = req.getPayload();
-			String listName = (String)listReq.get("listName");
-			Function<Map<String, Object>, ListConfig> configFn = listConfigFns.get(listName);
-			if (configFn == null) {
-				return ResponseEvent.response(null);
-			}
-
-			ListConfig cfg = configFn.apply(listReq);
-			if (cfg == null) {
-				return ResponseEvent.response(null);
-			}
-
-			return ResponseEvent.response(listGenerator.getList(cfg, (List<Column>)listReq.get("filters")));
-		} catch (OpenSpecimenException ose) {
-			return ResponseEvent.error(ose);
-		} catch (Exception e) {
-			return ResponseEvent.serverError(e);
-		}
+		return listSvc.getList(req);
 	}
 
 	@Override
 	@PlusTransactional
 	public ResponseEvent<Integer> getListSize(RequestEvent<Map<String, Object>> req) {
-		try {
-			Map<String, Object> listReq = req.getPayload();
-			String listName = (String)listReq.get("listName");
-			Function<Map<String, Object>, ListConfig> configFn = listConfigFns.get(listName);
-			if (configFn == null) {
-				return ResponseEvent.response(null);
-			}
-
-			ListConfig cfg = configFn.apply(listReq);
-			if (cfg == null) {
-				return ResponseEvent.response(null);
-			}
-
-			return ResponseEvent.response(listGenerator.getListSize(cfg, (List<Column>)listReq.get("filters")));
-		} catch (OpenSpecimenException ose) {
-			return ResponseEvent.error(ose);
-		} catch (Exception e) {
-			return ResponseEvent.serverError(e);
-		}
+		return listSvc.getListSize(req);
 	}
 
 	@Override
 	@PlusTransactional
 	public ResponseEvent<Collection<Object>> getListExprValues(RequestEvent<Map<String, Object>> req) {
-		try {
-			Map<String, Object> listReq = req.getPayload();
-			String listName = (String)listReq.get("listName");
-			Function<Map<String, Object>, ListConfig> configFn = listConfigFns.get(listName);
-			if (configFn == null) {
-				return ResponseEvent.response(null);
-			}
-
-			ListConfig cfg = configFn.apply(listReq);
-			if (cfg == null) {
-				return ResponseEvent.response(null);
-			}
-
-			String expr = (String)listReq.get("expr");
-			String searchTerm = (String)listReq.get("searchTerm");
-			return ResponseEvent.response(listGenerator.getExpressionValues(cfg, expr, searchTerm));
-		} catch (OpenSpecimenException ose) {
-			return ResponseEvent.error(ose);
-		} catch (Exception e) {
-			return ResponseEvent.serverError(e);
-		}
+		return listSvc.getListExprValues(req);
 	}
 
 	@Override
@@ -1286,15 +1207,15 @@ public class CollectionProtocolServiceImpl implements CollectionProtocolService,
 		AccessCtrlMgr.getInstance().ensureReadCpRights(cp);
 	}
 
-	private CpListCriteria addCpListCriteria(CpListCriteria crit) {
-		Set<Long> cpIds = AccessCtrlMgr.getInstance().getReadableCpIds();
-		if (cpIds != null && cpIds.isEmpty()) {
-			return null;
-		} else if (cpIds != null) {
-			crit.ids(new ArrayList<>(cpIds));
-		}
+	@Override
+	public void afterPropertiesSet() throws Exception {
+		listSvc.registerListConfigurator("participant-list-view", this::getParticipantsListConfig);
+		listSvc.registerListConfigurator("specimen-list-view", this::getSpecimenListConfig);
+	}
 
-		return crit;
+	private CpListCriteria addCpListCriteria(CpListCriteria crit) {
+		Set<SiteCpPair> siteCps = AccessCtrlMgr.getInstance().getReadableSiteCps();
+		return siteCps != null && siteCps.isEmpty() ? null : crit.siteCps(siteCps);
 	}
 
 	private CprListCriteria addCprListCriteria(CprListCriteria listCrit) {
@@ -1331,10 +1252,11 @@ public class CollectionProtocolServiceImpl implements CollectionProtocolService,
 
 		daoFactory.getCollectionProtocolDao().saveOrUpdate(cp, true);
 		cp.addOrUpdateExtension();
-		
+
 		//Assign default roles to PI and Coordinators
 		addOrRemovePiCoordinatorRoles(cp, "CREATE", null, cp.getPrincipalInvestigator(), cp.getCoordinators(), null);
 		fixSopDocumentName(cp);
+		copyWorkflows(existing, cp);
 		return cp;
 	}
 
@@ -1347,20 +1269,13 @@ public class CollectionProtocolServiceImpl implements CollectionProtocolService,
 		if (user.isAdmin()) {
 			return;
 		}
-		
-		user = loadUser(user);
-		
-		Set<Site> userSites = user.getInstitute().getSites();
-		Set<Site> cpSites = cp.getRepositories();		
-		if (!userSites.containsAll(cpSites)) {
+
+		Set<Site> cpSites = cp.getRepositories();
+		if (cpSites.stream().anyMatch(cpSite -> !cpSite.getInstitute().equals(AuthUtil.getCurrentUserInstitute()))) {
 			throw OpenSpecimenException.userError(CpErrorCode.CREATOR_DOES_NOT_BELONG_CP_REPOS);
 		}
 	}
 	
-	private User loadUser(User user) {
-		return daoFactory.getUserDao().getById(user.getId());
-	}
-
 	private void ensureUniqueTitle(CollectionProtocol existingCp, CollectionProtocol cp, OpenSpecimenException ose) {
 		String title = cp.getTitle();
 		if (existingCp != null && existingCp.getTitle().equals(title)) {
@@ -1471,9 +1386,8 @@ public class CollectionProtocolServiceImpl implements CollectionProtocolService,
 			addOp.setConsentTier(consent);
 			addOp.setCpId(cpId);
 			addOp.setOp(OP.ADD);
-			
-			RequestEvent<ConsentTierOp> req = new RequestEvent<ConsentTierOp>(addOp);					
-			ResponseEvent<ConsentTierDetail> resp = updateConsentTier(req);
+
+			ResponseEvent<ConsentTierDetail> resp = updateConsentTier(new RequestEvent<>(addOp));
 			resp.throwErrorIfUnsuccessful();
 		}
 	}
@@ -1485,8 +1399,7 @@ public class CollectionProtocolServiceImpl implements CollectionProtocolService,
 		
 		for (CollectionProtocolEventDetail event : events) {
 			event.setCollectionProtocol(cpTitle);
-			RequestEvent<CollectionProtocolEventDetail> req = new RequestEvent<CollectionProtocolEventDetail>(event);
-			ResponseEvent<CollectionProtocolEventDetail> resp = addEvent(req);
+			ResponseEvent<CollectionProtocolEventDetail> resp = addEvent(new RequestEvent<>(event));
 			resp.throwErrorIfUnsuccessful();
 			
 			Long eventId = resp.getPayload().getId();
@@ -1527,6 +1440,15 @@ public class CollectionProtocolServiceImpl implements CollectionProtocolService,
 		}
 	}
 
+	private void importWorkflows(Long cpId, Map<String, WorkflowDetail> workflows) {
+		CpWorkflowCfgDetail input = new CpWorkflowCfgDetail();
+		input.setCpId(cpId);
+		input.setWorkflows(workflows);
+
+		ResponseEvent<CpWorkflowCfgDetail> resp = saveWorkflows(new RequestEvent<>(input));
+		resp.throwErrorIfUnsuccessful();
+	}
+
 	private List<SpecimenRequirement> createAliquots(AliquotSpecimensRequirement requirement) {
 		List<SpecimenRequirement> aliquots = srFactory.createAliquots(requirement);
 		SpecimenRequirement aliquot = aliquots.iterator().next();
@@ -1540,6 +1462,20 @@ public class CollectionProtocolServiceImpl implements CollectionProtocolService,
 		parent.addChildRequirements(aliquots);
 		daoFactory.getSpecimenRequirementDao().saveOrUpdate(parent, true);
 		return aliquots;
+	}
+
+	private void copyWorkflows(CollectionProtocol srcCp, CollectionProtocol dstCp) {
+		if (srcCp == null) {
+			return;
+		}
+
+		CpWorkflowConfig srcWfCfg = daoFactory.getCollectionProtocolDao().getCpWorkflows(srcCp.getId());
+		if (srcWfCfg != null) {
+			CpWorkflowConfig newConfig = new CpWorkflowConfig();
+			newConfig.setCp(dstCp);
+			newConfig.setWorkflows(srcWfCfg.getWorkflows());
+			daoFactory.getCollectionProtocolDao().saveCpWorkflows(newConfig);
+		}
 	}
 
 	private void addOrRemovePiCoordinatorRoles(CollectionProtocol cp, String cpOp, User oldPi, User newPi, Collection<User> newCoord, Collection<User> removedCoord) {
@@ -1746,7 +1682,7 @@ public class CollectionProtocolServiceImpl implements CollectionProtocolService,
 		CollectionProtocolEvent firstCpe = tgtCp.firstEvent();
 		for (Visit visit : srcCpr.getVisits()) {
 			visit.setCpEvent(firstCpe);
-			visit.getSpecimens().stream().forEach(s -> s.setSpecimenRequirement(null));
+			visit.getSpecimens().forEach(s -> s.setSpecimenRequirement(null));
 		}
 
 		//
@@ -1794,7 +1730,7 @@ public class CollectionProtocolServiceImpl implements CollectionProtocolService,
 		}
 	}
 
-	private boolean forceDeleteCps(final List<CollectionProtocol> cps)
+	private boolean forceDeleteCps(final List<CollectionProtocol> cps, final String reason)
 	throws Exception {
 		final Authentication auth = AuthUtil.getAuth();
 
@@ -1802,7 +1738,7 @@ public class CollectionProtocolServiceImpl implements CollectionProtocolService,
 			@Override
 			public Boolean call() throws Exception {
 				SecurityContextHolder.getContext().setAuthentication(auth);
-				cps.forEach(cp -> forceDeleteCp(cp));
+				cps.forEach(cp -> forceDeleteCp(cp, reason));
 				return true;
 			}
 		});
@@ -1817,18 +1753,18 @@ public class CollectionProtocolServiceImpl implements CollectionProtocolService,
 		return completed;
 	}
 
-	private void forceDeleteCp(final CollectionProtocol cp) {
+	private void forceDeleteCp(CollectionProtocol cp, String reason) {
 		while (deleteRegistrations(cp));
-		deleteCp(cp);
+		deleteCp(cp, reason);
 	}
 
-	private boolean deleteCps(List<CollectionProtocol> cps) {
-		cps.forEach(this::deleteCp);
+	private boolean deleteCps(List<CollectionProtocol> cps, String reason) {
+		cps.forEach(cp -> deleteCp(cp, reason));
 		return true;
 	}
 
 	@PlusTransactional
-	private boolean deleteCp(CollectionProtocol cp) {
+	private boolean deleteCp(CollectionProtocol cp, String reason) {
 		boolean success = false;
 		String stackTrace = null;
 		CollectionProtocol deletedCp = new CollectionProtocol();
@@ -1843,10 +1779,13 @@ public class CollectionProtocolServiceImpl implements CollectionProtocolService,
 			addOrRemovePiCoordinatorRoles(cp, "DELETE", cp.getPrincipalInvestigator(), null, null, cp.getCoordinators());
 			removeCpRoles(cp);
 			BeanUtils.copyProperties(cp, deletedCp);
+
+			cp.setOpComments(reason);
 			cp.delete();
+
+			DeleteLogUtil.getInstance().log(cp);
 			success = true;
 		} catch (Exception ex) {
-			success = false;
 			stackTrace = ExceptionUtils.getStackTrace(ex);
 
 			if (ex instanceof OpenSpecimenException) {
@@ -2014,7 +1953,7 @@ public class CollectionProtocolServiceImpl implements CollectionProtocolService,
 		cfg.setHiddenColumns(hiddenColumns);
 
 		Long cpId = (Long)listReq.get("cpId");
-		List<Pair<Long, Long>> siteCps = AccessCtrlMgr.getInstance().getReadAccessSpecimenSiteCps(cpId);
+		List<SiteCpPair> siteCps = AccessCtrlMgr.getInstance().getReadAccessSpecimenSiteCps(cpId);
 		if (siteCps == null) {
 			//
 			// Admin; hence no additional restrictions
@@ -2026,8 +1965,7 @@ public class CollectionProtocolServiceImpl implements CollectionProtocolService,
 			throw OpenSpecimenException.userError(RbacErrorCode.ACCESS_DENIED);
 		}
 
-		Set<Long> siteIds = siteCps.stream().map(siteCp -> siteCp.first()).collect(Collectors.toSet());
-		cfg.setRestriction(getListRestriction(siteIds));
+		cfg.setRestriction(getListRestriction(siteCps));
 		cfg.setDistinct(true);
 		return cfg;
 	}
@@ -2054,34 +1992,74 @@ public class CollectionProtocolServiceImpl implements CollectionProtocolService,
 			throw OpenSpecimenException.userError(RbacErrorCode.ACCESS_DENIED);
 		}
 
-		Set<Long> siteIds = new HashSet<>();
-		for (Pair<Set<Long>, Long> siteCp : access.siteCps) {
-			siteIds.addAll(siteCp.first());
-		}
-
-		cfg.setRestriction(getListRestriction(siteIds));
+		cfg.setRestriction(getListRestriction(access.siteCps));
 		cfg.setDistinct(true);
 		return cfg;
 	}
 
-	private String getListRestriction(Collection<Long> siteIds) {
-		StringBuilder restriction = new StringBuilder();
+	private String getListRestriction(Collection<SiteCpPair> siteCps) {
+		StringBuilder instituteIds = new StringBuilder();
+		StringBuilder siteIds = new StringBuilder();
+		for (SiteCpPair siteCp : siteCps) {
+			if (siteCp.getSiteId() != null) {
+				if (siteIds.length() != 0) {
+					siteIds.append(",");
+				}
 
-		String siteIdsStr = siteIds.stream().map(siteId -> siteId.toString()).collect(Collectors.joining(", "));
+				siteIds.append(siteCp.getSiteId());
+			} else {
+				if (instituteIds.length() != 0) {
+					instituteIds.append(",");
+				}
+
+				instituteIds.append(siteCp.getInstituteId());
+			}
+		}
+
+		StringBuilder restriction = new StringBuilder();
 		if (AccessCtrlMgr.getInstance().isAccessRestrictedBasedOnMrn()) {
-			restriction.append("(").append("(Participant.medicalRecord.mrnSiteId exists")
-				.append(" and Participant.medicalRecord.mrnSiteId in (").append(siteIdsStr)
-				.append(")) or (Participant.medicalRecord.mrnSiteId not exists ")
-				.append(" and CollectionProtocol.cpSites.siteId in (").append(siteIdsStr).append(")))");
+			restriction.append("((Participant.medicalRecord.mrnSiteId exists and")
+				.append(getSiteIdRestriction("Participant.medicalRecord.mrnSiteId", instituteIds.toString(), siteIds.toString()))
+				.append(") or (Participant.medicalRecord.mrnSiteId not exists and ")
+				.append(getSiteIdRestriction("CollectionProtocol.cpSites.siteId", instituteIds.toString(), siteIds.toString()))
+				.append("))");
 		} else {
-			restriction.append("(CollectionProtocol.cpSites.siteId in (").append(siteIdsStr).append("))");
+			restriction.append(getSiteIdRestriction("CollectionProtocol.cpSites.siteId", instituteIds.toString(), siteIds.toString()));
 		}
 
 		return restriction.insert(0, "(").append(")").toString();
 	}
 
+	private String getSiteIdRestriction(String property, String instituteIds, String siteIds) {
+		StringBuilder restriction = new StringBuilder();
+
+		if (StringUtils.isNotBlank(instituteIds)) {
+			restriction.append("(").append(property).append(" in ")
+				.append(sqlRestriction(String.format(INSTITUTE_SITES_SQL, instituteIds)))
+				.append(")");
+
+			if (StringUtils.isNotBlank(siteIds)) {
+				restriction.append(" or ");
+			}
+		}
+
+		if (StringUtils.isNotBlank(siteIds)) {
+			restriction.append(property).append(" in (").append(siteIds).append(")");
+		}
+
+		return restriction.insert(0, "(").append(")").toString();
+	}
+
+	private String sqlRestriction(String restriction) {
+		return "sql(\"" + restriction + "\")";
+	}
+
 	private ListConfig getListConfig(Map<String, Object> listReq, String listName, String drivingForm) {
-		Long cpId = (Long)listReq.get("cpId");
+		Long cpId = (Long) listReq.get("cpId");
+		if (cpId == null) {
+			cpId = (Long) listReq.get("objectId");
+		}
+
 		Workflow workflow = getWorkFlow(cpId, listName);
 		if (workflow == null) {
 			return null;
@@ -2178,4 +2156,7 @@ public class CollectionProtocolServiceImpl implements CollectionProtocolService,
 	private static final int OP_CP_CREATED = 0;
 
 	private static final int OP_CP_DELETED = 2;
+
+	private static final String INSTITUTE_SITES_SQL =
+			"select identifier from catissue_site where institute_id in (%s) and activity_status != 'Disabled'";
 }

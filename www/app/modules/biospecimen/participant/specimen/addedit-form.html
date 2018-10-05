@@ -4,8 +4,12 @@
     <div ng-switch on="opts.hasDict">
       <div ng-switch-when="true">
         <sde-form-fields name="spmn" base-fields="opts.sysDict" fields="opts.cpDict"
-          obj="spmnCtx.obj" in-objs="spmnCtx.inObjs" ex-objs="spmnCtx.exObjs" opts="opts">
+          obj="spmnCtx.obj" in-objs="spmnCtx.inObjs" ex-objs="spmnCtx.exObjs" opts="spmnCtx.opts">
         </sde-form-fields>
+
+        <span ng-if="spmnCtx.opts.verticalLayout">
+          <span ng-init="opts.verticalLayout=true"></span>
+        </span>
       </div>
       <div ng-switch-default>
         <div ng-include="'modules/biospecimen/participant/specimen/static-addedit.html'">
@@ -18,7 +22,7 @@
       </div>
 
       <div ng-if="opts.allowMultipleSpecimens != false && opts.allowMultipleSpecimens != 'false'">
-        <fieldset ng-if="opts.verticalLayout">
+        <fieldset ng-if="spmnCtx.opts.verticalLayout">
           <legend translate="specimens.multiple">Multiple Specimens</legend>
           <div class="row" ng-if="!spmnCtx.manualSpecLabelReq">
             <div class="col-xs-6">
@@ -38,7 +42,7 @@
           </div>
         </fieldset>
 
-        <div ng-if="!opts.verticalLayout">
+        <div ng-if="!spmnCtx.opts.verticalLayout">
           <div class="os-section-divider">
             <span translate="specimens.multiple">Multiple Specimens</span>
           </div>
@@ -81,7 +85,7 @@
       <div class="col-xs-6">
         <input type="text" name="label" ng-model="inputSpmn.label" class="form-control"
           ng-disabled="inputSpmn.labelFmt && !opts.cp.manualSpecLabelEnabled"
-          ng-required="inputSpmn.status != 'Missed Collection'"
+          ng-required="inputSpmn.status != 'Missed Collection' && inputSpmn.status != 'Not Collected'"
           placeholder="{{'specimens.label' | translate}}"/>
         <div os-field-error field="sform.label"></div>
       </div>
@@ -113,6 +117,14 @@
           </os-specimen-types>
           <div os-field-error field="sform.type"></div>
         </div>
+      </div>
+    </div>
+
+    <div class="form-group" ng-if="opts.imagingEnabled && inputSpmn.status == 'Collected'">
+      <label class="col-xs-3 control-label" translate="specimens.image_id">Image ID/URL</label>
+      <div class="col-xs-6">
+        <input ng-model="inputSpmn.imageId" class="form-control"
+          type="text" placeholder="{{'specimens.image_id' | translate}}">
       </div>
     </div>
 
@@ -237,7 +249,7 @@
     </div>
 
     <div ng-if="inputSpmn.lineage == 'New' && !inputSpmn.poolSpecimen">
-      <div ng-if = "!inputSpmn.id && !inputSpmn.reqId">
+      <div>
         <div class="os-section-divider">
           <span translate="specimens.col_event.title">Collection Details</span>
         </div>
@@ -246,7 +258,7 @@
           <label class="col-xs-3 control-label"  translate="specimens.col_event.user_time">User and Time</label>
           <div class="col-xs-3">
             <os-users  name="collector" ng-model="inputSpmn.collectionEvent.user" 
-              placeholder="{{'specimens.col_event.user' | translate}}" required> 
+              default-current-user placeholder="{{'specimens.col_event.user' | translate}}" required>
             </os-users>
             <div os-field-error field="sform.collector"></div>
           </div>
@@ -295,7 +307,7 @@
           <label class="col-xs-3 control-label"  translate="specimens.recv_event.user">User and Time</label>
           <div class="col-xs-3">
             <os-users name="receiver" ng-model="inputSpmn.receivedEvent.user" 
-              placeholder="{{'specimens.recv_event.user_time' | translate}}" required> 
+              default-current-user placeholder="{{'specimens.recv_event.user_time' | translate}}" required>
             </os-users>
             <div os-field-error field="sform.receiver"></div>
           </div>
@@ -342,7 +354,7 @@
   </div>
 
   <div class="form-group">
-    <div class="col-xs-9 os-text-checkbox" ng-class="{'col-xs-offset-3': !opts.verticalLayout}">
+    <div class="col-xs-9 os-text-checkbox" ng-class="{'col-xs-offset-3': !spmnCtx.opts.verticalLayout}">
       <div class="checkbox">
         <os-checkbox ng-model="spmnCtx.createAliquots" ng-click="toggleAliquots()"></os-checkbox>
       </div>
@@ -353,7 +365,7 @@
   </div>
 
   <div class="form-group" ng-if="!!spmnCtx.createAliquots">
-    <div ng-class="{'col-xs-offset-3 col-xs-8': !opts.verticalLayout, 'col-xs-12': opts.verticalLayout}">
+    <div ng-class="{'col-xs-offset-3 col-xs-8': !spmnCtx.opts.verticalLayout, 'col-xs-12': spmnCtx.opts.verticalLayout}">
       <table class="os-table os-table-tree bulk-edit os-border os-table-muted-hdr">
         <thead class="os-table-head">
           <tr class="row">
@@ -377,19 +389,25 @@
         <tbody class="os-table-body">
           <tr class="row" ng-form="aform" ng-repeat="aliquot in spmnCtx.aliquots">
             <td class="col">
-              <os-specimen-types name="type" md-input="true" specimen="aliquot" required></os-specimen-types>
+              <os-specimen-types name="type" md-input specimen="aliquot" ng-click="addIfLastAliquot($index)"
+                ng-required="specimen.noOfAliquots || specimen.qtyPerAliquot || specimen.pathology">
+              </os-specimen-types>
               <div os-field-error field="aform.type"></div>
             </td>
             <td class="col">
-              <input name="noOfAliquots" os-md-input ng-model="aliquot.noOfAliquots" ng-pattern="/^[1-9][0-9]*$/" required>
+              <input name="noOfAliquots" os-md-input ng-model="aliquot.noOfAliquots"
+                ng-pattern="/^[1-9][0-9]*$/" ng-focus="addIfLastAliquot($index)"
+                ng-required="aliquot.type || aliquot.qtyPerAliquot || aliquot.pathology">
               <div os-field-error field="aform.noOfAliquots"></div>
             </td>
             <td class="col">
-              <os-spmn-measure name="qty" md-input="true" specimen="aliquot" quantity="aliquot.qtyPerAliquot">
+              <os-spmn-measure name="qty" md-input="true" specimen="aliquot"
+                quantity="aliquot.qtyPerAliquot" ng-focus="addIfLastAliquot($index)">
               </os-spmn-measure>
             </td>
             <td class="col">
-              <os-pvs name="pathology" os-md-input ng-model="aliquot.pathology" attribute="pathology-status">
+              <os-pvs name="pathology" os-md-input ng-model="aliquot.pathology" attribute="pathology-status"
+                ng-click="addIfLastAliquot($index)">
               </os-pvs>
             </td>
             <td class="col">

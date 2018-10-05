@@ -61,6 +61,24 @@
       </div>
     </div>
 
+    <div class="form-group" ng-if="!container.id && !locationSelected">
+      <label class="col-xs-3 control-label">
+        <span translate="container.used_for">Used For</span>
+      </label>
+      <div class="col-xs-9">
+        <label class="radio-inline">
+          <input type="radio" name="usedFor" ng-model="container.usedFor"
+            ng-value="'STORAGE'" ng-change="onUsedForChange()">
+          <span translate="container.storage">Storage</span>
+        </label>
+        <label class="radio-inline">
+          <input type="radio" name="usedFor" ng-model="container.usedFor"
+            ng-value="'DISTRIBUTION'" ng-change="onUsedForChange()">
+          <span translate="container.distribution">Distribution</span>
+        </label>
+      </div>
+    </div>
+
     <div class="form-group" ng-if="!container.$$dimensionless">
       <label class="col-xs-3 control-label">
         <span translate="container.type">Type</span>
@@ -119,16 +137,16 @@
 
     <div class="form-group" ng-if="!container.id && ctx.mode == 'single'">
       <label class="col-xs-3 control-label">
-        <span translate="container.usage_mode">Usage Mode</span>
+        <span translate="container.dimensionless_q">Dimensionless</span>
       </label>
       <div class="col-xs-9">
         <label class="radio-inline">
-          <input type="radio" name="class" ng-model="container.$$regular" ng-value="true" ng-click="setRegular()">
-          <span translate="container.regular">Regular</span>
+          <input type="radio" name="class" ng-click="setDimensionless()">
+          <span translate="common.yes">Dimensionless</span>
         </label>
         <label class="radio-inline">
-          <input type="radio" name="class" ng-click="setDimensionless()">
-          <span translate="container.dimensionless">Dimensionless</span>
+          <input type="radio" name="class" ng-model="container.$$regular" ng-value="true" ng-click="setRegular()">
+          <span translate="common.no">Regular</span>
         </label>
         <!-- label class="radio-inline">
           <input type="radio" name="class" ng-click="setAutomated()">
@@ -137,16 +155,18 @@
       </div>
     </div>
 
-    <div class="form-group" ng-if="!container.$$dimensionless">
+    <div class="form-group os-multi-parts-control" ng-if="!container.$$dimensionless">
       <label class="col-xs-3 control-label">
         <span translate="container.dimension">Dimension</span>
       </label>
       <div class="col-xs-3">
+        <label class="part-label" translate="container.vertical_dimension"></label>
         <input type="text" name="noOfRows" ng-model="container.noOfRows" class="form-control"
           placeholder="{{'container.vertical_dimension' | translate}}" ng-pattern="/^[0-9]*$/" required>
         <div os-field-error field="cform.noOfRows"></div>
       </div>
       <div class="col-xs-3">
+        <label class="part-label" translate="container.horizontal_dimension"></label>
         <input type="text" name="noOfColumns" ng-model="container.noOfColumns" class="form-control"
           placeholder="{{'container.horizontal_dimension' | translate}}" ng-pattern="/^[0-9]*$/" required>
         <div os-field-error field="cform.noOfColumns"></div>
@@ -185,17 +205,19 @@
       </div>
     </div>
 
-    <div class="form-group" ng-if="container.positionLabelingMode == 'TWO_D'">
+    <div class="form-group os-multi-parts-control" ng-if="container.positionLabelingMode == 'TWO_D'">
       <label class="col-xs-3 control-label">
         <span translate="container.labeling_scheme">Labeling Scheme</span>
       </label>
       <div class="col-xs-3">
+        <label class="part-label" translate="container.vertical_labeling_scheme"></label>
         <os-select ng-model="container.rowLabelingScheme" list="positionLabelingSchemes"
           name="rowLabelingScheme" placeholder="{{'container.vertical_labeling_scheme' | translate}}" required>
         </os-select>
         <div os-field-error field="cform.rowLabelingScheme"></div>
       </div>
       <div class="col-xs-3">
+        <label class="part-label" translate="container.horizontal_labeling_scheme"></label>
         <os-select ng-model="container.columnLabelingScheme" list="positionLabelingSchemes"
           name="columnLabelingScheme" placeholder="{{'container.horizontal_labeling_scheme' | translate}}" required>
         </os-select>
@@ -265,31 +287,46 @@
       </div>
     </div>
 
-    <div class="form-group">
-      <label class="col-xs-3 control-label">
-        <span translate="container.collection_protocol">Collection Protocol</span>
-      </label>
-      <div class="col-xs-6">
-        <os-select multiple ng-model="container.allowedCollectionProtocols" list="cps"
-          placeholder="{{container.collection_protocol | translate}}">
-        </os-select>
+    <span ng-if="container.usedFor == 'STORAGE'">
+      <div class="form-group">
+        <label class="col-xs-3 control-label">
+          <span translate="container.collection_protocol">Collection Protocol</span>
+        </label>
+        <div class="col-xs-6">
+          <os-select multiple ng-model="container.allowedCollectionProtocols" list="cps"
+            placeholder="{{container.collection_protocol | translate}}">
+          </os-select>
+        </div>
       </div>
-    </div>
 
-    <div class="form-group">
-      <label class="col-xs-3 control-label">
-        <span translate="container.specimen_types">Specimen Types</span>
-      </label>
-      <div class="col-xs-6">
-        <os-group-selector
-          placeholder="{{container.specimen_types | translate}}"
-          opts="specimenTypeSelectorOpts"
-          selected-categories="container.allowedSpecimenClasses"
-          selected-category-items="container.allowedSpecimenTypes">
-        </os-group-selector>
+      <div class="form-group">
+        <label class="col-xs-3 control-label">
+          <span translate="container.specimen_types">Specimen Types</span>
+        </label>
+        <div class="col-xs-6">
+          <os-group-selector
+            placeholder="{{container.specimen_types | translate}}"
+            opts="specimenTypeSelectorOpts"
+            selected-categories="container.allowedSpecimenClasses"
+            selected-category-items="container.allowedSpecimenTypes">
+          </os-group-selector>
+        </div>
       </div>
-    </div>
- 
+    </span>
+
+    <span ng-if="container.usedFor == 'DISTRIBUTION'">
+      <div class="form-group">
+        <label class="col-xs-3 control-label">
+          <span translate="container.dps">Distribution Protocols</span>
+        </label>
+        <div class="col-xs-6">
+          <os-select multiple ng-model="container.allowedDistributionProtocols" list="dps"
+            placeholder="{{container.dps | translate}}">
+          </os-select>
+        </div>
+      </div>
+    </span>
+
     <div class="os-divider"></div>
 
     <div class="form-group">

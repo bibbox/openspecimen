@@ -1,11 +1,14 @@
 
 angular.module('os.query.save', ['os.query.models'])
-  .controller('QuerySaveCtrl', function($scope, $modalInstance, queryToSave) {
-     $scope.queryToSave = queryToSave;
+  .controller('QuerySaveCtrl', function($scope, $modalInstance, queryToSave, dependentQueries) {
+    $scope.lctx = {
+      queryToSave: queryToSave,
+      dependentQueries: dependentQueries
+    };
 
-     $scope.save = function(copy) {
-       if (copy) {
-         queryToSave.id = undefined;
+    $scope.save = function(copy) {
+      if (copy) {
+        queryToSave.id = undefined;
       }
 
       queryToSave.$saveOrUpdate().then(

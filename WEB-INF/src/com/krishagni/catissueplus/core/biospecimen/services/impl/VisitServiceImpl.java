@@ -18,6 +18,7 @@ import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.InitializingBean;
 
+import com.krishagni.catissueplus.core.audit.services.impl.DeleteLogUtil;
 import com.krishagni.catissueplus.core.biospecimen.ConfigParams;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
 import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
@@ -29,7 +30,6 @@ import com.krishagni.catissueplus.core.biospecimen.domain.factory.VisitFactory;
 import com.krishagni.catissueplus.core.biospecimen.events.CpEntityDeleteCriteria;
 import com.krishagni.catissueplus.core.biospecimen.events.FileDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.FileDownloadDetail;
-import com.krishagni.catissueplus.core.biospecimen.events.LabelPrintJobSummary;
 import com.krishagni.catissueplus.core.biospecimen.events.MatchedVisitDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.PrintVisitNameDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.SpecimenDetail;
@@ -47,9 +47,9 @@ import com.krishagni.catissueplus.core.biospecimen.services.SpecimenService;
 import com.krishagni.catissueplus.core.biospecimen.services.SprPdfGenerator;
 import com.krishagni.catissueplus.core.biospecimen.services.VisitService;
 import com.krishagni.catissueplus.core.common.OpenSpecimenAppCtxProvider;
-import com.krishagni.catissueplus.core.common.Pair;
 import com.krishagni.catissueplus.core.common.PlusTransactional;
 import com.krishagni.catissueplus.core.common.access.AccessCtrlMgr;
+import com.krishagni.catissueplus.core.common.access.SiteCpPair;
 import com.krishagni.catissueplus.core.common.domain.LabelPrintJob;
 import com.krishagni.catissueplus.core.common.domain.PrintItem;
 import com.krishagni.catissueplus.core.common.errors.ErrorType;
@@ -57,6 +57,7 @@ import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.DependentEntityDetail;
 import com.krishagni.catissueplus.core.common.events.EntityQueryCriteria;
 import com.krishagni.catissueplus.core.common.events.FileType;
+import com.krishagni.catissueplus.core.common.events.LabelPrintJobSummary;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
 import com.krishagni.catissueplus.core.common.events.ResponseEvent;
 import com.krishagni.catissueplus.core.common.service.ConfigurationService;
@@ -234,7 +235,11 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 			Visit visit = getVisit(crit.getId(), crit.getName());
 			raiseErrorIfSpecimenCentric(visit);
 			AccessCtrlMgr.getInstance().ensureDeleteVisitRights(visit);
+
 			visit.delete(!crit.isForceDelete());
+			visit.setOpComments(crit.getReason());
+
+			DeleteLogUtil.getInstance().log(visit);
 			return ResponseEvent.response(VisitDetail.from(visit));
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
@@ -493,7 +498,7 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 	@PlusTransactional
 	@Override
 	public List<Visit> getSpecimenVisits(List<String> specimenLabels) {
-		List<Pair<Long, Long>> siteCps = AccessCtrlMgr.getInstance().getReadAccessSpecimenSiteCps();
+		List<SiteCpPair> siteCps = AccessCtrlMgr.getInstance().getReadAccessSpecimenSiteCps();
 		if (siteCps != null && siteCps.isEmpty()) {
 			return Collections.emptyList();
 		}
@@ -579,6 +584,8 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 		if (existing == null) {
 			if (visit.isMissed()) {
 				visit.createMissedSpecimens();
+			} else if (visit.isNotCollected()) {
+				visit.createNotCollectedSpecimens();
 			}
 			
 			existing = visit;
@@ -590,6 +597,11 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 		daoFactory.getVisitsDao().saveOrUpdate(existing);
 		existing.addOrUpdateExtension();
 		existing.printLabels(prevVisitStatus);
+
+		if (existing.isDeleted()) {
+			DeleteLogUtil.getInstance().log(existing);
+		}
+
 		EventPublisher.getInstance().publish(new VisitSavedEvent(existing));
 		return existing;
 	}
@@ -860,7 +872,7 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 
 			private VisitsListCriteria crit;
 
-			private int startAt;
+			private Long lastId;
 
 			@Override
 			public List<? extends Object> apply(ExportJob exportJob) {
@@ -870,14 +882,15 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 					return Collections.emptyList();
 				}
 
-				List<Visit> visits = daoFactory.getVisitsDao().getVisitsList(crit.startAt(startAt));
-				startAt += visits.size();
+				List<Visit> visits = daoFactory.getVisitsDao().getVisitsList(crit.lastId(lastId));
 				if (CollectionUtils.isNotEmpty(crit.names()) || visits.size() < 100) {
 					endOfVisits = true;
 				}
 
 				List<VisitDetail> records = new ArrayList<>();
 				for (Visit visit : visits) {
+					lastId = visit.getId();
+
 					try {
 						boolean hasPhi = AccessCtrlMgr.getInstance().ensureReadVisitRights(visit, true);
 						VisitDetail detail = VisitDetail.from(visit, false, !hasPhi);
@@ -907,7 +920,7 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 				}
 
 				Long cpId = getCpId(params);
-				List<Pair<Long, Long>> siteCps = AccessCtrlMgr.getInstance().getReadAccessSpecimenSiteCps(cpId, false);
+				List<SiteCpPair> siteCps = AccessCtrlMgr.getInstance().getReadAccessSpecimenSiteCps(cpId, false);
 				if (siteCps != null && siteCps.isEmpty()) {
 					endOfVisits = true;
 				} else if (!AccessCtrlMgr.getInstance().hasVisitSpecimenEximRights(cpId)) {

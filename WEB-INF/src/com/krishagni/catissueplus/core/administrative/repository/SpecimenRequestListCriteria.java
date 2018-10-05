@@ -3,23 +3,26 @@ package com.krishagni.catissueplus.core.administrative.repository;
 import java.util.Collection;
 import java.util.Date;
 
+import com.krishagni.catissueplus.core.common.access.SiteCpPair;
 import com.krishagni.catissueplus.core.common.events.AbstractListCriteria;
 
 public class SpecimenRequestListCriteria extends AbstractListCriteria<SpecimenRequestListCriteria> {
 
 	private Long catalogId;
 
-	private Collection<Long> siteIds;
-
-	private String screeningStatus;
-
 	private Date fromReqDate;
 
 	private Date toReqDate;
 
-	private Boolean pendingReqs;
+	private String status;
 
-	private Boolean closedReqs;
+	//
+	// internally added restrictions
+	//
+	private Collection<SiteCpPair> sites;
+
+	private Long requestorId;
+
 
 	@Override
 	public SpecimenRequestListCriteria self() {
@@ -32,24 +35,6 @@ public class SpecimenRequestListCriteria extends AbstractListCriteria<SpecimenRe
 
 	public SpecimenRequestListCriteria catalogId(Long catalogId) {
 		this.catalogId = catalogId;
-		return this;
-	}
-
-	public Collection<Long> siteIds() {
-		return siteIds;
-	}
-
-	public SpecimenRequestListCriteria siteIds(Collection<Long> siteIds) {
-		this.siteIds = siteIds;
-		return this;
-	}
-
-	public String screeningStatus() {
-		return screeningStatus;
-	}
-
-	public SpecimenRequestListCriteria screeningStatus(String screeningStatus) {
-		this.screeningStatus = screeningStatus;
 		return this;
 	}
 
@@ -71,21 +56,30 @@ public class SpecimenRequestListCriteria extends AbstractListCriteria<SpecimenRe
 		return this;
 	}
 
-	public Boolean pendingReqs() {
-		return pendingReqs;
+	public String status() {
+		return status;
 	}
 
-	public SpecimenRequestListCriteria pendingReqs(Boolean pendingReqs) {
-		this.pendingReqs = pendingReqs;
+	public SpecimenRequestListCriteria status(String status) {
+		this.status = status;
+		return self();
+	}
+
+	public Collection<SiteCpPair> sites() {
+		return sites;
+	}
+
+	public SpecimenRequestListCriteria sites(Collection<SiteCpPair> sites) {
+		this.sites = sites;
 		return this;
 	}
 
-	public Boolean closedReqs() {
-		return closedReqs;
+	public Long requestorId() {
+		return requestorId;
 	}
 
-	public SpecimenRequestListCriteria closedReqs(Boolean closedReqs) {
-		this.closedReqs = closedReqs;
-		return this;
+	public SpecimenRequestListCriteria requestorId(Long requestorId) {
+		this.requestorId = requestorId;
+		return self();
 	}
 }

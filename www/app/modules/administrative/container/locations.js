@@ -22,8 +22,7 @@ angular.module('os.administrative.container.locations', ['os.administrative.mode
       $scope.lctx.mapState = 'loading';
       container.getOccupiedPositions().then(
         function(occupancyMap) {
-          $scope.lctx.mapState = 'loaded';
-          $scope.lctx.pristineMap = $scope.lctx.occupancyMap = occupancyMap;
+          setMap(occupancyMap);
         },
 
         function() {
@@ -32,13 +31,22 @@ angular.module('os.administrative.container.locations', ['os.administrative.mode
       );
     }
 
-    function addSpecimens() {
-      var labels = Util.splitStr($scope.lctx.input.labels,/,|\t|\n/, false)
+    function setMap(occupancyMap) {
+      $scope.lctx.mapState = 'loaded';
+      $scope.lctx.pristineMap = $scope.lctx.occupancyMap = occupancyMap;
+      $scope.lctx.hasFreeSlots = (occupancyMap.length < container.noOfRows * container.noOfColumns);
+      $scope.lctx.hasBlockedSlots = occupancyMap.some(function(slot) { return slot.blocked; });
+      $scope.lctx.selected = [];
+      $scope.lctx.input.labels = undefined;
+    }
+
+    function addSpecimens(labels) {
       var filterOpts = {};
       if (!!$scope.lctx.input.useBarcode) {
         filterOpts.barcode = labels;
         labels = undefined;
       }
+
       SpecimenUtil.getSpecimens(labels, filterOpts).then(
         function(specimens) {
           if (!specimens) {
@@ -60,6 +68,20 @@ angular.module('os.administrative.container.locations', ['os.administrative.mode
           );
         }
       );
+    }
+
+    function getDupLabels(labels) {
+      var labelsMap = {}, result = [];
+      for (var i = 0; i < labels.length; ++i) {
+        var instance = labelsMap[labels[i]] || 0;
+        if (instance == 1) {
+          result.push(labels[i]);
+        }
+
+        labelsMap[labels[i]] = ++instance;
+      }
+
+      return result;
     }
 
     $scope.showInfo = function(entityType, entityId) {
@@ -122,8 +144,15 @@ angular.module('os.administrative.container.locations', ['os.administrative.mode
     }
 
     $scope.assignPositions = function() {
+      var labels = Util.splitStr($scope.lctx.input.labels, /,|\t|\n/, false);
+      var dups = getDupLabels(labels);
+      if (dups.length > 0) {
+        Alerts.error('container.dup_labels', {barcodes: $scope.lctx.input.useBarcode, dups: dups.join(', ')});
+        return;
+      }
+
       if ($scope.ctx.dimless) {
-        addSpecimens();
+        addSpecimens(labels);
         return;
       }
 
@@ -192,8 +221,7 @@ angular.module('os.administrative.container.locations', ['os.administrative.mode
           var assignOp = {vacateOccupant: $scope.lctx.input.vacateOccupants, positions: positions};
           container.assignPositions(assignOp).then(
             function(latestOccupancyMap) {
-              $scope.lctx.pristineMap = $scope.lctx.occupancyMap = latestOccupancyMap;
-              $scope.lctx.input.labels = undefined;
+              setMap(latestOccupancyMap);
             }
           );
         }
@@ -241,13 +269,11 @@ angular.module('os.administrative.container.locations', ['os.administrative.mode
         return;
       }
 
-      container.blockPositions(positions).then(
-        function(latestOccupancyMap) {
-          $scope.lctx.selected = [];
-          $scope.lctx.pristineMap = $scope.lctx.occupancyMap = latestOccupancyMap;
-          $scope.lctx.input.labels = undefined;
-        }
-      );
+      container.blockPositions(positions).then(setMap);
+    }
+
+    $scope.blockAllPositions = function() {
+      container.blockPositions([]).then(setMap);
     }
 
     $scope.unblockPositions = function() {
@@ -266,13 +292,11 @@ angular.module('os.administrative.container.locations', ['os.administrative.mode
         return;
       }
 
-      container.unblockPositions(positions).then(
-        function(latestOccupancyMap) {
-          $scope.lctx.selected = [];
-          $scope.lctx.pristineMap = $scope.lctx.occupancyMap = latestOccupancyMap;
-          $scope.lctx.input.labels = undefined;
-        }
-      );
+      container.unblockPositions(positions).then(setMap);
+    }
+
+    $scope.unblockAllPositions = function() {
+      container.unblockPositions([]).then(setMap);
     }
 
     init();

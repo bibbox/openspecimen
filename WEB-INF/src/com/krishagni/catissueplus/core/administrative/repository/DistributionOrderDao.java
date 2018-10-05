@@ -1,5 +1,6 @@
 package com.krishagni.catissueplus.core.administrative.repository;
 
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 
@@ -11,17 +12,19 @@ import com.krishagni.catissueplus.core.administrative.events.DistributionOrderSu
 import com.krishagni.catissueplus.core.common.repository.Dao;
 
 public interface DistributionOrderDao extends Dao<DistributionOrder> {
-	public List<DistributionOrderSummary> getOrders(DistributionOrderListCriteria criteria);
+	List<DistributionOrderSummary> getOrders(DistributionOrderListCriteria criteria);
 
-	public Long getOrdersCount(DistributionOrderListCriteria criteria);
+	Long getOrdersCount(DistributionOrderListCriteria criteria);
 
-	public DistributionOrder getOrder(String name);
+	DistributionOrder getOrder(String name);
 
-	public List<DistributionOrder> getOrders(List<String> names);
+	List<DistributionOrder> getOrders(List<String> names);
 
-	public List<DistributionOrderItem> getDistributedOrderItems(List<Long> specimenIds);
+	List<DistributionOrder> getUnpickedOrders(Date distSince, int startAt, int maxOrders);
 
-	public Map<String, Object> getOrderIds(String key, Object value);
+	List<DistributionOrderItem> getDistributedOrderItems(List<Long> specimenIds);
+
+	Map<String, Object> getOrderIds(String key, Object value);
 
 	List<DistributionOrderItem> getOrderItems(DistributionOrderItemListCriteria crit);
 

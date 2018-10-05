@@ -17,6 +17,11 @@
         <span class="fa fa-warning"></span>
         <span translate="participant.buttons.anonymize">Anonymize</span>
       </button>
+      <button ng-if="occurredVisits.length > 0 && (!specimenAllowedOps || specimenAllowedOps.update)" class="default"
+        ng-click="printSpecimenLabels()" title="{{'specimens.tooltip.print' | translate}}">
+        <span class="fa fa-print"></span>
+        <span translate="specimens.buttons.print">Print</span>
+      </button>
       <button show-if-allowed="participantResource.deleteOpts" class="default" ng-click="deleteReg()">
         <span class="fa fa-trash"></span>
         <span translate="common.buttons.delete">Delete</span>
@@ -47,15 +52,14 @@
         </div>
       </div>
 
-      <div class="os-section" ng-init="ovCollapsed=false">
+      <div class="os-section" ng-init="ovCollapsed=false" ng-if="occurredVisits.length > 0">
         <button class="os-btn-section-collapse os-btn-transparent" ng-click="ovCollapsed=!ovCollapsed">
           <span ng-if="!ovCollapsed" class="fa fa-chevron-circle-down"></span>
           <span ng-if="ovCollapsed" class="fa fa-chevron-circle-right"></span>
         </button>
         <h3 class="os-sub-section-title" translate="visits.occurred_visits">Occurred Visits</h3>
-        <div collapse="ovCollapsed" ng-switch on="occurredVisits.length == 0">
-          <span ng-switch-when="true" translate="common.none">None</span>
-          <div ng-switch-when="false" ng-switch on="occurredVisitsCols.length > 0">
+        <div collapse="ovCollapsed">
+          <div ng-switch on="occurredVisitsCols.length > 0">
             <div ng-switch-when="true">
               <div ng-include src="'modules/biospecimen/participant/overview-occurred-visits-sde.html'"></div>
             </div>
@@ -71,7 +75,7 @@
           <span ng-if="!ovCollapsed" class="fa fa-chevron-circle-down"></span>
           <span ng-if="ovCollapsed" class="fa fa-chevron-circle-right"></span>
         </button>
-        <h3 class="os-sub-section-title" translate="visits.missed_visits">Missed Visits</h3>
+        <h3 class="os-sub-section-title" translate="visits.missed_or_not_collected_visits">Missed Visits</h3>
         <div collapse="ovCollapsed">
           <div class="os-table os-table-muted-hdr os-border" ng-if="missedVisits.length > 0">
             <div class="os-table-head">
@@ -125,15 +129,14 @@
         </div>
       </div>
 
-      <div class="os-section" ng-init="avCollapsed=false">
+      <div class="os-section" ng-init="avCollapsed=false" ng-if="anticipatedVisits.length > 0">
         <button class="os-btn-section-collapse os-btn-transparent" ng-click="avCollapsed=!avCollapsed">
           <span ng-if="!avCollapsed" class="fa fa-chevron-circle-down"></span>
           <span ng-if="avCollapsed" class="fa fa-chevron-circle-right"></span>
         </button>
         <h3 class="os-sub-section-title" translate="visits.anticipated_visits">Anticipated Visits</h3>
         <div collapse="avCollapsed">
-          <span ng-if="anticipatedVisits.length == 0" translate="common.none">None</span>
-          <table class="os-table os-table-muted-hdr os-border" ng-if="anticipatedVisits.length > 0">
+          <table class="os-table os-table-muted-hdr os-border">
             <thead class="os-table-head">
               <tr class="row">
                 <td class="col col-xs-4" translate="visits.title">Visit</td>
@@ -176,12 +179,6 @@
                               <span translate="visits.ctx_menu.add_visit">Add Visit</span>
                             </a> 
                           </li>
-                          <li show-if-allowed="specimenResource.updateOpts">
-                            <a ui-sref="visit-addedit({visitId: visit.id, eventId: visit.eventId, missedVisit: true})">
-                              <i class="fa fa-ban"></i>
-                              <span translate="visits.ctx_menu.missed_visit">Missed Visit</span>
-                            </a>
-                          </li>
                           <li>
                             <a ui-sref="visit-detail.overview({visitId: visit.id, eventId: visit.eventId})">
                               <i class="fa fa-eye"></i>
@@ -220,6 +217,10 @@
     <tbody class="os-table-body">
       <tr class="row title" ng-repeat="visit in occurredVisits">
         <td class="col os-col-20">
+          <a class="os-tree-image-icon" ui-sref="visit-detail.spr({visitId: visit.id, eventId: visit.eventId})"
+            os-tooltip="{{'visits.spr_help' | translate}}" placement="right" ng-if="!!visit.sprName">
+            <span class="fa fa-file-text-o"></span>
+          </a>
           <a ui-sref="visit-detail.overview({visitId: visit.id, eventId: visit.eventId})">
             <os-event-desc event-point="visit.eventPoint" event-point-unit="visit.eventPointUnit"
               event-label="visit.eventLabel">
@@ -261,9 +262,15 @@
     <tbody class="os-table-body">
       <tr class="row title" ng-repeat="visit in occurredVisits">
         <td class="col" ng-repeat="column in visit.$$columns">
-          <a ui-sref="visit-detail.overview({visitId: visit.id, eventId: visit.eventId})" ng-if="$index == 0">
-            <span>{{column.value | osNoValue}}</span>
-          </a>
+          <span ng-if="$index == 0">
+            <a class="os-tree-image-icon" ui-sref="visit-detail.spr({visitId: visit.id, eventId: visit.eventId})"
+              os-tooltip="{{'visits.spr_help' | translate}}" placement="right" ng-if="!!visit.sprName">
+              <span class="fa fa-file-text-o"></span>
+            </a>
+            <a ui-sref="visit-detail.overview({visitId: visit.id, eventId: visit.eventId})">
+              <span>{{column.value | osNoValue}}</span>
+            </a>
+          </span>
           <span ng-if="$index > 0">{{column.value | osNoValue}}</span>
         </td>
         <td class="col os-col-20">
@@ -329,7 +336,7 @@
 
 <script type="text/ng-template" id="modules/biospecimen/participant/overview-visit-spmns-count.html">
   <progress class="progress" max="visit.totalPrimarySpmns"
-    bs-popover trigger="hover" placement="bottom" content-template="specimen-count.html">
+    bs-popover trigger="hover" placement="bottom" container="body" content-template="specimen-count.html">
     <bar value="visit.plannedPrimarySpmnsColl" type="success">
       <span><b> {{visit.plannedPrimarySpmnsColl}} </b> </span>
     </bar>
@@ -347,7 +354,7 @@
 
 <script type="text/ng-template" id="modules/biospecimen/participant/overview-visit-spmns-storage.html">
   <progress class="progress" max="visit.reqStorage"
-    bs-popover trigger="hover" placement="bottom" content-template="storage-utilization.html">
+    bs-popover trigger="hover" placement="bottom" container="body" content-template="storage-utilization.html">
     <bar value="visit.storedSpecimens" type="success" ng-if="!!visit.storedSpecimens">
       <span><b> {{visit.storedSpecimens}} </b></span>
     </bar>
@@ -375,7 +382,7 @@
         <td>{{visit.unplannedPrimarySpmnsColl}}</td>
       </tr>
       <tr ng-if="!!visit.uncollectedPrimarySpmns">
-        <td translate="specimens.status.not_collected">Not Collected</td>
+        <td translate="specimens.status.missed_or_not_collected">Not Collected</td>
         <td>{{visit.uncollectedPrimarySpmns}}</td>
       </tr>
       <tr ng-if="!!visit.pendingPrimarySpmns">

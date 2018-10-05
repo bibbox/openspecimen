@@ -26,4 +26,36 @@ angular.module('openspecimen')
         );
       }
     };
+  })
+
+  .directive('osTooltip', function($compile) {
+    return {
+      restrict: 'A',
+
+      terminal: true,
+
+      priority: 100000,
+
+      compile: function(tElem, tAttrs) {
+        var tooltip = tAttrs.osTooltip;
+        tElem.removeAttr('os-tooltip');
+        tElem.attr({
+          'bs-tooltip': '',
+          'data-title': tooltip,
+          'trigger'   : tAttrs.trigger || 'hover focus',
+          'placement' : tAttrs.placement || 'auto',
+          'html'      : (tAttrs.html == true || tAttrs.html == 'true')
+        });
+
+        var linkFn = $compile(tElem);
+        return {
+          pre: function(scope, element, attrs) {
+          },
+
+          post: function(scope, element, attrs) {
+            linkFn(scope, function(clone) { element.replaceWith(clone); });
+          }
+        }
+      }
+    }
   });

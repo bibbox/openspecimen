@@ -1,6 +1,7 @@
 
 package com.krishagni.catissueplus.core.administrative.repository.impl;
 
+import static org.apache.commons.collections.CollectionUtils.isEmpty;
 import static org.apache.commons.collections.CollectionUtils.isNotEmpty;
 
 import java.util.ArrayList;
@@ -29,6 +30,7 @@ import org.hibernate.criterion.Restrictions;
 import org.hibernate.criterion.Subqueries;
 import org.hibernate.sql.JoinType;
 
+import com.krishagni.catissueplus.core.administrative.domain.DistributionOrder;
 import com.krishagni.catissueplus.core.administrative.domain.PermissibleValue;
 import com.krishagni.catissueplus.core.administrative.domain.PositionAssigner;
 import com.krishagni.catissueplus.core.administrative.domain.StorageContainer;
@@ -42,7 +44,7 @@ import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolSite
 import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
 import com.krishagni.catissueplus.core.biospecimen.repository.SpecimenListCriteria;
 import com.krishagni.catissueplus.core.biospecimen.repository.impl.BiospecimenDaoHelper;
-import com.krishagni.catissueplus.core.common.Pair;
+import com.krishagni.catissueplus.core.common.access.SiteCpPair;
 import com.krishagni.catissueplus.core.common.repository.AbstractDao;
 import com.krishagni.catissueplus.core.common.util.Status;
 
@@ -161,6 +163,15 @@ public class StorageContainerDaoImpl extends AbstractDao<StorageContainer> imple
 			);
 		}
 
+		if (isNotEmpty(crit.distributionProtocols())) {
+			query.createAlias("d.compAllowedDps", "dp", JoinType.LEFT_OUTER_JOIN);
+			restriction.add(
+				Restrictions.conjunction()
+					.add(Restrictions.isNotNull("dp.id"))
+					.add(Restrictions.not(Restrictions.in("dp.id", crit.distributionProtocolIds())))
+			);
+		}
+
 		flush();
 		return query.add(restriction).list();
 	}
@@ -201,6 +212,26 @@ public class StorageContainerDaoImpl extends AbstractDao<StorageContainer> imple
 		}
 
 		return query.add(restriction).list();
+	}
+
+	@SuppressWarnings(value = "unchecked")
+	@Override
+	public List<String> getNonCompliantDistributedSpecimens(ContainerRestrictionsCriteria crit) {
+		if (isEmpty(crit.distributionProtocols())) {
+			return Collections.emptyList();
+		}
+
+		return (List<String>) getCurrentSession().createCriteria(DistributionOrder.class, "order")
+			.createAlias("order.distributionProtocol", "dp")
+			.createAlias("order.orderItems", "orderItem")
+			.createAlias("orderItem.specimen", "spmn")
+			.createAlias("spmn.position", "pos")
+			.createAlias("pos.container", "container")
+			.createAlias("container.ancestorContainers", "ancestor")
+			.add(Restrictions.eq("ancestor.id", crit.containerId()))
+			.add(Restrictions.not(Restrictions.in("dp.id", crit.distributionProtocolIds())))
+			.setProjection(Projections.distinct(Projections.property("spmn.label")))
+			.list();
 	}
 
 	@Override
@@ -335,13 +366,25 @@ public class StorageContainerDaoImpl extends AbstractDao<StorageContainer> imple
 			innerQuery.createAlias("cont.site", "site")
 				.createAlias("cont.allowedCps", "cp", JoinType.LEFT_OUTER_JOIN);
 
+			boolean instituteAdded = false;
 			Disjunction siteCpsCond = Restrictions.disjunction();
-			for (Pair<Long, Long> siteCp : crit.siteCps()) {
-				Junction siteCpCond = Restrictions.conjunction().add(Restrictions.eq("site.id", siteCp.first()));
-				if (siteCp.second() != null) {
+			for (SiteCpPair siteCp : crit.siteCps()) {
+				Junction siteCpCond = Restrictions.conjunction();
+				if (siteCp.getSiteId() != null) {
+					siteCpCond.add(Restrictions.eq("site.id", siteCp.getSiteId()));
+				} else {
+					if (!instituteAdded) {
+						innerQuery.createAlias("site.institute", "institute");
+						instituteAdded = true;
+					}
+
+					siteCpCond.add(Restrictions.eq("institute.id", siteCp.getInstituteId()));
+				}
+
+				if (siteCp.getCpId() != null) {
 					siteCpCond.add(Restrictions.or(
 						Restrictions.isNull("cp.id"),
-						Restrictions.eq("cp.id", siteCp.second())
+						Restrictions.eq("cp.id", siteCp.getCpId())
 					));
 				}
 
@@ -392,7 +435,7 @@ public class StorageContainerDaoImpl extends AbstractDao<StorageContainer> imple
 	//
 	@Override
 	public Map<String, List<String>> getInaccessibleSpecimens(
-		List<Long> containerIds, List<Pair<Long, Long>> siteCps,
+		List<Long> containerIds, List<SiteCpPair> siteCps,
 		boolean useMrnSites, int firstN) {
 
 		DetachedCriteria validSpmnsQuery = DetachedCriteria.forClass(Specimen.class, "specimen")
@@ -403,6 +446,7 @@ public class StorageContainerDaoImpl extends AbstractDao<StorageContainer> imple
 			.createAlias("pos.container", "container")
 			.createAlias("container.ancestorContainers", "aContainer")
 			.add(Restrictions.in("aContainer.id", containerIds));
+
 		BiospecimenDaoHelper.getInstance().addSiteCpsCond(query, siteCps, useMrnSites, "visit");
 		return getInvalidSpecimens(containerIds, validSpmnsQuery, firstN);
 	}
@@ -640,7 +684,9 @@ public class StorageContainerDaoImpl extends AbstractDao<StorageContainer> imple
 			addFreeContainersRestriction();
 			addSpecimenRestriction();
 			addCpRestriction();
+			addDpRestriction();
 			addStoreSpecimenRestriction();
+			addUsageModeRestriction();
 			
 			addParentRestriction();
 			addCanHoldRestriction();
@@ -811,7 +857,7 @@ public class StorageContainerDaoImpl extends AbstractDao<StorageContainer> imple
 		}
 
 		private void addCpRestriction() {
-			if (CollectionUtils.isEmpty(crit.cpIds()) && CollectionUtils.isEmpty(crit.cpShortTitles())) {
+			if (isEmpty(crit.cpIds()) && isEmpty(crit.cpShortTitles())) {
 				return;
 			}
 
@@ -826,7 +872,23 @@ public class StorageContainerDaoImpl extends AbstractDao<StorageContainer> imple
 				where.append("(cp is null or cp.shortTitle in (:cpShortTitles))");
 				params.put("cpShortTitles", crit.cpShortTitles());
 			}
-		}	
+		}
+
+		private void addDpRestriction() {
+			if (isEmpty(crit.dpShortTitles())) {
+				return;
+			}
+
+			if (crit.hierarchical()) {
+				from.append(" left join dc.compAllowedDps dp");
+			} else {
+				from.append(" left join c.compAllowedDps dp");
+			}
+
+			addAnd();
+			where.append("(dp is null or dp.shortTitle in (:dpShortTitles))");
+			params.put("dpShortTitles", crit.dpShortTitles());
+		}
 		
 		private void addStoreSpecimenRestriction() {			
 			if (crit.storeSpecimensEnabled() == null) {
@@ -856,13 +918,26 @@ public class StorageContainerDaoImpl extends AbstractDao<StorageContainer> imple
 				addCpAlias();
 			}
 
+			boolean instituteAliasAdded = false;
+
 			List<String> disjunctions = new ArrayList<>();
-			for (Pair<Long, Long> siteCp : crit.siteCps()) {
-				StringBuilder restriction = new StringBuilder("(site.id = ").append(siteCp.first());
-				if (siteCp.second() != null) {
+			for (SiteCpPair siteCp : crit.siteCps()) {
+				StringBuilder restriction = new StringBuilder();
+				if (siteCp.getSiteId() != null) {
+					restriction.append("(site.id = ").append(siteCp.getSiteId());
+				} else {
+					if (!instituteAliasAdded) {
+						from.append(" join site.institute institute");
+						instituteAliasAdded = true;
+					}
+
+					restriction.append("(institute.id = ").append(siteCp.getInstituteId());
+				}
+
+				if (siteCp.getCpId() != null) {
 					restriction.append(" and (")
 						.append("cp.id is null or ")
-						.append("cp.id = ").append(siteCp.second())
+						.append("cp.id = ").append(siteCp.getCpId())
 						.append(")");
 				}
 
@@ -872,6 +947,21 @@ public class StorageContainerDaoImpl extends AbstractDao<StorageContainer> imple
 
 			addAnd();
 			where.append("(").append(StringUtils.join(disjunctions, " or ")).append(")");
+		}
+
+		private void addUsageModeRestriction() {
+			if (crit.usageMode() == null) {
+				return;
+			}
+
+			addAnd();
+			if (crit.hierarchical()) {
+				where.append("dc.usedFor = :usedFor");
+			} else {
+				where.append("c.usedFor = :usedFor");
+			}
+
+			params.put("usedFor", crit.usageMode());
 		}
 	}
 

@@ -20,6 +20,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 
 import com.krishagni.catissueplus.core.administrative.domain.Site;
 import com.krishagni.catissueplus.core.administrative.domain.User;
+import com.krishagni.catissueplus.core.audit.services.impl.DeleteLogUtil;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.ParticipantErrorCode;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.DependentEntityDetail;
@@ -138,7 +139,17 @@ public class CollectionProtocolRegistration extends BaseEntity {
 		}
 
 		return getVisits().stream()
-			.sorted((v1, v2) -> v1.getVisitDate().compareTo(v2.getVisitDate()))
+			.sorted((v1, v2) -> {
+				if (v1.getVisitDate() != null && v2.getVisitDate() != null) {
+					return v1.getVisitDate().compareTo(v2.getVisitDate());
+				} else if (v1.getVisitDate() != null) {
+					return -1;
+				} else if (v2.getVisitDate() != null) {
+					return 1;
+				} else {
+					return v1.getId().compareTo(v2.getId());
+				}
+			})
 			.collect(Collectors.toList());
 	}
 
@@ -223,8 +234,12 @@ public class CollectionProtocolRegistration extends BaseEntity {
 		this.forceDelete = forceDelete;
 	}
 
+	public boolean isDeleted() {
+		return Status.ACTIVITY_STATUS_DISABLED.getStatus().equals(getActivityStatus());
+	}
+
 	public boolean isActive() {
-		return Status.ACTIVITY_STATUS_ACTIVE.getStatus().equals(this.getActivityStatus());
+		return Status.ACTIVITY_STATUS_ACTIVE.getStatus().equals(getActivityStatus());
 	}
 
 	public void setActive() {
@@ -277,6 +292,8 @@ public class CollectionProtocolRegistration extends BaseEntity {
 
 	public void update(CollectionProtocolRegistration cpr) {
 		setForceDelete(cpr.isForceDelete());
+		setOpComments(cpr.getOpComments());
+
 		updateActivityStatus(cpr.getActivityStatus());
 		if (!isActive()) {
 			return;

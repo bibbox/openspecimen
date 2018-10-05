@@ -3,8 +3,8 @@ angular.module('os.biospecimen.participant.addedit', ['os.biospecimen.models', '
   .controller('ParticipantAddEditCtrl', function(
     $scope, $state, $stateParams, $translate, $modal, $q,
     cp, cpr, extensionCtxt, hasDict, cpDict, twoStepReg, layout,
-    mrnAccessRestriction, addPatientOnLookupFail, lookupFieldsCfg,
-    lockedFields, firstCpEvent,
+    onValueChangeCb, mrnAccessRestriction, addPatientOnLookupFail,
+    lookupFieldsCfg, lockedFields, firstCpEvent,
     CpConfigSvc, CollectionProtocolRegistration, Participant,
     Visit, CollectSpecimensSvc, Site, PvManager, ExtensionsUtil, Alerts) {
 
@@ -21,7 +21,13 @@ angular.module('os.biospecimen.participant.addedit', ['os.biospecimen.models', '
       $scope.partCtx = {
         cpSites: cp.cpSites.map(function(cpSite) { return cpSite.siteName; }),
         firstCpEvent: firstCpEvent,
-        fieldOpts: {lockedFields: lockedFields, layout: layout, mdInput: false},
+        fieldOpts: {
+          viewCtx: $scope,
+          lockedFields: lockedFields,
+          layout: layout,
+          onValueChange: onValueChangeCb,
+          mdInput: false
+        },
         twoStep: lookupFieldsCfg.configured,
         edit: !!cpr.id,
         obj: {cpr: $scope.cpr, cp: cp},
@@ -43,6 +49,7 @@ angular.module('os.biospecimen.participant.addedit', ['os.biospecimen.models', '
         initDisableFieldOpts(lockedFields);
       }
 
+      $scope.op         = !!$scope.cpr.id ? 'Update' : 'Create';
       $scope.deFormCtrl = {};
       $scope.extnOpts = ExtensionsUtil.getExtnOpts(
         $scope.cpr.participant, extensionCtxt, $scope.disableFieldOpts.customFields);
@@ -51,7 +58,6 @@ angular.module('os.biospecimen.participant.addedit', ['os.biospecimen.models', '
         $scope.cpr.participant.addPmi($scope.cpr.participant.newPmi());
         loadPvs();
       }
-
     };
 
     function onMatchSelect(match) {
@@ -121,7 +127,6 @@ angular.module('os.biospecimen.participant.addedit', ['os.biospecimen.models', '
     }
 
     function loadPvs() {
-      $scope.op            = !!$scope.cpr.id ? 'Update' : 'Create';
       $scope.genders       = PvManager.getPvs('gender');
       $scope.vitalStatuses = PvManager.getPvs('vital-status');
     };
@@ -277,6 +282,7 @@ angular.module('os.biospecimen.participant.addedit', ['os.biospecimen.models', '
         useSelectedMatch(matches[0]);
       } else {
         $scope.partCtx.step = 'chooseMatch';
+        $scope.partCtx.selectedMatch = null;
       }
     }
 
@@ -474,8 +480,18 @@ angular.module('os.biospecimen.participant.addedit', ['os.biospecimen.models', '
           match.$$selected = false;
         }
       );
-      $scope.partCtx.obj.cpr = $scope.cpr = angular.copy(inputParticipant);
-      $scope.partCtx.step = 'registerParticipant';
+
+      if (!lookupFieldsCfg.configured || $scope.partCtx.edit) {
+        registerParticipant();
+      } else {
+        var cpr = $scope.partCtx.obj.cpr = $scope.cpr = angular.copy(inputParticipant);
+        if (cpr.participant && typeof cpr.participant.birthDate == 'string') {
+          var bd = cpr.participant.birthDate.split('-');
+          cpr.participant.birthDate = new Date(+bd[0], +bd[1] - 1, bd[2]);
+        }
+
+        $scope.partCtx.step = 'registerParticipant';
+      }
     }
 
     $scope.previous = function() {
