@@ -8,9 +8,11 @@ import java.util.stream.Collectors;
 
 import org.codehaus.jackson.map.annotate.JsonSerialize;
 
+import com.krishagni.catissueplus.core.administrative.domain.DistributionProtocol;
 import com.krishagni.catissueplus.core.administrative.domain.StorageContainer;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
 import com.krishagni.catissueplus.core.common.ListenAttributeChanges;
+import com.krishagni.catissueplus.core.de.events.ExtensionDetail;
 
 @JsonSerialize(include = JsonSerialize.Inclusion.NON_NULL)
 @ListenAttributeChanges
@@ -21,21 +23,29 @@ public class StorageContainerDetail extends StorageContainerSummary {
 
 	private String comments;
 
-	private Set<String> allowedSpecimenClasses = new HashSet<String>();
-	
-	private Set<String> calcAllowedSpecimenClasses = new HashSet<String>();
-	
-	private Set<String> allowedSpecimenTypes = new HashSet<String>();
-	
-	private Set<String> calcAllowedSpecimenTypes = new HashSet<String>();
+	private ExtensionDetail extensionDetail;
 
-	private Set<String> allowedCollectionProtocols = new HashSet<String>();
+	private Set<String> allowedSpecimenClasses = new HashSet<>();
 	
-	private Set<String> calcAllowedCollectionProtocols = new HashSet<String>();
+	private Set<String> calcAllowedSpecimenClasses = new HashSet<>();
+	
+	private Set<String> allowedSpecimenTypes = new HashSet<>();
+	
+	private Set<String> calcAllowedSpecimenTypes = new HashSet<>();
 
-	private Set<Integer> occupiedPositions = new HashSet<Integer>();
+	private Set<String> allowedCollectionProtocols = new HashSet<>();
+	
+	private Set<String> calcAllowedCollectionProtocols = new HashSet<>();
+
+	private Set<String> allowedDistributionProtocols = new HashSet<>();
+
+	private Set<String> calcAllowedDistributionProtocols = new HashSet<>();
+
+	private Set<Integer> occupiedPositions = new HashSet<>();
 
 	private Map<String, Integer> specimensByType;
+
+	private boolean printLabels;
 
 	public Double getTemperature() {
 		return temperature;
@@ -59,6 +69,14 @@ public class StorageContainerDetail extends StorageContainerSummary {
 
 	public void setComments(String comments) {
 		this.comments = comments;
+	}
+
+	public ExtensionDetail getExtensionDetail() {
+		return extensionDetail;
+	}
+
+	public void setExtensionDetail(ExtensionDetail extensionDetail) {
+		this.extensionDetail = extensionDetail;
 	}
 
 	public Set<String> getAllowedSpecimenClasses() {
@@ -108,7 +126,23 @@ public class StorageContainerDetail extends StorageContainerSummary {
 	public void setCalcAllowedCollectionProtocols(Set<String> calcAllowedCollectionProtocols) {
 		this.calcAllowedCollectionProtocols = calcAllowedCollectionProtocols;
 	}
-	
+
+	public Set<String> getAllowedDistributionProtocols() {
+		return allowedDistributionProtocols;
+	}
+
+	public void setAllowedDistributionProtocols(Set<String> allowedDistributionProtocols) {
+		this.allowedDistributionProtocols = allowedDistributionProtocols;
+	}
+
+	public Set<String> getCalcAllowedDistributionProtocols() {
+		return calcAllowedDistributionProtocols;
+	}
+
+	public void setCalcAllowedDistributionProtocols(Set<String> calcAllowedDistributionProtocols) {
+		this.calcAllowedDistributionProtocols = calcAllowedDistributionProtocols;
+	}
+
 	public Set<Integer> getOccupiedPositions() {
 		return occupiedPositions;
 	}
@@ -125,12 +159,21 @@ public class StorageContainerDetail extends StorageContainerSummary {
 		this.specimensByType = specimensByType;
 	}
 
+	public boolean isPrintLabels() {
+		return printLabels;
+	}
+
+	public void setPrintLabels(boolean printLabels) {
+		this.printLabels = printLabels;
+	}
+
 	public static StorageContainerDetail from(StorageContainer container) {
 		StorageContainerDetail result = new StorageContainerDetail();
 		StorageContainerDetail.transform(container, result);
 
 		result.setTemperature(container.getTemperature());
 		result.setComments(container.getComments());
+		result.setExtensionDetail(ExtensionDetail.from(container.getExtension()));
 		if (container.getCellDisplayProp() != null) {
 			result.setCellDisplayProp(container.getCellDisplayProp().name());
 		} else {
@@ -145,12 +188,19 @@ public class StorageContainerDetail extends StorageContainerSummary {
 		
 		result.setAllowedCollectionProtocols(getCpNames(container.getAllowedCps()));		
 		result.setCalcAllowedCollectionProtocols(getCpNames(container.getCompAllowedCps()));
+
+		result.setAllowedDistributionProtocols(getDpNames(container.getAllowedDps()));
+		result.setCalcAllowedDistributionProtocols(getDpNames(container.getCompAllowedDps()));
 		
 		result.setOccupiedPositions(container.occupiedPositionsOrdinals());
 		return result;
 	}
 	
 	private static Set<String> getCpNames(Collection<CollectionProtocol> cps) {
-		return cps.stream().map(cp -> cp.getShortTitle()).collect(Collectors.toSet());
+		return cps.stream().map(CollectionProtocol::getShortTitle).collect(Collectors.toSet());
+	}
+
+	private static Set<String> getDpNames(Collection<DistributionProtocol> dps) {
+		return dps.stream().map(DistributionProtocol::getShortTitle).collect(Collectors.toSet());
 	}
 }

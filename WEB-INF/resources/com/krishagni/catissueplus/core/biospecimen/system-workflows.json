@@ -149,5 +149,409 @@
                 }
             ]
         }
+    },
+    {
+        "name": "common-specimens-list-view",
+        "data": {
+            "columns": [
+                {
+                    "expr": "Participant.ppid",
+                    "caption": "PPID"
+                },
+                {
+                    "expr": "Specimen.label",
+                    "caption": "Label",
+                    "metainfo": {
+                        "showLink": "true"
+                    }
+                },
+                {
+                    "expr": "Specimen.lineage",
+                    "caption": "Lineage"
+                },
+                {
+                    "expr": "Specimen.type",
+                    "caption": "Type"
+                },
+                {
+                    "expr": "Specimen.tissueSite",
+                    "caption": "Anatomic Site"
+                },
+                {
+                    "expr": "CollectionProtocol.shortTitle",
+                    "caption": "Collection Protocol"
+                },
+                {
+                    "expr": "Specimen.availableQty",
+                    "caption": "Quantity",
+                    "metainfo": {
+                        "showUnit": "true",
+                        "measure": "quantity"
+                    }
+                },
+                {
+                    "expr": "concat(Specimen.specimenPosition.containerName, concat_ws(\"\", concat(\" (\", Specimen.specimenPosition.formattedPos, \")\")))",
+                    "caption": "Location"
+                }
+            ],
+            "criteria": "",
+            "orderBy": [],
+            "filters": [
+                {
+                    "expr": "Participant.ppid",
+                    "caption": "PPID",
+                    "searchType": "contains"
+                },
+                {
+                    "expr": "Specimen.label",
+                    "caption": "Label",
+                    "searchType": "contains"
+                },
+                {
+                    "expr": "Specimen.lineage",
+                    "caption": "Lineage"
+                },
+                {
+                    "expr": "Specimen.type",
+                    "caption": "Type"
+                },
+                {
+                    "expr": "Specimen.tissueSite",
+                    "caption": "Anatomic Site"
+                },
+                {
+                    "expr": "CollectionProtocol.shortTitle",
+                    "caption": "Collection Protocol"
+                },
+                {
+                    "expr": "Specimen.availableQty",
+                    "caption": "Quantity"
+                },
+                {
+                    "expr": "Specimen.specimenPosition.containerName",
+                    "caption": "Storage Container"
+                }
+            ]
+        }
+    },
+    {
+        "name": "order-specimens-list-view",
+        "data": {
+            "columns": [
+                {
+                    "expr": "Specimen.specimenOrders.label",
+                    "caption": "Distribution Label"
+                },
+                {
+                    "expr": "Specimen.label",
+                    "caption": "Label",
+                    "metainfo": {
+                        "showLink": "true"
+                    }
+                },
+                {
+                    "expr": "Specimen.type",
+                    "caption": "Type"
+                },
+                {
+                    "expr": "Specimen.tissueSite",
+                    "caption": "Anatomic Site"
+                },
+                {
+                    "expr": "CollectionProtocol.shortTitle",
+                    "caption": "Collection Protocol"
+                },
+                {
+                    "expr": "Specimen.specimenOrders.quantity",
+                    "caption": "Quantity",
+                    "metainfo": {
+                        "showUnit": "true",
+                        "measure": "quantity"
+                    }
+                },
+                {
+                    "expr": "concat(Specimen.specimenPosition.containerName, concat_ws(\"\", concat(\" (\", Specimen.specimenPosition.formattedPos, \")\")))",
+                    "caption": "Location"
+                },
+                {
+                    "expr": "Specimen.specimenOrders.status",
+                    "caption": "Status"
+                }
+            ],
+            "hideEmptyColumns": true,
+            "criteria": "",
+            "orderBy": [
+                {
+                    "expr": "Specimen.specimenOrders.itemId",
+                    "direction": "asc"
+                }
+            ],
+            "filters": [
+                {
+                    "expr": "Specimen.label",
+                    "caption": "Label",
+                    "searchType": "contains"
+                },
+                {
+                    "expr": "Specimen.type",
+                    "caption": "Type"
+                },
+                {
+                    "expr": "Specimen.tissueSite",
+                    "caption": "Anatomic Site"
+                },
+                {
+                    "expr": "CollectionProtocol.shortTitle",
+                    "caption": "Collection Protocol"
+                }
+            ]
+        }
+    },
+    {
+        "name": "common",
+        "data": {
+            "aliquotsCollection": [
+                {
+                    "title" : "Aliquots",
+                    "criteria" : {
+                        "rules" : [
+                            {
+                                "field" : "specimen.parent.id",
+                                "op" : "exists"
+                            }
+                        ]
+                    },
+                    "enableCofrc" : false,
+                    "fields" : [
+                        {
+                            "name": "specimen.parent.label",
+                            "caption": "Parent Specimen",
+                            "type": "span",
+                            "url": "specimen({specimenId: specimen.parent.id})"
+                        },
+                        {
+                            "name": "specimen.parent.availableQty",
+                            "caption": "Parent Quantity",
+                            "type": "span",
+                            "width": "120px"
+                        },
+                        {
+                            "name": "specimen.type",
+                            "caption": "Type",
+                            "type" : "specimen-type",
+                            "specimen" : "specimen",
+                            "optional": false,
+                            "width": "185px"
+                        },
+                        {
+                            "name": "specimen.noOfAliquots",
+                            "caption": "Count",
+                            "type": "text",
+                            "pattern" : "/^[1-9][0-9]*$/",
+                            "modelOpts": {"allowInvalid": true},
+                            "optional": true,
+                            "width": "80px",
+                            "showIf": {
+                                "tabMode": true,
+                                "op": "OR",
+                                "rules": [
+                                    {
+                                        "field": "viewCtx.inputLabels",
+                                        "op": "==",
+                                        "value": "false"
+                                    }
+                                ]
+                            }
+                        },
+                        {
+                            "name": "specimen.labels",
+                            "caption": "Labels",
+                            "type": "textarea",
+                            "optional": false,
+                            "showIf": {
+                                "tabMode": true,
+                                "op": "OR",
+                                "rules": [
+                                    {
+                                        "field": "viewCtx.inputLabels",
+                                        "op": "==",
+                                        "value": "true"
+                                    }
+                                ]
+                            },
+                            "copyValueFn" : "function(firstRowVal, currentVal) { if (!!currentVal) { return currentVal; } else { return ''; } }"
+                        },
+                        {
+                            "name": "specimen.qtyPerAliquot",
+                            "caption": "Quantity",
+                            "type" : "specimen-quantity",
+                            "specimen": "specimen",
+                            "optional": true,
+                            "width": "100px"
+                        },
+                        {
+                            "name": "specimen.createdOn",
+                            "caption" : "Created On",
+                            "type" : "date",
+                            "optional" : true,
+                            "defaultValue" : "current_date"
+                        },
+                        {
+                            "name": "specimen.createdBy",
+                            "caption": "Created By",
+                            "type": "user",
+                            "defaultValue": "current_user",
+                            "optional": true,
+                            "listSource": {
+                                "queryParams": {
+                                    "static": {
+                                        "excludeType": "CONTACT"
+                                    }
+                                }
+                            }
+                        },
+                        {
+                            "name": "specimen.storageLocation",
+                            "caption": "Location",
+                            "type" : "storage-position",
+                            "optional": true,
+                            "cpId": "specimen.cpId",
+                            "entity": "specimen",
+                            "width": "240px",
+                            "copyValueFn": "function(firstRowVal, currentVal) { if ((!!currentVal && !!currentVal.reservationId) && (!!firstRowVal && !!firstRowVal.reservationId)) { return currentVal;} else if (firstRowVal) { return { id: '', name: firstRowVal.name, mode: firstRowVal.mode, positionX: '', positionY: '', position: '', reservationId: '' };} else { return {}; }}"
+                        },
+                        {
+                            "name": "specimen.printLabel",
+                            "caption": "Print",
+                            "icon": "fa fa-print",
+                            "type": "toggle-checkbox",
+                            "width": "30px"
+                        },
+                        {
+                            "name": "specimen.closeParent",
+                            "caption": "Close Parent",
+                            "icon": "fa fa-ban",
+                            "type": "toggle-checkbox",
+                            "width": "30px",
+                            "defaultValue": true
+                        }
+                    ]
+                }
+            ],
+
+            "derivedSpecimens": [
+                {
+                    "title" : "Derived Specimens",
+                    "criteria" : {
+                        "rules" : [
+                            {
+                                "field" : "specimen.parent.id",
+                                "op" : "exists"
+                            }
+                        ]
+                    },
+                    "enableCofrc" : false,
+                    "fields" : [
+                        {
+                            "name": "specimen.parent.label",
+                            "caption": "Parent Specimen",
+                            "type": "span",
+                            "url": "specimen({specimenId: specimen.parent.id})"
+                        },
+                        {
+                            "name": "specimen.parent.type",
+                            "caption": "Parent Type",
+                            "type": "span"
+                        },
+                        {
+                            "name": "specimen.label",
+                            "caption": "Label",
+                            "type": "text",
+                            "optional": false,
+                            "showIf": {
+                                "tabMode": true,
+                                "op": "OR",
+                                "rules": [
+                                    {
+                                        "field": "viewCtx.inputLabels",
+                                        "op": "==",
+                                        "value": "true"
+                                    }
+                                ]
+                            },
+                            "copyValueFn" : "function(firstRowVal, currentVal) { if (!!currentVal) { return currentVal; } else { return ''; } }"
+                        },
+                        {
+                            "name": "specimen.parent.availableQty",
+                            "caption": "Parent Quantity",
+                            "type": "span",
+                            "width": "120px"
+                        },
+                        {
+                            "name": "specimen.type",
+                            "caption": "Type",
+                            "type" : "specimen-type",
+                            "specimen" : "specimen",
+                            "optional": false,
+                            "width": "185px"
+                        },
+                        {
+                            "name": "specimen.initialQty",
+                            "caption": "Quantity",
+                            "type" : "specimen-quantity",
+                            "specimen": "specimen",
+                            "optional": true,
+                            "width": "100px"
+                        },
+                        {
+                            "name": "specimen.createdOn",
+                            "caption" : "Created On",
+                            "type" : "date",
+                            "optional" : true,
+                            "defaultValue" : "current_date"
+                        },
+                        {
+                            "name": "specimen.createdBy",
+                            "caption": "Created By",
+                            "type": "user",
+                            "defaultValue": "current_user",
+                            "optional": true,
+                            "listSource": {
+                                "queryParams": {
+                                    "static": {
+                                        "excludeType": "CONTACT"
+                                    }
+                                }
+                            }
+                        },
+                        {
+                            "name": "specimen.storageLocation",
+                            "caption": "Location",
+                            "type" : "storage-position",
+                            "optional": true,
+                            "cpId": "specimen.cpId",
+                            "entity": "specimen",
+                            "width": "240px",
+                            "copyValueFn": "function(firstRowVal, currentVal) { if ((!!currentVal && !!currentVal.reservationId) && (!!firstRowVal && !!firstRowVal.reservationId)) { return currentVal;} else if (firstRowVal) { return { id: '', name: firstRowVal.name, mode: firstRowVal.mode, positionX: '', positionY: '', position: '', reservationId: '' };} else { return {}; }}"
+                        },
+                        {
+                            "name": "specimen.printLabel",
+                            "caption": "Print",
+                            "icon": "fa fa-print",
+                            "type": "toggle-checkbox",
+                            "width": "30px"
+                        },
+                        {
+                            "name": "specimen.closeParent",
+                            "caption": "Close Parent",
+                            "icon": "fa fa-ban",
+                            "type": "toggle-checkbox",
+                            "width": "30px",
+                            "defaultValue": true
+                        }
+                    ]
+                }
+            ]
+        }
     }
 ]

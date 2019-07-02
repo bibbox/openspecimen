@@ -1,7 +1,10 @@
 package com.krishagni.catissueplus.core.administrative.services.impl;
 
 import java.io.File;
+import java.util.Date;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 import org.apache.commons.lang.StringUtils;
 import org.springframework.context.ApplicationListener;
@@ -49,8 +52,13 @@ public class ScheduledJobServiceImpl implements ScheduledJobService, Application
 	@PlusTransactional
 	public ResponseEvent<List<ScheduledJobDetail>> getScheduledJobs(RequestEvent<ScheduledJobListCriteria> req) {
 		try {
-			AccessCtrlMgr.getInstance().ensureReadScheduledJobRights();			
+			AccessCtrlMgr.getInstance().ensureReadScheduledJobRights();
 			List<ScheduledJob> jobs = daoFactory.getScheduledJobDao().getScheduledJobs(req.getPayload());
+
+			Map<Long, ScheduledJob> jobsMap = jobs.stream().collect(Collectors.toMap(ScheduledJob::getId, job -> job));
+			Map<Long, Date> jobsLastRuntime = daoFactory.getScheduledJobDao().getJobsLastRunTime(jobsMap.keySet());
+			jobsLastRuntime.forEach((jobId, lastRuntime) -> jobsMap.get(jobId).setLastRunOn(lastRuntime));
+
 			return ResponseEvent.response(ScheduledJobDetail.from(jobs));
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
@@ -118,7 +126,12 @@ public class ScheduledJobServiceImpl implements ScheduledJobService, Application
 			if (existing == null) {
 				return ResponseEvent.userError(ScheduledJobErrorCode.NOT_FOUND);
 			}
-			
+
+			ScheduledJobDetail input = req.getPayload();
+			if (input.getStartDate() == null) {
+				input.setStartDate(existing.getStartDate());
+			}
+
 			ScheduledJob job = jobFactory.createScheduledJob(req.getPayload());
 			if (!existing.getName().equals(job.getName())) {
 				ensureUniqueJobName(job);

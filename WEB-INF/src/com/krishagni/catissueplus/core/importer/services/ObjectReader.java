@@ -7,8 +7,8 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.Date;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -46,11 +46,23 @@ public class ObjectReader implements Closeable {
 	
 	private String timeFmt;
 	
-	private List<Integer> keyColumnIndices = new ArrayList<Integer>();
+	private List<Integer> keyColumnIndices = new ArrayList<>();
+
+	private Map<Record, List<Integer>> columnIndicesMap = new HashMap<>();
 
 	public ObjectReader(String filePath, ObjectSchema schema, String dateFmt, String timeFmt) {
+		this(filePath, schema, dateFmt, timeFmt, null);
+	}
+
+	public ObjectReader(String filePath, ObjectSchema schema, String dateFmt, String timeFmt, String fieldSeparator) {
 		try {
-			this.csvReader = CsvFileReader.createCsvFileReader(filePath, true);
+			char separatorChar = Utility.getFieldSeparator();
+			fieldSeparator = (fieldSeparator != null && fieldSeparator.length() > 0) ? fieldSeparator : schema.getFieldSeparator();
+			if (fieldSeparator != null && fieldSeparator.length() > 0) {
+				separatorChar = fieldSeparator.charAt(0);
+			}
+
+			this.csvReader = CsvFileReader.createCsvFileReader(filePath, true, separatorChar);
 			this.schema = schema;
 			if (StringUtils.isNotBlank(schema.getRecord().getName())) {
 				this.objectClass = Class.forName(schema.getRecord().getName());
@@ -72,7 +84,7 @@ public class ObjectReader implements Closeable {
 	public Object next() {
 		if (csvReader.next()) {
 			currentRow = csvReader.getRow();
-			return parseObject();
+			return Arrays.stream(currentRow).allMatch(StringUtils::isBlank) ? next() : parseObject();
 		} else {
 			currentRow = null;
 			return null;
@@ -80,17 +92,21 @@ public class ObjectReader implements Closeable {
 	}
 	
 	public List<String> getCsvColumnNames() {
-		return new ArrayList<String>(Arrays.asList(csvReader.getColumnNames()));
+		return new ArrayList<>(Arrays.asList(csvReader.getColumnNames()));
 	}
 	
 	public List<String> getCsvRow() {
-		return new ArrayList<String>(Arrays.asList(currentRow));
+		return new ArrayList<>(Arrays.asList(currentRow));
 	}
 	
 	public String getRowKey() {
 		return keyColumnIndices.stream()
-			.map(index -> index < currentRow.length ? currentRow[index] : StringUtils.EMPTY)
+			.map(index -> index > -1 && index < currentRow.length ? currentRow[index] : StringUtils.EMPTY)
 			.collect(Collectors.joining("_"));
+	}
+
+	public String getRowDigest() {
+		return getDigest(schema.getRecord(), "");
 	}
 	
 	@Override
@@ -99,8 +115,19 @@ public class ObjectReader implements Closeable {
 	}
 	
 	public static String getSchemaFields(ObjectSchema schema) {
+		return getSchemaFields(schema, null);
+	}
+
+	public static String getSchemaFields(ObjectSchema schema, String reqSeparator) {
+		char fieldSeparator = Utility.getFieldSeparator();
+		if (StringUtils.isNotBlank(reqSeparator)) {
+			fieldSeparator = reqSeparator.charAt(0);
+		} else if (StringUtils.isNotBlank(schema.getFieldSeparator())) {
+			fieldSeparator = schema.getFieldSeparator().charAt(0);
+		}
+
 		List<String> columnNames = getSchemaFields(schema.getRecord(), "");
-		return Utility.stringListToCsv(columnNames);
+		return Utility.stringListToCsv(columnNames, true, fieldSeparator);
 	}
 			
 	private Object parseObject() {
@@ -123,9 +150,7 @@ public class ObjectReader implements Closeable {
 	
 	private Map<String, Object> parseObject(Record record, String prefix)
 	throws Exception {
-		Map<String, Object> props = new HashMap<String, Object>();
-		props.putAll(parseFields(record, prefix));
-		
+		Map<String, Object> props = new LinkedHashMap<>(parseFields(record, prefix));
 		if (record.getSubRecords() == null) {
 			return props;
 		}
@@ -144,17 +169,21 @@ public class ObjectReader implements Closeable {
 				}
 			}
 		}
+
+		if (StringUtils.isNotBlank(record.getDigestAttribute())) {
+			props.put(record.getDigestAttribute(), getDigest(record, prefix));
+		}
 		
 		return props;
 	}
 	
 	private Map<String, Object> parseFields(Record record, String prefix)
 	throws Exception {
-		Map<String, Object> props = new HashMap<String, Object>();
+		Map<String, Object> props = new LinkedHashMap<>();
 		
 		for (Field field : record.getFields()) {
 			if (field.isMultiple()) {
-				List<Object> values = new ArrayList<Object>();
+				List<Object> values = new ArrayList<>();
 				boolean setToBlank = false;
 				for (int idx = 1; true; ++idx) {
 					String columnName = prefix + field.getCaption() + "#" + idx;
@@ -196,7 +225,7 @@ public class ObjectReader implements Closeable {
 		
 		Object result = null;
 		if (record.isMultiple()) {
-			List<Map<String, Object>> subObjects = new ArrayList<Map<String, Object>>();
+			List<Map<String, Object>> subObjects = new ArrayList<>();
 			for (int idx = 1; true; ++idx) {
 				Map<String, Object> subObject = parseObject(record, newPrefix + idx + "#");
 				if (subObject.isEmpty()) {
@@ -341,8 +370,75 @@ public class ObjectReader implements Closeable {
 		sdf.setLenient(false);
 		return sdf.parse(value).getTime();
 	}
-			
-	public static void main(String[] args) 
+
+	private String getDigest(Record record, String prefix) {
+		if (currentRow == null) {
+			return null;
+		}
+
+		List<Integer> columnIndices = columnIndicesMap.get(record);
+		if (columnIndices == null) {
+			columnIndices = getColumnIndices(schema.getRecord(), prefix, getCsvColumnNames());
+			columnIndicesMap.put(schema.getRecord(), columnIndices);
+		}
+
+		String row = columnIndices.stream()
+			.map(i -> isSetToBlankField(currentRow[i]) ? "null" : currentRow[i])
+			.filter(column -> StringUtils.isNotBlank(column))
+			.collect(Collectors.joining("_"));
+		return Utility.getDigest(row);
+	}
+
+	private List<Integer> getColumnIndices(Record record, String prefix, List<String> columnNames) {
+		List<Integer> result = new ArrayList<>();
+
+		for (Field field : record.getFields()) {
+			String columnName = prefix + field.getCaption();
+			if (field.isMultiple()) {
+				for (int idx = 1; true; ++idx) {
+					int columnIdx = columnNames.indexOf(columnName + "#" + idx);
+					if (columnIdx == -1) {
+						break;
+					}
+
+					result.add(columnIdx);
+				}
+			} else {
+				int columnIdx = columnNames.indexOf(columnName);
+				if (columnIdx != -1) {
+					result.add(columnIdx);
+				}
+			}
+		}
+
+		if (record.getSubRecords() == null) {
+			return result;
+		}
+
+		for (Record subRecord : record.getSubRecords()) {
+			String newPrefix = prefix;
+			if (StringUtils.isNotBlank(subRecord.getCaption())) {
+				newPrefix += subRecord.getCaption() + "#";
+			}
+
+			if (subRecord.isMultiple()) {
+				for (int idx = 1; true; ++idx) {
+					List<Integer> subRecIndices = getColumnIndices(record, newPrefix + idx + "#", columnNames);
+					if (subRecIndices.isEmpty()) {
+						break;
+					}
+
+					result.addAll(subRecIndices);
+				}
+			} else {
+				result.addAll(getColumnIndices(record, newPrefix, columnNames));
+			}
+		}
+
+		return result;
+	}
+
+	public static void main(String[] args)
 	throws Exception {
 		ObjectSchema containerSchema = ObjectSchema.parseSchema("/home/vpawar/work/ka/catp/os/WEB-INF/resources/com/krishagni/catissueplus/core/administrative/schema/container.xml");
 		System.err.println("Container: " + ObjectReader.getSchemaFields(containerSchema));

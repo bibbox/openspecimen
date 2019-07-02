@@ -4,11 +4,11 @@ angular.module('os.administrative.dp.list', ['os.administrative.models'])
     $scope, $state, DistributionProtocol, Util, DeleteUtil,
     PvManager, ListPagerOpts, CheckList) {
 
-    var pagerOpts;
+    var pagerOpts, filterOpts;
 
     function init() {
       pagerOpts = $scope.pagerOpts = new ListPagerOpts({listSizeGetter: getDpsCount});
-      $scope.dpFilterOpts = Util.filterOpts({includeStats: true, maxResults: pagerOpts.recordsPerPage + 1});
+      filterOpts = $scope.dpFilterOpts = Util.filterOpts({includeStats: true, maxResults: pagerOpts.recordsPerPage + 1});
       $scope.ctx = {};
       loadDps($scope.dpFilterOpts);
       Util.filter($scope, 'dpFilterOpts', loadDps);
@@ -18,9 +18,9 @@ angular.module('os.administrative.dp.list', ['os.administrative.models'])
     function loadDps(filterOpts) {
       DistributionProtocol.query(filterOpts).then(
         function(dps) {
+          pagerOpts.refreshOpts(dps);
           $scope.distributionProtocols = dps;
           $scope.ctx.checkList = new CheckList(dps);
-          pagerOpts.refreshOpts(dps);
         }
       );
     }
@@ -61,6 +61,10 @@ angular.module('os.administrative.dp.list', ['os.administrative.models'])
       }
 
       DeleteUtil.bulkDelete({bulkDelete: DistributionProtocol.bulkDelete}, getDpIds(dps), opts);
+    }
+
+    $scope.pageSizeChanged = function() {
+      filterOpts.maxResults = pagerOpts.recordsPerPage + 1;
     }
 
     init();

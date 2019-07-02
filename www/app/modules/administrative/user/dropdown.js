@@ -1,14 +1,49 @@
 
 angular.module('os.administrative.user.dropdown', ['os.administrative.models'])
-  .directive('osUsers', function(AuthorizationService, User) {
-    function loadUsers(scope, searchTerm) {
+  .directive('osUsers', function($filter, AuthorizationService, User) {
+    function loadUsers(scope, searchTerm, ctrl, attrs) {
       var opts = angular.extend({searchString : searchTerm}, scope.filterOpts || {});
-      User.query(opts).then(
+      if (attrs.queryParams) {
+        angular.extend(opts, JSON.parse(attrs.queryParams));
+      }
+
+      if (attrs.hasOwnProperty('excludeContacts')) {
+        opts.excludeType = 'CONTACT';
+      }
+
+      ctrl.listLoaded = true;
+
+      var promise = !attrs.listFn ? User.query(opts) : scope.listFn(opts);
+      promise.then(
         function(result) {
           scope.users = result;
+          loadSelectedUser(scope, result, ctrl);
         }
       );
     };
+
+    function loadSelectedUser(scope, usersList, ctrl) {
+      if (ctrl.onceLoaded) {
+        return;
+      }
+
+      ctrl.onceLoaded = true;
+      var selectProp = ctrl.attrs.selectProp;
+      if (selectProp != 'id' || !scope.ngModel) {
+        return;
+      }
+
+      var selectedUser = usersList.find(function(user) { return user[selectProp] == scope.ngModel; });
+      if (selectedUser) {
+        return;
+      }
+
+      User.getById(scope.ngModel).then(
+        function(user) {
+          usersList.push(user);
+        }
+      );
+    }
 
     return {
       restrict: 'AE',
@@ -16,20 +51,40 @@ angular.module('os.administrative.user.dropdown', ['os.administrative.models'])
       scope: {
         ngModel: '=ngModel',
         placeholder: '@',
-        onSelect: '=onSelect',
         filterOpts: '=',
-        defaultList: '='
+        defaultList: '=',
+        onSelect: '&',
+        listFn: '&'
       },
 
       replace: true,
 
-      controller: function($scope) {
+      controller: function($scope, $element, $attrs) {
+        var ctrl = this;
+
+        if ($attrs.options) {
+          $scope.users = ctrl.localList = JSON.parse($attrs.options);
+          ctrl.listLoaded = true;
+
+          $scope.searchUsers = function(searchTerm) {
+            if (searchTerm) {
+              $scope.users = $filter('filter')(ctrl.localList, searchTerm);
+            } else {
+              $scope.users = ctrl.localList;
+            }
+          }
+
+          return;
+        }
+
         $scope.searchUsers = function(searchTerm) {
           if (!searchTerm && $scope.defaultList) {
             $scope.users = $scope.defaultList;
+            loadSelectedUser($scope, $scope.users, ctrl);
             return;
           }
-          loadUsers($scope, searchTerm);
+
+          loadUsers($scope, searchTerm, ctrl, $attrs);
         };
 
         $scope.$watch('filterOpts', function(newVal, oldVal) {
@@ -37,13 +92,32 @@ angular.module('os.administrative.user.dropdown', ['os.administrative.models'])
             return;
           }
 
-          loadUsers($scope);
+          loadUsers($scope, undefined, ctrl, $attrs);
         });
+
+        $attrs.$observe('queryParams',
+          function() {
+            if (!ctrl.listLoaded) {
+              //
+              // this is done to ensure we do not load users list twice
+              // once by the attributes observer and another by the filterOpts watcher
+              //
+              return;
+            }
+
+            loadUsers($scope, undefined, ctrl, $attrs);
+          }
+        );
       },
   
       link: function(scope, element, attrs, ctrl) {
+        ctrl.attrs = attrs;
+
         if (!scope.ngModel && attrs.hasOwnProperty('defaultCurrentUser')) {
-          var user = AuthorizationService.currentUser();
+          var user = angular.copy(AuthorizationService.currentUser() || {});
+          if (attrs.selectProp) {
+            user = user[attrs.selectProp];
+          }
 
           if (attrs.hasOwnProperty('multiple')) {
             scope.ngModel = [user];
@@ -65,28 +139,30 @@ angular.module('os.administrative.user.dropdown', ['os.administrative.models'])
         }
 
         return angular.isDefined(tAttrs.multiple) ?
-              '<div>' +
-                '<ui-select multiple ng-model="$parent.ngModel" reset-search-input="true"' +
+              '<div class="os-select-container">' +
+                '<ui-select multiple os-fix-dd ng-model="$parent.ngModel" reset-search-input="true"' +
+                  (!!tAttrs.onSelect ? 'on-select="$parent.onSelect({user: $item})"' : '') +
                   ' append-to-body="' + bodyAppend + '" os-tabable="' + tabable + '">' +
                   '<ui-select-match placeholder="{{$parent.placeholder}}">' +
-                    '{{$item.lastName}}, {{$item.firstName}}' +
+                    '{{$item.firstName}} {{$item.lastName}}' +
                   '</ui-select-match>' +
                   '<ui-select-choices repeat="' + loopExpr +'" refresh="searchUsers($select.search)" refresh-delay="750">' +
-                    '<span ng-bind-html="user.lastName + \', \' + user.firstName | highlight: $select.search"></span>' +
+                    '<span ng-bind-html="user.firstName + \' \' + user.lastName | highlight: $select.search"></span>' +
                   '</ui-select-choices>' +
                 '</ui-select>' +
               '</div>'
 
               :
 
-              '<div>' +
-                '<ui-select ng-model="$parent.ngModel" reset-search-input="true"' + 
+              '<div class="os-select-container">' +
+                '<ui-select os-fix-dd ng-model="$parent.ngModel" reset-search-input="true"' +
+                  (!!tAttrs.onSelect ? 'on-select="$parent.onSelect({user: $item})"' : '') +
                   ' append-to-body="' + bodyAppend + '" os-tabable="' + tabable + '">' +
                   '<ui-select-match placeholder="{{$parent.placeholder}}" allow-clear="'+ (tAttrs.required == undefined) +'">' +
-                    '{{$select.selected.lastName}}, {{$select.selected.firstName}}' +
+                    '{{$select.selected.firstName}} {{$select.selected.lastName}}' +
                   '</ui-select-match>' +
                   '<ui-select-choices repeat="' + loopExpr +'" refresh="searchUsers($select.search)" refresh-delay="750">' +
-                    '<span ng-bind-html="user.lastName + \', \' + user.firstName | highlight: $select.search"></span>' +
+                    '<span ng-bind-html="user.firstName + \' \' + user.lastName | highlight: $select.search"></span>' +
                   '</ui-select-choices>' + 
                 '</ui-select>' +
               '</div>';

@@ -16,8 +16,8 @@ angular.module('os.query.results', ['os.query.models'])
     }
   })
   .controller('QueryResultsCtrl', function(
-    $rootScope, $scope, $state, $stateParams, $modal, $document, $timeout, $interpolate, currentUser,
-    queryCtx, cps, QueryCtxHolder, QueryUtil, QueryExecutor, SpecimenList, SpecimensHolder, Alerts) {
+    $scope, $state, $stateParams, $modal, $document, $timeout, $interpolate, currentUser,
+    queryCtx, cps, QueryCtxHolder, QueryUtil, QueryExecutor, SpecimenList, SpecimensHolder, Util, Alerts) {
 
     var STR_FACETED_OPS = ['eq', 'qin', 'exists', 'any'];
 
@@ -147,8 +147,10 @@ angular.module('os.query.results', ['os.query.models'])
 
       currResults = {};
 
+      var aql = getAql(true, true);
       var outputIsoFmt = (qc.reporting.type != 'crosstab');
-      QueryExecutor.getRecords(qc.id, qc.selectedCp.id, getAql(true, true), qc.wideRowMode || 'DEEP', outputIsoFmt).then(
+      var opts = {outputColumnExprs: qc.outputColumnExprs};
+      QueryExecutor.getRecords(qc.id, qc.selectedCp.id, aql, qc.wideRowMode || 'DEEP', outputIsoFmt, opts).then(
         function(result) {
           currResults = result;
           $scope.resultsCtx.waitingForRecords = false;
@@ -177,10 +179,38 @@ angular.module('os.query.results', ['os.query.models'])
     }
 
     function loadFacets() {
+      var facets = getFacets($scope.queryCtx.filters);
+      $scope.resultsCtx.facets = facets;
+      $scope.resultsCtx.hasFacets = (facets.length > 0);
+    }
+
+
+    function getFacets(filters) {
       var facets = [];
-      angular.forEach($scope.queryCtx.filters,
+
+      angular.forEach(filters,
         function(filter, index) {
-          if (!filter.parameterized) {
+          if (!filter.parameterized && !filter.subQuery) {
+            return;
+          }
+
+          if (filter.subQuery) {
+            //
+            // if the sub-query has parameterised filters then all the facet
+            // values are loaded instead of loading only those that satisfy
+            // the query criteria
+            //
+            var sqFacets = getFacets(filter.subQuery.context.filters);
+            if (sqFacets.length > 0) {
+              criteria = undefined;
+            }
+
+            angular.forEach(sqFacets,
+              function(sqFacet) {
+                sqFacet.queryCtx = sqFacet.queryCtx || filter.subQuery.context;
+                facets.push(sqFacet);
+              }
+            );
             return;
           }
 
@@ -227,8 +257,7 @@ angular.module('os.query.results', ['os.query.models'])
         }
       );
 
-      $scope.resultsCtx.facets = facets;
-      $scope.resultsCtx.hasFacets = (facets.length > 0);
+      return facets;
     }
 
     function getFacet(filter, index) {
@@ -262,7 +291,7 @@ angular.module('os.query.results', ['os.query.models'])
 
       return {
         id: filter.id,
-        caption: !!filter.expr ? filter.desc : filter.field.caption,
+        caption: !!filter.expr || !!filter.desc ? filter.desc : filter.field.caption,
         dataType: type,
         isRange: isRangeType,
         expr: !!filter.expr ? filter.expr : (filter.form.name + "." + filter.field.name),
@@ -270,13 +299,14 @@ angular.module('os.query.results', ['os.query.models'])
         values: values,
         valuesQ: undefined,
         selectedValues: [],
-        subset: !!values,
-        isOpen: false
+        subset: !filter.hideOptions && !!values,
+        isOpen: false,
+        hideOptions: filter.hideOptions
       };
     }
 
     function loadFacetValues(facet, searchTerm) {
-      if (facet.dataType != 'STRING' || facet.subset) {
+      if (facet.dataType != 'STRING' || facet.subset || facet.hideOptions) {
         return;
       }
 
@@ -341,6 +371,7 @@ angular.module('os.query.results', ['os.query.models'])
         qc.selectedFields, 
         qc.filtersMap, 
         qc.exprNodes, 
+        qc.havingClause,
         qc.reporting,
         addLimit,
         addPropIds);
@@ -426,9 +457,18 @@ angular.module('os.query.results', ['os.query.models'])
 
           var cellTemplate = null;
           if (result.columnUrls[idx]) {
+            var link, linkTxt;
+            if (result.columnUrls[idx] == 'true') {
+              link = '{{row.getProperty(col.field)}}';
+              linkTxt = 'Click here';
+            } else {
+              link = '{{cellUrl(row, col,' + idx + ')}}'
+              linkTxt = '{{row.getProperty(col.field)}}';
+            }
+
             cellTemplate = '<div class="ngCellText" ng-class="col.colIndex()">' +
-                           '  <a href="{{cellUrl(row, col,' + idx + ')}}" target="_blank">' +
-                           '    {{row.getProperty(col.field)}}' +
+                           '  <a href="' + link + '" target="_blank">' +
+                                linkTxt +
                            '  </a>' +
                            '</div>';
           }
@@ -443,7 +483,7 @@ angular.module('os.query.results', ['os.query.models'])
             cellTemplate: !!cellTemplate ? cellTemplate : undefined,
             showSummary:  showColSummary,
             summary:      summaryRow[idx],
-            sortFn:       isDateColumn ? QueryUtil.sortDatesFn : undefined,
+            sortFn:       getSortFn(result.columnTypes[idx]),
             cellFilter:   isDateColumn ? "date: global.dateTimeFmt" : undefined
           });
         }
@@ -461,6 +501,20 @@ angular.module('os.query.results', ['os.query.models'])
         $(window).resize();
         $(window).resize();
       }, 500);
+    }
+
+    function getSortFn(type) {
+      if (type == 'INTEGER' || type == 'FLOAT' || type == 'DATE_INTERVAL') {
+        return QueryUtil.sortNumber;
+      } else if (type == 'STRING') {
+        return QueryUtil.sortAlpha;
+      } else if (type == 'BOOLEAN') {
+        return QueryUtil.sortBool;
+      } else if (type == 'DATE') {
+        return QueryUtil.sortDate;
+      } else {
+        return function(a, b) { return (a === b) ? 0 : (a < b ? -1 : 1); };
+      }
     }
 
     function getFormattedRows(labels, rows) {
@@ -484,28 +538,33 @@ angular.module('os.query.results', ['os.query.models'])
     }
 
     function showAddToSpecimenList() {
-      if ($scope.queryCtx.selectedFields.indexOf('Specimen.label') != -1) {
-        return true;
+      if ($scope.queryCtx.reporting.type == 'crosstab') {
+        return false;
       }
 
-      return false;
-    };
+      var result = false, fields = $scope.queryCtx.selectedFields;
+      for (var i = 0; i < fields.length; ++i) {
+        var field = fields[i];
+
+        if (typeof field == 'string') {
+          result = (field == 'Specimen.label');
+        } else if (typeof field == 'object' && (!field.aggFns || field.aggFns.lengths == 0)) {
+          result = (field.name == 'Specimen.label');
+        }
+
+        if (result) {
+          break;
+        }
+      }
+
+      return result;
+    }
 
     function getSelectedSpecimens() {
       return $scope.selectedRows.map(function(row) {
         return {id: row.hidden[0].$specimenId};
       });
     };
-
-    function loadCpCatalog(cp) {
-      if (!cp.catalogQuery) {
-        Alerts.error("queries.no_catalog", cp);
-        return;
-      }
-
-      $state.go('query-results', {cpId: cp.id, queryId: cp.catalogQuery.id});
-    }
-
 
     var gridFilterPlugin = {
       init: function(scope, grid) {
@@ -577,11 +636,18 @@ angular.module('os.query.results', ['os.query.models'])
       executeQuery(false);
     }
 
+    $scope.saveCtx = function(navTo) {
+      queryCtx.fromState = navTo;
+      QueryCtxHolder.setCtx(queryCtx);
+    }
+
     $scope.downloadResults = function() {
       var qc = $scope.queryCtx;
 
       var alert = Alerts.info('queries.export_initiated', {}, false);  
-      QueryExecutor.exportQueryResultsData(qc.id, qc.selectedCp.id, getAql(false), qc.wideRowMode || 'DEEP').then(
+      var aql = getAql(false);
+      var opts = {outputColumnExprs: qc.outputColumnExprs};
+      QueryExecutor.exportQueryResultsData(qc.id, qc.selectedCp.id, aql, qc.wideRowMode || 'DEEP', opts).then(
         function(result) {
           Alerts.remove(alert);
           if (result.completed) {
@@ -607,6 +673,8 @@ angular.module('os.query.results', ['os.query.models'])
       $scope.resultsCtx.gridOpts.selectAll(false);
       $scope.resultsCtx.selectAll = false;
     };
+
+    $scope.getSelectedSpecimens = getSelectedSpecimens;
 
     $scope.addSelectedSpecimensToSpecimenList = function(list) {
       var selectedSpecimens = getSelectedSpecimens();
@@ -647,7 +715,8 @@ angular.module('os.query.results', ['os.query.models'])
     }
 
     $scope.toggleFacetValueSelection = function(facet, toggledValue) {
-      angular.forEach($scope.queryCtx.filters, function(filter) {
+      var ctx = facet.queryCtx || $scope.queryCtx;
+      angular.forEach(ctx.filters, function(filter) {
         if (filter.id != facet.id) {
           return;
         }
@@ -694,7 +763,7 @@ angular.module('os.query.results', ['os.query.models'])
           if (!toggledValue) {
             filter.value = [];
           } else {
-            filter.value = filter.value || [];
+            filter.value = facet.selectedValues;
 
             var valueIdx = filter.value.indexOf(toggledValue.value);
             if (toggledValue.selected && valueIdx == -1) {
@@ -717,7 +786,16 @@ angular.module('os.query.results', ['os.query.models'])
         }
       });
 
-      loadRecords(false, true);
+      if (ctx.searchQ) {
+        $timeout.cancel(ctx.searchQ);
+      }
+
+      ctx.searchQ = $timeout(
+        function() {
+          loadRecords(false, true);
+        },
+        ui.os.global.filterWaitInterval
+      );
     }
 
     $scope.clearFacetValueSelection = function($event, facet) {
@@ -725,9 +803,13 @@ angular.module('os.query.results', ['os.query.models'])
         $event.stopPropagation();
       }
 
-      angular.forEach(facet.values, function(value) {
-        value.selected = false;
-      });
+      if (facet.hideOptions) {
+        facet.values = [];
+      } else {
+        angular.forEach(facet.values, function(value) {
+          value.selected = false;
+        });
+      }
 
       $scope.toggleFacetValueSelection(facet);
       facet.isOpen = false;
@@ -746,7 +828,7 @@ angular.module('os.query.results', ['os.query.models'])
         function() {
           loadFacetValues(facet, facet.searchFor);
         },
-        $rootScope.global.filterWaitInterval
+        ui.os.global.filterWaitInterval
       );
     }
 
@@ -773,17 +855,20 @@ angular.module('os.query.results', ['os.query.models'])
       $scope.toggleFacetValueSelection(facet);
     }
 
-    $scope.switchCatalog = function(cp) {
-      if (!cp.catalogQuery) {
-        cp.getCatalogQuery().then(
-          function(query) {
-            cp.catalogQuery = query;
-            loadCpCatalog(cp);
-          }
-        );
-      } else {
-        loadCpCatalog(cp);
+    $scope.addCond = function(facet) {
+      var values = Util.splitStr(facet.searchFor, /,|\t|\n/, false);
+      if (values.length == 0) {
+        return;
       }
+
+      facet.selectedValues = values;
+      facet.values = values.map(function(value) { return {value: value, selected: true} });
+      $scope.toggleFacetValueSelection(facet, {});
+      facet.searchFor = undefined;
+    }
+
+    $scope.saveQuery = function() {
+      QueryUtil.saveQuery($scope.queryCtx);
     }
 
     init();

@@ -68,6 +68,9 @@ osApp.config(function(
           currentUser: function(User) {
             return User.getCurrentUser();
           },
+          userUiState: function(User) {
+            return User.getUiState();
+          },
           authInit: function(currentUser, AuthorizationService) {
             return AuthorizationService.initializeUserRights(currentUser);
           }
@@ -124,8 +127,54 @@ osApp.config(function(
       Alerts.errorText(errMsgs);
     }
 
+    var totalReqs = 0;
+
+    var completedReqs = 0;
+
+    var listeners = [];
+
+    var timerId = undefined;
+
+    function notifyListeners() {
+      if (timerId) {
+        clearTimeout(timerId);
+      }
+
+      timerId = setTimeout(notifyListeners0, 500);
+    }
+
+    function notifyListeners0() {
+      if (completedReqs >= totalReqs) {
+        angular.forEach(listeners,
+          function(listener) {
+            listener();
+          }
+        );
+
+        listeners = [];
+        totalReqs = completedReqs = 0;
+      }
+    }
+
+    function addListener(listener) {
+      if (completedReqs >= totalReqs) {
+        listener();
+      } else {
+        listeners.push(listener);
+      }
+    }
+
+    function isHtmlReq(config) {
+      return config.method == 'GET' &&
+        (config.url.substr(0, 7) == 'modules' || config.url.substr(0, 19) == 'plugin-ui-resources');
+    }
+
     return {
       request: function(config) {
+        if (!isHtmlReq(config)) {
+          ++totalReqs;
+        }
+
         if (config.method == 'GET' && $templateCache.get(config.url) == null) {
           if (config.url.indexOf('modules') == 0 || config.url.indexOf('plugin-ui-resources') == 0) {
             config.url += qp;
@@ -140,14 +189,29 @@ osApp.config(function(
       },
 
       response: function(response) {
+        var apiCall = !isHtmlReq(response.config);
+        if (apiCall) {
+          ++completedReqs;
+        }
+
         var httpMethods = ['POST', 'PUT', 'PATCH'];
         if (response.status == 200 && httpMethods.indexOf(response.config.method) != -1) {
           LocationChangeListener.allowChange();
         }
+
+        if (apiCall) {
+          notifyListeners();
+        }
+
         return response || $q.when(response);
       },
 
       responseError: function(rejection) {
+        var apiCall = !isHtmlReq(rejection.config);
+        if (apiCall) {
+          ++completedReqs;
+        }
+
         if (rejection.status == 0) {
           Alerts.error("common.server_connect_error");
         } else if (rejection.status == 401) {
@@ -170,8 +234,14 @@ osApp.config(function(
           }
         } 
 
+        if (apiCall) {
+          notifyListeners();
+        }
+
         return $q.reject(rejection);
-      }
+      },
+
+      addListener: addListener
     };
   })
   .factory('ApiUtil', function($window, $http) {
@@ -218,6 +288,10 @@ osApp.config(function(
         secure  : server.secure,
         app     : server.app,
         urls    : that.urls,
+
+        getServerUrl: function() {
+          return server.url;
+        },
 
         getBaseUrl: function() {
           return server.url + 'rest/ng/';
@@ -312,14 +386,11 @@ osApp.config(function(
       return $state.includes(stateName, params, options);
     }
 
-    $rootScope.back = function() {
-      LocationChangeListener.allowChange();
-      $window.history.back();
-    };
+    $rootScope.back = LocationChangeListener.back;
 
-    $rootScope.global = {
+    ui.os.global = $rootScope.global = {
       defaultDomain: 'openspecimen',	
-      filterWaitInterval: 500,
+      filterWaitInterval: ui.os.appProps.searchDelay,
       appProps: ui.os.appProps
     };
 

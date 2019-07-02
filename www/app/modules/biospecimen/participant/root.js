@@ -1,8 +1,10 @@
 
 angular.module('os.biospecimen.participant.root', ['os.biospecimen.models'])
   .controller('ParticipantRootCtrl', function(
-    $scope, cpr, hasSde, hasDict, sysDict, cpDict, lookupFieldsCfg,
-    pendingSpmnsDispInterval, barcodingEnabled, AuthorizationService) {
+    $scope, $timeout, cpr, hasSde, hasDict, sysDict, cpDict,
+    lookupFieldsCfg, headers, participantSpmnsViewState, aliquotQtyReq,
+    pendingSpmnsDispInterval, barcodingEnabled, spmnBarcodesAutoGen,
+    ParticipantSpecimensViewState, AuthorizationService, Specimen) {
 
     function init() {
       $scope.cpr = $scope.object = cpr;
@@ -12,12 +14,33 @@ angular.module('os.biospecimen.participant.root', ['os.biospecimen.models'])
       $scope.fieldsCtx = {
         hasSde: hasSde, hasDict: hasDict,
         sysDict: sysDict, cpDict: cpDict,
-        lookupFields: lookupFieldsCfg.fields
+        lookupFields: lookupFieldsCfg.fields,
+        headers: headers
       };
 
       $scope.pendingSpmnsDispInterval = +pendingSpmnsDispInterval.value;
       $scope.barcodingEnabled = barcodingEnabled;
+      $scope.spmnBarcodesAutoGen = spmnBarcodesAutoGen;
+      $scope.aliquotQtyReq = aliquotQtyReq;
+
       initAuthorizationOpts();
+
+      $scope.rootCtx = {
+        participantSpmnsViewState: participantSpmnsViewState,
+        showTree: ParticipantSpecimensViewState.showTree
+      };
+
+      $scope.$on('participantSpecimensUpdated',
+        function(e, data) {
+          participantSpmnsViewState.specimensUpdated();
+
+          data = data || {};
+          if (data.inline == true && $scope.rootCtx.showTree) {
+            $scope.rootCtx.showTree = false;
+            $timeout(function() { $scope.rootCtx.showTree = true; });
+          }
+        }
+      );
     }
 
     function initAuthorizationOpts() {
@@ -105,6 +128,12 @@ angular.module('os.biospecimen.participant.root', ['os.biospecimen.models'])
           sites: sites
         }
       }
+    }
+
+    $scope.toggleTree = function() {
+      $scope.rootCtx.showTree = !$scope.rootCtx.showTree;
+      ParticipantSpecimensViewState.showTree = $scope.rootCtx.showTree;
+      $scope.$broadcast('osToggleParticipantSpecimenTree', {show: $scope.rootCtx.showTree});
     }
 
     init();

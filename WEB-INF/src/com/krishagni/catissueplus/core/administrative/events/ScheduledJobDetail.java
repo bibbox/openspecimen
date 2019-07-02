@@ -3,10 +3,12 @@ package com.krishagni.catissueplus.core.administrative.events;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import com.krishagni.catissueplus.core.administrative.domain.ScheduledJob;
 import com.krishagni.catissueplus.core.administrative.domain.ScheduledJob.RepeatSchedule;
 import com.krishagni.catissueplus.core.common.events.UserSummary;
+import com.krishagni.catissueplus.core.de.events.SavedQuerySummary;
 
 public class ScheduledJobDetail {
 	private Long id;
@@ -26,6 +28,10 @@ public class ScheduledJobDetail {
 	private String scheduledDayOfWeek;
 	
 	private Integer scheduledDayOfMonth;
+
+	private Integer hourlyInterval;
+
+	private Integer minutelyInterval;
 	
 	private Date nextRunOn;
 	
@@ -38,8 +44,14 @@ public class ScheduledJobDetail {
 	private String taskImplFqn;
 	
 	private String command;
+
+	private String fixedArgs;
+
+	private SavedQuerySummary savedQuery;
+
+	private UserSummary runAs;
 	
-	private List<UserSummary> recipients = new ArrayList<UserSummary>();
+	private List<UserSummary> recipients = new ArrayList<>();
 	
 	private Boolean isActiveJob;
 
@@ -121,6 +133,22 @@ public class ScheduledJobDetail {
 		this.scheduledDayOfMonth = scheduledDayOfMonth;
 	}
 
+	public Integer getHourlyInterval() {
+		return hourlyInterval;
+	}
+
+	public void setHourlyInterval(Integer hourlyInterval) {
+		this.hourlyInterval = hourlyInterval;
+	}
+
+	public Integer getMinutelyInterval() {
+		return minutelyInterval;
+	}
+
+	public void setMinutelyInterval(Integer minutelyInterval) {
+		this.minutelyInterval = minutelyInterval;
+	}
+
 	public Date getNextRunOn() {
 		return nextRunOn;
 	}
@@ -167,6 +195,30 @@ public class ScheduledJobDetail {
 
 	public void setCommand(String command) {
 		this.command = command;
+	}
+
+	public String getFixedArgs() {
+		return fixedArgs;
+	}
+
+	public void setFixedArgs(String fixedArgs) {
+		this.fixedArgs = fixedArgs;
+	}
+
+	public SavedQuerySummary getSavedQuery() {
+		return savedQuery;
+	}
+
+	public void setSavedQuery(SavedQuerySummary savedQuery) {
+		this.savedQuery = savedQuery;
+	}
+
+	public UserSummary getRunAs() {
+		return runAs;
+	}
+
+	public void setRunAs(UserSummary runAs) {
+		this.runAs = runAs;
 	}
 
 	public List<UserSummary> getRecipients() {
@@ -219,25 +271,32 @@ public class ScheduledJobDetail {
 		detail.setRepeatSchedule(job.getRepeatSchedule().toString());
 		detail.setType(job.getType().toString());
 		detail.setCommand(job.getCommand());
+		detail.setFixedArgs(job.getFixedArgs());
 		detail.setIsActiveJob(job.isActiveJob());
 		detail.setTaskImplFqn(job.getTaskImplfqn());
+		detail.setSavedQuery(SavedQuerySummary.fromSavedQuery(job.getSavedQuery()));
 		detail.setRecipients(UserSummary.from(job.getRecipients()));
+		if (job.getRunAs() != null) {
+			detail.setRunAs(UserSummary.from(job.getRunAs()));
+		}
 
 		detail.setRtArgsProvided(job.getRtArgsProvided());
-		detail.setRtArgsHelpText(job.getRtArgsHelpText());		
-		
+		detail.setRtArgsHelpText(job.getRtArgsHelpText());
+
+		detail.setStartDate(job.getStartDate());
+		detail.setEndDate(job.getEndDate());
+		detail.setLastRunOn(job.getLastRunOn());
+		detail.setNextRunOn(job.getNextRunOn());
+
 		if (job.getRepeatSchedule().equals(RepeatSchedule.ONDEMAND)) {
 			return detail;
 		}
-		
-		detail.setStartDate(job.getStartDate());
-		detail.setEndDate(job.getEndDate());
-		detail.setNextRunOn(job.getNextRunOn());
 
 		detail.setScheduledMinute(job.getScheduledMinute());
 		detail.setScheduledHour(job.getScheduledHour());
 		detail.setScheduledDayOfMonth(job.getScheduledDayOfMonth());
-
+		detail.setHourlyInterval(job.getHourlyInterval());
+		detail.setMinutelyInterval(job.getMinutelyInterval());
 		if (job.getScheduledDayOfWeek() != null) {
 			detail.setScheduledDayOfWeek(job.getScheduledDayOfWeek().toString());
 		}
@@ -246,12 +305,6 @@ public class ScheduledJobDetail {
 	}
 	
 	public static List<ScheduledJobDetail> from(List<ScheduledJob> jobs) {
-		List<ScheduledJobDetail> list = new ArrayList<ScheduledJobDetail>();
-		
-		for (ScheduledJob job : jobs) {
-			list.add(from(job));
-		}
-		
-		return list;
+		return jobs.stream().map(ScheduledJobDetail::from).collect(Collectors.toList());
 	}
 }

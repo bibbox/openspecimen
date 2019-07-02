@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.ResponseStatus;
 
+import com.krishagni.catissueplus.core.administrative.domain.UserUiState;
 import com.krishagni.catissueplus.core.administrative.events.AnnouncementDetail;
 import com.krishagni.catissueplus.core.administrative.events.InstituteDetail;
 import com.krishagni.catissueplus.core.administrative.events.PasswordDetails;
@@ -53,42 +54,60 @@ public class UserController {
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody
 	public List<UserSummary> getUsers(
-			@RequestParam(value = "start", required = false, defaultValue = "0") 
-			int start,
+		@RequestParam(value = "start", required = false, defaultValue = "0")
+		int start,
 
-			@RequestParam(value = "maxResults", required = false, defaultValue = "100") 
-			int maxResults,
+		@RequestParam(value = "maxResults", required = false, defaultValue = "100")
+		int maxResults,
 
-			@RequestParam(value = "searchString", required = false) 
-			String searchString,
+		@RequestParam(value = "searchString", required = false)
+		String searchString,
 
-			@RequestParam(value = "name", required = false)
-			String name,
+		@RequestParam(value = "name", required = false)
+		String name,
 
-			@RequestParam(value = "loginName", required = false)
-			String loginName,
+		@RequestParam(value = "loginName", required = false)
+		String loginName,
 
-			@RequestParam(value = "institute", required = false)
-			String institute,
+		@RequestParam(value = "institute", required = false)
+		String institute,
 
-			@RequestParam(value = "domainName", required = false)
-			String domainName,
+		@RequestParam(value = "domainName", required = false)
+		String domainName,
 
-			@RequestParam(value = "activityStatus", required = false)
-			String activityStatus,
+		@RequestParam(value = "activityStatus", required = false)
+		String activityStatus,
 
-			@RequestParam(value = "listAll", required = false, defaultValue = "true")
-			boolean listAll,
+		@RequestParam(value = "listAll", required = false, defaultValue = "true")
+		boolean listAll,
 
-			@RequestParam(value = "includeStats", required = false, defaultValue = "false")
-			boolean includeStats,
+		@RequestParam(value = "includeStats", required = false, defaultValue = "false")
+		boolean includeStats,
 
-			@RequestParam(value = "type", required = false)
-			String type,
+		@RequestParam(value = "type", required = false)
+		String type,
 
-			@RequestParam(value = "activeSince", required = false)
-			@DateTimeFormat(pattern="yyyy-MM-dd")
-			Date activeSince) {
+		@RequestParam(value = "excludeType", required = false)
+		String[] excludeTypes,
+
+		@RequestParam(value = "activeSince", required = false)
+		@DateTimeFormat(pattern="yyyy-MM-dd")
+		Date activeSince,
+
+		@RequestParam(value = "site", required = false)
+		String siteName,
+
+		@RequestParam(value = "cp", required = false)
+		String cpShortTitle,
+
+		@RequestParam(value = "role", required = false)
+		String[] roles,
+
+		@RequestParam(value = "resource", required = false)
+		String resourceName,
+
+		@RequestParam(value = "op", required = false)
+		String[] ops) {
 		
 		UserListCriteria crit = new UserListCriteria()
 			.startAt(start)
@@ -102,10 +121,16 @@ public class UserController {
 			.listAll(listAll)
 			.includeStat(includeStats)
 			.type(type)
-			.activeSince(activeSince);
+			.excludeTypes(excludeTypes != null ? Arrays.asList(excludeTypes) : null)
+			.activeSince(activeSince)
+			.siteName(siteName)
+			.cpShortTitle(cpShortTitle)
+			.roleNames(roles != null ? Arrays.asList(roles) : Collections.emptyList())
+			.resourceName(resourceName)
+			.opNames(ops != null ? Arrays.asList(ops) : Collections.emptyList());
 		
 		
-		RequestEvent<UserListCriteria> req = new RequestEvent<UserListCriteria>(crit);
+		RequestEvent<UserListCriteria> req = new RequestEvent<>(crit);
 		ResponseEvent<List<UserSummary>> resp = userService.getUsers(req);
 		resp.throwErrorIfUnsuccessful();
 		
@@ -116,30 +141,36 @@ public class UserController {
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody
 	public Map<String, Long> getUsersCount(
-			@RequestParam(value = "searchString", required = false) 
-			String searchString,
+		@RequestParam(value = "searchString", required = false)
+		String searchString,
 			
-			@RequestParam(value = "name", required = false)
-			String name,
+		@RequestParam(value = "name", required = false)
+		String name,
 			
-			@RequestParam(value = "loginName", required = false)
-			String loginName,
+		@RequestParam(value = "loginName", required = false)
+		String loginName,
 			
-			@RequestParam(value = "institute", required = false)
-			String institute,
+		@RequestParam(value = "institute", required = false)
+		String institute,
 			
-			@RequestParam(value = "domainName", required = false)
-			String domainName,
+		@RequestParam(value = "domainName", required = false)
+		String domainName,
 			
-			@RequestParam(value = "activityStatus", required = false)
-			String activityStatus,
+		@RequestParam(value = "activityStatus", required = false)
+		String activityStatus,
 			
-			@RequestParam(value = "listAll", required = false, defaultValue = "true")
-			boolean listAll,
+		@RequestParam(value = "listAll", required = false, defaultValue = "true")
+		boolean listAll,
 
-			@RequestParam(value = "activeSince", required = false)
-			@DateTimeFormat(pattern="yyyy-MM-dd")
-			Date activeSince) {
+		@RequestParam(value = "type", required = false)
+		String type,
+
+		@RequestParam(value = "excludeType", required = false)
+		String[] excludeTypes,
+
+		@RequestParam(value = "activeSince", required = false)
+		@DateTimeFormat(pattern="yyyy-MM-dd")
+		Date activeSince) {
 		
 		UserListCriteria crit = new UserListCriteria()
 			.query(searchString)
@@ -148,6 +179,8 @@ public class UserController {
 			.instituteName(institute)
 			.domainName(domainName)
 			.activityStatus(activityStatus)
+			.type(type)
+			.excludeTypes(excludeTypes != null ? Arrays.asList(excludeTypes) : null)
 			.listAll(listAll)
 			.activeSince(activeSince);
 		
@@ -305,8 +338,8 @@ public class UserController {
 	@RequestMapping(method = RequestMethod.POST, value = "/forgot-password")
 	@ResponseBody
 	@ResponseStatus(HttpStatus.OK)
-	public Boolean forgotPassword(@RequestBody Map<String, String>  data) {
-		RequestEvent<String> req = new RequestEvent<String>(data.get("loginName"));
+	public Boolean forgotPassword(@RequestBody UserDetail detail) {
+		RequestEvent<UserDetail> req = new RequestEvent<UserDetail>(detail);
 		ResponseEvent<Boolean> resp = userService.forgotPassword(req);
 		resp.throwErrorIfUnsuccessful();
 		
@@ -319,7 +352,6 @@ public class UserController {
 	public UserSummary getCurrentUser() {
 		ResponseEvent<UserSummary> resp = userAuthService.getCurrentLoggedInUser();
 		resp.throwErrorIfUnsuccessful();
-		
 		return resp.getPayload();
  	}
 	
@@ -331,7 +363,25 @@ public class UserController {
 		resp.throwErrorIfUnsuccessful();
 		return resp.getPayload();
 	}
-	
+
+	@RequestMapping(method = RequestMethod.GET, value = "/current-user-ui-state")
+	@ResponseBody
+	@ResponseStatus(HttpStatus.OK)
+	public Map<String, Object> getCurrentUserUiState() {
+		ResponseEvent<UserUiState> resp = userService.getUiState();
+		resp.throwErrorIfUnsuccessful();
+		return resp.getPayload() == null ? Collections.emptyMap() : resp.getPayload().getState();
+	}
+
+	@RequestMapping(method = RequestMethod.PUT, value = "/current-user-ui-state")
+	@ResponseBody
+	@ResponseStatus(HttpStatus.OK)
+	public Map<String, Object> saveCurrentUserUiState(@RequestBody Map<String, Object> state) {
+		ResponseEvent<UserUiState> resp = userService.saveUiState(new RequestEvent<>(state));
+		resp.throwErrorIfUnsuccessful();
+		return resp.getPayload() == null ? Collections.emptyMap() : resp.getPayload().getState();
+	}
+
 	@RequestMapping(method = RequestMethod.GET, value = "/{id}/institute")
 	@ResponseBody
 	@ResponseStatus(HttpStatus.OK)

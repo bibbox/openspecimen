@@ -1,7 +1,7 @@
 angular.module('os.biospecimen.specimen.detail', [])
   .controller('SpecimenDetailCtrl', function(
-    $scope, $state, $modal, $stateParams, currentUser,
-    cp, listView, cpr, visit, specimen, Specimen, SpecimenLabelPrinter, SpecimensHolder, DeleteUtil, Alerts) {
+    $scope, $state, $modal, $stateParams, currentUser, cp, listView, cpr, visit, specimen,
+    ParticipantSpecimensViewState, Specimen, SpecimenLabelPrinter, SpecimensHolder, DeleteUtil, Alerts) {
 
     function init() {
       $scope.cpr = cpr;
@@ -19,7 +19,15 @@ angular.module('os.biospecimen.specimen.detail', [])
         }
       );
 
-      return result.concat($scope.specimen.children);
+      return result.concat(specimen.children);
+    }
+
+    function specimenUpdatedInline() {
+      ParticipantSpecimensViewState.specimensUpdated($scope, {inline: true});
+    }
+
+    function specimenUpdated() {
+      ParticipantSpecimensViewState.specimensUpdated($scope);
     }
 
     $scope.reload = function() {
@@ -38,7 +46,7 @@ angular.module('os.biospecimen.specimen.detail', [])
     }
 
     $scope.reopen = function() {
-      specimen.reopen();
+      specimen.reopen().then(specimenUpdatedInline);
     }
 
     $scope.deleteSpecimen = function() {
@@ -53,19 +61,22 @@ angular.module('os.biospecimen.specimen.detail', [])
         specimen,
         {
           onDeletion: function() {
+            specimenUpdated();
+
             if (!parentId) {
               $state.go(!cp.specimenCentric ? 'visit-detail.overview' : listView, params);
             } else {
               $state.go('specimen-detail.overview', angular.extend({specimenId: parentId}, params));
             }
           },
-          forceDelete: true
+          forceDelete: true,
+          askReason: true
         }
       );
     }
 
     $scope.closeSpecimen = function() {
-      var modalInstance = $modal.open({
+      $modal.open({
         templateUrl: 'modules/biospecimen/participant/specimen/close.html',
         controller: 'SpecimenCloseCtrl',
         resolve: {
@@ -73,12 +84,14 @@ angular.module('os.biospecimen.specimen.detail', [])
             return [specimen];
           }
         }
-      });
+      }).result.then(
+        function() {
+          specimen.storageLocation = undefined;
+          specimen.activityStatus = 'Closed';
+          specimenUpdatedInline();
+        }
+      );
     }
-
-    $scope.printSpecimenLabels = function() {
-      SpecimenLabelPrinter.printLabels({specimenIds: [specimen.id]});
-    };
 
     $scope.addSpecimensToSpecimenList = function(list) {
       var selectedSpecimens = [{id: $scope.specimen.id}];

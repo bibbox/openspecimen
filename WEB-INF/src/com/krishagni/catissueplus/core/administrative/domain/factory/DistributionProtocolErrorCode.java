@@ -34,10 +34,16 @@ public enum DistributionProtocolErrorCode implements ErrorCode {
 	PI_COORD_CANNOT_BE_SAME,
 
 	EXPIRED,
+
+	CLOSED,
 	
 	DUP_CONSENT,
 
-	CONSENT_NOT_FOUND;
+	CONSENT_NOT_FOUND,
+
+	INV_OI_LABEL_FMT,
+
+	INV_DPS;
 
 	@Override
 	public String code() {

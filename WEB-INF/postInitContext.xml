@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.springframework.org/schema/beans
+  http://www.springframework.org/schema/beans/spring-beans-4.3.xsd">
+
+  <bean id="post-init-liquibase" class="liquibase.integration.spring.SpringLiquibase">
+    <property name="dataSource" ref="dataSource"/>
+    <property name="changeLog" value="classpath:db/db-os-changelog-post-init.xml" />
+  </bean>
+
+  <bean class="com.krishagni.catissueplus.core.init.EnversEnumHandler">
+    <property name="sessionFactory" ref="sessionFactory"/>
+  </bean>
+
+  <bean id="postInitializer" class="com.krishagni.catissueplus.core.init.PostInitializer">
+    <property name="searchSvc" ref="searchSvc"/>
+  </bean>
+
+  <bean id="importContainerTypes" class="com.krishagni.catissueplus.core.init.ImportContainerTypes" depends-on="post-init-liquibase">
+    <property name="jdbcTemplate" ref="jdbcTemplate"/>
+    <property name="daoFactory" ref="biospecimenDaoFactory"/>
+    <property name="containerTypeSvc" ref="containerTypeSvc"/>
+  </bean>
+
+  <bean id="importDefaultQueries" class="com.krishagni.catissueplus.core.init.ImportDefaultQueries">
+    <property name="txnMgr" ref="transactionManager"/>
+    <property name="daoFactory" ref="deDaoFactory"/>
+    <property name="userDao" ref="userDao"/>
+    <property name="cfgService" ref="cfgSvc"/>
+  </bean>
+</beans>

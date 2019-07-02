@@ -289,8 +289,11 @@ public class SamlBootstrap {
 	 * IDP Metadata configuration - paths to metadata of IDPs in circle of trust is here
 	 */
 	private CachingMetadataManager getMetadata(ParserPool parserPool, KeyManager keyManager) throws Exception {
-		List<MetadataProvider> providers = new ArrayList<MetadataProvider>();
-		providers.add(getIdpExtendedMetadataProvider(parserPool));
+		List<MetadataProvider> providers = new ArrayList<>();
+		MetadataProvider provider = getIdpExtendedMetadataProvider(parserPool);
+		if (provider != null) {
+			providers.add(provider);
+		}
 
 		ExtendedMetadataDelegate spMetadataProvider = getSpExtendedMetadataProvider(parserPool);
 		if (spMetadataProvider != null) {
@@ -334,7 +337,9 @@ public class SamlBootstrap {
 	 * SAML 2.0 WebSSO Assertion Consumer
 	 */
 	private WebSSOProfileConsumer getWebSSOprofileConsumer() {
-		return new WebSSOProfileConsumerImpl();
+		WebSSOProfileConsumerImpl consumer = new WebSSOProfileConsumerImpl();
+		consumer.setMaxAuthenticationAge(24 * 60 * 60);
+		return consumer;
 	}
 
 	private HTTPArtifactBinding getArtifactBinding(HTTPSOAP11Binding soapBinding, ParserPool parserPool, VelocityEngine velocityEngine) {
@@ -425,6 +430,9 @@ public class SamlBootstrap {
 	throws Exception {
 		String metadataPath = samlProps.get("idpMetadataPath");
 		String metadataUrl = samlProps.get("idpMetadataURL");
+		if (StringUtils.isBlank(metadataPath) && StringUtils.isBlank(metadataUrl)) {
+			return null;
+		}
 
 		AbstractMetadataProvider metadataProvider;
 		if (StringUtils.isNotBlank(metadataPath)) {

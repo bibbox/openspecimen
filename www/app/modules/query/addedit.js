@@ -9,6 +9,8 @@ angular.module('os.query.addedit', ['os.query.models', 'os.query.util', 'os.quer
     var popovers = [];
 
     function init() {
+      $scope.queryGlobal = queryGlobal;
+
       $scope.openForm = undefined;
       $scope.cps = cps;
       $scope.queryLocal = queryCtx;
@@ -79,27 +81,12 @@ angular.module('os.query.addedit', ['os.query.models', 'os.query.util', 'os.quer
     }
 
     $scope.saveQuery = function() {
-      var mi = $modal.open({
-        templateUrl: 'modules/query/save.html',
-        controller: 'QuerySaveCtrl',
-        resolve: {
-          queryToSave: function() {
-            return SavedQuery.fromQueryCtx($scope.queryLocal);
-          }
-        }
-      });
-
-      mi.result.then(
-        function(query) { 
-          $state.go('query-list');
-          Alerts.success('queries.query_saved', {title: query.title});
-        }
-      );
-    };
+      QueryUtil.saveQuery($scope.queryLocal);
+    }
 
     $scope.getCount = function() {
       var ql = $scope.queryLocal;
-      var aql = QueryUtil.getCountAql(ql.filtersMap, ql.exprNodes);
+      var aql = QueryUtil.getCountAql(ql.filtersMap, ql.exprNodes, ql.havingClause);
 
       ql.waitingForCnt = true;
       ql.countResults = undefined;
@@ -117,6 +104,20 @@ angular.module('os.query.addedit', ['os.query.models', 'os.query.util', 'os.quer
 
     $scope.closePopover = function() {
       QueryUtil.hidePopovers();
+    }
+
+    $scope.searchQuery = function(searchTerm) {
+      var thisQueryId = $scope.queryLocal.id;
+      var cp = $scope.queryLocal.selectedCp;
+      SavedQuery.query({cpId: cp.id, searchString: searchTerm, max: 25}).then(
+        function(savedQueries) {
+          $scope.savedQueries = savedQueries.filter(
+            function(query) {
+              return query.id != thisQueryId;
+            }
+          );
+        }
+      );
     }
 
     init();

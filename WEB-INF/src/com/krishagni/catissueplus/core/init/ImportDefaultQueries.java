@@ -1,6 +1,7 @@
 
 package com.krishagni.catissueplus.core.init;
 
+import java.util.Calendar;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.Map;
@@ -95,9 +96,7 @@ public class ImportDefaultQueries implements InitializingBean {
 				if(query != null){
 					queries.add(query);
 
-					if (resource.getFilename().equals(DEFAULT_CATALOG_QUERY)) {
-						configureCatalogQuery(query);
-					} else if (resource.getFilename().equals(DISTRIBUTION_REPORT_QUERY)) {
+					if (resource.getFilename().equals(DISTRIBUTION_REPORT_QUERY)) {
 						configureDistributionReportQuery(query);
 					} else if (resource.getFilename().equals(SHIPMENT_REPORT_QUERY)) {
 						configureShipmentReportQuery(query);
@@ -105,6 +104,8 @@ public class ImportDefaultQueries implements InitializingBean {
 						configureKitReportQuery(query);
 					} else if (resource.getFilename().equals(CONTAINER_SPECIMENS_REPORT_QUERY)) {
 						configureContainerSpecimensReportQuery(query);
+					} else if (resource.getFilename().equals(CART_SPECIMENS_REPORT_QUERY)) {
+						configureCartSpecimensReportQuery(query);
 					}
 				}
 			} else {
@@ -140,12 +141,13 @@ public class ImportDefaultQueries implements InitializingBean {
 	private void updateQuery(Long queryId, String filename, byte[] queryContent, String md5Digest) {
 		try {
 			SavedQuery savedQuery = daoFactory.getSavedQueryDao().getQuery(queryId);
-			if(savedQuery == null){
-				savedQuery = new SavedQuery();
+			if(savedQuery != null){
+				savedQuery.setQueryDefJson(new String(queryContent), true);
+				savedQuery.setLastUpdated(Calendar.getInstance().getTime());
+				savedQuery.setLastUpdatedBy(sysUser);
+				daoFactory.getSavedQueryDao().saveOrUpdate(savedQuery);
 			}
 			
-			savedQuery.setQueryDefJson(new String(queryContent), true);
-			daoFactory.getSavedQueryDao().saveOrUpdate(savedQuery);
 			insertChangeLog(filename, md5Digest, "UPDATED", queryId);
 		} catch (Exception e) {
 			LOGGER.error("Error updating query " + queryId + " using definition from file: " + filename, e);
@@ -188,6 +190,10 @@ public class ImportDefaultQueries implements InitializingBean {
 		saveDefaultQuerySetting(query, "common", "cont_spmns_report_query");
 	}
 
+	private void configureCartSpecimensReportQuery(SavedQuery query) {
+		saveDefaultQuerySetting(query, "common", "cart_specimens_rpt_query");
+	}
+
 	private void saveDefaultQuerySetting(SavedQuery query, String module, String name) {
 		try {
 			AuthUtil.setCurrentUser(sysUser);
@@ -214,8 +220,6 @@ public class ImportDefaultQueries implements InitializingBean {
 	
 	private static final String QUERIES_DIRECTORY = "/default-queries";
 
-	private static final String DEFAULT_CATALOG_QUERY = "SpecimenCatalog.json";
-
 	private static final String DISTRIBUTION_REPORT_QUERY = "DistributionReport.json";
 
 	private static final String SHIPMENT_REPORT_QUERY = "ShipmentReport.json";
@@ -223,4 +227,6 @@ public class ImportDefaultQueries implements InitializingBean {
 	private static final String SPECIMEN_KIT_REPORT_QUERY = "SpecimenKitReport.json";
 
 	private static final String CONTAINER_SPECIMENS_REPORT_QUERY = "ContainerSpecimensReport.json";
+
+	private static final String CART_SPECIMENS_REPORT_QUERY = "CartSpecimensReport.json";
 }

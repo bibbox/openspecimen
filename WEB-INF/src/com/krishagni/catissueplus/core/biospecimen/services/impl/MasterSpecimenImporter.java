@@ -115,6 +115,8 @@ public class MasterSpecimenImporter implements ObjectImporter<MasterSpecimenDeta
 		cprDetail.setPpid(detail.getPpid());
 		cprDetail.setCpShortTitle(detail.getCpShortTitle());
 		cprDetail.setRegistrationDate(detail.getRegistrationDate());
+		cprDetail.setSite(detail.getRegSite());
+		cprDetail.setExternalSubjectId(detail.getExternalSubjectId());
 		setParticipant(detail, cprDetail);
 		
 		ResponseEvent<CollectionProtocolRegistrationDetail> resp = cprSvc.createRegistration(request(cprDetail));
@@ -158,6 +160,7 @@ public class MasterSpecimenImporter implements ObjectImporter<MasterSpecimenDeta
 		specimenDetail.setReqCode(detail.getReqCode());
 		specimenDetail.setLabel(detail.getLabel());
 		specimenDetail.setBarcode(detail.getBarcode());
+		specimenDetail.setImageId(detail.getImageId());
 		specimenDetail.setSpecimenClass(detail.getSpecimenClass());
 		specimenDetail.setType(detail.getType());
 		specimenDetail.setLineage(detail.getLineage());
@@ -168,8 +171,10 @@ public class MasterSpecimenImporter implements ObjectImporter<MasterSpecimenDeta
 		specimenDetail.setInitialQty(detail.getInitialQty());
 		specimenDetail.setConcentration(detail.getConcentration());
 		specimenDetail.setCreatedOn(detail.getCreatedOn());
+		specimenDetail.setCreatedBy(detail.getCreatedBy());
 		specimenDetail.setComments(detail.getComments());
 		specimenDetail.setExtensionDetail(detail.getExtensionDetail());
+		specimenDetail.setExternalIds(detail.getExternalIds());
 		
 		setParentLabel(detail, specimenDetail);
 		setLocation(detail, specimenDetail);

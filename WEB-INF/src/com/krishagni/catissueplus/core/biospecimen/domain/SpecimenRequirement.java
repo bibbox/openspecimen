@@ -69,13 +69,13 @@ public class SpecimenRequirement extends BaseEntity implements Comparable<Specim
 			
 	private SpecimenRequirement parentSpecimenRequirement;
 	
-	private Set<SpecimenRequirement> childSpecimenRequirements = new LinkedHashSet<SpecimenRequirement>();
+	private Set<SpecimenRequirement> childSpecimenRequirements = new LinkedHashSet<>();
 
 	private SpecimenRequirement pooledSpecimenRequirement;
 
-	private Set<SpecimenRequirement> specimenPoolReqs = new LinkedHashSet<SpecimenRequirement>();
+	private Set<SpecimenRequirement> specimenPoolReqs = new LinkedHashSet<>();
 
-	private Set<Specimen> specimens = new HashSet<Specimen>();
+	private Set<Specimen> specimens = new HashSet<>();
 
 	public String getName() {
 		return name;
@@ -268,6 +268,10 @@ public class SpecimenRequirement extends BaseEntity implements Comparable<Specim
 		this.activityStatus = activityStatus;
 	}
 
+	public boolean isClosed() {
+		return Status.isClosedStatus(getActivityStatus());
+	}
+
 	@NotAudited
 	public SpecimenRequirement getParentSpecimenRequirement() {
 		return parentSpecimenRequirement;
@@ -287,7 +291,7 @@ public class SpecimenRequirement extends BaseEntity implements Comparable<Specim
 	}
 
 	public List<SpecimenRequirement> getOrderedChildRequirements() {
-		List<SpecimenRequirement> childReqs = new ArrayList<SpecimenRequirement>(getChildSpecimenRequirements());
+		List<SpecimenRequirement> childReqs = new ArrayList<>(getChildSpecimenRequirements());
 		Collections.sort(childReqs);
 		return childReqs;
 	}
@@ -346,6 +350,8 @@ public class SpecimenRequirement extends BaseEntity implements Comparable<Specim
 	}
 
 	public void update(SpecimenRequirement sr) {
+		ensureReqIsNotClosed();
+
 		if (isPrimary() && !isSpecimenPoolReq()) {
 			updateRequirementAttrs(sr);
 		}
@@ -380,6 +386,12 @@ public class SpecimenRequirement extends BaseEntity implements Comparable<Specim
 		if (isAliquot() && NumUtil.lessThanZero(getParentSpecimenRequirement().getQtyAfterAliquotsUse())) {
 			throw OpenSpecimenException.userError(SrErrorCode.INSUFFICIENT_QTY);
 		}
+
+		boolean wasClosed = isClosed();
+		setActivityStatus(sr.getActivityStatus());
+		if (!wasClosed && isClosed()) {
+			close();
+		}
 	}
 				
 	public SpecimenRequirement copy() {
@@ -389,6 +401,8 @@ public class SpecimenRequirement extends BaseEntity implements Comparable<Specim
 	}
 
 	public SpecimenRequirement deepCopy(CollectionProtocolEvent cpe) {
+		ensureReqIsNotClosed();
+
 		if (cpe == null) {
 			cpe = getCollectionProtocolEvent();
 		}
@@ -401,24 +415,34 @@ public class SpecimenRequirement extends BaseEntity implements Comparable<Specim
 		
 		return deepCopy(cpe, getParentSpecimenRequirement(), getPooledSpecimenRequirement());
 	}
+
+	public void close() {
+		setActivityStatus(Status.ACTIVITY_STATUS_CLOSED.getStatus());
+		getSpecimenPoolReqs().forEach(SpecimenRequirement::close);
+		getChildSpecimenRequirements().forEach(SpecimenRequirement::close);
+	}
 		
 	public void addChildRequirement(SpecimenRequirement childReq) {
+		ensureReqIsNotClosed();
 		childReq.setParentSpecimenRequirement(this);
 		getChildSpecimenRequirements().add(childReq);
 	}
 	
 	public void addChildRequirements(Collection<SpecimenRequirement> children) {
+		ensureReqIsNotClosed();
 		for (SpecimenRequirement childReq : children) {
 			addChildRequirement(childReq);
 		}
 	}
 	
 	public void addSpecimenPoolReq(SpecimenRequirement spmnPoolReq) {
+		ensureReqIsNotClosed();
 		spmnPoolReq.setPooledSpecimenRequirement(this);
 		getSpecimenPoolReqs().add(spmnPoolReq);
 	}
 
 	public void addSpecimenPoolReqs(Collection<SpecimenRequirement> spmnPoolReqs) {
+		ensureReqIsNotClosed();
 		for (SpecimenRequirement req : spmnPoolReqs) {
 			addSpecimenPoolReq(req);
 		}
@@ -426,6 +450,10 @@ public class SpecimenRequirement extends BaseEntity implements Comparable<Specim
 
 	public BigDecimal getQtyAfterAliquotsUse() {
 		BigDecimal available = getInitialQuantity();
+		if (available == null) {
+			return null;
+		}
+
 		for (SpecimenRequirement childReq : getChildSpecimenRequirements()) {
 			if (childReq.isAliquot() && childReq.getInitialQuantity() != null) {
 				available =  available.subtract(childReq.getInitialQuantity());
@@ -458,7 +486,7 @@ public class SpecimenRequirement extends BaseEntity implements Comparable<Specim
 		
 		CollectionProtocol cp = getCollectionProtocolEvent().getCollectionProtocol();
 		if (isAliquot()) {
-			return cp.getAliquotLabelFormat();
+			return cp.getAliquotLabelFormatToUse();
 		} else if (isDerivative()) {
 			return cp.getDerivativeLabelFormat();
 		} else {
@@ -590,6 +618,24 @@ public class SpecimenRequirement extends BaseEntity implements Comparable<Specim
 		for (SpecimenRequirement poolSr : getSpecimenPoolReqs()) {
 			poolSr.update(anatomicSite, laterality, concentration, specimenClass, specimenType, pathologyStatus);
 		}
+	}
+
+	private void ensureReqIsNotClosed() {
+		if (!isClosed()) {
+			return;
+		}
+
+
+		String key = getCode();
+		if (StringUtils.isBlank(key)) {
+			key = getName();
+		}
+
+		if (StringUtils.isBlank(key)) {
+			key = getId().toString();
+		}
+
+		throw OpenSpecimenException.userError(SrErrorCode.CLOSED, key);
 	}
 
 	private static final String[] EXCLUDE_COPY_PROPS = {

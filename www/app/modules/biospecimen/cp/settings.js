@@ -11,9 +11,9 @@ angular.module('os.biospecimen.cp')
     });
 
     settings.addItem({
-      name: 'CatalogSettings',
-      state: 'cp-detail.settings.catalog',
-      key: 'cp.catalog.title',
+      name: 'FormSettings',
+      state: 'cp-detail.settings.forms',
+      key: 'cp.forms.title',
       caption: ''
     });
 

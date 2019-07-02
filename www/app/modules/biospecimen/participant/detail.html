@@ -1,7 +1,9 @@
 <div> 
   <div os-page-header>
-    <div class="os-page-header-content">
-      <ul os-breadcrumbs>
+    <div class="os-page-header-content" ng-switch on="!!fieldsCtx.headers.participant.breadcrumb">
+      <os-html-template ng-switch-when="true" template="fieldsCtx.headers.participant.breadcrumb"></os-html-template>
+
+      <ul ng-switch-when="false" os-breadcrumbs>
         <li>
           <a ui-sref="cp-list-view({cpId: cpr.cpId})">
             <span>{{cp.shortTitle}}</span>
@@ -13,52 +15,77 @@
           </a>
         </li>
       </ul>
+
       <h3>
-        <span translate="{{cpr.ppid}}"></span>
-        <span ng-if="userCtx.hasPhiAccess && (cpr.participant.firstName || cpr.participant.lastName)">
-         ( {{cpr.participant.firstName}} {{cpr.participant.lastName}} )
-        </span>
+        <div ng-switch on="!!fieldsCtx.headers.participant.leftTitle">
+          <div ng-switch-when="true">
+            <os-html-template template="fieldsCtx.headers.participant.leftTitle"></os-html-template>
+          </div>
+          <div ng-switch-default>
+            <span translate="{{cpr.ppid}}"></span>
+            <span ng-if="userCtx.hasPhiAccess &&
+              (cpr.participant.firstName || cpr.participant.middleName || cpr.participant.lastName)">
+              ( {{cpr.participant.firstName}} {{cpr.participant.middleName}} {{cpr.participant.lastName}} )
+            </span>
+          </div>
+        </div>
       </h3>
     </div>
 
     <div class="os-page-header-actions">
-      <ng-include ng-if="!!listViewCtx.headerActionsTmpl" src="listViewCtx.headerActionsTmpl"></ng-include>
+      <h3 ng-if="!!fieldsCtx.headers.participant.rightTitle">
+        <os-html-template template="fieldsCtx.headers.participant.rightTitle"></os-html-template>
+      </h3>
     </div>
-
-    <h3>
-      <span>{{cpr.ppid}}</span>
-    </h3>
   </div>
 
   <div os-side-menu>
     <ul>
       <li ui-sref-active="active"> 
         <a ui-sref=".overview"> 
-          <i class="fa fa-eye"></i>
+          <span class="fa fa-eye"></span>
           <span class="os-title" translate="participant.menu.overview">Overview</span>
         </a>
       </li>
       <li ui-sref-active="active" ng-if="!cp.consentsWaived">
         <a ui-sref=".consents">
-          <i class="fa fa-pencil-square-o"></i>
+          <span class="fa fa-pencil-square-o"></span>
           <span class="os-title" translate="participant.menu.consents">Consents</span>
         </a>
       </li>
       <li ui-sref-active="active">
         <a ui-sref=".visits">
-          <i class="fa fa-list-alt"></i>
+          <span class="fa fa-list-alt"></span>
           <span class="os-title" translate="participant.menu.visits">Visits</span>
         </a>
       </li>
       <li ui-sref-active="active">
+        <a ui-sref=".specimens">
+          <span class="fa fa-flask"></span>
+          <span class="os-title" translate="participant.menu.specimens">Specimens</span>
+        </a>
+      </li>
+      <li ui-sref-active="active">
         <a ui-sref=".extensions.list">
-          <i class="fa fa-files-o"></i>
+          <span class="fa fa-files-o"></span>
           <span class="os-title" translate="participant.menu.extensions">Forms</span>
+        </a>
+      </li>
+      <li ng-click="toggleTree()">
+        <a>
+          <span class="fa fa-sitemap"></span>
+          <span class="os-title" translate="participant.menu.specimen_tree">Specimen Tree</span>
         </a>
       </li>
     </ul>
   </div>
 
-  <div class="os-side-menu-page-content" ui-view></div>
+  <div class="os-side-menu-page-content os-no-right-padding clearfix">
+    <div ng-if="rootCtx.showTree" class="os-col-25 os-full-height-container os-no-padding">
+      <div class="os-full-height-container" ng-include src="'modules/biospecimen/participant/specimens-drawer.html'"></div>
+    </div>
+    <div class="os-specimen-tree-pane" ng-class="{'os-col-75': !!rootCtx.showTree}">
+      <div ui-view></div>
+    </div>
+  </div>
 </div>
-

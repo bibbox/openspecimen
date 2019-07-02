@@ -11,10 +11,10 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.apache.commons.collections.CollectionUtils;
-import org.codehaus.jackson.annotate.JsonIgnore;
-import org.codehaus.jackson.map.annotate.JsonDeserialize;
-import org.codehaus.jackson.map.annotate.JsonSerialize;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolRegistration;
 import com.krishagni.catissueplus.core.biospecimen.domain.Participant;
 import com.krishagni.catissueplus.core.common.AttributeModifiedSupport;
@@ -63,7 +63,9 @@ public class ParticipantDetail extends AttributeModifiedSupport {
 	private Set<CprSummary> registeredCps;
 	
 	private ExtensionDetail extensionDetail;
-	
+
+	private Long stagedId;
+
 	// For Update participant through BO
 	private String cpShortTitle;
 	
@@ -82,6 +84,7 @@ public class ParticipantDetail extends AttributeModifiedSupport {
 	// transient variables specifying action to be performed
 	//
 	private boolean forceDelete;
+
 
 	public Long getId() {
 		return id;
@@ -131,21 +134,30 @@ public class ParticipantDetail extends AttributeModifiedSupport {
 		return birthDate != null ? sdf.format(birthDate) : null;
 	}
 
-	public void setBirthDateStr(String birthDateStr) {
-
-	}
-
 	@JsonDeserialize(using = com.krishagni.catissueplus.core.common.util.JsonDateDeserializer.class)
 	public void setBirthDate(Date birthDate) {
 		this.birthDate = birthDate;
+	}
+
+	public void setBirthDateStr(String birthDateStr) {
+
 	}
 
 	public Date getDeathDate() {
 		return deathDate;
 	}
 
+	public String getDeathDateStr() {
+		return deathDate != null ? sdf.format(deathDate) : null;
+	}
+
+	@JsonDeserialize(using = com.krishagni.catissueplus.core.common.util.JsonDateDeserializer.class)
 	public void setDeathDate(Date deathDate) {
 		this.deathDate = deathDate;
+	}
+
+	public void setDeathDateStr(String deathDateStr) {
+
 	}
 
 	public String getGender() {
@@ -247,7 +259,15 @@ public class ParticipantDetail extends AttributeModifiedSupport {
 	public void setExtensionDetail(ExtensionDetail extensionDetail) {
 		this.extensionDetail = extensionDetail;
 	}
-	
+
+	public Long getStagedId() {
+		return stagedId;
+	}
+
+	public void setStagedId(Long stagedId) {
+		this.stagedId = stagedId;
+	}
+
 	@JsonIgnore
 	public String getCpShortTitle() {
 		return cpShortTitle;

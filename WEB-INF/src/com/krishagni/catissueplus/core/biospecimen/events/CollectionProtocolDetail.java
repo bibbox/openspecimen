@@ -2,6 +2,7 @@ package com.krishagni.catissueplus.core.biospecimen.events;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.annotation.JsonFilter;
@@ -9,6 +10,8 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.krishagni.catissueplus.core.administrative.events.DistributionProtocolSummary;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
+import com.krishagni.catissueplus.core.biospecimen.domain.CpWorkflowConfig;
+import com.krishagni.catissueplus.core.biospecimen.services.impl.CpWorkflowTxnCache;
 import com.krishagni.catissueplus.core.common.events.UserSummary;
 import com.krishagni.catissueplus.core.de.events.ExtensionDetail;
 
@@ -40,6 +43,8 @@ public class CollectionProtocolDetail extends CollectionProtocolSummary {
 	private String derivativeLabelFmt;
 
 	private String aliquotLabelFmt;
+
+	private String specimenBarcodeFmt;
 	
 	private String visitNameFmt;
 	
@@ -52,6 +57,8 @@ public class CollectionProtocolDetail extends CollectionProtocolSummary {
 	private Boolean bulkPartRegEnabled;
 
 	private Boolean barcodingEnabled;
+
+	private Boolean closeParentSpecimens;
 
 	private String containerSelectionStrategy;
 
@@ -69,16 +76,24 @@ public class CollectionProtocolDetail extends CollectionProtocolSummary {
 
 	private List<DistributionProtocolSummary> distributionProtocols;
 
+	private Long catalogId;
+
 	private String activityStatus;
-	
+
+	private ExtensionDetail extensionDetail;
+
+	private String aliquotLabelFmtToUse;
+
+	private String specimenBarcodeFmtToUse;
+
 	//
 	// mostly used for export and import of CP
 	// 
 	private List<ConsentTierDetail> consents;
 	
 	private List<CollectionProtocolEventDetail> events;
-	
-	private ExtensionDetail extensionDetail;
+
+	private Map<String, CpWorkflowCfgDetail.WorkflowDetail> workflows;
 
 	public List<UserSummary> getCoordinators() {
 		return coordinators;
@@ -176,6 +191,14 @@ public class CollectionProtocolDetail extends CollectionProtocolSummary {
 		this.derivativeLabelFmt = derivativeLabelFmt;
 	}
 
+	public String getSpecimenBarcodeFmt() {
+		return specimenBarcodeFmt;
+	}
+
+	public void setSpecimenBarcodeFmt(String specimenBarcodeFmt) {
+		this.specimenBarcodeFmt = specimenBarcodeFmt;
+	}
+
 	public String getAliquotLabelFmt() {
 		return aliquotLabelFmt;
 	}
@@ -230,6 +253,14 @@ public class CollectionProtocolDetail extends CollectionProtocolSummary {
 
 	public void setBarcodingEnabled(Boolean barcodingEnabled) {
 		this.barcodingEnabled = barcodingEnabled;
+	}
+
+	public Boolean getCloseParentSpecimens() {
+		return closeParentSpecimens;
+	}
+
+	public void setCloseParentSpecimens(Boolean closeParentSpecimens) {
+		this.closeParentSpecimens = closeParentSpecimens;
 	}
 
 	public String getContainerSelectionStrategy() {
@@ -296,12 +327,44 @@ public class CollectionProtocolDetail extends CollectionProtocolSummary {
 		this.distributionProtocols = distributionProtocols;
 	}
 
+	public Long getCatalogId() {
+		return catalogId;
+	}
+
+	public void setCatalogId(Long catalogId) {
+		this.catalogId = catalogId;
+	}
+
 	public String getActivityStatus() {
 		return activityStatus;
 	}
 
 	public void setActivityStatus(String activityStatus) {
 		this.activityStatus = activityStatus;
+	}
+
+	public ExtensionDetail getExtensionDetail() {
+		return extensionDetail;
+	}
+
+	public void setExtensionDetail(ExtensionDetail extensionDetail) {
+		this.extensionDetail = extensionDetail;
+	}
+
+	public String getAliquotLabelFmtToUse() {
+		return aliquotLabelFmtToUse;
+	}
+
+	public void setAliquotLabelFmtToUse(String aliquotLabelFmtToUse) {
+		this.aliquotLabelFmtToUse = aliquotLabelFmtToUse;
+	}
+
+	public String getSpecimenBarcodeFmtToUse() {
+		return specimenBarcodeFmtToUse;
+	}
+
+	public void setSpecimenBarcodeFmtToUse(String specimenBarcodeFmtToUse) {
+		this.specimenBarcodeFmtToUse = specimenBarcodeFmtToUse;
 	}
 
 	public List<ConsentTierDetail> getConsents() {
@@ -320,12 +383,12 @@ public class CollectionProtocolDetail extends CollectionProtocolSummary {
 		this.events = events;
 	}
 
-	public ExtensionDetail getExtensionDetail() {
-		return extensionDetail;
+	public Map<String, CpWorkflowCfgDetail.WorkflowDetail> getWorkflows() {
+		return workflows;
 	}
 
-	public void setExtensionDetail(ExtensionDetail extensionDetail) {
-		this.extensionDetail = extensionDetail;
+	public void setWorkflows(Map<String, CpWorkflowCfgDetail.WorkflowDetail> workflows) {
+		this.workflows = workflows;
 	}
 
 	public static CollectionProtocolDetail from(CollectionProtocol cp) {
@@ -348,6 +411,9 @@ public class CollectionProtocolDetail extends CollectionProtocolSummary {
 		result.setSpecimenLabelFmt(cp.getSpecimenLabelFormat());
 		result.setDerivativeLabelFmt(cp.getDerivativeLabelFormat());
 		result.setAliquotLabelFmt(cp.getAliquotLabelFormat());
+		result.setSpecimenBarcodeFmt(cp.getSpecimenBarcodeFormat());
+		result.setAliquotLabelFmtToUse(cp.getAliquotLabelFormatToUse());
+		result.setSpecimenBarcodeFmtToUse(cp.getSpecimenBarcodeFormatToUse());
 		result.setVisitNameFmt(cp.getVisitNameFormat());
 		result.setManualPpidEnabled(cp.isManualPpidEnabled());
 		result.setManualVisitNameEnabled(cp.isManualVisitNameEnabled());
@@ -355,6 +421,7 @@ public class CollectionProtocolDetail extends CollectionProtocolSummary {
 		result.setBulkPartRegEnabled(cp.isBulkPartRegEnabled());
 		result.setSpecimenCentric(cp.isSpecimenCentric());
 		result.setBarcodingEnabled(cp.isBarcodingEnabled());
+		result.setCloseParentSpecimens(cp.isCloseParentSpecimens());
 		result.setContainerSelectionStrategy(cp.getContainerSelectionStrategy());
 		result.setAliquotsInSameContainer(cp.getAliquotsInSameContainer());
 		result.setVisitCollectionMode(cp.getVisitCollectionMode().name());
@@ -363,6 +430,7 @@ public class CollectionProtocolDetail extends CollectionProtocolSummary {
 		result.setSpmnLabelPrePrintMode(cp.getSpmnLabelPrePrintMode().name());
 		result.setSpmnLabelPrintSettings(CpSpecimenLabelPrintSettingDetail.from(cp.getSpmnLabelPrintSettings()));
 		result.setDistributionProtocols(DistributionProtocolSummary.from(cp.getDistributionProtocols()));
+		result.setCatalogId(cp.getCatalogId());
 		result.setActivityStatus(cp.getActivityStatus());
 		result.setCpSites(CollectionProtocolSiteDetail.from(cp.getSites()));
 		result.setExtensionDetail(ExtensionDetail.from(cp.getExtension()));
@@ -370,6 +438,11 @@ public class CollectionProtocolDetail extends CollectionProtocolSummary {
 		if (fullObject) {
 			result.setConsents(ConsentTierDetail.from(cp.getConsentTier()));
 			result.setEvents(CollectionProtocolEventDetail.from(cp.getOrderedCpeList(), true));
+
+			CpWorkflowConfig config = CpWorkflowTxnCache.getInstance().getWorkflows(cp.getId());
+			if (config.getCp() != null) {
+				result.setWorkflows(CpWorkflowCfgDetail.from(config).getWorkflows());
+			}
 		}
 		
 		return result;

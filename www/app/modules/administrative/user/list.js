@@ -1,11 +1,11 @@
 
 angular.module('os.administrative.user.list', ['os.administrative.models'])
   .controller('UserListCtrl', function(
-    $scope, $state, $modal, currentUser,
-    osRightDrawerSvc, Institute, User, ItemsHolder, PvManager,
+    $scope, $state, $modal, $translate, currentUser,
+    osRightDrawerSvc, User, ItemsHolder, PvManager,
     Util, DeleteUtil, CheckList, Alerts, ListPagerOpts) {
 
-    var pagerOpts;
+    var pagerOpts, filterOpts;
     var pvInit = false;
 
     function init() {
@@ -20,23 +20,15 @@ angular.module('os.administrative.user.list', ['os.administrative.models'])
     }
   
     function initPvsAndFilterOpts() {
-      $scope.userFilterOpts = Util.filterOpts({includeStats: true, maxResults: pagerOpts.recordsPerPage + 1});
+      filterOpts = $scope.userFilterOpts = Util.filterOpts({includeStats: true, maxResults: pagerOpts.recordsPerPage + 1});
       $scope.$on('osRightDrawerOpen', function() {
         if (pvInit) {
           return;
         }
 
         loadActivityStatuses();
-        loadInstitutes().then(
-          function(institutes) {
-            if (institutes.length == 1) {
-              $scope.userFilterOpts.institute = institutes[0].name;
-            }
-
-            Util.filter($scope, 'userFilterOpts', loadUsers);
-          }
-        );
-
+        loadUserTypes();
+        Util.filter($scope, 'userFilterOpts', loadUsers);
         pvInit = true;
       });
     }
@@ -44,33 +36,33 @@ angular.module('os.administrative.user.list', ['os.administrative.models'])
     function loadActivityStatuses() {
       PvManager.loadPvs('activity-status').then(
         function(result) {
-          $scope.activityStatuses = [].concat(result);
-          $scope.activityStatuses.push('Locked');
-          var idx = $scope.activityStatuses.indexOf('Disabled');
+          var statuses = [].concat(result);
+          statuses.push('Locked');
+          var idx = statuses.indexOf('Disabled');
           if (idx != -1) {
-            $scope.activityStatuses.splice(idx, 1);
+            statuses.splice(idx, 1);
           }
+
+          idx = statuses.indexOf('Closed');
+          if (idx != -1) {
+            statuses[idx] = 'Archived';
+          } else {
+            statuses.push('Archived');
+          }
+
+          $scope.activityStatuses = statuses.sort();
         }
       );
     }
 
-    function loadInstitutes() {
-      var q = undefined;
-      if (currentUser.admin) {
-        q = Institute.query();
-      } else {
-        q = currentUser.getInstitute();
-      }
-
-      return q.then(
-        function(result) {
-          if (result instanceof Array) {
-            $scope.institutes = result;
-          } else {
-            $scope.institutes = [result];
-          }
- 
-          return $scope.institutes;
+    function loadUserTypes() {
+      $translate('user.types.NONE').then(
+        function() {
+          $scope.userTypes = ['SUPER', 'INSTITUTE', 'CONTACT', 'NONE'].map(
+            function(type) {
+              return {type: type, name: $translate.instant('user.types.' + type)};
+            }
+          );
         }
       );
     }
@@ -99,13 +91,23 @@ angular.module('os.administrative.user.list', ['os.administrative.models'])
       return User.getCount($scope.userFilterOpts)
     }
 
-    function updateStatus(status, msgKey) {
-      var users = $scope.ctx.checkList.getSelectedItems();
-      User.bulkUpdate({detail: {activityStatus: status}, ids: getUserIds(users)}).then(
-        function(savedUsers) {
-          Alerts.success(msgKey);
+    function updateStatus(prevStatuses, status, msgKey) {
+      var users = $scope.ctx.checkList.getSelectedItems()
+        .filter(function(u) { return prevStatuses.indexOf(u.activityStatus) != -1; });
 
-          angular.forEach(users, function(user) { user.selected = false; });
+      var usersMap = {};
+      angular.forEach(users, function(u) { usersMap[u.id] = u; });
+
+      User.bulkUpdate({detail: {activityStatus: status}, ids: Object.keys(usersMap)}).then(
+        function(savedUsers) {
+          Alerts.success(msgKey, {count: savedUsers.length});
+
+          angular.forEach(savedUsers,
+            function(su) {
+              usersMap[su.id].activityStatus = su.activityStatus;
+            }
+          );
+
           $scope.ctx.checkList = new CheckList($scope.users);
         }
       );
@@ -165,15 +167,27 @@ angular.module('os.administrative.user.list', ['os.administrative.models'])
     }
 
     $scope.unlockUsers = function() {
-      updateStatus('Active', 'user.users_unlocked');
+      updateStatus(['Locked'], 'Active', 'user.users_unlocked');
     }
 
     $scope.approveUsers = function() {
-      updateStatus('Active', 'user.users_approved');
+      updateStatus(['Pending'], 'Active', 'user.users_approved');
     }
 
     $scope.lockUsers = function() {
-      updateStatus('Locked', 'user.users_locked');
+      updateStatus(['Active'], 'Locked', 'user.users_locked');
+    }
+
+    $scope.archiveUsers = function() {
+      updateStatus(['Locked', 'Active', 'Expired'], 'Closed', 'user.users_archived');
+    }
+
+    $scope.reactivateUsers = function() {
+      updateStatus(['Closed'], 'Active', 'user.users_reactivated');
+    }
+
+    $scope.pageSizeChanged = function() {
+      filterOpts.maxResults = pagerOpts.recordsPerPage + 1;
     }
 
     init();

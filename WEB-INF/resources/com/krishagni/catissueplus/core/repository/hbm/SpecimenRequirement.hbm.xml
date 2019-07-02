@@ -59,9 +59,7 @@
     
     <property name="labelAutoPrintMode" column="LABEL_AUTO_PRINT_MODE">
       <type name="org.hibernate.type.EnumType">
-        <param name="enumClass">
-          com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol$SpecimenLabelAutoPrintMode
-        </param>
+        <param name="enumClass">com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol$SpecimenLabelAutoPrintMode</param>
         <param name="type">12</param>
       </type>
     </property>
@@ -132,9 +130,22 @@
         join sr.collectionProtocolEvent event
         join event.collectionProtocol cp
       where
-        cp.shortTitle = :cpShortTitle
-        and event.eventLabel = :eventLabel
-        and sr.code = :code
+        cp.shortTitle = :cpShortTitle and
+        event.eventLabel = :eventLabel and
+        sr.code = :code
+    </query>
+
+    <query name="getByCpIdEventLabelAndSrCode">
+      select
+        sr
+      from
+        com.krishagni.catissueplus.core.biospecimen.domain.SpecimenRequirement sr
+        join sr.collectionProtocolEvent event
+        join event.collectionProtocol cp
+      where
+        cp.id = :cpId and
+        event.eventLabel = :eventLabel and
+        sr.code = :code
     </query>
   </class>
 </hibernate-mapping>

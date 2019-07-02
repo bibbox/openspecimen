@@ -5,6 +5,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import org.apache.commons.collections.CollectionUtils;
 import org.hibernate.Criteria;
@@ -15,8 +16,11 @@ import org.hibernate.criterion.Projections;
 import org.hibernate.criterion.Restrictions;
 
 import com.krishagni.catissueplus.core.biospecimen.domain.BaseEntity;
+import com.krishagni.catissueplus.core.common.util.Utility;
+import com.krishagni.catissueplus.core.init.AppProperties;
 
 public class AbstractDao<T> implements Dao<T> {
+	private static final String LIMIT_SQL = "select * from (select tab.*, rownum rnum from (%s) tab where rownum <= %d) where rnum >= %d";
 
 	protected SessionFactory sessionFactory;
 
@@ -79,7 +83,7 @@ public class AbstractDao<T> implements Dao<T> {
 			hql += " and " + activeCondition;
 		}
 
-		return sessionFactory.getCurrentSession().createQuery(hql).setParameterList("ids", ids).list();
+		return getCurrentSession().createQuery(hql).setParameterList("ids", ids).list();
 	}
 
 	public Class<?> getType() {
@@ -126,5 +130,30 @@ public class AbstractDao<T> implements Dao<T> {
 		}
 
 		return Collections.singletonMap(propName, rows.iterator().next());
+	}
+
+	protected String getLimitSql(String baseSql, int startAt, int maxResults, boolean oracle) {
+		if (oracle) {
+			return String.format(LIMIT_SQL, baseSql, maxResults, startAt);
+		} else {
+			return baseSql + "limit " + startAt + ", " + maxResults;
+		}
+	}
+
+	protected Collection<String> toUpper(Collection<String> inputList) {
+		return Utility.nullSafeStream(inputList).map(String::toUpperCase).collect(Collectors.toList());
+	}
+
+	protected boolean isOracle() {
+		return getDbType().equals("oracle");
+	}
+
+	protected boolean isMySQL() {
+		return getDbType().equals("mysql");
+	}
+
+	private String getDbType() {
+		return AppProperties.getInstance().getProperties()
+			.getProperty("database.type", "mysql").toLowerCase();
 	}
 }

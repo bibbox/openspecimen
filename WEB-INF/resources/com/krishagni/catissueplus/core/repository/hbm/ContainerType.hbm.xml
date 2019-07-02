@@ -4,8 +4,7 @@
     "http://hibernate.sourceforge.net/hibernate-mapping-3.0.dtd">
 
 <hibernate-mapping auto-import="false">
-  <class name="com.krishagni.catissueplus.core.administrative.domain.ContainerType" 
-    table="OS_CONTAINER_TYPES">
+  <class name="com.krishagni.catissueplus.core.administrative.domain.ContainerType" table="OS_CONTAINER_TYPES">
 
     <id name="id" column="IDENTIFIER">
       <generator class="native">
@@ -25,9 +24,14 @@
 
     <property name="positionLabelingMode" column="POS_LABELING_MODE" not-null="true">
       <type name="org.hibernate.type.EnumType">
-        <param name="enumClass">
-          com.krishagni.catissueplus.core.administrative.domain.StorageContainer$PositionLabelingMode
-        </param>
+        <param name="enumClass">com.krishagni.catissueplus.core.administrative.domain.StorageContainer$PositionLabelingMode</param>
+        <param name="type">12</param>
+      </type>
+    </property>
+
+    <property name="positionAssignment" column="POS_ASSIGNMENT" not-null="true">
+      <type name="org.hibernate.type.EnumType">
+        <param name="enumClass">com.krishagni.catissueplus.core.administrative.domain.StorageContainer$PositionAssignment</param>
         <param name="type">12</param>
       </type>
     </property>
@@ -58,10 +62,50 @@
      
     <query name="getByNames">
       from
-        com.krishagni.catissueplus.core.administrative.domain.ContainerType containerType
+        com.krishagni.catissueplus.core.administrative.domain.ContainerType t
       where
-        containerType.name in (:names)
+        t.name in (:names)
     </query>
 
+    <query name="getLeafTypeIds">
+      select
+        t.id
+      from
+        com.krishagni.catissueplus.core.administrative.domain.ContainerType t
+        left join t.canHold ch
+      where
+        ch.id is null
+      order by
+        t.name
+    </query>
+
+    <sql-query name="getDependentEntities">
+      <return-scalar column="entityName" type="string"/>
+      <return-scalar column="count" type="int"/>
+
+      select
+        de.entityName as entityName, de.count as count
+      from (
+        select
+          'storage_container' as entityName, count(s.identifier) as count
+        from
+          os_storage_containers s
+        where
+          s.activity_status != 'Disabled' and
+          s.type_id = :typeId
+
+        union all
+
+        select
+          'container_type' as entityName, count(t.identifier) as count
+        from
+          os_container_types t
+        where
+          t.activity_status != 'Disabled' and
+          t.can_hold = :typeId
+      ) de
+      where
+        de.count > 0
+    </sql-query>
   </class>
 </hibernate-mapping>

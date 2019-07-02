@@ -1,10 +1,14 @@
 
 angular.module('os.administrative.models.order', ['os.common.models'])
-  .factory('DistributionOrder', function(osModel, $http, Specimen, SpecimenList) {
+  .factory('DistributionOrder', function(osModel, $http, Specimen, SpecimenList, DistributionProtocol) {
     var DistributionOrder = osModel('distribution-orders',
       function(order) {
         if (!!order.specimenList) {
           order.specimenList = new SpecimenList(order.specimenList);
+        }
+
+        if (!!order.distributionProtocol) {
+          order.distributionProtocol = new DistributionProtocol(order.distributionProtocol);
         }
       }
     );
@@ -62,6 +66,14 @@ angular.module('os.administrative.models.order', ['os.common.models'])
       return $http.get(DistributionOrder.url() + this.$id() + '/items', {params: params}).then(
         function(resp) {
           return resp.data;
+        }
+      );
+    }
+
+    DistributionOrder.prototype.retrieveSpecimens = function(detail) {
+      return $http.post(DistributionOrder.url() + this.$id() + '/retrieve', detail).then(
+        function(resp) {
+          return resp.data.count;
         }
       );
     }

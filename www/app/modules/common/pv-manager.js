@@ -50,12 +50,14 @@ angular.module('openspecimen')
     var visitStatuses = [
       'Complete',
       'Pending',
-      'Missed Collection'
+      'Missed Collection',
+      'Not Collected'
     ];
 
     var specimenStatuses = [
       'Collected',
       'Missed Collection',
+      'Not Collected',
       'Pending'
     ];
 
@@ -64,11 +66,6 @@ angular.module('openspecimen')
       'Pending',
       'Disabled',
       'Closed'
-    ];
-
-    var qualityStatuses = [
-      'Acceptable',
-      'Unacceptable'
     ];
 
     var visitNamePrintModes = [
@@ -80,6 +77,7 @@ angular.module('openspecimen')
     var spmnLabelPrePrintModes = [
       {name: 'ON_REGISTRATION', displayKey:'cp.spmn_label_pre_print_modes.ON_REGISTRATION'},
       {name: 'ON_VISIT', displayKey:'cp.spmn_label_pre_print_modes.ON_VISIT'},
+      {name: 'ON_PRIMARY_COLL', displayKey: 'cp.spmn_label_pre_print_modes.ON_PRIMARY_COLL'},
       {name: 'NONE', displayKey:'cp.spmn_label_pre_print_modes.NONE'}
     ];
 
@@ -89,6 +87,24 @@ angular.module('openspecimen')
       {name: 'NONE', displayKey:'srs.spmn_label_auto_print_modes.NONE'}
     ];
 
+    var intervalUnits = [
+      {name: 'DAYS',   displayKey: 'common.interval_units.DAYS'},
+      {name: 'WEEKS',  displayKey: 'common.interval_units.WEEKS'},
+      {name: 'MONTHS', displayKey: 'common.interval_units.MONTHS'},
+      {name: 'YEARS',  displayKey: 'common.interval_units.YEARS'}
+    ]
+
+    var positionAssignments = [
+      {name: 'HZ_TOP_DOWN_LEFT_RIGHT',  displayKey: 'container.position_assignments.HZ_TOP_DOWN_LEFT_RIGHT'},
+      {name: 'HZ_TOP_DOWN_RIGHT_LEFT',  displayKey: 'container.position_assignments.HZ_TOP_DOWN_RIGHT_LEFT'},
+      {name: 'HZ_BOTTOM_UP_LEFT_RIGHT', displayKey: 'container.position_assignments.HZ_BOTTOM_UP_LEFT_RIGHT'},
+      {name: 'HZ_BOTTOM_UP_RIGHT_LEFT', displayKey: 'container.position_assignments.HZ_BOTTOM_UP_RIGHT_LEFT'},
+      {name: 'VT_TOP_DOWN_LEFT_RIGHT',  displayKey: 'container.position_assignments.VT_TOP_DOWN_LEFT_RIGHT'},
+      {name: 'VT_TOP_DOWN_RIGHT_LEFT',  displayKey: 'container.position_assignments.VT_TOP_DOWN_RIGHT_LEFT'},
+      {name: 'VT_BOTTOM_UP_LEFT_RIGHT', displayKey: 'container.position_assignments.VT_BOTTOM_UP_LEFT_RIGHT'},
+      {name: 'VT_BOTTOM_UP_RIGHT_LEFT', displayKey: 'container.position_assignments.VT_BOTTOM_UP_RIGHT_LEFT'},
+    ]
+
     var pvMap = {
       anatomicSite: anatomicSites,
       'storage-type': storageTypes,
@@ -96,10 +112,11 @@ angular.module('openspecimen')
       'specimen-status': specimenStatuses,
       'container-position-labeling-schemes': positionLabelingSchemes,
       'activity-status': activityStatuses,
-      'quality-status': qualityStatuses,
       'visit-name-print-modes': visitNamePrintModes,
       'specimen-label-pre-print-modes': spmnLabelPrePrintModes,
-      'specimen-label-auto-print-modes': spmnLabelAutoPrintModes
+      'specimen-label-auto-print-modes': spmnLabelAutoPrintModes,
+      'interval-units': intervalUnits,
+      'container-position-assignments': positionAssignments
     };
 
     var pvIdMap = {
@@ -163,7 +180,7 @@ angular.module('openspecimen')
       );
     };
 
-    function loadPvsByParent(parentAttr, parentVal, incParentVal, transformFn) {
+    function loadPvsByParent(parentAttr, parentVal, incParentVal, transformFn, maxPvs) {
       var pvId = pvIdMap[parentAttr];
       if (!pvId) {
         pvId = parentAttr;
@@ -173,7 +190,7 @@ angular.module('openspecimen')
         parentAttribute: pvId, 
         parentValue: parentVal,  
         includeParentValue: incParentVal,
-        maxResults: 100
+        maxResults: maxPvs || 100
       };
 
       return $http.get(url, {params: params}).then(

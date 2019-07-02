@@ -40,16 +40,18 @@
         </div>
       </div>
 
-      <div class="form-group">
+      <div class="form-group os-multi-parts-control">
         <label class="col-xs-3 control-label">
           <span translate="container.dimension">Dimension</span>
         </label>
         <div class="col-xs-3">
+          <label class="part-label" translate="container.vertical_dimension"></label>
           <input type="text" name="noOfRows" ng-model="containerType.noOfRows" class="form-control"
             placeholder="{{'container.vertical_dimension' | translate}}" ng-pattern="/^[1-9][0-9]*$/" required>
           <div os-field-error field="ctform.noOfRows"></div>
         </div>
         <div class="col-xs-3">
+          <label class="part-label" translate="container.horizontal_dimension"></label>
           <input type="text" name="noOfColumns" ng-model="containerType.noOfColumns" class="form-control"
             placeholder="{{'container.horizontal_dimension' | translate}}" ng-pattern="/^[1-9][0-9]*$/" required>
           <div os-field-error field="ctform.noOfColumns"></div>
@@ -72,21 +74,36 @@
         </div>
       </div>
 
-      <div class="form-group" ng-if="containerType.positionLabelingMode == 'TWO_D'">
+      <div class="form-group os-multi-parts-control" ng-if="containerType.positionLabelingMode == 'TWO_D'">
         <label class="col-xs-3 control-label">
           <span translate="container.labeling_scheme">Labeling Scheme</span>
         </label>
         <div class="col-xs-3">
+          <label class="part-label" translate="container.vertical_labeling_scheme"></label>
           <os-select ng-model="containerType.rowLabelingScheme" list="positionLabelingSchemes"
             name="rowLabelingScheme" placeholder="{{'container.vertical_labeling_scheme' | translate}}" required>
           </os-select>
           <div os-field-error field="ctform.rowLabelingScheme"></div>
         </div>
         <div class="col-xs-3">
+          <label class="part-label" translate="container.horizontal_labeling_scheme"></label>
           <os-select ng-model="containerType.columnLabelingScheme" list="positionLabelingSchemes"
             name="columnLabelingScheme" placeholder="{{'container.horizontal_labeling_scheme' | translate}}" required>
           </os-select>
           <div os-field-error field="ctform.columnLabelingScheme"></div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="col-xs-3 control-label">
+          <span translate="container.position_assignment">Position Assignment</span>
+        </label>
+        <div class="col-xs-6">
+          <os-select ng-model="containerType.positionAssignment" list="positionAssignments"
+            select-prop="name" display-prop="displayName" name="positionAssignment"
+            placeholder="{{'container.position_assignment' | translate}}" required>
+          </os-select>
+          <div os-field-error field="ctform.positionAssignment"></div>
         </div>
       </div>
 
@@ -124,7 +141,7 @@
         </label>
         <div class="col-xs-6">
           <os-select ng-model="containerType.canHold" list="containerTypes" name="canHold" display-prop="name"
-            placeholder="{{'container_type.can_hold' | translate}}">
+            refresh="searchTypes" placeholder="{{'container_type.can_hold' | translate}}">
           </os-select>
         </div>
       </div>

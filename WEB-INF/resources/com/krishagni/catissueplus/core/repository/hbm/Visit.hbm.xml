@@ -38,30 +38,31 @@
       <element column="CLINICAL_DIAGNOSIS" type="string"/>
     </set>
 
-    <many-to-one name="registration"
-      class="com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolRegistration"
-      column="COLLECTION_PROTOCOL_REG_ID" />
+    <many-to-one name="registration" column="COLLECTION_PROTOCOL_REG_ID" />
 
-    <many-to-one name="cpEvent"
-      class="com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolEvent" 
-      column="COLLECTION_PROTOCOL_EVENT_ID" />
+    <many-to-one name="cpEvent" column="COLLECTION_PROTOCOL_EVENT_ID" />
 
-    <many-to-one name="site" 
-      class="com.krishagni.catissueplus.core.administrative.domain.Site"
-      column="SITE_ID" />
+    <many-to-one name="site" column="SITE_ID" />
 
     <set name="specimens" table="CATISSUE_SPECIMEN" inverse="true" cascade="save-update">
-      <key column="SPECIMEN_COLLECTION_GROUP_ID"></key>
+      <key column="SPECIMEN_COLLECTION_GROUP_ID"/>
       <one-to-many class="com.krishagni.catissueplus.core.biospecimen.domain.Specimen" />
       <filter name="activeEntity"/>
     </set>
 
-    <many-to-one name="missedBy"
-      class="com.krishagni.catissueplus.core.administrative.domain.User"
-      column="MISSED_BY"
-    />
+    <many-to-one name="missedBy" column="MISSED_BY"/>
     
     <property name="cohort" column="COHORT"/>
+
+    <property name="extensionRev" column="EXTENSION_REV"/>
+
+    <property name="creationTime" column="CREATION_TIME"/>
+
+    <many-to-one name="creator" column="CREATOR"/>
+
+    <property name="updateTime" column="UPDATE_TIME"/>
+
+    <many-to-one name="updater" column="UPDATER"/>
 
     <filter name="activeEntity"/>
 
@@ -76,14 +77,14 @@
       from 
         com.krishagni.catissueplus.core.biospecimen.domain.Visit 
       where 
-        name in (:names)
+        upper(name) in (:names)
     </query>
 
     <query name="getVisitBySpr">
       from
         com.krishagni.catissueplus.core.biospecimen.domain.Visit
       where
-        surgicalPathologyNumber = :sprNumber
+        upper(surgicalPathologyNumber) = :sprNumber
     </query>
 
     <query name="getLatestVisitByCprId">
@@ -99,13 +100,41 @@
         visit.visitDate desc, visit.id desc
     </query>
 
-    <sql-query name="getVisitsSummaryByCprId">
+    <query name="getVisitsByEmpiOrMrn">
+      select
+        distinct v
+      from
+        com.krishagni.catissueplus.core.biospecimen.domain.Visit v
+        join v.registration reg
+        join reg.collectionProtocol cp
+        join reg.participant p
+        left join p.pmis pmi
+      where
+        (lower(p.empi) = :empiOrMrn or lower(pmi.medicalRecordNumber) = :empiOrMrn) and
+        cp.id = :cpId
+    </query>
+
+    <query name="getVisitByCpAndSprNo">
+      select
+        v
+      from
+        com.krishagni.catissueplus.core.biospecimen.domain.Visit v
+        join v.registration reg
+        join reg.collectionProtocol cp
+      where
+        lower(v.surgicalPathologyNumber) = :sprNo and
+        cp.id = :cpId
+    </query>
+
+    <!-- TODO: Below query getVisitsSummaryByCprId should be removed before v5.0 RC -->
+    <!-- sql-query name="getVisitsSummaryByCprId">
       <return-scalar column="id" type="long"/>
       <return-scalar column="eventId" type="long"/>
       <return-scalar column="name" type="string"/>
       <return-scalar column="eventStatus" type="string"/>
       <return-scalar column="label" type="string"/>
       <return-scalar column="calendarPoint" type="int"/>
+      <return-scalar column="eventPointUnit" type="string"/>
       <return-scalar column="status" type="string"/>
       <return-scalar column="visitDate" type="timestamp"/>
       <return-scalar column="regDate" type="timestamp"/>
@@ -114,7 +143,7 @@
 
       select
         scg.identifier as id, cpe.identifier as eventId, scg.name as name, cpe.activity_status as eventStatus,
-        cpe.collection_point_label as label, cpe.study_calendar_event_point as calendarPoint,
+        cpe.collection_point_label as label, cpe.study_calendar_event_point as calendarPoint, cpe.event_point_unit as eventPointUnit,
         scg.collection_status as status, scg.collection_timestamp as visitDate, cpr.registration_date as regDate,
         scg.missed_reason as missedReason, cpr.collection_protocol_id as cpId
       from   
@@ -133,7 +162,7 @@
 
       select
         scg.identifier as id, null as eventId, scg.name as name, null as eventStatus,
-        null as label, null as calendarPoint,
+        null as label, null as calendarPoint, null as eventPointUnit,
         scg.collection_status as status, scg.collection_timestamp as visitDate, cpr.registration_date as regDate,
         scg.missed_reason as missedReason, cpr.collection_protocol_id as cpId
       from
@@ -145,7 +174,7 @@
       where
         cpr.identifier = :cprId and
         cpr.activity_status != 'Disabled'
-    </sql-query>
+    </sql-query -->
 
     <sql-query name="getVisitStats">
       <return-scalar column="visitId" type="long"/>
@@ -169,7 +198,7 @@
           as plannedPrimarySpmnsColl,
         count(distinct case when t.lineage = 'New' and t.planned = 'N' and t.status = 'Collected' then t.id else null end)
           as unplannedPrimarySpmnsColl,
-        count(distinct case when t.lineage = 'New' and t.status = 'Missed Collection' then t.id else null end)
+        count(distinct case when t.lineage = 'New' and (t.status = 'Missed Collection' or t.status = 'Not Collected') then t.id else null end)
           as missedPrimarySpmnsColl,
         count(distinct case when t.spmn_stored = 'Y' then t.id else null end) as storedSpmns,
         count(distinct case when t.activity_status != 'Closed' and t.status = 'Collected' and
@@ -207,7 +236,8 @@
                o.status = 'EXECUTED' and
                o.activity_status != 'Disabled'
         where
-          v.identifier in (:visitIds)
+          v.identifier in (:visitIds) and
+          (req.activity_status = 'Active' or s.identifier is not null)
 
       union
         select
@@ -253,7 +283,7 @@
       where
         cpe.identifier in (:eventIds) and
         cpe.activity_status != 'Disabled' and
-        req.activity_status != 'Disabled'
+        req.activity_status = 'Active'
       group by
         cpe.identifier
     </sql-query>

@@ -1,7 +1,9 @@
-<div>
+<div ng-if="showForm">
   <div os-page-header>
-    <div class="os-page-header-content">
-      <ul os-breadcrumbs>
+    <div class="os-page-header-content" ng-switch on="!!fieldsCtx.headers.specimen.breadcrumb">
+      <os-html-template ng-switch-when="true" template="fieldsCtx.headers.specimen.breadcrumb"></os-html-template>
+
+      <ul ng-switch-when="false" os-breadcrumbs>
         <li> 
           <a ui-sref="cp-list-view({cpId: cpr.cpId})">
             <span>{{cpr.cpShortTitle}}</span>
@@ -9,11 +11,7 @@
         </li>
         <li ng-if="!cp.specimenCentric">
           <a ui-sref="participant-detail.overview({cprId: cpr.id})">
-            <ng-switch on="!!(cpr.participant.lastName || cpr.participant.firstName)">
-              <span ng-switch-when="true"> {{cpr.participant.firstName}} {{cpr.participant.lastName}} </span>
-              <span ng-switch-when="false" translate="common.na"> N/A </span>
-            </ng-switch>
-            <span>({{cpr.ppid}})</span>
+            <span>{{cpr.ppid}}</span>
           </a>
         </li>
         <li ng-if="!cp.specimenCentric">
@@ -30,6 +28,12 @@
 
       <h3>
         <span translate="specimens.create_derivative">Create Derivative</span>
+      </h3>
+    </div>
+
+    <div class="os-page-header-actions">
+      <h3 ng-if="!!fieldsCtx.headers.specimen.rightTitle">
+        <os-html-template template="fieldsCtx.headers.specimen.rightTitle"></os-html-template>
       </h3>
     </div>
   </div>
@@ -63,7 +67,7 @@
       <div ng-switch on="fieldsCtx.hasDict">
         <div ng-switch-when="true">
           <sde-form-fields base-fields="fieldsCtx.sysDict" fields="fieldsCtx.cpDict"
-            obj="spmnCtx.obj" in-objs="spmnCtx.inObjs" ex-objs="spmnCtx.exObjs">
+            obj="spmnCtx.obj" in-objs="spmnCtx.inObjs" ex-objs="spmnCtx.exObjs" opts="spmnCtx.opts">
           </sde-form-fields>
         </div>
         <div ng-switch-default>
@@ -115,16 +119,24 @@
       <div class="col-xs-6">
         <input name="label" ng-model="derivative.label" class="form-control"
           type="text" placeholder="{{'specimens.label' | translate}}"
-          ng-required="!cpr.derivativeLabelFmt || cp.manualSpecLabelEnabled">
+          ng-required="cp.manualSpecLabelEnabled">
         <div os-field-error field="derivativeForm.label"></div>
       </div>
     </div>
 
-    <div class="form-group" ng-if="barcodingEnabled">
+    <div class="form-group" ng-if="barcodingEnabled && !spmnBarcodesAutoGen">
       <label class="col-xs-3 control-label" translate="specimens.barcode">Barcode</label>
       <div class="col-xs-6">
         <input ng-model="derivative.barcode" class="form-control"
           type="text" placeholder="{{'specimens.barcode' | translate}}">
+      </div>
+    </div>
+
+    <div class="form-group" ng-if="imagingEnabled">
+      <label class="col-xs-3 control-label" translate="specimens.image_id">Image ID/URL</label>
+      <div class="col-xs-6">
+        <input ng-model="derivative.imageId" class="form-control"
+          type="text" placeholder="{{'specimens.image_id' | translate}}">
       </div>
     </div>
 
@@ -200,6 +212,16 @@
           </div>
         </div>
         <div os-field-error field="derivativeForm.createdOn"></div>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="col-xs-3 control-label" translate="specimens.created_by">Created By</label>
+      <div class="col-xs-6">
+        <os-users name="createdBy" ng-model="derivative.createdBy" default-current-user exclude-contacts
+          placeholder="{{'specimens.created_by' | translate}}" required>
+        </os-users>
+        <div os-field-error field="derivativeForm.createdBy"></div>
       </div>
     </div>
 

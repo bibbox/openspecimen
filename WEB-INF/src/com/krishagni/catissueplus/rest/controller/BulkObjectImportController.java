@@ -47,7 +47,7 @@ public class BulkObjectImportController {
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody		
 	public void getInputFileTemplate(
-			@RequestParam(value = "schema", required = true)
+			@RequestParam(value = "schema")
 			String schemaName,
 
 			@RequestParam
@@ -66,7 +66,7 @@ public class BulkObjectImportController {
 		}
 		
 		ObjectSchemaCriteria detail = new ObjectSchemaCriteria();
-		detail.setObjectType(schemaName);		
+		detail.setObjectType(schemaName);
 		detail.setParams(params);
 		
 		RequestEvent<ObjectSchemaCriteria> req = new RequestEvent<>(detail);

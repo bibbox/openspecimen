@@ -1,11 +1,11 @@
 angular.module('os.administrative.container.list', ['os.administrative.models'])
   .controller('ContainerListCtrl', function($scope, $state, Container, Util, DeleteUtil, ListPagerOpts, CheckList) {
 
-    var pagerOpts;
+    var pagerOpts, filterOpts;
 
     function init() {
       pagerOpts = $scope.pagerOpts = new ListPagerOpts({listSizeGetter: getContainersCount});
-      $scope.containerFilterOpts = Util.filterOpts({
+      filterOpts = $scope.containerFilterOpts = Util.filterOpts({
         maxResults: pagerOpts.recordsPerPage + 1,
         includeStats: true,
         topLevelContainers: true
@@ -22,6 +22,8 @@ angular.module('os.administrative.container.list', ['os.administrative.models'])
     function loadContainers(filterOpts) {
       Container.list(filterOpts).then(
         function(containers) {
+          pagerOpts.refreshOpts(containers);
+
           angular.forEach(containers,
             function(container) {
               if (container.capacity) {
@@ -32,7 +34,6 @@ angular.module('os.administrative.container.list', ['os.administrative.models'])
 
           $scope.containerList = containers;
           $scope.ctx.checkList = new CheckList(containers);
-          pagerOpts.refreshOpts(containers);
         }
       );
     }
@@ -61,6 +62,10 @@ angular.module('os.administrative.container.list', ['os.administrative.models'])
       }
 
       DeleteUtil.bulkDelete({bulkDelete: Container.bulkDelete}, getContainerIds(containers), opts);
+    }
+
+    $scope.pageSizeChanged = function() {
+      filterOpts.maxResults = pagerOpts.recordsPerPage + 1;
     }
 
     init();

@@ -77,7 +77,7 @@ public class ConfigurationServiceImpl implements ConfigurationService, Initializ
 	public ResponseEvent<List<ConfigSettingDetail>> getSettings(RequestEvent<String> req) {
 		String module = req.getPayload();
 
-		List<ConfigSetting> settings = new ArrayList<ConfigSetting>();
+		List<ConfigSetting> settings = new ArrayList<>();
 		if (StringUtils.isBlank(module)) {
 			for (Map<String, ConfigSetting> moduleSettings : configSettings.values()) {
 				settings.addAll(moduleSettings.values());
@@ -98,13 +98,10 @@ public class ConfigurationServiceImpl implements ConfigurationService, Initializ
 		Pair<String, String> payload = req.getPayload();
 		try {
 			Map<String, ConfigSetting> moduleSettings = configSettings.get(payload.first());
-			if (moduleSettings == null) {
-				return ResponseEvent.userError(ConfigErrorCode.MODULE_NOT_FOUND);
-			}
 
-			ConfigSetting setting = moduleSettings.get(payload.second());
-			if (setting == null) {
-				return ResponseEvent.userError(ConfigErrorCode.SETTING_NOT_FOUND);
+			ConfigSetting setting;
+			if (moduleSettings == null || (setting = moduleSettings.get(payload.second())) == null) {
+				return ResponseEvent.response(new ConfigSettingDetail());
 			}
 
 			return ResponseEvent.response(ConfigSettingDetail.from(setting));
@@ -135,7 +132,7 @@ public class ConfigurationServiceImpl implements ConfigurationService, Initializ
 		
 		String setting = detail.getValue();
 		if (!isValidSetting(existing.getProperty(), setting)) {
-			return ResponseEvent.userError(ConfigErrorCode.INVALID_SETTING_VALUE);
+			return ResponseEvent.userError(ConfigErrorCode.INVALID_SETTING_VALUE, setting);
 		}
 		
 		boolean successful = false;
@@ -453,7 +450,7 @@ public class ConfigurationServiceImpl implements ConfigurationService, Initializ
 	
 	@Override
 	public Map<String, Object> getAppProps() {
-		Map<String, Object> props = new HashMap<String, Object>();
+		Map<String, Object> props = new HashMap<>();
 		props.put("plugins",                 PluginManager.getInstance().getPluginNames());
 		props.put("build_version",           appProps.getProperty("buildinfo.version"));
 		props.put("build_date",              appProps.getProperty("buildinfo.date"));
@@ -469,6 +466,8 @@ public class ConfigurationServiceImpl implements ConfigurationService, Initializ
 		props.put("toast_disp_time",         getIntSetting("common", "toast_disp_time", 5));
 		props.put("default_domain",          getStrSetting("auth", "default_domain"));
 		props.put("data_dir",                getDataDir());
+		props.put("not_specified",           getStrSetting("common", "not_specified_text"));
+		props.put("searchDelay",             getIntSetting("common", "search_delay", 1000));
 		return props;
 	}
 

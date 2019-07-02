@@ -4,98 +4,22 @@
   <name>shipment</name>
   <record> 
     <name>com.krishagni.catissueplus.core.administrative.events.ShipmentDetail</name>
-    
-    <field>
-      <caption>#getMessage("shipment_identifier")</caption>
-      <attribute>id</attribute>
-    </field>
-    
-    <field>
-      <caption>#getMessage("shipment_name")</caption>
-      <attribute>name</attribute>
-      <key>true</key>
-    </field>
 
-    <field>
-      <caption>#getMessage("shipment_courier_name")</caption>
-      <attribute>courierName</attribute>
-    </field>
-
-    <field>
-      <caption>#getMessage("shipment_tracking_number")</caption>
-      <attribute>trackingNumber</attribute>
-    </field>
-
-    <field>
-      <caption>#getMessage("shipment_tracking_url")</caption>
-      <attribute>trackingUrl</attribute>
-    </field>
-
-    <field>
-      <caption>#getMessage("shipment_sending_site")</caption>
-      <attribute>sendingSite</attribute>
-    </field>
-
-    <field>
-      <caption>#getMessage("shipment_recv_site")</caption>
-      <attribute>receivingSite</attribute>
-    </field>
-
-    <field>
-      <type>date</type>
-      <caption>#getMessage("shipment_shipped_date")</caption>
-      <attribute>shippedDate</attribute>
-    </field>
- 
-    <record>
-      <attribute>sender</attribute>
-      <caption>#getMessage("shipment_sender")</caption>
-
-      <field>
-        <caption>#getMessage("user_email")</caption>
-        <attribute>emailAddress</attribute>
-      </field>
-    </record>
-
-    <field>
-      <caption>#getMessage("shipment_sender_comments")</caption>
-      <attribute>senderComments</attribute>
-    </field>
-
-    <field>
-      <type>date</type>
-      <caption>#getMessage("shipment_received_date")</caption>
-      <attribute>receivedDate</attribute>
-    </field>
+    #parse( 'com/krishagni/catissueplus/core/administrative/schema/shipment-common.xml' )
 
     <record>
-      <attribute>receiver</attribute>
-      <caption>#getMessage("shipment_receiver")</caption>
-
-      <field>
-        <caption>#getMessage("user_email")</caption>
-        <attribute>emailAddress</attribute>
-      </field>
-    </record>
-
-    <field>
-      <caption>#getMessage("shipment_receiver_comments")</caption>
-      <attribute>receiverComments</attribute>
-    </field>
-
-    <field>
-      <caption>#getMessage("shipment_status")</caption>
-      <attribute>status</attribute>
-    </field>
-
-    <record>
-      <attribute>shipmentItem</attribute>
-      <caption>#getMessage("shipment_item")</caption>
+      <attribute>shipmentSpecimen</attribute>
+      <caption>#getMessage("shipment_specimen")</caption>
       
       <record>
         <attribute>specimen</attribute>
         <multiple>false</multiple>
         <caption>#getMessage("specimen")</caption>
+
+        <field>
+          <caption>#getMessage("specimen_identifier")</caption>
+          <attribute>id</attribute>
+        </field>
 
         <field>
           <caption>#getMessage("specimen_cp_short")</caption>
@@ -110,6 +34,11 @@
         <field>
           <caption>#getMessage("specimen_barcode")</caption>
           <attribute>barcode</attribute>
+        </field>
+
+        <field>
+          <caption>#getMessage("specimen_available_quantity")</caption>
+          <attribute>availableQty</attribute>
         </field>
 
         <record>
@@ -134,7 +63,7 @@
       </record>
 
       <field>
-        <caption>#getMessage("shipment_items_recv_quality")</caption>
+        <caption>#getMessage("shipment_item_recv_quality")</caption>
         <attribute>receivedQuality</attribute>
       </field>
     </record>

@@ -60,6 +60,8 @@ public class VisitFactoryImpl implements VisitFactory {
 				
 		visit.setId(visitDetail.getId());
 		visit.setName(visitDetail.getName());
+		visit.setOpComments(visitDetail.getOpComments());
+
 		setCpe(visitDetail, visit, ose);		
 		setCpr(visitDetail, visit, ose);
 		validateCprAndCpe(visit, ose);
@@ -89,6 +91,8 @@ public class VisitFactoryImpl implements VisitFactory {
 		
 		visit.setId(existing.getId());
 		visit.setForceDelete(detail.isForceDelete());
+		visit.setOpComments(detail.getOpComments());
+
 		if (detail.isAttrModified("name")) {
 			visit.setName(detail.getName());
 		} else {
@@ -229,18 +233,21 @@ public class VisitFactoryImpl implements VisitFactory {
 		}
 	}
 	
-	private void setVisitStatus(VisitDetail visitDetail, Visit visit, OpenSpecimenException ose) {
-		String visitStatus = visitDetail.getStatus();
-		if (StringUtils.isBlank(visitStatus)) {
-			visitStatus = Visit.VISIT_STATUS_COMPLETED;
+	private void setVisitStatus(VisitDetail detail, Visit visit, OpenSpecimenException ose) {
+		String status = detail.getStatus();
+		if (StringUtils.isBlank(status)) {
+			status = Visit.VISIT_STATUS_COMPLETED;
 		}
 
-		if (!isValid(VISIT_STATUS, visitStatus)) {
-			ose.addError(VisitErrorCode.INVALID_STATUS);			
+		if (!status.equals(Visit.VISIT_STATUS_COMPLETED) &&
+			!status.equals(Visit.VISIT_STATUS_PENDING) &&
+			!status.equals(Visit.VISIT_STATUS_MISSED) &&
+			!status.equals(Visit.VISIT_STATUS_NOT_COLLECTED)) {
+			ose.addError(VisitErrorCode.INVALID_STATUS, status);
 			return;
 		}
 
-		visit.setStatus(visitStatus);		
+		visit.setStatus(status);
 	}
 	
 	private void setVisitStatus(VisitDetail detail, Visit existing, Visit visit, OpenSpecimenException ose) {
@@ -295,7 +302,7 @@ public class VisitFactoryImpl implements VisitFactory {
 		Site site = null;
 		String visitSite = visitDetail.getSite();
 		if (StringUtils.isBlank(visitSite)) {
-			if (visit.isMissed()) {
+			if (visit.isMissedOrNotCollected()) {
 				return;
 			}
 
@@ -333,10 +340,11 @@ public class VisitFactoryImpl implements VisitFactory {
 	}
 
 	private void setMissedReason(VisitDetail detail, Visit visit, OpenSpecimenException ose) {
-		if (!visit.isMissed()) {
+		if (!visit.isMissedOrNotCollected()) {
 			visit.setMissedReason(null);
 			return;
 		}
+
 		String missedReason = detail.getMissedReason();
 		if (!isValid(MISSED_VISIT_REASON, missedReason)) {
 			ose.addError(VisitErrorCode.INVALID_MISSED_REASON);
@@ -355,7 +363,7 @@ public class VisitFactoryImpl implements VisitFactory {
 	}
 
 	private void setMissedBy(VisitDetail detail, Visit visit, OpenSpecimenException ose) {
-		if (!visit.isMissed()) {
+		if (!visit.isMissedOrNotCollected()) {
 			visit.setMissedBy(null);
 			return;
 		}

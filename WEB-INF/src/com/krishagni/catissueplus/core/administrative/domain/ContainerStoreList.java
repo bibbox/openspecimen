@@ -33,6 +33,10 @@ public class ContainerStoreList extends BaseEntity {
 
 	private Short state;
 
+	private int noOfRetries;
+
+	private String error;
+
 	private Set<ContainerStoreListItem> items = new HashSet<>();
 
 	public StorageContainer getContainer() {
@@ -91,6 +95,22 @@ public class ContainerStoreList extends BaseEntity {
 		this.state = state;
 	}
 
+	public int getNoOfRetries() {
+		return noOfRetries;
+	}
+
+	public void setNoOfRetries(int noOfRetries) {
+		this.noOfRetries = noOfRetries;
+	}
+
+	public String getError() {
+		return error;
+	}
+
+	public void setError(String error) {
+		this.error = error;
+	}
+
 	public Set<ContainerStoreListItem> getItems() {
 		return items;
 	}
@@ -106,7 +126,7 @@ public class ContainerStoreList extends BaseEntity {
 		getItems().add(item);
 	}
 
-	public void process() {
-		getContainer().processList(this);
+	public Status process() {
+		return getContainer().processList(this);
 	}
 }

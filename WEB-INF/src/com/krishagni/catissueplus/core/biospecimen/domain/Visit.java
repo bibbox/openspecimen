@@ -1,7 +1,6 @@
 
 package com.krishagni.catissueplus.core.biospecimen.domain;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
@@ -9,8 +8,8 @@ import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
-import com.krishagni.catissueplus.core.common.CollectionUpdater;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang.StringUtils;
 import org.hibernate.envers.AuditTable;
@@ -22,17 +21,19 @@ import org.springframework.beans.factory.annotation.Qualifier;
 
 import com.krishagni.catissueplus.core.administrative.domain.Site;
 import com.krishagni.catissueplus.core.administrative.domain.User;
-import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol.SpecimenLabelAutoPrintMode;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol.SpecimenLabelPrePrintMode;
+import com.krishagni.catissueplus.core.biospecimen.domain.factory.CpeErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.SpecimenErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.VisitErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
 import com.krishagni.catissueplus.core.biospecimen.services.SpecimenService;
 import com.krishagni.catissueplus.core.biospecimen.services.VisitService;
+import com.krishagni.catissueplus.core.common.CollectionUpdater;
 import com.krishagni.catissueplus.core.common.domain.PrintItem;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.DependentEntityDetail;
 import com.krishagni.catissueplus.core.common.service.LabelGenerator;
+import com.krishagni.catissueplus.core.common.service.impl.EventPublisher;
 import com.krishagni.catissueplus.core.common.util.Status;
 import com.krishagni.catissueplus.core.common.util.Utility;
 import com.krishagni.catissueplus.core.de.services.impl.FormUtil;
@@ -48,6 +49,8 @@ public class Visit extends BaseExtensionEntity {
 	public static final String VISIT_STATUS_COMPLETED = "Complete";
 
 	public static final String VISIT_STATUS_MISSED = "Missed Collection";
+
+	public static final String VISIT_STATUS_NOT_COLLECTED = "Not Collected";
 
 	public static final String EXTN = "VisitExtension";
 
@@ -105,6 +108,10 @@ public class Visit extends BaseExtensionEntity {
 	private DaoFactory daoFactory;
 	
 	private transient boolean forceDelete;
+
+	private transient boolean updated;
+
+	private transient boolean statusChanged;
 	
 	public static String getEntityName() {
 		return ENTITY_NAME;
@@ -210,6 +217,10 @@ public class Visit extends BaseExtensionEntity {
 		this.cpEvent = cpEvent;
 	}
 
+	public boolean isEventClosed() {
+		return getCpEvent() != null && getCpEvent().isClosed();
+	}
+
 	@NotAudited
 	public Set<Specimen> getSpecimens() {
 		return specimens;
@@ -220,18 +231,7 @@ public class Visit extends BaseExtensionEntity {
 	}
 	
 	public Set<Specimen> getTopLevelSpecimens() {
-		Set<Specimen> result = new HashSet<Specimen>();
-		if (getSpecimens() == null) {
-			return null;
-		}
-		
-		for (Specimen specimen : getSpecimens()) {
-			if (specimen.getParentSpecimen() == null && specimen.getPooledSpecimen() == null) {
-				result.add(specimen);
-			}
-		}
-		
-		return result;
+		return Utility.nullSafeStream(getSpecimens()).filter(s -> s.isPrimary() && !s.isPoolSpecimen()).collect(Collectors.toSet());
 	}
 
 	public Collection<Specimen> getOrderedTopLevelSpecimens() {
@@ -291,7 +291,27 @@ public class Visit extends BaseExtensionEntity {
 	}
 
 	public boolean isActive() {
-		return Status.ACTIVITY_STATUS_ACTIVE.getStatus().equals(this.activityStatus);
+		return Status.ACTIVITY_STATUS_ACTIVE.getStatus().equals(getActivityStatus());
+	}
+
+	public boolean isDeleted() {
+		return Status.ACTIVITY_STATUS_DISABLED.getStatus().equals(getActivityStatus());
+	}
+
+	public boolean isUpdated() {
+		return updated;
+	}
+
+	public void setUpdated(boolean updated) {
+		this.updated = updated;
+	}
+
+	public boolean isStatusChanged() {
+		return statusChanged;
+	}
+
+	public void setStatusChanged(boolean statusChanged) {
+		this.statusChanged = statusChanged;
 	}
 
 	public boolean isCompleted() {
@@ -305,9 +325,21 @@ public class Visit extends BaseExtensionEntity {
 	public boolean isMissed() {
 		return isMissed(getStatus());
 	}
+
+	public boolean isNotCollected() {
+		return isNotCollected(getStatus());
+	}
+
+	public boolean isMissedOrNotCollected() {
+		return isMissed() || isNotCollected();
+	}
 	
 	public boolean isUnplanned() {
 		return getCpEvent() == null;
+	}
+
+	public boolean isPlanned() {
+		return getCpEvent() != null;
 	}
 
 	public boolean isOfEvent(String eventLabel) {
@@ -342,12 +374,15 @@ public class Visit extends BaseExtensionEntity {
 		}
 		
 		setName(Utility.getDisabledValue(getName(), 255));
+		setSurgicalPathologyNumber(Utility.getDisabledValue(getSurgicalPathologyNumber(), 50));
 		setActivityStatus(Status.ACTIVITY_STATUS_DISABLED.getStatus());
 		FormUtil.getInstance().deleteRecords(getCpId(), Arrays.asList("SpecimenCollectionGroup", "VisitExtension"), getId());
 	}
 
 	public void update(Visit visit) {
 		setForceDelete(visit.isForceDelete());
+		setOpComments(visit.getOpComments());
+
 		updateActivityStatus(visit.getActivityStatus());
 		if (!isActive()) {
 			return;
@@ -360,14 +395,15 @@ public class Visit extends BaseExtensionEntity {
 		setSite(visit.getSite());
 		updateStatus(visit.getStatus());		
 		setComments(visit.getComments());
-		setMissedReason(isMissed() ? visit.getMissedReason() : null);
-		setMissedBy(isMissed() ? visit.getMissedBy() : null);
+		setMissedReason(isMissedOrNotCollected() ? visit.getMissedReason() : null);
+		setMissedBy(isMissedOrNotCollected() ? visit.getMissedBy() : null);
 		setSurgicalPathologyNumber(visit.getSurgicalPathologyNumber());
 		setVisitDate(visit.getVisitDate());
 		setCohort(visit.getCohort());
 		setDefNameTmpl(visit.getDefNameTmpl());
 		setExtension(visit.getExtension());
 		CollectionUpdater.update(getClinicalDiagnoses(), visit.getClinicalDiagnoses());
+		setUpdated(true);
 	}
 
 	public void updateSprName(String sprName) {
@@ -404,11 +440,15 @@ public class Visit extends BaseExtensionEntity {
 		if (status.equals(getStatus())) {
 			return;
 		}
-		
-		setStatus(status);		
-		if (isMissed(status) || isPending(status)) {
+
+		setStatus(status);
+		if (isMissedOrNotCollected(status) || isPending(status)) {
 			updateSpecimenStatus(status);
-		}		
+		} else if (isEventClosed()) {
+			throw OpenSpecimenException.userError(CpeErrorCode.CLOSED, getCpEvent().getEventLabel());
+		}
+
+		setStatusChanged(true);
 	}
 	
 	public void updateSpecimenStatus(String status) {
@@ -417,8 +457,8 @@ public class Visit extends BaseExtensionEntity {
 			specimen.updateCollectionStatus(status);
 		}
 
-		if (Specimen.isMissed(status)) {
-			createMissedSpecimens();
+		if (Specimen.isMissed(status) || Specimen.isNotCollected(status)) {
+			createSpecimens(status);
 		} else if (Specimen.isPending(status)) {
 			for (Specimen specimen : topLevelSpmns) {
 				if (!specimen.isPooled()) {
@@ -433,35 +473,28 @@ public class Visit extends BaseExtensionEntity {
 	}
 
 	public void createMissedSpecimens() {
-		Set<SpecimenRequirement> anticipated = getCpEvent().getTopLevelAnticipatedSpecimens();
-		for (Specimen specimen : getTopLevelSpecimens()) {
-			if (specimen.getSpecimenRequirement() != null) {
-				anticipated.remove(specimen.getSpecimenRequirement());
-			}
+		createSpecimens(Specimen.MISSED_COLLECTION);
+	}
 
-			addOrUpdateMissedPoolSpmns(specimen);
-		}
-
-		for (SpecimenRequirement sr : anticipated) {
-			Specimen specimen = sr.getSpecimen();
-			specimen.setVisit(this);
-			specimen.updateCollectionStatus(Specimen.MISSED_COLLECTION);
-			addSpecimen(specimen);
-			addOrUpdateMissedPoolSpmns(specimen);
-		}
+	public void createNotCollectedSpecimens() {
+		createSpecimens(Specimen.NOT_COLLECTED);
 	}
 
 	public void createPendingSpecimens() {
-		if (CollectionUtils.isNotEmpty(getSpecimens())) {
+		if (CollectionUtils.isNotEmpty(getSpecimens()) || getCpEvent() == null) {
 			//
-			// We quit if there is at least one specimen object created for visit
+			// We quit if there is at least one specimen object created for visit or the visit is unplanned
 			//
 			return;
 		}
 
-		for (SpecimenRequirement sr : getCpEvent().getTopLevelAnticipatedSpecimens()) {
+		for (SpecimenRequirement sr : getCpEvent().getOrderedTopLevelAnticipatedSpecimens()) {
 			createPendingSpecimen(sr, null);
 		}
+	}
+
+	public boolean hasPhiFields() {
+		return StringUtils.isNotBlank(getSurgicalPathologyNumber()) || super.hasPhiFields();
 	}
 	
 	public static boolean isCompleted(String status) {
@@ -474,6 +507,14 @@ public class Visit extends BaseExtensionEntity {
 	
 	public static boolean isMissed(String status) {
 		return Visit.VISIT_STATUS_MISSED.equals(status);
+	}
+
+	public static boolean isNotCollected(String status) {
+		return Visit.VISIT_STATUS_NOT_COLLECTED.equals(status);
+	}
+
+	public static boolean isMissedOrNotCollected(String status) {
+		return isMissed(status) || isNotCollected(status);
 	}
 
 	public void printLabels(String prevStatus) {
@@ -492,7 +533,8 @@ public class Visit extends BaseExtensionEntity {
 
 	public boolean isPrePrintSpecimenLabelEnabled() {
 		CollectionProtocol cp = getCollectionProtocol();
-		return cp.getSpmnLabelPrePrintMode() != SpecimenLabelPrePrintMode.NONE && !cp.isManualSpecLabelEnabled();
+		SpecimenLabelPrePrintMode mode = cp.getSpmnLabelPrePrintMode();
+		return (mode == SpecimenLabelPrePrintMode.ON_REGISTRATION || mode == SpecimenLabelPrePrintMode.ON_VISIT) && !cp.isManualSpecLabelEnabled();
 	}
 
 	public boolean shouldPrePrintSpecimenLabels(String prevStatus) {
@@ -501,9 +543,9 @@ public class Visit extends BaseExtensionEntity {
 		}
 
 		if (StringUtils.isBlank(prevStatus)) {
-			return !isMissed();
+			return !isMissedOrNotCollected();
 		} else {
-			return isMissed(prevStatus) && !isMissed();
+			return isMissedOrNotCollected(prevStatus) && !isMissedOrNotCollected();
 		}
 	}
 	
@@ -534,11 +576,13 @@ public class Visit extends BaseExtensionEntity {
 		return getCollectionProtocol().getId();
 	}
 
+	public boolean hasCollectedSpecimens() {
+		return getSpecimens().stream().anyMatch(s -> s.isActiveOrClosed() && s.isCollected());
+	}
+
 	private void ensureNoActiveChildObjects() {
-		for (Specimen specimen : getSpecimens()) {
-			if (specimen.isActiveOrClosed() && specimen.isCollected()) {
-				throw OpenSpecimenException.userError(SpecimenErrorCode.REF_ENTITY_FOUND);
-			}
+		if (hasCollectedSpecimens()) {
+			throw OpenSpecimenException.userError(SpecimenErrorCode.REF_ENTITY_FOUND);
 		}
 	}
 	
@@ -553,15 +597,34 @@ public class Visit extends BaseExtensionEntity {
 		return count;
 	}
 
-	private void addOrUpdateMissedPoolSpmns(Specimen specimen) {
+	private void createSpecimens(String status) {
+		Set<SpecimenRequirement> anticipated = getCpEvent().getTopLevelAnticipatedSpecimens();
+		for (Specimen specimen : getTopLevelSpecimens()) {
+			if (specimen.getSpecimenRequirement() != null) {
+				anticipated.remove(specimen.getSpecimenRequirement());
+			}
+
+			addOrUpdatePoolSpmns(specimen, status);
+		}
+
+		for (SpecimenRequirement sr : anticipated) {
+			Specimen specimen = sr.getSpecimen();
+			specimen.setVisit(this);
+			specimen.updateCollectionStatus(status);
+			addSpecimen(specimen);
+			addOrUpdatePoolSpmns(specimen, status);
+		}
+	}
+
+	private void addOrUpdatePoolSpmns(Specimen specimen, String status) {
 		if (!specimen.isPooled()) {
 			return;
 		}
 
 		SpecimenRequirement sr = specimen.getSpecimenRequirement();
-		Set<SpecimenRequirement> anticipated = new HashSet<SpecimenRequirement>(sr.getSpecimenPoolReqs());
+		Set<SpecimenRequirement> anticipated = new HashSet<>(sr.getSpecimenPoolReqs());
 		for (Specimen poolSpecimen : specimen.getSpecimensPool()) {
-			poolSpecimen.updateCollectionStatus(Specimen.MISSED_COLLECTION);
+			poolSpecimen.updateCollectionStatus(status);
 			anticipated.remove(poolSpecimen.getSpecimenRequirement());
 		}
 
@@ -569,58 +632,61 @@ public class Visit extends BaseExtensionEntity {
 			Specimen poolSpecimen = poolSpecimenReq.getSpecimen();
 			poolSpecimen.setVisit(this);
 			specimen.addPoolSpecimen(poolSpecimen);
-			poolSpecimen.updateCollectionStatus(Specimen.MISSED_COLLECTION);
+			poolSpecimen.updateCollectionStatus(status);
 		}
 	}
 
 	private Specimen createPendingSpecimen(SpecimenRequirement sr, Specimen parent) {
+		if (sr.isClosed()) {
+			return null;
+		}
+
 		Specimen specimen = sr.getSpecimen();
 		specimen.setParentSpecimen(parent);
 		specimen.setVisit(this);
 		specimen.setCollectionStatus(Specimen.PENDING);
-
 		specimen.setLabelIfEmpty();
 
 		addSpecimen(specimen);
 		daoFactory.getSpecimenDao().saveOrUpdate(specimen);
+		EventPublisher.getInstance().publish(new SpecimenSavedEvent(specimen));
 
 		for (SpecimenRequirement poolSr : sr.getOrderedSpecimenPoolReqs()) {
-			specimen.addPoolSpecimen(createPendingSpecimen(poolSr, null));
+			Specimen poolSpmn = createPendingSpecimen(poolSr, null);
+			if (poolSpmn == null) {
+				continue;
+			}
+
+			specimen.addPoolSpecimen(poolSpmn);
 		}
 
 		for (SpecimenRequirement childSr : sr.getOrderedChildRequirements()) {
-			specimen.addChildSpecimen(createPendingSpecimen(childSr, specimen));
+			Specimen childSpmn = createPendingSpecimen(childSr, specimen);
+			if (childSpmn == null) {
+				continue;
+			}
+
+			specimen.addChildSpecimen(childSpmn);
 		}
 
 		return specimen;
 	}
 
 	private List<PrintItem<Specimen>> getSpecimenPrintItems(Collection<Specimen> specimens) {
-		List<PrintItem<Specimen>> spmnPrintItems = new ArrayList<PrintItem<Specimen>>();
-		specimens = Specimen.sort(specimens);
-
-		for (Specimen specimen : specimens) {
-			SpecimenRequirement requirement = specimen.getSpecimenRequirement();
-			if (requirement.getLabelAutoPrintModeToUse() == SpecimenLabelAutoPrintMode.PRE_PRINT) {
-				Integer printCopies = requirement.getLabelPrintCopiesToUse();
-				spmnPrintItems.add(PrintItem.make(specimen, printCopies));
-			}
-
-			spmnPrintItems.addAll(getSpecimenPrintItems(specimen.getSpecimensPool()));
-			spmnPrintItems.addAll(getSpecimenPrintItems(specimen.getChildCollection()));
-		}
-		
-		return spmnPrintItems;
+		return Specimen.sort(specimens).stream()
+			.map(Specimen::getPrePrintItems)
+			.flatMap(List::stream)
+			.collect(Collectors.toList());
 	}
 
 	private boolean shouldPrintVisitName(String prevStatus) {
-		if (isMissed() || isUnplanned()) {
+		if (isMissedOrNotCollected() || isUnplanned()) {
 			return false;
 		}
 
 		switch (getCpEvent().getVisitNamePrintModeToUse()) {
 			case PRE_PRINT:
-				return StringUtils.isBlank(prevStatus) || isMissed(prevStatus);
+				return StringUtils.isBlank(prevStatus) || isMissedOrNotCollected(prevStatus);
 
 			case ON_COMPLETION:
 				return isCompleted() && !isCompleted(prevStatus);

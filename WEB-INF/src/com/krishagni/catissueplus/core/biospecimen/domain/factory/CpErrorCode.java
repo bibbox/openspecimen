@@ -38,6 +38,8 @@ public enum CpErrorCode implements ErrorCode {
 	INVALID_ALIQUOT_LABEL_FMT,
 	
 	INVALID_DERIVATIVE_LABEL_FMT,
+
+	INVALID_SPECIMEN_BARCODE_FMT,
 	
 	INVALID_VISIT_NAME_FMT,
 	
@@ -58,6 +60,8 @@ public enum CpErrorCode implements ErrorCode {
 	CONSENTS_WAIVED,
 	
 	DUP_CP_SITE_CODES,
+
+	USED_SITES,
 
 	SOP_DOC_NOT_FOUND,
 

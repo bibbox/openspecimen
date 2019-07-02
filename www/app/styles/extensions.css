@@ -1,11 +1,16 @@
 
-.os-extn-form .panel-heading { 
+.os-forms-list .list-group-item-heading {
+  margin-right: 20px;
+}
+
+/*.os-extn-form .panel-heading {
   display: none;
 }
 
 .os-extn-form .panel {
   border: none;
-}
+  box-shadow: none;
+}*/
 
 .os-extn-form .modal-footer {
   text-align: left;

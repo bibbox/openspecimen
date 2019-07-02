@@ -23,11 +23,7 @@
 
     <property name="activityStatus" column="ACTIVITY_STATUS"/>
 
-    <many-to-one 
-      name="principalInvestigator" 
-      cascade="none" 
-      class="com.krishagni.catissueplus.core.administrative.domain.User"
-      column="PRINCIPAL_INVESTIGATOR_ID"/>
+    <many-to-one name="principalInvestigator" column="PRINCIPAL_INVESTIGATOR_ID"/>
 
     <property name="irbIdentifier" column="IRB_IDENTIFIER"/>
 
@@ -49,6 +45,8 @@
 
     <property name="aliquotLabelFormat" column="ALIQUOT_LABEL_FORMAT"/>
 
+    <property name="specimenBarcodeFormat" column="SPECIMEN_BARCODE_FORMAT"/>
+
     <property name="ppidFormat" column="PPID_FORMAT"/>
     
     <property name="visitNameFormat" column="VISIT_NAME_FORMAT"/>
@@ -65,6 +63,8 @@
 
     <property name="barcodingEnabled" column="BARCODING_ENABLED"/>
 
+    <property name="closeParentSpecimens" column="CLOSE_PARENT_SPMNS"/>
+
     <property name="unsignedConsentDocumentURL" column="UNSIGNED_CONSENT_DOC_URL"/>
 
     <property name="containerSelectionStrategy" column="CONTAINER_SEL_STRATEGY"/>
@@ -73,17 +73,14 @@
 
     <property name="visitCollectionMode" column="VISIT_COLLECTION_MODE">
       <type name="org.hibernate.type.EnumType">
-        <param name="enumClass">
-          com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol$VisitCollectionMode
-        </param>
+        <param name="enumClass">com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol$VisitCollectionMode</param>
+        <param name="type">12</param>
       </type>
     </property>
 
     <property name="visitNamePrintMode" column="VISIT_NAME_PRINT_MODE">
       <type name="org.hibernate.type.EnumType">
-        <param name="enumClass">
-          com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol$VisitNamePrintMode
-        </param>
+        <param name="enumClass">com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol$VisitNamePrintMode</param>
         <param name="type">12</param>
       </type>
     </property>
@@ -92,9 +89,7 @@
 
     <property name="spmnLabelPrePrintMode" column="SPMN_LABEL_PRE_PRINT_MODE">
       <type name="org.hibernate.type.EnumType">
-        <param name="enumClass">
-          com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol$SpecimenLabelPrePrintMode
-        </param>
+        <param name="enumClass">com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol$SpecimenLabelPrePrintMode</param>
         <param name="type">12</param>
       </type>
     </property>
@@ -103,7 +98,9 @@
       <key column="CP_ID"/>
       <one-to-many class="com.krishagni.catissueplus.core.biospecimen.domain.CpSpecimenLabelPrintSetting"/>
     </set>
-    
+
+    <property name="catalogId" column="CATALOG_ID"/>
+
     <property name="consentsWaived" column="CONSENTS_WAIVED"/>
 
     <set name="consentTier" table="CATISSUE_CONSENT_TIER" inverse="true" cascade="all-delete-orphan" order-by="id">
@@ -137,14 +134,14 @@
     <set name="storageContainers" table="OS_STOR_CONTAINER_CPS" inverse="false">
       <key column="CP_ID"/>
       <many-to-many class="com.krishagni.catissueplus.core.administrative.domain.StorageContainer" column="STORAGE_CONTAINER_ID">
-        <filter name="activeEntity"/>
+        <filter name="activeEntity" condition="activity_status != 'Disabled'"/>
       </many-to-many>
     </set>
 
-    <set name="distributionProtocols" table="OS_CP_ALLOWED_DPS" inverse="false">
+    <set name="distributionProtocols" table="OS_CP_ALLOWED_DPS">
       <key column="CP_ID"/>
       <many-to-many class="com.krishagni.catissueplus.core.administrative.domain.DistributionProtocol" column="DP_ID">
-        <filter name="activeEntity"/>
+        <filter name="activeEntity" condition="activity_status != 'Disabled'"/>
       </many-to-many>
     </set>
     
@@ -247,22 +244,7 @@
         site.activityStatus = 'Active'
     </query>
     
-    <sql-query name="getCpIdsBySiteIds">
-      <return-scalar column="cpId" type="long"/> 
-      
-      select
-        cp_site.collection_protocol_id as cpId
-      from
-        catissue_site_cp cp_site 
-        inner join catissue_collection_protocol cp on cp_site.collection_protocol_id = cp.identifier
-        inner join catissue_site site on site.identifier = cp_site.site_id
-      where
-        cp.activity_status = 'Active' 
-        and site.activity_status = 'Active'
-        and cp_site.site_id in (:siteIds)
-    </sql-query>
-    
-    <query name="getConsentTier"> 
+    <query name="getConsentTier">
       select 
         ct
       from 
@@ -302,7 +284,7 @@
 
     <query name="getRepoIdsByCps">
       select 
-        cp.id, site.id
+        cp.id, site.institute.id, site.id
       from
         com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol cp
         join cp.sites cpSite

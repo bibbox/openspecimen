@@ -3,11 +3,16 @@ angular.module('os.biospecimen.extensions.util', [])
   .factory('ExtensionsUtil', function($modal, Form, Alerts, ApiUrls) {
     var filesUrl = ApiUrls.getBaseUrl() + 'form-files';
 
-    function getFileDownloadUrl(formId, recordId, ctrlName) {
+    function getFileDownloadUrl(formId, recordId, ctrlName, fileId) {
       var params = '?formId=' + formId +
-                   '&recordId=' + recordId +
-                   '&ctrlName=' + ctrlName +
-                   '&_reqTime=' + new Date().getTime();
+        '&ctrlName=' + ctrlName +
+        '&_reqTime=' + new Date().getTime();
+
+      if (fileId) {
+        params += '&fileId=' + fileId;
+      } else {
+        params += '&recordId=' + recordId;
+      }
 
       return filesUrl + params;
     }
@@ -52,14 +57,16 @@ angular.module('os.biospecimen.extensions.util', [])
         return;
       }
 
-      extensionDetail.attrsMap = {
-        id: extensionDetail.id,
-        containerId: extensionDetail.formId
-      };
+      extensionDetail.attrsMap = extensionDetail.attrsMap || {};
+      angular.extend(extensionDetail.attrsMap, {id: extensionDetail.id, containerId: extensionDetail.formId});
 
       angular.forEach(extensionDetail.attrs, function(attr) {
-        if (attr.type == 'datePicker' && !isNaN(parseInt(attr.value))) {
-          attr.value = parseInt(attr.value);
+        if (attr.type == 'datePicker') {
+          if (!isNaN(attr.value) && !isNaN(parseInt(attr.value))) {
+            attr.value = parseInt(attr.value);
+          } else if (!!attr.value || attr.value === 0) {
+            attr.value = new Date(attr.value);
+          }
         }
 
         extensionDetail.attrsMap[attr.name] = attr.type != 'subForm' ? attr.value : getSubformFieldMap(attr);
@@ -97,7 +104,83 @@ angular.module('os.biospecimen.extensions.util', [])
         disableFields: disableFields || []
       };
     }
-    
+
+    function sortForms(inputForms, orderSpec) {
+      if (!orderSpec || orderSpec.length == 0) {
+        return inputForms;
+      }
+
+      var formsByType = {};
+      angular.forEach(inputForms,
+        function(form) {
+          if (!formsByType[form.entityType]) {
+            formsByType[form.entityType] = [];
+          }
+
+          formsByType[form.entityType].push(form);
+        }
+      );
+
+      var result = [];
+      angular.forEach(orderSpec,
+        function(typeForms) {
+          Array.prototype.push.apply(result, sortForms0(formsByType[typeForms.type], typeForms.forms));
+          delete formsByType[typeForms.type];
+        }
+      );
+
+      angular.forEach(inputForms,
+        function(form) {
+          if (formsByType[form.entityType]) {
+            result.push(form);
+          }
+        }
+      );
+
+      return result;
+    }
+
+    function sortForms0(inputForms, orderSpec) {
+      var formsById = {};
+      angular.forEach(inputForms,
+        function(form) {
+          formsById[form.formId] = form;
+        }
+      );
+
+      var result = [];
+      angular.forEach(orderSpec,
+        function(spec) {
+          var form = formsById[spec.id];
+          if (form) {
+            result.push(form);
+            inputForms.splice(inputForms.indexOf(form), 1);
+          }
+        }
+      );
+
+      Array.prototype.push.apply(result, inputForms);
+      return result;
+    }
+
+    function linkFormRecords(inputForms, records) {
+      var recsMap = {};
+      angular.forEach(records,
+        function(rec) {
+          if (!recsMap[rec.fcId]) {
+            recsMap[rec.fcId] = [];
+          }
+          recsMap[rec.fcId].push(rec);
+        }
+      );
+
+      angular.forEach(inputForms,
+        function(form) {
+          form.records = recsMap[form.formCtxtId] || [];
+        }
+      );
+    }
+
     return {
       getFileDownloadUrl: getFileDownloadUrl,
 
@@ -105,7 +188,11 @@ angular.module('os.biospecimen.extensions.util', [])
 
       createExtensionFieldMap: createExtensionFieldMap,
 
-      getExtnOpts: getExtnOpts
+      getExtnOpts: getExtnOpts,
+
+      sortForms: sortForms,
+
+      linkFormRecords: linkFormRecords
     }
  
   });

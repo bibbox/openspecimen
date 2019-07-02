@@ -1,6 +1,6 @@
 
 angular.module('os.administrative.container.util', ['os.common.box'])
-  .factory('ContainerUtil', function(BoxLayoutUtil, NumberConverterUtil) {
+  .factory('ContainerUtil', function($translate, BoxLayoutUtil, NumberConverterUtil, SpecimenUtil, Util) {
 
     function createSpmnPos(container, label, x, y, oldOccupant) {
       return {
@@ -39,7 +39,8 @@ angular.module('os.administrative.container.util', ['os.common.box'])
           columnLabelingScheme : function() { return container.columnLabelingScheme; },
           occupantClick        : function() { /* dummy method to make box allow cell clicks */ }
         },
-
+        toggleCellSelect: function() { },
+        allowEmptyCellSelect: true,
         occupants: [],
         occupantName: function(occupant) {
           if (!!useBarcode && occupant.occuypingEntity == 'specimen') {
@@ -50,14 +51,22 @@ angular.module('os.administrative.container.util', ['os.common.box'])
         },
         occupantDisplayHtml: function(occupant) {
           var displayName = undefined;
+          var cssClass = '';
           if (occupant.occuypingEntity == 'specimen' && !!occupant.occupantProps) {
             displayName = getOccupantDisplayName(container, occupant);
-           } else {
+
+            if (occupant.occupantProps.reserved) {
+              cssClass = 'slot-reserved';
+            }
+          } else if (!!occupant.occupyingEntityName) {
             displayName = occupant.occupyingEntityName;
+          } else if (occupant.blocked) {
+            displayName = $translate.instant('container.cell_blocked');
+            cssClass = 'slot-blocked';
           }
 
           return angular.element('<span class="slot-desc"/>')
-            .attr('title', displayName)
+            .addClass(cssClass).attr('title', displayName)
             .append(displayName);
         },
         allowClicks: allowClicks,
@@ -69,6 +78,37 @@ angular.module('os.administrative.container.util', ['os.common.box'])
         },
         onAddEvent: showAddMarker ? function() {} : undefined
       };
+    }
+
+    function getSpecimens(labels, filterOpts) {
+      return SpecimenUtil.getSpecimens(labels, filterOpts).then(
+        function(specimens) {
+          if (!specimens) {
+            return specimens;
+          }
+
+          return confirmTransferAction(!labels, specimens);
+        }
+      );
+    }
+
+    function confirmTransferAction(useBarcode, specimens) {
+      var storedSpmns = specimens
+        .filter(function(spmn) { return spmn.storageLocation && spmn.storageLocation.id > 0; })
+        .map(function(spmn) { return useBarcode && spmn.barcode || spmn.label; });
+      if (storedSpmns.length == 0) {
+        return specimens;
+      }
+
+      return Util.showConfirm({
+        title: 'container.transfer_spmns',
+        confirmMsg: 'container.transfer_spmns_warn',
+        isWarning: true,
+        input: { storedSpmns: storedSpmns }
+      }).then(
+        function() { return specimens; },
+        function() { return undefined; }
+      );
     }
 
     return {
@@ -86,6 +126,8 @@ angular.module('os.administrative.container.util', ['os.common.box'])
 
         var result = BoxLayoutUtil.assignCells(opts, inputLabels, userOpts.vacateOccupants);
         return {map: result.occupants, noFreeLocs: result.noFreeLocs};
-      }
+      },
+
+      getSpecimens: getSpecimens
     };
   });

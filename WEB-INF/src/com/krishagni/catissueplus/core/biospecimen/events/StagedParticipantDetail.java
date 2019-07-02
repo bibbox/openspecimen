@@ -64,6 +64,7 @@ public class StagedParticipantDetail extends ParticipantDetail {
 
 		result.setUpdatedTime(participant.getUpdatedTime());
 		result.setSource(participant.getSource());
+		result.setStagedId(participant.getId());
 		return result;
 	}
 }

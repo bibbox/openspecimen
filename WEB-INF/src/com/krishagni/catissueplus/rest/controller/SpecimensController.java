@@ -30,6 +30,7 @@ import com.krishagni.catissueplus.core.biospecimen.repository.SpecimenListCriter
 import com.krishagni.catissueplus.core.biospecimen.services.CollectionProtocolRegistrationService;
 import com.krishagni.catissueplus.core.biospecimen.services.SpecimenService;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
+import com.krishagni.catissueplus.core.common.events.BulkEntityDetail;
 import com.krishagni.catissueplus.core.common.events.DependentEntityDetail;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
 import com.krishagni.catissueplus.core.common.events.ResponseEvent;
@@ -101,7 +102,13 @@ public class SpecimensController {
 			List<String> labels,
 
 			@RequestParam(value = "barcode", required = false)
-			List<String> barcodes) {
+			List<String> barcodes,
+
+			@RequestParam(value = "exactMatch", required= false, defaultValue = "false")
+			boolean exactMatch,
+
+			@RequestParam(value = "includeExtensions", required = false, defaultValue = "false")
+			boolean includeExtensions) {
 				
 		if (cprId != null) { // TODO: Move this to CPR controller
 			VisitSpecimensQueryCriteria crit = new VisitSpecimensQueryCriteria();
@@ -113,16 +120,17 @@ public class SpecimensController {
 			resp.throwErrorIfUnsuccessful();
 			return resp.getPayload();
 		} else if (CollectionUtils.isNotEmpty(ids)) {
-			ResponseEvent<List<SpecimenInfo>> resp = specimenSvc.getSpecimensById(getRequest(ids));
+			ResponseEvent<List<? extends SpecimenInfo>> resp = specimenSvc.getSpecimensById(ids, includeExtensions);
 			resp.throwErrorIfUnsuccessful();
 			return resp.getPayload();
 		} else if (CollectionUtils.isNotEmpty(labels) || CollectionUtils.isNotEmpty(barcodes)) {
 			SpecimenListCriteria crit = new SpecimenListCriteria()
-				.labels(labels)
-				.barcodes(barcodes)
-				.storageLocationSite(storageLocationSite);
+				.labels(labels).barcodes(barcodes)
+				.exactMatch(exactMatch)
+				.storageLocationSite(storageLocationSite)
+				.includeExtensions(includeExtensions);
 
-			ResponseEvent<List<SpecimenInfo>> resp = specimenSvc.getSpecimens(getRequest(crit));
+			ResponseEvent<List<? extends SpecimenInfo>> resp = specimenSvc.getSpecimens(getRequest(crit));
 			resp.throwErrorIfUnsuccessful();
 			return resp.getPayload();
 		} else if (cpId != null) {
@@ -180,6 +188,15 @@ public class SpecimensController {
 		return resp.getPayload();
 	}
 
+	@RequestMapping(method = RequestMethod.PUT, value = "/bulk-update")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public List<SpecimenInfo> bulkUpdateSpecimens(@RequestBody BulkEntityDetail<SpecimenDetail> detail) {
+		ResponseEvent<List<SpecimenInfo>> resp = specimenSvc.bulkUpdateSpecimens(getRequest(detail));
+		resp.throwErrorIfUnsuccessful();
+		return resp.getPayload();
+	}
+
 	@RequestMapping(method = RequestMethod.PUT, value="/{id}/status")
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody
@@ -226,11 +243,15 @@ public class SpecimensController {
 			Long specimenId,
 
 			@RequestParam(value = "forceDelete", required = false, defaultValue = "false")
-			boolean forceDelete) {
+			boolean forceDelete,
+
+			@RequestParam(value = "reason", required = false, defaultValue = "")
+			String reason) {
 
 		CpEntityDeleteCriteria crit = new CpEntityDeleteCriteria();
 		crit.setId(specimenId);
 		crit.setForceDelete(forceDelete);
+		crit.setReason(reason);
 
 		ResponseEvent<List<SpecimenInfo>> resp = specimenSvc.deleteSpecimens(getRequest(Collections.singletonList(crit)));
 		resp.throwErrorIfUnsuccessful();
@@ -240,12 +261,19 @@ public class SpecimensController {
 	@RequestMapping(method = RequestMethod.DELETE)
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody
-	public List<SpecimenInfo> deleteSpecimens(@RequestParam(value = "id") Long[] specimenIds) {
+	public List<SpecimenInfo> deleteSpecimens(
+			@RequestParam(value = "id")
+			Long[] specimenIds,
+
+			@RequestParam(value = "reason", required = false, defaultValue = "")
+			String reason) {
+
 		List<CpEntityDeleteCriteria> criteria = new ArrayList<>();
 		for (Long specimenId : specimenIds) {
 			CpEntityDeleteCriteria criterion = new CpEntityDeleteCriteria();
 			criterion.setId(specimenId);
 			criterion.setForceDelete(true);
+			criterion.setReason(reason);
 			criteria.add(criterion);
 		}
 
@@ -324,6 +352,13 @@ public class SpecimensController {
 		ResponseEvent<Map<String, Object>> resp = specimenSvc.getCprAndVisitIds(new RequestEvent<Long>(specimenId));
 		resp.throwErrorIfUnsuccessful();
 		return resp.getPayload();
+	}
+
+	@RequestMapping(method = RequestMethod.GET, value="/{id}/primary-specimen-id")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public Map<String, Long> getPrimarySpecimenId(@PathVariable("id") Long specimenId) {
+		return Collections.singletonMap("id", specimenSvc.getPrimarySpecimen(new SpecimenQueryCriteria(specimenId)));
 	}
 
 	@RequestMapping(method = RequestMethod.GET, value="/extension-form")

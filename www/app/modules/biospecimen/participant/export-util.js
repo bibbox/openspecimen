@@ -35,22 +35,31 @@ angular.module('os.biospecimen.participant')
       var group = $translate.instant('visits.title');
       var input = {'var': 'visitNames', varName: 'visits.names', varDesc: 'visits.names_csv'};
 
-      var exportTypes = [{ group: group, type: 'visit', title: msg('visits.list'), '$$input': input }];
+      var exportTypes = [
+        { group: group, type: 'visit', title: msg('visits.visits_text_rpts'), '$$input': input },
+        { group: group, type: 'visit', title: msg('visits.visits_pdf_rpts'), '$$input': input, params: { sprFileType: 'pdf' } }
+      ];
       return addForms(exportTypes, group, 'SpecimenCollectionGroup', input, entityForms['SpecimenCollectionGroup']);
     }
 
     function getSpecimenTypes(cp, entityForms) {
       var group = $translate.instant('specimens.title');
-
       var input = {'var': 'specimenLabels', varName: 'specimens.labels', varDesc: 'specimens.labels_csv'};
+
       var exportTypes = [{ group: group, type: 'specimen', title: msg('specimens.list'), '$$input': input }]
       addForms(exportTypes, group, 'Specimen', input, entityForms['Specimen']);
       return addForms(exportTypes, group, 'SpecimenEvent', input, entityForms['SpecimenEvent']);
     }
 
     function getExportDetail(cp, allowedEntityTypes, forms) {
-      var breadcrumbs = [{state: 'cp-list-view', title: cp.shortTitle, params: '{cpId:' + cp.id + '}'}];
-      var onSuccess = {state: 'cp-list-view', params: {cpId: cp.id}};
+      var breadcrumbs, onSuccess;
+      if (cp.id == -1) {
+        breadcrumbs = [{state: 'cp-list', title: 'cp.list'}];
+        onSuccess = {state: 'cp-list', params: {}};
+      } else {
+        breadcrumbs = [{state: 'cp-list-view', title: cp.shortTitle, params: '{cpId:' + cp.id + '}'}];
+        onSuccess = {state: 'cp-list-view', params: {cpId: cp.id}};
+      }
 
       var entityForms = {};
       angular.forEach(forms,

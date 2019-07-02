@@ -34,6 +34,8 @@ public enum VisitErrorCode implements ErrorCode {
 
 	COMPL_OR_MISSED_VISIT_REQ,
 
+	COMPL_OR_NC_VISIT_REQ,
+
 	NO_SPR_UPLOADED,
 
 	UNABLE_TO_LOCATE_SPR,
@@ -48,7 +50,9 @@ public enum VisitErrorCode implements ErrorCode {
 
 	NO_VISITS_TO_PRINT,
 
-	PRINT_ERROR;
+	PRINT_ERROR,
+
+	INVALID_LOOKUP_FLOW;
 	
 	public String code() {
 		return "VISIT_" + this.name();

@@ -9,6 +9,7 @@ import org.hibernate.envers.NotAudited;
 
 import com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.krishagni.catissueplus.core.administrative.domain.ScheduledJob;
 import com.krishagni.catissueplus.core.administrative.domain.User;
 
 public class SavedQuery {
@@ -35,12 +36,22 @@ public class SavedQuery {
 	private QueryExpressionNode[] queryExpression;
 
 	private Object[] selectList;
+
+	private String havingClause;
 	
 	private ReportSpec reporting;
+
+	private Set<Long> subQueries = new HashSet<>();
+
+	private Set<Long> dependentQueries = new HashSet<>();
 	
-	private Set<QueryFolder> folders = new HashSet<QueryFolder>();
+	private Set<QueryFolder> folders = new HashSet<>();
+
+	private Set<ScheduledJob> scheduledJobs = new HashSet<>();
 	
 	private String wideRowMode = "DEEP";
+
+	private boolean outputColumnExprs;
 
 	private Date deletedOn;
 
@@ -105,6 +116,10 @@ public class SavedQuery {
 	}
 
 	public void setCpId(Long cpId) {
+		if (cpId != null && cpId == -1L) {
+			cpId = null;
+		}
+
 		this.cpId = cpId;
 	}
 
@@ -141,7 +156,15 @@ public class SavedQuery {
 	public void setSelectList(Object[] selectList) {
 		this.selectList = selectList;
 	}
-	
+
+	public String getHavingClause() {
+		return havingClause;
+	}
+
+	public void setHavingClause(String havingClause) {
+		this.havingClause = havingClause;
+	}
+
 	@NotAudited
 	public ReportSpec getReporting() {
 		return reporting;
@@ -149,6 +172,24 @@ public class SavedQuery {
 
 	public void setReporting(ReportSpec reporting) {
 		this.reporting = reporting;
+	}
+
+	@NotAudited
+	public Set<Long> getSubQueries() {
+		return subQueries;
+	}
+
+	public void setSubQueries(Set<Long> subQueries) {
+		this.subQueries = subQueries;
+	}
+
+	@NotAudited
+	public Set<Long> getDependentQueries() {
+		return dependentQueries;
+	}
+
+	public void setDependentQueries(Set<Long> dependentQueries) {
+		this.dependentQueries = dependentQueries;
 	}
 
 	@NotAudited
@@ -160,12 +201,29 @@ public class SavedQuery {
 		this.folders = folders;
 	}
 
+	@NotAudited
+	public Set<ScheduledJob> getScheduledJobs() {
+		return scheduledJobs;
+	}
+
+	public void setScheduledJobs(Set<ScheduledJob> scheduledJobs) {
+		this.scheduledJobs = scheduledJobs;
+	}
+
 	public String getWideRowMode() {
 		return wideRowMode;
 	}
 
 	public void setWideRowMode(String wideRowMode) {
 		this.wideRowMode = wideRowMode;
+	}
+
+	public boolean isOutputColumnExprs() {
+		return outputColumnExprs;
+	}
+
+	public void setOutputColumnExprs(boolean outputColumnExprs) {
+		this.outputColumnExprs = outputColumnExprs;
 	}
 
 	public Date getDeletedOn() {
@@ -193,8 +251,10 @@ public class SavedQuery {
 		query.queryExpression = queryExpression;
 		query.drivingForm = drivingForm;
 		query.folders = null;
+		query.havingClause = havingClause;
 		query.reporting = reporting;
 		query.wideRowMode = wideRowMode;
+		query.outputColumnExprs = outputColumnExprs;
 		
 		try {
 			return getWriteMapper().writeValueAsString(query);
@@ -217,25 +277,27 @@ public class SavedQuery {
 		if(includeTitle){
 			this.title = query.title;
 		}
-		this.cpId = query.cpId;
+		this.cpId = (query.cpId != null && query.cpId == -1L) ? null : query.cpId;
 		this.selectList = query.selectList;
 		this.filters = query.filters;
 		this.queryExpression = query.queryExpression;
 		this.drivingForm = query.drivingForm;
+		this.havingClause = query.havingClause;
 		this.reporting = query.reporting;
 		this.wideRowMode = query.wideRowMode;
+		this.outputColumnExprs = query.outputColumnExprs;
 	}
 	
 	public String getAql() {
-		return AqlBuilder.getInstance().getQuery(selectList, filters, queryExpression);
+		return AqlBuilder.getInstance().getQuery(selectList, filters, queryExpression, havingClause);
 	}
 	
 	public String getAql(Filter[] conjunctionFilters) {
-		return AqlBuilder.getInstance().getQuery(selectList, filters, conjunctionFilters, queryExpression);
+		return AqlBuilder.getInstance().getQuery(selectList, filters, conjunctionFilters, queryExpression, havingClause);
 	}
 
 	public String getAql(String conjunction) {
-		return AqlBuilder.getInstance().getQuery(selectList, filters, conjunction, queryExpression);
+		return AqlBuilder.getInstance().getQuery(selectList, filters, conjunction, queryExpression, havingClause);
 	}
 	
 	public void update(SavedQuery query) {
@@ -245,10 +307,13 @@ public class SavedQuery {
 		setLastUpdatedBy(query.getLastUpdatedBy());
 		setLastUpdated(query.getLastUpdated());
 		setSelectList(query.getSelectList());
-		setFilters(query.getFilters());		
+		setFilters(query.getFilters());
+		setSubQueries(query.getSubQueries());
 		setQueryExpression(query.getQueryExpression());
+		setHavingClause(query.getHavingClause());
 		setReporting(query.getReporting());
 		setWideRowMode(query.getWideRowMode());
+		setOutputColumnExprs(query.isOutputColumnExprs());
 	}
 	
 	@Override

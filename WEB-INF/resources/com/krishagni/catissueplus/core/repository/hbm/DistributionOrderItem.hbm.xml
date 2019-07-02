@@ -20,9 +20,7 @@
     
     <property name="status" column="STATUS" not-null="true">
       <type name="org.hibernate.type.EnumType">
-        <param name="enumClass"> 
-          com.krishagni.catissueplus.core.administrative.domain.DistributionOrderItem$Status
-        </param>
+        <param name="enumClass">com.krishagni.catissueplus.core.administrative.domain.DistributionOrderItem$Status</param>
         <param name="type">12</param>
       </type>
     </property>
@@ -42,5 +40,9 @@
     <property name="freezeThawIncrOnReturn" column="FREEZE_THAW_INCR_ON_RETURN"/>
 
     <property name="returnComments" column="RETURN_COMMENTS"/>
+
+    <property name="cost" column="COST"/>
+
+    <property name="label" column="LABEL"/>
   </class>
 </hibernate-mapping>

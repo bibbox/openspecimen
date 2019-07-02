@@ -37,6 +37,7 @@ import com.krishagni.catissueplus.core.de.domain.DeObject;
 
 
 public class ParticipantFactoryImpl implements ParticipantFactory {
+	private static final String DEAD_STATUS = "Dead";
 
 	private DaoFactory daoFactory;
 	
@@ -60,7 +61,7 @@ public class ParticipantFactoryImpl implements ParticipantFactory {
 		existing.setCpId(detail.getCpId());
 
 		Participant participant = new Participant();
-		BeanUtils.copyProperties(existing, participant, new String[] {"cprs"});
+		BeanUtils.copyProperties(existing, participant, "cprs", "source");
 		
 		OpenSpecimenException ose = new OpenSpecimenException(ErrorType.USER_ERROR);
 		setParticipantAttrs(detail, participant, true, ose);
@@ -82,7 +83,6 @@ public class ParticipantFactoryImpl implements ParticipantFactory {
 		setVitalStatus(detail, participant, partial, ose);
 		setBirthAndDeathDate(detail, participant, partial, ose);
 		setActivityStatus(detail, participant, partial, ose);
-		setSexGenotype(detail, participant, partial, ose);
 		setGender(detail, participant, partial, ose);
 		setRace(detail, participant, partial, ose);
 		setEthnicity(detail, participant, partial, ose);
@@ -185,14 +185,15 @@ public class ParticipantFactoryImpl implements ParticipantFactory {
 			participant.setBirthDate(birthDate);
 		}
 
-		if (!partial || detail.isAttrModified("deathDate")) {
+		if (!DEAD_STATUS.equals(participant.getVitalStatus())) {
+			participant.setDeathDate(null);
+		} else if (!partial || detail.isAttrModified("deathDate")) {
 			Date deathDate = detail.getDeathDate();
 
 			if (deathDate != null && deathDate.after(Calendar.getInstance().getTime())) {
 				oce.addError(ParticipantErrorCode.INVALID_DEATH_DATE);
 			}
 
-			// TODO: how do we set vital status to dead now?
 			participant.setDeathDate(deathDate);
 		}
 
@@ -221,20 +222,6 @@ public class ParticipantFactoryImpl implements ParticipantFactory {
 		participant.setActivityStatus(status);		
 	}
 
-	private void setSexGenotype(ParticipantDetail detail, Participant participant, boolean partial, OpenSpecimenException oce) {
-		if (partial && !detail.isAttrModified("sexGenotype")) {
-			return;
-		}
-		
-		String genotype = detail.getSexGenotype();		
-		if (!isValid(GENOTYPE, genotype)) {
-			oce.addError(ParticipantErrorCode.INVALID_GENOTYPE);
-			return;
-		}
-		
-		participant.setSexGenotype(genotype);
-	}
-	
 	private void setGender(ParticipantDetail detail, Participant participant, boolean partial, OpenSpecimenException oce) {
 		if (partial && !detail.isAttrModified("gender")) {
 			return;
@@ -306,11 +293,11 @@ public class ParticipantFactoryImpl implements ParticipantFactory {
 			}
 		}
 		
-		Set<ParticipantMedicalIdentifier> newPmis = new HashSet<ParticipantMedicalIdentifier>();		
+		Set<ParticipantMedicalIdentifier> newPmis = new HashSet<>();
 		if (CollectionUtils.isEmpty(detail.getPmis())) {
 			participant.setPmis(newPmis);
 		} else {
-			Set<String> siteNames = new HashSet<String>();
+			Set<String> siteNames = new HashSet<>();
 			boolean dupSite = false;
 			
 			for (PmiDetail pmiDetail : detail.getPmis()) {
@@ -333,6 +320,10 @@ public class ParticipantFactoryImpl implements ParticipantFactory {
 	}
 
 	private ParticipantMedicalIdentifier getPmi(PmiDetail pmiDetail, OpenSpecimenException oce) {
+		if (StringUtils.isBlank(pmiDetail.getSiteName()) && StringUtils.isBlank(pmiDetail.getMrn())) {
+			return null;
+		}
+
 		Site site = daoFactory.getSiteDao().getSiteByName(pmiDetail.getSiteName());		
 		if (site == null) {
 			oce.addError(SiteErrorCode.NOT_FOUND);

@@ -2,6 +2,8 @@
 package com.krishagni.catissueplus.core.biospecimen.repository.impl;
 
 import java.math.BigDecimal;
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
@@ -29,6 +31,8 @@ import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
 import com.krishagni.catissueplus.core.biospecimen.domain.Visit;
 import com.krishagni.catissueplus.core.biospecimen.repository.SpecimenDao;
 import com.krishagni.catissueplus.core.biospecimen.repository.SpecimenListCriteria;
+import com.krishagni.catissueplus.core.common.Pair;
+import com.krishagni.catissueplus.core.common.access.SiteCpPair;
 import com.krishagni.catissueplus.core.common.repository.AbstractDao;
 
 public class SpecimenDaoImpl extends AbstractDao<Specimen> implements SpecimenDao {
@@ -56,6 +60,13 @@ public class SpecimenDaoImpl extends AbstractDao<Specimen> implements SpecimenDa
 		}
 
 		return query.list();
+	}
+
+	public Integer getSpecimensCount(SpecimenListCriteria crit) {
+		Number count = (Number) getSpecimenIdsQuery(crit).getExecutableCriteria(getCurrentSession())
+			.setProjection(Projections.rowCount())
+			.uniqueResult();
+		return count.intValue();
 	}
 
 	@SuppressWarnings("unchecked")
@@ -90,6 +101,15 @@ public class SpecimenDaoImpl extends AbstractDao<Specimen> implements SpecimenDa
 		return getByVisitAndSrId(GET_BY_VISIT_AND_SR, visitId, srId);
 	}
 
+	@SuppressWarnings("unchecked")
+	@Override
+	public List<Specimen> getByVisitAndSrCode(Long visitId, Collection<String> reqCodes) {
+		return getCurrentSession().getNamedQuery(GET_BY_VISIT_N_SR_CODE)
+			.setParameter("visitId", visitId)
+			.setParameterList("srCodes", reqCodes)
+			.list();
+	}
+
 	@Override
 	public Specimen getParentSpecimenByVisitAndSr(Long visitId, Long srId) {
 		return getByVisitAndSrId(GET_PARENT_BY_VISIT_AND_SR, visitId, srId);
@@ -98,22 +118,79 @@ public class SpecimenDaoImpl extends AbstractDao<Specimen> implements SpecimenDa
 	@SuppressWarnings("unchecked")
 	@Override
 	public Specimen getByBarcode(String barcode) {
-		Criteria query = sessionFactory.getCurrentSession().createCriteria(Specimen.class);
-		query.add(Restrictions.eq("barcode", barcode));
-		List<Specimen> specimens = query.list();
-		
+		List<Specimen> specimens = sessionFactory.getCurrentSession()
+			.getNamedQuery(GET_BY_BARCODE)
+			.setParameter("barcode", barcode)
+			.list();
+
 		return specimens.isEmpty() ? null : specimens.iterator().next();
 	}
-	
+
+	@SuppressWarnings("unchecked")
+	@Override
+	public Specimen getByBarcodeAndCp(String cpShortTitle, String barcode) {
+		List<Specimen> specimens = sessionFactory.getCurrentSession()
+			.getNamedQuery(GET_BY_BARCODE_AND_CP)
+			.setParameter("barcode", barcode)
+			.setParameter("cpShortTitle", cpShortTitle)
+			.list();
+
+		return specimens.isEmpty() ? null : specimens.iterator().next();
+	}
+
+	@Override
+	public Long getPrimarySpecimen(Long specimenId) {
+		return (Long) getCurrentSession().getNamedQuery(GET_ROOT_ID)
+			.setParameter("specimenId", specimenId)
+			.uniqueResult();
+	}
+
 	@SuppressWarnings("unchecked")
 	@Override
 	public List<Specimen> getSpecimensByIds(List<Long> specimenIds) {
-		return sessionFactory.getCurrentSession()
-				.getNamedQuery(GET_BY_IDS)
-				.setParameterList("specimenIds", specimenIds)
-				.list();
+		return getCurrentSession().getNamedQuery(GET_BY_IDS)
+			.setParameterList("specimenIds", specimenIds)
+			.list();
 	}
-	
+
+	@SuppressWarnings("unchecked")
+	@Override
+	public List<Specimen> getByLabels(Collection<Pair<String, String>> cpLabels) {
+		Criteria query = getCurrentSession().createCriteria(Specimen.class)
+			.createAlias("collectionProtocol", "cp");
+
+		Disjunction disjunction = Restrictions.disjunction();
+		for (Pair<String, String> cpLabel : cpLabels) {
+			disjunction.add(
+				Restrictions.and(
+					Restrictions.eq("cp.shortTitle", cpLabel.first()),
+					Restrictions.eq("label", cpLabel.second())
+				)
+			);
+		}
+
+		return (List<Specimen>) query.add(disjunction).list();
+	}
+
+	@SuppressWarnings("unchecked")
+	@Override
+	public List<Specimen> getByBarcodes(Collection<Pair<String, String>> cpBarcodes) {
+		Criteria query = getCurrentSession().createCriteria(Specimen.class)
+			.createAlias("collectionProtocol", "cp");
+
+		Disjunction disjunction = Restrictions.disjunction();
+		for (Pair<String, String> cpBarcode : cpBarcodes) {
+			disjunction.add(
+				Restrictions.and(
+					Restrictions.eq("cp.shortTitle", cpBarcode.first()),
+					Restrictions.eq("barcode", cpBarcode.second())
+				)
+			);
+		}
+
+		return (List<Specimen>) query.add(disjunction).list();
+	}
+
 	@SuppressWarnings("unchecked")
 	@Override
 	public List<Specimen> getSpecimensByVisitId(Long visitId) {
@@ -163,7 +240,7 @@ public class SpecimenDaoImpl extends AbstractDao<Specimen> implements SpecimenDa
 	
 	@SuppressWarnings("unchecked")
 	@Override
-	public Map<Long, Set<Long>> getSpecimenSites(Set<Long> specimenIds) {
+	public Map<Long, Set<SiteCpPair>> getSpecimenSites(Set<Long> specimenIds) {
 		Criteria query = getSessionFactory().getCurrentSession().createCriteria(Specimen.class)
 				.createAlias("visit", "visit")
 				.createAlias("visit.registration", "cpr")
@@ -174,21 +251,20 @@ public class SpecimenDaoImpl extends AbstractDao<Specimen> implements SpecimenDa
 		ProjectionList projs = Projections.projectionList();
 		query.setProjection(projs);
 		projs.add(Projections.property("id"));
+		projs.add(Projections.property("site.institute.id"));
 		projs.add(Projections.property("site.id"));
 		query.add(Restrictions.in("id", specimenIds));
 		
 		List<Object []> rows = query.list();
-		Map<Long, Set<Long>> results = new HashMap<>();
+		Map<Long, Set<SiteCpPair>> results = new HashMap<>();
 		for (Object[] row: rows) {
-			Long id = (Long)row[0];
-			Long siteId = (Long)row[1];
-			Set<Long> siteIds = results.get(id);
-			if (siteIds == null) {
-				siteIds = new HashSet<>();
-				results.put(id, siteIds);
-			}
-			
-			siteIds.add(siteId);
+			int idx = 0;
+			Long id = (Long)row[idx++];
+			Long instituteId = (Long)row[idx++];
+			Long siteId = (Long)row[idx++];
+
+			Set<SiteCpPair> sites = results.computeIfAbsent(id, (k) -> new HashSet<>());
+			sites.add(SiteCpPair.make(instituteId, siteId, null));
 		}
 		
 		return results;
@@ -248,7 +324,17 @@ public class SpecimenDaoImpl extends AbstractDao<Specimen> implements SpecimenDa
 			.getNamedQuery(GET_DUPLICATE_LABEL_COUNT)
 			.list();
 
-		return rows.size() > 0;
+		return !rows.isEmpty();
+	}
+
+	@SuppressWarnings("unchecked")
+	@Override
+	public boolean areDuplicateBarcodesPresent() {
+		List<Object[]> rows = getSessionFactory().getCurrentSession()
+			.getNamedQuery(GET_DUPLICATE_BARCODE_COUNT)
+			.list();
+
+		return !rows.isEmpty();
 	}
 
 	@SuppressWarnings("unchecked")
@@ -357,12 +443,14 @@ public class SpecimenDaoImpl extends AbstractDao<Specimen> implements SpecimenDa
 			query.add(labelOrBarcode);
 		}
 
+		addLastIdCond(query, crit);
 		addLineageCond(query, crit);
 		addCollectionStatusCond(query, crit);
 		addSiteCpsCond(query, crit);
 		addCpCond(query, crit);
 		addPpidCond(query, crit);
 		addSpecimenListCond(query, crit);
+		addReservedForDpCond(query, crit);
 		addStorageLocationCond(query, crit);
 		addSpecimenTypeCond(query, crit);
 		addAnatomicSiteCond(query, crit);
@@ -371,12 +459,20 @@ public class SpecimenDaoImpl extends AbstractDao<Specimen> implements SpecimenDa
 		return detachedCriteria;
 	}
 
+	private void addLastIdCond(Criteria query, SpecimenListCriteria crit) {
+		if (crit.lastId() == null || crit.lastId() < 0L) {
+			return;
+		}
+
+		query.add(Restrictions.gt("id", crit.lastId()));
+	}
+
 	private void addLineageCond(Criteria query, SpecimenListCriteria crit) {
 		if (crit.lineages() == null || crit.lineages().length == 0) {
 			return;
 		}
 
-		query.add(Restrictions.in("lineage", crit.lineages()));
+		query.add(Restrictions.in("lineage", Arrays.asList(crit.lineages())));
 	}
 
 	private void addCollectionStatusCond(Criteria query, SpecimenListCriteria crit) {
@@ -384,7 +480,7 @@ public class SpecimenDaoImpl extends AbstractDao<Specimen> implements SpecimenDa
 			return;
 		}
 
-		query.add(Restrictions.in("collectionStatus", crit.collectionStatuses()));
+		query.add(Restrictions.in("collectionStatus", Arrays.asList(crit.collectionStatuses())));
 	}
 
 	private void addSiteCpsCond(Criteria query, SpecimenListCriteria crit) {
@@ -392,7 +488,7 @@ public class SpecimenDaoImpl extends AbstractDao<Specimen> implements SpecimenDa
 	}
 
 	private void addCpCond(Criteria query, SpecimenListCriteria crit) {
-		if (crit.cpId() == null) {
+		if (crit.cpId() == null && StringUtils.isBlank(crit.cpShortTitle())) {
 			return;
 		}
 
@@ -405,7 +501,11 @@ public class SpecimenDaoImpl extends AbstractDao<Specimen> implements SpecimenDa
 				.createAlias("cpr.collectionProtocol", "cp");
 		}
 
-		query.add(Restrictions.eq("cp.id", crit.cpId()));
+		if (crit.cpId() != null) {
+			query.add(Restrictions.eq("cp.id", crit.cpId()));
+		} else {
+			query.add(Restrictions.eq("cp.shortTitle", crit.cpShortTitle()));
+		}
 	}
 
 	private void addPpidCond(Criteria query, SpecimenListCriteria crit) {
@@ -432,6 +532,16 @@ public class SpecimenDaoImpl extends AbstractDao<Specimen> implements SpecimenDa
 		query.createAlias("specimen.specimenListItems", "listItem")
 			.createAlias("listItem.list", "list")
 			.add(Restrictions.eq("list.id", crit.specimenListId()));
+	}
+
+	private void addReservedForDpCond(Criteria query, SpecimenListCriteria crit) {
+		if (crit.reservedForDp() == null) {
+			return;
+		}
+
+		query.createAlias("specimen.reservedEvent", "reservedDpEvent")
+			.createAlias("reservedDpEvent.dp", "dp")
+			.add(Restrictions.eq("dp.id", crit.reservedForDp()));
 	}
 
 	private void addStorageLocationCond(Criteria query, SpecimenListCriteria crit) {
@@ -524,8 +634,14 @@ public class SpecimenDaoImpl extends AbstractDao<Specimen> implements SpecimenDa
 	private static final String GET_BY_LABEL = FQN + ".getByLabel";
 
 	private static final String GET_BY_LABEL_AND_CP = FQN + ".getByLabelAndCp";
+
+	private static final String GET_BY_BARCODE = FQN + ".getByBarcode";
+
+	private static final String GET_BY_BARCODE_AND_CP = FQN + ".getByBarcodeAndCp";
 	
 	private static final String GET_BY_VISIT_AND_SR = FQN + ".getByVisitAndReq";
+
+	private static final String GET_BY_VISIT_N_SR_CODE = FQN + ".getByVisitAndReqCode";
 
 	private static final String GET_PARENT_BY_VISIT_AND_SR = FQN + ".getParentByVisitAndReq";
 	
@@ -539,5 +655,9 @@ public class SpecimenDaoImpl extends AbstractDao<Specimen> implements SpecimenDa
 
 	private static final String GET_DUPLICATE_LABEL_COUNT = FQN + ".getDuplicateLabelCount";
 
+	private static final String GET_DUPLICATE_BARCODE_COUNT = FQN + ".getDuplicateBarcodeCount";
+
 	private static final String GET_STORAGE_SITE = FQN + ".getStorageSite";
+
+	private static final String GET_ROOT_ID = FQN + ".getRootId";
 }

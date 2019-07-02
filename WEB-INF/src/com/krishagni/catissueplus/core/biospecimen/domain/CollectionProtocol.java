@@ -1,15 +1,16 @@
 
 package com.krishagni.catissueplus.core.biospecimen.domain;
 
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.apache.commons.lang.StringUtils;
 import org.hibernate.envers.AuditTable;
@@ -20,11 +21,13 @@ import com.krishagni.catissueplus.core.administrative.domain.DistributionProtoco
 import com.krishagni.catissueplus.core.administrative.domain.Site;
 import com.krishagni.catissueplus.core.administrative.domain.StorageContainer;
 import com.krishagni.catissueplus.core.administrative.domain.User;
+import com.krishagni.catissueplus.core.biospecimen.ConfigParams;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.CpErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.CpeErrorCode;
 import com.krishagni.catissueplus.core.common.CollectionUpdater;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.DependentEntityDetail;
+import com.krishagni.catissueplus.core.common.util.ConfigUtil;
 import com.krishagni.catissueplus.core.common.util.Status;
 import com.krishagni.catissueplus.core.common.util.Utility;
 import com.krishagni.catissueplus.core.de.services.impl.FormUtil;
@@ -35,6 +38,7 @@ public class CollectionProtocol extends BaseExtensionEntity {
 	public enum SpecimenLabelPrePrintMode {
 		ON_REGISTRATION,
 		ON_VISIT,
+		ON_PRIMARY_COLL,
 		NONE
 	}
 
@@ -97,7 +101,9 @@ public class CollectionProtocol extends BaseExtensionEntity {
 	private String derivativeLabelFormat;
 	
 	private String aliquotLabelFormat;
-	
+
+	private String specimenBarcodeFormat;
+
 	private String ppidFormat;
 	
 	private String visitNameFormat;
@@ -116,6 +122,8 @@ public class CollectionProtocol extends BaseExtensionEntity {
 
 	private Boolean barcodingEnabled;
 
+	private Boolean closeParentSpecimens;
+
 	private String containerSelectionStrategy;
 
 	private Boolean aliquotsInSameContainer;
@@ -132,19 +140,21 @@ public class CollectionProtocol extends BaseExtensionEntity {
 	
 	private Boolean consentsWaived;
 
-	private Set<CpConsentTier> consentTier = new HashSet<>();
+	private Set<CpConsentTier> consentTier = new LinkedHashSet<>();
 	
-	private Set<User> coordinators = new HashSet<User>();
+	private Set<User> coordinators = new HashSet<>();
 	
-	private Set<CollectionProtocolSite> sites = new HashSet<CollectionProtocolSite>();
+	private Set<CollectionProtocolSite> sites = new HashSet<>();
 	
-	private Set<CollectionProtocolEvent> collectionProtocolEvents = new HashSet<CollectionProtocolEvent>();
+	private Set<CollectionProtocolEvent> collectionProtocolEvents = new LinkedHashSet<>();
 
-	private Set<StorageContainer> storageContainers = new HashSet<StorageContainer>();
+	private Set<StorageContainer> storageContainers = new HashSet<>();
 	
-	private Set<CollectionProtocolRegistration> collectionProtocolRegistrations = new HashSet<CollectionProtocolRegistration>();
+	private Set<CollectionProtocolRegistration> collectionProtocolRegistrations = new HashSet<>();
 
 	private Set<DistributionProtocol> distributionProtocols = new HashSet<>();
+
+	private Long catalogId;
 
 	public static String getEntityName() {
 		return ENTITY_NAME;
@@ -282,8 +292,32 @@ public class CollectionProtocol extends BaseExtensionEntity {
 		return aliquotLabelFormat;
 	}
 
+	public String getAliquotLabelFormatToUse() {
+		if (StringUtils.isNotBlank(getAliquotLabelFormat())) {
+			return getAliquotLabelFormat();
+		} else {
+			return ConfigUtil.getInstance().getStrSetting(ConfigParams.MODULE, ConfigParams.ALIQUOT_LABEL_FORMAT, null);
+		}
+	}
+
 	public void setAliquotLabelFormat(String aliquotLabelFormat) {
 		this.aliquotLabelFormat = aliquotLabelFormat;
+	}
+
+	public String getSpecimenBarcodeFormat() {
+		return specimenBarcodeFormat;
+	}
+
+	public String getSpecimenBarcodeFormatToUse() {
+		if (StringUtils.isNotBlank(getSpecimenBarcodeFormat())) {
+			return getSpecimenBarcodeFormat();
+		} else {
+			return ConfigUtil.getInstance().getStrSetting(ConfigParams.MODULE, ConfigParams.SPMN_BARCODE_FORMAT, null);
+		}
+	}
+
+	public void setSpecimenBarcodeFormat(String specimenBarcodeFormat) {
+		this.specimenBarcodeFormat = specimenBarcodeFormat;
 	}
 
 	public String getPpidFormat() {
@@ -342,7 +376,7 @@ public class CollectionProtocol extends BaseExtensionEntity {
 		this.bulkPartRegEnabled = bulkPartRegEnabled;
 	}
 
-	public Boolean isSpecimenCentric() {
+	public boolean isSpecimenCentric() {
 		return specimenCentric != null ? specimenCentric : false;
 	}
 
@@ -356,6 +390,22 @@ public class CollectionProtocol extends BaseExtensionEntity {
 
 	public void setBarcodingEnabled(Boolean barcodingEnabled) {
 		this.barcodingEnabled = barcodingEnabled;
+	}
+
+	public boolean isBarcodingEnabledToUse() {
+		if (isBarcodingEnabled()) {
+			return true;
+		}
+
+		return ConfigUtil.getInstance().getBoolSetting(ConfigParams.MODULE, ConfigParams.ENABLE_SPMN_BARCODING, false);
+	}
+
+	public boolean isCloseParentSpecimens() {
+		return closeParentSpecimens != null && closeParentSpecimens;
+	}
+
+	public void setCloseParentSpecimens(Boolean closeParentSpecimens) {
+		this.closeParentSpecimens = (closeParentSpecimens != null && closeParentSpecimens);
 	}
 
 	public boolean areAllSpecimenLabelsAutoGenerated() {
@@ -432,8 +482,8 @@ public class CollectionProtocol extends BaseExtensionEntity {
 		getSpmnLabelPrintSettings().add(setting);
 	}
 	
-	public Boolean isConsentsWaived() {
-		return consentsWaived != null ? consentsWaived: false;
+	public boolean isConsentsWaived() {
+		return consentsWaived != null ? consentsWaived : false;
 	}
 
 	public void setConsentsWaived(Boolean consentsWaived) {
@@ -466,7 +516,7 @@ public class CollectionProtocol extends BaseExtensionEntity {
 	}
 	
 	public Set<Site> getRepositories() {
-		return Utility.<Set<Site>>collect(sites, "site", true);
+		return getSites().stream().map(CollectionProtocolSite::getSite).collect(Collectors.toSet());
 	}
 
 	@NotAudited
@@ -518,6 +568,14 @@ public class CollectionProtocol extends BaseExtensionEntity {
 		this.distributionProtocols = distributionProtocols;
 	}
 
+	public Long getCatalogId() {
+		return catalogId;
+	}
+
+	public void setCatalogId(Long catalogId) {
+		this.catalogId = catalogId;
+	}
+
 	public void update(CollectionProtocol cp) {
 		setTitle(cp.getTitle()); 
 		setShortTitle(cp.getShortTitle());
@@ -540,9 +598,11 @@ public class CollectionProtocol extends BaseExtensionEntity {
 		setSpecimenLabelFormat(cp.getSpecimenLabelFormat());
 		setDerivativeLabelFormat(cp.getDerivativeLabelFormat());
 		setAliquotLabelFormat(cp.getAliquotLabelFormat());
+		setSpecimenBarcodeFormat(cp.getSpecimenBarcodeFormat());
 		setManualSpecLabelEnabled(cp.isManualSpecLabelEnabled());
 		setBulkPartRegEnabled(cp.isBulkPartRegEnabled());
 		setBarcodingEnabled(cp.isBarcodingEnabled());
+		setCloseParentSpecimens(cp.isCloseParentSpecimens());
 		setContainerSelectionStrategy(cp.getContainerSelectionStrategy());
 		setAliquotsInSameContainer(cp.getAliquotsInSameContainer());
 		setVisitCollectionMode(cp.getVisitCollectionMode());
@@ -550,6 +610,7 @@ public class CollectionProtocol extends BaseExtensionEntity {
 		setVisitNamePrintCopies(cp.getVisitNamePrintCopies());
 		setUnsignedConsentDocumentURL(cp.getUnsignedConsentDocumentURL());
 		setExtension(cp.getExtension());
+//		setCatalogId(cp.getCatalogId());
 		
 		updateSites(cp.getSites());
 		updateSpecimenLabelPrintSettings(cp.getSpmnLabelPrintSettings());
@@ -584,13 +645,16 @@ public class CollectionProtocol extends BaseExtensionEntity {
 		cp.setSpecimenLabelFormat(getSpecimenLabelFormat());
 		cp.setAliquotLabelFormat(getAliquotLabelFormat());
 		cp.setDerivativeLabelFormat(getDerivativeLabelFormat());
+		cp.setSpecimenBarcodeFormat(getSpecimenBarcodeFormat());
 		cp.setManualSpecLabelEnabled(isManualSpecLabelEnabled());
 		cp.setBulkPartRegEnabled(isBulkPartRegEnabled());
 		cp.setBarcodingEnabled(isBarcodingEnabled());
+		cp.setCloseParentSpecimens(isCloseParentSpecimens());
 		cp.setVisitCollectionMode(getVisitCollectionMode());
 		cp.setVisitNamePrintMode(getVisitNamePrintMode());
 		cp.setVisitNamePrintCopies(getVisitNamePrintCopies());
 		cp.setSpmnLabelPrePrintMode(getSpmnLabelPrePrintMode());
+		cp.setCatalogId(getCatalogId());
 
 		copyLabelPrintSettingsTo(cp);
 		copyExtensionTo(cp);
@@ -625,7 +689,7 @@ public class CollectionProtocol extends BaseExtensionEntity {
 	}
 	
 	public void copyEventsTo(CollectionProtocol cp) {
-		for (CollectionProtocolEvent cpe : getCollectionProtocolEvents()) {
+		for (CollectionProtocolEvent cpe : getOrderedCpeList()) {
 			cp.addCpe(cpe.deepCopy());
 		}
 	}
@@ -761,9 +825,7 @@ public class CollectionProtocol extends BaseExtensionEntity {
 	}
 	
 	public List<CollectionProtocolEvent> getOrderedCpeList() {
-		List<CollectionProtocolEvent> events = new ArrayList<CollectionProtocolEvent>(getCollectionProtocolEvents());
-		Collections.sort(events);
-		return events;
+		return getCollectionProtocolEvents().stream().sorted().collect(Collectors.toList());
 	}
 
 	public String getPpid() {

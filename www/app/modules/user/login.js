@@ -37,14 +37,18 @@ angular.module('openspecimen')
     }
   })
   .controller('LoginCtrl', function(
-    $scope, $rootScope, $state, $stateParams, $http, $location, $injector,
-    AuthDomain, AuthService) {
+    $scope, $rootScope, $state, $stateParams, $q, $http, $location, $injector, $window,
+    Alerts, AuthDomain, AuthService) {
 
     function init() {
-      $scope.loginData = {};
+      $scope.errors     = [];
+      $scope.loginData  = {};
+      $scope.samlDomain = '';
+      $scope.showSignIn = true;
       
+      var logoutQ;
       if ($location.search().logout) {
-        $scope.logout();
+        logoutQ = $scope.logout();
       }
  
       if ($http.defaults.headers.common['X-OS-API-TOKEN']) {
@@ -58,10 +62,7 @@ angular.module('openspecimen')
         //
         // User not logged in
         //
-        var catalogId = $injector.get('scCatalog').defCatalogId;
-        if (catalogId) {
-          $state.go('sc-catalog-dashboard', {catalogId: catalogId}, {location: 'replace'});
-        }
+        $q.when(logoutQ, gotoCatalog, gotoCatalog);
       }
 
       if ($stateParams.directVisit == 'true') {
@@ -71,19 +72,36 @@ angular.module('openspecimen')
       loadDomains();
     }
 
+    function gotoCatalog() {
+      var catalogId = $injector.get('scCatalog').defCatalogId;
+      if (catalogId) {
+        $state.go('sc-catalog-dashboard', {catalogId: catalogId}, {location: 'replace'});
+      }
+    }
+
     function loadDomains() {
       $scope.domains = [];
-      AuthDomain.getDomainNames().then(
+      AuthDomain.query().then(
         function(domains) {
+          $scope.samlDomain = domains.find(function(d) { return d.type == 'saml'; });
+
           var defaultDomain = $scope.global.appProps.default_domain;
           $scope.domains = domains;
           if (domains.length == 1) {
-            $scope.loginData.domainName = domains[0];
-          } else if (!!defaultDomain && domains.indexOf(defaultDomain) >= 0) {
+            $scope.loginData.domainName = domains[0].name;
+          } else if (!!defaultDomain && domains.some(function(d) { return d.name == defaultDomain; })) {
             $scope.loginData.domainName = defaultDomain;
+            if ($scope.samlDomain && $scope.samlDomain.name == defaultDomain) {
+              gotoIdp();
+            }
           }
         }
       );
+    }
+
+    function gotoIdp() {
+      $scope.showSignIn = false;
+      $window.location.replace('saml/login');
     }
 
     function onLogin(result) {
@@ -113,14 +131,25 @@ angular.module('openspecimen')
       }
     };
 
+    $scope.onDomainSelect = function(domain) {
+      if (domain.type == 'saml') {
+        gotoIdp();
+      }
+    }
+
     $scope.login = function() {
-      AuthService.authenticate($scope.loginData).then(onLogin);
+      $scope.errors = [];
+      AuthService.authenticate($scope.loginData).then(
+        onLogin,
+        function(resp) {
+          $scope.errors = (resp.data || []);
+          Alerts.clear();
+        }
+      );
     }
 
     $scope.logout = function() {
-      if ($http.defaults.headers.common['X-OS-API-TOKEN']) {
-        AuthService.logout();
-      }
+      return AuthService.logout();
     }
 
     init();

@@ -10,28 +10,39 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
+import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.lang.ObjectUtils;
 import org.apache.commons.lang.StringUtils;
 import org.hibernate.envers.Audited;
 import org.hibernate.envers.NotAudited;
+import org.hibernate.envers.RelationTargetAuditMode;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Configurable;
 import org.springframework.beans.factory.annotation.Qualifier;
 
 import com.krishagni.catissueplus.core.administrative.domain.DistributionOrderItem;
 import com.krishagni.catissueplus.core.administrative.domain.DistributionProtocol;
+import com.krishagni.catissueplus.core.administrative.domain.SpecimenReservedEvent;
 import com.krishagni.catissueplus.core.administrative.domain.StorageContainer;
 import com.krishagni.catissueplus.core.administrative.domain.StorageContainerPosition;
 import com.krishagni.catissueplus.core.administrative.domain.User;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.SpecimenErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.SpecimenReturnEvent;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.VisitErrorCode;
+import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
 import com.krishagni.catissueplus.core.common.access.AccessCtrlMgr;
+import com.krishagni.catissueplus.core.common.domain.PrintItem;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.DependentEntityDetail;
 import com.krishagni.catissueplus.core.common.service.LabelGenerator;
+import com.krishagni.catissueplus.core.common.service.LabelPrinter;
+import com.krishagni.catissueplus.core.common.service.impl.EventPublisher;
 import com.krishagni.catissueplus.core.common.util.AuthUtil;
 import com.krishagni.catissueplus.core.common.util.NumUtil;
 import com.krishagni.catissueplus.core.common.util.Status;
@@ -49,10 +60,12 @@ public class Specimen extends BaseExtensionEntity {
 	
 	public static final String COLLECTED = "Collected";
 	
-	public static final String MISSED_COLLECTION = "Missed Collection";
-	
 	public static final String PENDING = "Pending";
-	
+
+	public static final String MISSED_COLLECTION = "Missed Collection";
+
+	public static final String NOT_COLLECTED = "Not Collected";
+
 	public static final String ACCEPTABLE = "Acceptable";
 	
 	public static final String NOT_SPECIFIED = "Not Specified";
@@ -87,11 +100,13 @@ public class Specimen extends BaseExtensionEntity {
 
 	private Date createdOn;
 
+	private String imageId;
+
 	private BigDecimal availableQuantity;
 
 	private String collectionStatus;
 	
-	private Set<String> biohazards = new HashSet<String>();
+	private Set<String> biohazards = new HashSet<>();
 
 	private Integer freezeThawCycles;
 
@@ -105,13 +120,23 @@ public class Specimen extends BaseExtensionEntity {
 
 	private Specimen parentSpecimen;
 
-	private Set<Specimen> childCollection = new HashSet<Specimen>();
+	private Set<Specimen> childCollection = new HashSet<>();
 
 	private Specimen pooledSpecimen;
 
-	private Set<Specimen> specimensPool = new HashSet<Specimen>();
+	private Set<Specimen> specimensPool = new HashSet<>();
 
-	private Set<ExternalIdentifier> externalIdentifierCollection = new HashSet<ExternalIdentifier>();
+	private Set<SpecimenExternalIdentifier> externalIds = new HashSet<>();
+
+	//
+	// records aliquot or derivative events that have occurred on this specimen
+	//
+	private Set<SpecimenChildrenEvent> childrenEvents = new LinkedHashSet<>();
+
+	//
+	// records the event through which this specimen got created
+	//
+	private SpecimenChildrenEvent parentEvent;
 
 	//
 	// collectionEvent and receivedEvent are valid only for primary specimens
@@ -119,6 +144,11 @@ public class Specimen extends BaseExtensionEntity {
 	private SpecimenCollectionEvent collectionEvent;
 	
 	private SpecimenReceivedEvent receivedEvent;
+
+	//
+	// record the DP for which this specimen is currently reserved
+	//
+	private SpecimenReservedEvent reservedEvent;
 
 	//
 	// Available for all specimens in hierarchy based on values set for primary specimens
@@ -134,12 +164,56 @@ public class Specimen extends BaseExtensionEntity {
 	@Autowired
 	@Qualifier("specimenLabelGenerator")
 	private LabelGenerator labelGenerator;
-	
+
+
+	@Autowired
+	@Qualifier("specimenBarcodeGenerator")
+	private LabelGenerator barcodeGenerator;
+
+	@Autowired
+	private DaoFactory daoFactory;
+
 	private transient boolean forceDelete;
 	
 	private transient boolean printLabel;
 
 	private transient boolean freezeThawIncremented;
+
+	private transient Date transferTime;
+
+	private transient String transferComments;
+
+	private transient boolean autoCollectParents;
+
+	private transient boolean updated;
+
+	private transient boolean statusChanged;
+
+	private transient String uid;
+
+	private transient String parentUid;
+
+	private transient User createdBy;
+
+	//
+	// holdingLocation and dp are used during distribution to record the location
+	// where the specimen will be stored temporarily post distribution.
+	//
+	private transient StorageContainerPosition holdingLocation;
+
+	private transient DistributionProtocol dp;
+
+	//
+	// Records the derivatives or aliquots created from this specimen in current action/transaction
+	//
+	private transient SpecimenChildrenEvent derivativeEvent;
+
+	private transient SpecimenChildrenEvent aliquotEvent;
+
+	//
+	// OPSMN-4636: To ensure the same set of specimens are not created twice
+	//
+	private transient Map<Long, Specimen> preCreatedSpmnsMap;
 
 	public static String getEntityName() {
 		return ENTITY_NAME;
@@ -265,7 +339,7 @@ public class Specimen extends BaseExtensionEntity {
 
 			if (this.concentration == null || !this.concentration.equals(concentration)) {
 				for (Specimen child : getChildCollection()) {
-					if (child.isAliquot()) {
+					if (ObjectUtils.equals(this.concentration, child.getConcentration()) && child.isAliquot()) {
 						child.setConcentration(concentration);
 					}
 				}
@@ -322,6 +396,14 @@ public class Specimen extends BaseExtensionEntity {
 	public void setCreatedOn(Date createdOn) {
 		// For all specimens, the created on seconds and milliseconds should be reset to 0
 		this.createdOn = Utility.chopSeconds(createdOn);
+	}
+
+	public String getImageId() {
+		return imageId;
+	}
+
+	public void setImageId(String imageId) {
+		this.imageId = imageId;
 	}
 
 	public BigDecimal getAvailableQuantity() {
@@ -437,13 +519,30 @@ public class Specimen extends BaseExtensionEntity {
 		this.specimensPool = specimensPool;
 	}
 
-	@NotAudited
-	public Set<ExternalIdentifier> getExternalIdentifierCollection() {
-		return externalIdentifierCollection;
+	public Set<SpecimenExternalIdentifier> getExternalIds() {
+		return externalIds;
 	}
 
-	public void setExternalIdentifierCollection(Set<ExternalIdentifier> externalIdentifierCollection) {
-		this.externalIdentifierCollection = externalIdentifierCollection;
+	public void setExternalIds(Set<SpecimenExternalIdentifier> externalIds) {
+		this.externalIds = externalIds;
+	}
+
+	@NotAudited
+	public Set<SpecimenChildrenEvent> getChildrenEvents() {
+		return childrenEvents;
+	}
+
+	public void setChildrenEvents(Set<SpecimenChildrenEvent> childrenEvents) {
+		this.childrenEvents = childrenEvents;
+	}
+
+	@NotAudited
+	public SpecimenChildrenEvent getParentEvent() {
+		return parentEvent;
+	}
+
+	public void setParentEvent(SpecimenChildrenEvent parentEvent) {
+		this.parentEvent = parentEvent;
 	}
 
 	@NotAudited
@@ -488,6 +587,15 @@ public class Specimen extends BaseExtensionEntity {
 		this.receivedEvent = receivedEvent;
 	}
 
+	@Audited(targetAuditMode = RelationTargetAuditMode.NOT_AUDITED)
+	public SpecimenReservedEvent getReservedEvent() {
+		return reservedEvent;
+	}
+
+	public void setReservedEvent(SpecimenReservedEvent reservedEvent) {
+		this.reservedEvent = reservedEvent;
+	}
+
 	@NotAudited
 	public SpecimenCollectionReceiveDetail getCollRecvDetails() {
 		return collRecvDetails;
@@ -522,8 +630,27 @@ public class Specimen extends BaseExtensionEntity {
 		return labelGenerator;
 	}
 
-	public void setLabelGenerator(LabelGenerator labelGenerator) {
-		this.labelGenerator = labelGenerator;
+	public Specimen getPrimarySpecimen() {
+		Specimen specimen = this;
+		while (specimen.getParentSpecimen() != null) {
+			specimen = specimen.getParentSpecimen();
+		}
+
+		return specimen;
+	}
+
+	@Override
+	public String getEntityType() {
+		return EXTN;
+	}
+
+	@Override
+	public Long getCpId() {
+		return getCollectionProtocol().getId();
+	}
+
+	public String getCpShortTitle() {
+		return getCollectionProtocol().getShortTitle();
 	}
 
 	public boolean isForceDelete() {
@@ -533,7 +660,91 @@ public class Specimen extends BaseExtensionEntity {
 	public void setForceDelete(boolean forceDelete) {
 		this.forceDelete = forceDelete;
 	}
-	
+
+	public Date getTransferTime() {
+		return transferTime;
+	}
+
+	public void setTransferTime(Date transferTime) {
+		this.transferTime = transferTime;
+	}
+
+	public String getTransferComments() {
+		return transferComments;
+	}
+
+	public void setTransferComments(String transferComments) {
+		this.transferComments = transferComments;
+	}
+
+	public boolean isAutoCollectParents() {
+		return autoCollectParents;
+	}
+
+	public void setAutoCollectParents(boolean autoCollectParents) {
+		this.autoCollectParents = autoCollectParents;
+	}
+
+	public boolean isUpdated() {
+		return updated;
+	}
+
+	public void setUpdated(boolean updated) {
+		this.updated = updated;
+	}
+
+	public boolean isStatusChanged() {
+		return statusChanged;
+	}
+
+	public void setStatusChanged(boolean statusChanged) {
+		this.statusChanged = statusChanged;
+	}
+
+	public String getUid() {
+		return uid;
+	}
+
+	public void setUid(String uid) {
+		this.uid = uid;
+	}
+
+	public String getParentUid() {
+		return parentUid;
+	}
+
+	public void setParentUid(String parentUid) {
+		this.parentUid = parentUid;
+	}
+
+	public User getCreatedBy() {
+		return createdBy;
+	}
+
+	public void setCreatedBy(User createdBy) {
+		this.createdBy = createdBy;
+	}
+
+	public StorageContainerPosition getHoldingLocation() {
+		return holdingLocation;
+	}
+
+	public void setHoldingLocation(StorageContainerPosition holdingLocation) {
+		this.holdingLocation = holdingLocation;
+	}
+
+	public DistributionProtocol getDp() {
+		return dp;
+	}
+
+	public void setDp(DistributionProtocol dp) {
+		this.dp = dp;
+	}
+
+	public Map<Long, Specimen> getPreCreatedSpmnsMap() {
+		return preCreatedSpmnsMap;
+	}
+
 	public boolean isPrintLabel() {
 		return printLabel;
 	}
@@ -552,6 +763,18 @@ public class Specimen extends BaseExtensionEntity {
 	
 	public boolean isActiveOrClosed() {
 		return isActive() || isClosed();
+	}
+
+	public boolean isDeleted() {
+		return Status.ACTIVITY_STATUS_DISABLED.getStatus().equals(getActivityStatus());
+	}
+
+	public boolean isReserved() {
+		return getReservedEvent() != null;
+	}
+
+	public boolean isEditAllowed() {
+		return !isReserved() && isActive();
 	}
 	
 	public boolean isAliquot() {
@@ -586,6 +809,14 @@ public class Specimen extends BaseExtensionEntity {
 		return isMissed(getCollectionStatus());
 	}
 
+	public boolean isNotCollected() {
+		return isNotCollected(getCollectionStatus());
+	}
+
+	public boolean isMissedOrNotCollected() {
+		return isMissed() || isNotCollected();
+	}
+
 	public Boolean isAvailable() {
 		return getAvailableQuantity() == null || NumUtil.greaterThanZero(getAvailableQuantity());
 	}
@@ -611,7 +842,7 @@ public class Specimen extends BaseExtensionEntity {
 			specimen.disable(checkChildSpecimens);
 		}
 
-		virtualize(null);
+		virtualize(null, "Specimen deleted");
 		setLabel(Utility.getDisabledValue(getLabel(), 255));
 		setBarcode(Utility.getDisabledValue(getBarcode(), 255));
 		setActivityStatus(Status.ACTIVITY_STATUS_DISABLED.getStatus());
@@ -630,17 +861,106 @@ public class Specimen extends BaseExtensionEntity {
 		return MISSED_COLLECTION.equals(status);
 	}
 
+	public static boolean isNotCollected(String status) {
+		return NOT_COLLECTED.equals(status);
+	}
+
 	public boolean isPrePrintEnabled() {
 		return getSpecimenRequirement() != null &&
 			getSpecimenRequirement().getLabelAutoPrintModeToUse() == CollectionProtocol.SpecimenLabelAutoPrintMode.PRE_PRINT;
+	}
+
+	public void prePrintChildrenLabels(String prevStatus, LabelPrinter<Specimen> printer) {
+		if (getSpecimenRequirement() == null) {
+			//
+			// We pre-print child specimen labels of only planned specimens
+			//
+			return;
+		}
+
+		if (!isPrimary()) {
+			//
+			// We pre-print child specimen labels of only primary specimens
+			//
+			return;
+		}
+
+		if (!isCollected() || getCollectionProtocol().getSpmnLabelPrePrintMode() != CollectionProtocol.SpecimenLabelPrePrintMode.ON_PRIMARY_COLL) {
+			//
+			// specimen is either not collected or print on collection is not enabled
+			//
+			return;
+		}
+
+		if (Specimen.isCollected(prevStatus)) {
+			//
+			// specimen was previously collected. no need to print the child specimen labels
+			//
+			return;
+		}
+
+		if (getCollectionProtocol().isManualSpecLabelEnabled()) {
+			//
+			// no child labels are pre-printed in specimen labels are manually scanned
+			//
+			return;
+		}
+
+		if (CollectionUtils.isNotEmpty(getChildCollection())) {
+			//
+			// We quit if there is at least one child specimen created underneath the primary specimen
+			//
+			return;
+		}
+
+
+		List<Specimen> pendingSpecimens = createPendingSpecimens(getSpecimenRequirement(), this);
+		preCreatedSpmnsMap = pendingSpecimens.stream().collect(Collectors.toMap(s -> s.getSpecimenRequirement().getId(), s -> s));
+
+		List<PrintItem<Specimen>> printItems = pendingSpecimens.stream()
+			.filter(spmn -> spmn.getParentSpecimen().equals(this))
+			.map(Specimen::getPrePrintItems)
+			.flatMap(List::stream)
+			.collect(Collectors.toList());
+		if (!printItems.isEmpty()) {
+			printer.print(printItems);
+		}
+	}
+
+	public List<PrintItem<Specimen>> getPrePrintItems() {
+		SpecimenRequirement requirement = getSpecimenRequirement();
+		if (requirement == null) {
+			//
+			// OPSMN-4227: We won't pre-print unplanned specimens
+			// This can happen when following state change transition happens:
+			// visit -> completed -> planned + unplanned specimens collected -> visit missed -> pending
+			//
+			return Collections.emptyList();
+		}
+
+		List<PrintItem<Specimen>> result = new ArrayList<>();
+		if (requirement.getLabelAutoPrintModeToUse() == CollectionProtocol.SpecimenLabelAutoPrintMode.PRE_PRINT) {
+			Integer printCopies = requirement.getLabelPrintCopiesToUse();
+			result.add(PrintItem.make(this, printCopies));
+		}
+
+		for (Specimen poolSpmn : getSpecimensPool()) {
+			result.addAll(poolSpmn.getPrePrintItems());
+		}
+
+		for (Specimen childSpmn : getChildCollection()) {
+			result.addAll(childSpmn.getPrePrintItems());
+		}
+
+		return result;
 	}
 
 	public void close(User user, Date time, String reason) {
 		if (!getActivityStatus().equals(Status.ACTIVITY_STATUS_ACTIVE.getStatus())) {
 			return;
 		}
-		
-		virtualize(time);
+
+		transferTo(holdingLocation, user, time, reason);
 		addDisposalEvent(user, time, reason);		
 		setActivityStatus(Status.ACTIVITY_STATUS_CLOSED.getStatus());
 	}
@@ -665,34 +985,74 @@ public class Specimen extends BaseExtensionEntity {
 		return getVisit().getRegistration();
 	}
 
+	public List<Specimen> getDescendants() {
+		List<Specimen> result = new ArrayList<>();
+		result.add(this);
+
+		for (Specimen specimen : getChildCollection()) {
+			result.addAll(specimen.getDescendants());
+		}
+
+		return result;
+	}
+
 	public void update(Specimen specimen) {
+		boolean wasCollected = isCollected();
+
 		setForceDelete(specimen.isForceDelete());
+		setAutoCollectParents(specimen.isAutoCollectParents());
+		setOpComments(specimen.getOpComments());
 
 		String reason = null;
 		if (!StringUtils.equals(getComment(), specimen.getComment())) {
 			reason = specimen.getComment();
 		}
 
-		updateStatus(specimen.getActivityStatus(), reason);
-		if (!isActive()) {
-			return;
+		updateStatus(specimen, reason);
+
+		//
+		// NOTE: This has been commented to allow retrieving distributed specimens from the holding tanks
+		//
+		//	if (!isActive()) {
+		//		return;
+		//	}
+		if (!isDeleted()) {
+			setLabel(specimen.getLabel());
+			setBarcode(specimen.getBarcode());
 		}
-		
-		setLabel(specimen.getLabel());
-		setBarcode(specimen.getBarcode());
+
+		setImageId(specimen.getImageId());
 		setInitialQuantity(specimen.getInitialQuantity());
 		setAvailableQuantity(specimen.getAvailableQuantity());
+		setConcentration((isPoolSpecimen() ? getPooledSpecimen() : specimen).getConcentration());
 
+		if (!getVisit().equals(specimen.getVisit())) {
+			if (isPrimary()) {
+				updateVisit(specimen.getVisit(), specimen.getSpecimenRequirement());
+			} else {
+				throw OpenSpecimenException.userError(SpecimenErrorCode.VISIT_CHG_NOT_ALLOWED, getLabel());
+			}
+		}
+
+		updateExternalIds(specimen.getExternalIds());
 		updateEvent(getCollectionEvent(), specimen.getCollectionEvent());
 		updateEvent(getReceivedEvent(), specimen.getReceivedEvent());
+
+		setCreatedOn(specimen.getCreatedOn()); // required for auto-collection of parent specimens
 		updateCollectionStatus(specimen.getCollectionStatus());
-		updatePosition(specimen.getPosition());
+		updatePosition(specimen.getPosition(), null, specimen.getTransferTime(), specimen.getTransferComments());
+		updateCreatedBy(specimen.getCreatedBy());
 
 		if (isCollected()) {
+			Date createdOn = specimen.getCreatedOn();
 			if (isPrimary()) {
-				updateCreatedOn(Utility.chopSeconds(getReceivedEvent().getTime()));
+				updateCreatedOn(createdOn != null ? createdOn : getReceivedEvent().getTime());
 			} else {
-				updateCreatedOn(specimen.getCreatedOn());
+				updateCreatedOn(createdOn != null ? createdOn : Calendar.getInstance().getTime());
+
+				if (!wasCollected) {
+					getParentSpecimen().addToChildrenEvent(this);
+				}
 			}
 		} else {
 			updateCreatedOn(null);
@@ -713,23 +1073,36 @@ public class Specimen extends BaseExtensionEntity {
 		setSpecimenClass(spmnToUpdateFrom.getSpecimenClass());
 		setSpecimenType(spmnToUpdateFrom.getSpecimenType());
 		updateBiohazards(spmnToUpdateFrom.getBiohazards());
-		setConcentration(spmnToUpdateFrom.getConcentration());
 		setPathologicalStatus(spmnToUpdateFrom.getPathologicalStatus());
 
 		setComment(specimen.getComment());
 		setExtension(specimen.getExtension());
 		setPrintLabel(specimen.isPrintLabel());
 		setFreezeThawCycles(specimen.getFreezeThawCycles());
+		setUpdated(true);
 	}
 	
-	public void updateStatus(String activityStatus, String reason){
-		updateStatus(activityStatus, AuthUtil.getCurrentUser(), Calendar.getInstance().getTime(), reason, isForceDelete());
+	public void updateStatus(Specimen otherSpecimen, String reason) {
+		updateStatus(otherSpecimen.getActivityStatus(), AuthUtil.getCurrentUser(), Calendar.getInstance().getTime(), reason, isForceDelete());
+
+		//
+		// OPSMN-4629
+		// the specimen is in closed state and has no position.
+		// ensure the new updatable specimen has no position either.
+		//
+		if (!isActive()) {
+			otherSpecimen.setPosition(null);
+		}
 	}
-	
+
 	//
 	// TODO: Modify to accommodate pooled specimens
 	//	
 	public void updateStatus(String activityStatus, User user, Date date, String reason, boolean isForceDelete) {
+		if (isReserved()) {
+			throw OpenSpecimenException.userError(SpecimenErrorCode.EDIT_NOT_ALLOWED, getLabel());
+		}
+
 		if (this.activityStatus != null && this.activityStatus.equals(activityStatus)) {
 			return;
 		}
@@ -750,7 +1123,7 @@ public class Specimen extends BaseExtensionEntity {
 			//
 			return;
 		}
-		
+
 		if (isMissed(collectionStatus)) {
 			if (!getVisit().isCompleted() && !getVisit().isMissed()) {
 				throw OpenSpecimenException.userError(VisitErrorCode.COMPL_OR_MISSED_VISIT_REQ);
@@ -759,6 +1132,15 @@ public class Specimen extends BaseExtensionEntity {
 			} else {
 				updateHierarchyStatus(collectionStatus);
 				createMissedChildSpecimens();
+			}
+		} else if (isNotCollected(collectionStatus)) {
+			if (!getVisit().isCompleted() && !getVisit().isNotCollected()) {
+				throw OpenSpecimenException.userError(VisitErrorCode.COMPL_OR_NC_VISIT_REQ);
+			} else if (getParentSpecimen() != null && !getParentSpecimen().isCollected() && !getParentSpecimen().isNotCollected()) {
+				throw OpenSpecimenException.userError(SpecimenErrorCode.COLL_OR_NC_PARENT_REQ);
+			} else {
+				updateHierarchyStatus(collectionStatus);
+				createNotCollectedSpecimens();
 			}
 		} else if (isPending(collectionStatus)) {
 			if (!getVisit().isCompleted() && !getVisit().isPending()) {
@@ -771,9 +1153,15 @@ public class Specimen extends BaseExtensionEntity {
 		} else if (isCollected(collectionStatus)) {
 			if (!getVisit().isCompleted()) {
 				throw OpenSpecimenException.userError(VisitErrorCode.COMPL_VISIT_REQ);
-			} else if (getParentSpecimen() != null && !getParentSpecimen().isCollected()) {
-				throw OpenSpecimenException.userError(SpecimenErrorCode.COLL_PARENT_REQ);
 			} else {
+				if (getParentSpecimen() != null && !getParentSpecimen().isCollected()) {
+					if (!autoCollectParents) {
+						throw OpenSpecimenException.userError(SpecimenErrorCode.COLL_PARENT_REQ);
+					}
+
+					autoCollectParentSpecimens(this);
+				}
+
 				setCollectionStatus(collectionStatus);
 				decAliquotedQtyFromParent();
 				addOrUpdateCollRecvEvents();
@@ -781,6 +1169,7 @@ public class Specimen extends BaseExtensionEntity {
 		}
 		
 		checkPoolStatusConstraints();
+		setStatusChanged(true);
 	}
 		
 	public void distribute(DistributionOrderItem item) {
@@ -805,15 +1194,46 @@ public class Specimen extends BaseExtensionEntity {
 		SpecimenDistributionEvent.createForDistributionOrderItem(item).saveRecordEntry();
 
 		//
+		// cancel the reservation so that it can be distributed subsequently if available
+		//
+		setReservedEvent(null);
+
+		//
 		// close specimen if explicitly closed or no quantity available
 		//
 		if (NumUtil.isZero(getAvailableQuantity()) || item.isDistributedAndClosed()) {
-			close(item.getOrder().getDistributor(), item.getOrder().getExecutionDate(), "Distributed");
+			String dpShortTitle = item.getOrder().getDistributionProtocol().getShortTitle();
+			close(item.getOrder().getDistributor(), item.getOrder().getExecutionDate(), "Distributed to " + dpShortTitle);
 		}
 	}
 
-	public void updateCreatedOn(Date createdOn) {
+	public void returnSpecimen(DistributionOrderItem item) {
+		if (isClosed()) {
+			setAvailableQuantity(item.getReturnedQuantity());
+			activate();
+		} else {
+			if (getAvailableQuantity() == null) {
+				setAvailableQuantity(item.getReturnedQuantity());
+			} else {
+				setAvailableQuantity(getAvailableQuantity().add(item.getReturnedQuantity()));
+			}
+		}
+
+		StorageContainer container = item.getReturningContainer();
+		if (container != null) {
+			StorageContainerPosition position = container.createPosition(item.getReturningColumn(), item.getReturningRow());
+			transferTo(position, item.getReturnDate(), "Specimen returned");
+		}
+
+		SpecimenReturnEvent.createForDistributionOrderItem(item).saveRecordEntry();
+	}
+
+	private void updateCreatedOn(Date createdOn) {
 		this.createdOn = createdOn;
+		if (getParentEvent() != null && createdOn != null && !createdOn.equals(getParentEvent().getTime())) {
+			getParentEvent().setTime(createdOn);
+			getParentEvent().getChildren().forEach(spmn -> spmn.setCreatedOn(createdOn));
+		}
 
 		if (createdOn == null) {
 			for (Specimen childSpecimen : getChildCollection()) {
@@ -843,27 +1263,14 @@ public class Specimen extends BaseExtensionEntity {
 		}*/
 	}
 
-	public void returnSpecimen(DistributionOrderItem item) {
-		if (isClosed()) {
-			setAvailableQuantity(item.getReturnedQuantity());
-			activate();
-		} else {
-			if (getAvailableQuantity() == null) {
-				setAvailableQuantity(item.getReturnedQuantity());
-			} else {
-				setAvailableQuantity(getAvailableQuantity().add(item.getReturnedQuantity()));
-			}
+	private void updateCreatedBy(User user) {
+		if (isPrimary() || user == null || getParentEvent() == null) {
+			return;
 		}
 
-		StorageContainer container = item.getReturningContainer();
-		if (container != null) {
-			StorageContainerPosition position = container.createPosition(item.getReturningColumn(), item.getReturningRow());
-			transferTo(position, item.getReturnDate());
-		}
-
-		SpecimenReturnEvent.createForDistributionOrderItem(item).saveRecordEntry();
+		getParentEvent().setUser(user);
 	}
-	
+
 	private void addDisposalEvent(User user, Date time, String reason) {
 		SpecimenDisposalEvent event = new SpecimenDisposalEvent(this);
 		event.setReason(reason);
@@ -871,46 +1278,51 @@ public class Specimen extends BaseExtensionEntity {
 		event.setTime(time);
 		event.saveOrUpdate();
 	}
-	
-	private void virtualize(Date time) {
-		transferTo(null, time);
+
+	private void virtualize(Date time, String comments) {
+		transferTo(null, time, comments);
 	}
 	
-	private void transferTo(StorageContainerPosition newPosition, Date time) {
+	private void transferTo(StorageContainerPosition newPosition, Date time, String comments) {
+		transferTo(newPosition, null, time, comments);
+	}
+
+	private void transferTo(StorageContainerPosition newPosition, User user, Date time, String comments) {
 		StorageContainerPosition oldPosition = getPosition();
 		if (StorageContainerPosition.areSame(oldPosition, newPosition)) {
 			return;
 		}
 
-		if (oldPosition != null) {
+		if (oldPosition != null && !oldPosition.isSupressAccessChecks()) {
 			AccessCtrlMgr.getInstance().ensureSpecimenStoreRights(oldPosition.getContainer());
 		}
 
-		if (newPosition != null) {
+		if (newPosition != null && !newPosition.isSupressAccessChecks()) {
 			AccessCtrlMgr.getInstance().ensureSpecimenStoreRights(newPosition.getContainer());
 		}
 
 		SpecimenTransferEvent transferEvent = new SpecimenTransferEvent(this);
-		transferEvent.setUser(AuthUtil.getCurrentUser());
+		transferEvent.setUser(user == null ? AuthUtil.getCurrentUser() : user);
 		transferEvent.setTime(time == null ? Calendar.getInstance().getTime() : time);
+		transferEvent.setComments(comments);
 		
 		if (oldPosition != null && newPosition != null) {
 			oldPosition.getContainer().retrieveSpecimen(this);
 			newPosition.getContainer().storeSpecimen(this);
 
-			transferEvent.setFromPosition(oldPosition);
-			transferEvent.setToPosition(newPosition);
+			transferEvent.setFromLocation(oldPosition);
+			transferEvent.setToLocation(newPosition);
 
 			oldPosition.update(newPosition);			
 		} else if (oldPosition != null) {
 			oldPosition.getContainer().retrieveSpecimen(this);
-			transferEvent.setFromPosition(oldPosition);
+			transferEvent.setFromLocation(oldPosition);
 
 			oldPosition.vacate();
 			setPosition(null);
 		} else if (newPosition != null) {
 			newPosition.getContainer().storeSpecimen(this);
-			transferEvent.setToPosition(newPosition);
+			transferEvent.setToLocation(newPosition);
 			
 			newPosition.setOccupyingSpecimen(this);
 			newPosition.occupy();
@@ -921,17 +1333,27 @@ public class Specimen extends BaseExtensionEntity {
 	}
 
 	public void addChildSpecimen(Specimen specimen) {
-		specimen.setParentSpecimen(this);				
+		specimen.setParentSpecimen(this);
+
+		if (!isCollected() && specimen.isCollected()) {
+			if (!specimen.autoCollectParents) {
+				throw OpenSpecimenException.userError(SpecimenErrorCode.COLL_PARENT_REQ);
+			}
+
+			autoCollectParentSpecimens(specimen);
+		}
+
 		if (specimen.isAliquot()) {
 			specimen.decAliquotedQtyFromParent();
 		}
 
-		if (specimen.getCreatedOn() != null && specimen.getCreatedOn().before(getCreatedOn())) {
+		if (getCreatedOn() != null && specimen.getCreatedOn() != null && specimen.getCreatedOn().before(getCreatedOn())) {
 			throw OpenSpecimenException.userError(SpecimenErrorCode.CHILD_CREATED_ON_LT_PARENT);
 		}
 
 		specimen.occupyPosition();
 		getChildCollection().add(specimen);
+		addToChildrenEvent(specimen);
 	}
 	
 	public void addPoolSpecimen(Specimen specimen) {
@@ -966,16 +1388,16 @@ public class Specimen extends BaseExtensionEntity {
 	}
 	
 	public void addOrUpdateCollRecvEvents() {
-		if (!isCollected()) {
+		if (!isCollected() || isAliquot() || isDerivative()) {
 			return;
 		}
-		
-		addOrUpdateCollectionEvent();
-		addOrUpdateReceivedEvent();
+
+		getCollectionEvent().saveOrUpdate();
+		getReceivedEvent().saveOrUpdate();
 	}
 	
 	public void setLabelIfEmpty() {
-		if (StringUtils.isNotBlank(label) || isMissed()) {
+		if (StringUtils.isNotBlank(label) || isMissedOrNotCollected()) {
 			return;
 		}
 		
@@ -995,8 +1417,25 @@ public class Specimen extends BaseExtensionEntity {
 		
 		setLabel(label);
 	}
-	
+
+	public void setBarcodeIfEmpty() {
+		if (StringUtils.isNotBlank(barcode) ||
+			isMissedOrNotCollected() ||
+			!getCollectionProtocol().isBarcodingEnabledToUse()) {
+			return;
+		}
+
+		String barcodeTmpl = getCollectionProtocol().getSpecimenBarcodeFormatToUse();
+		if (StringUtils.isNotBlank(barcodeTmpl)) {
+			setBarcode(barcodeGenerator.generateLabel(barcodeTmpl, this));
+		}
+	}
+
 	public String getLabelTmpl() {
+		return getLabelTmpl(true);
+	}
+
+	public String getLabelTmpl(boolean useWfSettings) {
 		String labelTmpl = null;
 		
 		SpecimenRequirement sr = getSpecimenRequirement();
@@ -1010,23 +1449,38 @@ public class Specimen extends BaseExtensionEntity {
 		
 		CollectionProtocol cp = getVisit().getCollectionProtocol();
 		if (isAliquot()) {
-			labelTmpl = cp.getAliquotLabelFormat();
+			labelTmpl = cp.getAliquotLabelFormatToUse();
 		} else if (isDerivative()) {
 			labelTmpl = cp.getDerivativeLabelFormat();
 		} else {
 			labelTmpl = cp.getSpecimenLabelFormat();
-		}			
+		}
+
+		if (StringUtils.isBlank(labelTmpl) && useWfSettings) {
+			labelTmpl = LabelSettingsUtil.getLabelFormat(this);
+		}
 		
 		return labelTmpl;		
 	}
-	
+
 	public void updatePosition(StorageContainerPosition newPosition) {
 		updatePosition(newPosition, null);
 	}
 	
 	public void updatePosition(StorageContainerPosition newPosition, Date time) {
+		updatePosition(newPosition, null, time, null);
+	}
+
+	public void updatePosition(StorageContainerPosition newPosition, User user, Date time, String comments) {
 		if (!isCollected()) {
 			return;
+		}
+
+		if (isDeleted()) {
+			//
+			// deleted specimens will not have any locations assigned to them
+			//
+			newPosition = null;
 		}
 
 		if (newPosition != null) {
@@ -1036,9 +1490,9 @@ public class Specimen extends BaseExtensionEntity {
 			}
 		}
 
-		transferTo(newPosition, time);
+		transferTo(newPosition, user, time, comments);
 	}
-	
+
 	public String getLabelOrDesc() {
 		if (StringUtils.isNotBlank(label)) {
 			return label;
@@ -1064,7 +1518,19 @@ public class Specimen extends BaseExtensionEntity {
 
 		freezeThawIncremented = true;
 	}
-	
+
+	public boolean isStoredInDistributionContainer() {
+		return getPosition() != null && getPosition().getContainer().isDistributionContainer();
+	}
+
+	//
+	// HSEARCH-1350: https://hibernate.atlassian.net/browse/HSEARCH-1350
+	//
+	public void initCollections() {
+		getBiohazards().size();
+		getExternalIds().size();
+	}
+
 	public static String getDesc(String specimenClass, String type) {
 		StringBuilder desc = new StringBuilder();
 		if (StringUtils.isNotBlank(specimenClass)) {
@@ -1082,21 +1548,11 @@ public class Specimen extends BaseExtensionEntity {
 		return desc.toString();		
 	}
 	
-	@Override
-	public String getEntityType() {
-		return EXTN;
-	}
-
-	@Override
-	public Long getCpId() {
-		return getCollectionProtocol().getId();
-	}
-
 	//
 	// Useful for sorting specimens at same level
 	//
 	public static List<Specimen> sort(Collection<Specimen> specimens) {
-		List<Specimen> result = new ArrayList<Specimen>(specimens);
+		List<Specimen> result = new ArrayList<>(specimens);
 		Collections.sort(result, new Comparator<Specimen>() {
 			@Override
 			public int compare(Specimen s1, Specimen s2) {
@@ -1187,6 +1643,12 @@ public class Specimen extends BaseExtensionEntity {
 		return result;
 	}
 
+	public static List<Specimen> sortByBarcodes(Collection<Specimen> specimens, final List<String> barcodes) {
+		List<Specimen> result = new ArrayList<>(specimens);
+		result.sort(Comparator.comparingInt((s) -> barcodes.indexOf(s.getBarcode())));
+		return result;
+	}
+
 	public static boolean isValidLineage(String lineage) {
 		if (StringUtils.isBlank(lineage)) {
 			return false;
@@ -1194,7 +1656,35 @@ public class Specimen extends BaseExtensionEntity {
 
 		return lineage.equals(NEW) || lineage.equals(DERIVED) || lineage.equals(ALIQUOT);
 	}
-	
+
+	private void addToChildrenEvent(Specimen childSpmn) {
+		if (!childSpmn.isCollected() || childSpmn.getParentSpecimen() == null) {
+			return;
+		}
+
+		if (!isEditAllowed()) {
+			throw OpenSpecimenException.userError(SpecimenErrorCode.EDIT_NOT_ALLOWED, getLabel());
+		}
+
+		SpecimenChildrenEvent currentEvent = childSpmn.isAliquot() ? aliquotEvent : derivativeEvent;
+		if (currentEvent == null) {
+			currentEvent = new SpecimenChildrenEvent();
+			currentEvent.setSpecimen(this);
+			currentEvent.setLineage(childSpmn.getLineage());
+			currentEvent.setUser(childSpmn.getCreatedBy() != null ? childSpmn.getCreatedBy() : AuthUtil.getCurrentUser());
+			currentEvent.setTime(childSpmn.getCreatedOn());
+			getChildrenEvents().add(currentEvent);
+		}
+
+		currentEvent.addChild(childSpmn);
+
+		if (childSpmn.isAliquot()) {
+			aliquotEvent = currentEvent;
+		} else if (childSpmn.isDerivative()) {
+			derivativeEvent = currentEvent;
+		}
+	}
+
 	private void ensureNoActiveChildSpecimens() {
 		for (Specimen specimen : getChildCollection()) {
 			if (specimen.isActiveOrClosed() && specimen.isCollected()) {
@@ -1230,23 +1720,6 @@ public class Specimen extends BaseExtensionEntity {
 		return count;
 	}
 			
-	private void addOrUpdateCollectionEvent() {
-		if (isAliquot() || isDerivative()) {
-			return;
-		}
-		
-		getCollectionEvent().saveOrUpdate();		
-	}
-	
-	private void addOrUpdateReceivedEvent() {
-		if (isAliquot() || isDerivative()) {
-			return;
-		}
-		
-		getReceivedEvent().saveOrUpdate();
-		setCreatedOn(getReceivedEvent().getTime());
-	}
-	
 	private void deleteEvents() {
 		if (!isAliquot() && !isDerivative()) {
 			getCollectionEvent().delete();
@@ -1260,7 +1733,7 @@ public class Specimen extends BaseExtensionEntity {
 
 	private void adjustParentSpecimenQty(BigDecimal qty) {
 		BigDecimal parentQty = parentSpecimen.getAvailableQuantity();
-		if (parentQty == null || NumUtil.isZero(parentQty)) {
+		if (parentQty == null || NumUtil.isZero(parentQty) || qty == null) {
 			return;
 		}
 
@@ -1290,13 +1763,15 @@ public class Specimen extends BaseExtensionEntity {
 				getPosition().vacate();
 			}
 			setPosition(null);
+
+			if (getParentEvent() != null) {
+				getParentEvent().removeChild(this);
+			}
 				
 			deleteEvents();
 		}
-				
-		for (Specimen child : getChildCollection()) {
-			child.updateHierarchyStatus(status);
-		}
+
+		getChildCollection().forEach(child -> child.updateHierarchyStatus(status));
 	}
 
 	public void checkPoolStatusConstraints() {
@@ -1306,7 +1781,7 @@ public class Specimen extends BaseExtensionEntity {
 
 		Specimen pooledSpmn = null;
 		if (isPooled()) {
-			if (isMissed() || isPending()) {
+			if (isMissedOrNotCollected() || isPending()) {
 				return;
 			}
 
@@ -1333,16 +1808,23 @@ public class Specimen extends BaseExtensionEntity {
 	}
 
 	private void createMissedChildSpecimens() {
+		createChildSpecimens(Specimen.MISSED_COLLECTION);
+	}
+
+	private void createNotCollectedSpecimens() {
+		createChildSpecimens(Specimen.NOT_COLLECTED);
+	}
+
+	private void createChildSpecimens(String status) {
 		if (getSpecimenRequirement() == null) {
 			return;
 		}
 
-		Set<SpecimenRequirement> anticipated = 
-				new HashSet<SpecimenRequirement>(getSpecimenRequirement().getChildSpecimenRequirements());
-		for (Specimen childSpecimen : getChildCollection()) {
-			if (childSpecimen.getSpecimenRequirement() != null) {
-				anticipated.remove(childSpecimen.getSpecimenRequirement());
-				childSpecimen.createMissedChildSpecimens();
+		Set<SpecimenRequirement> anticipated = new HashSet<>(getSpecimenRequirement().getChildSpecimenRequirements());
+		for (Specimen childSpmn : getChildCollection()) {
+			if (childSpmn.getSpecimenRequirement() != null) {
+				anticipated.remove(childSpmn.getSpecimenRequirement());
+				childSpmn.createChildSpecimens(status);
 			}
 		}
 
@@ -1350,10 +1832,90 @@ public class Specimen extends BaseExtensionEntity {
 			Specimen specimen = sr.getSpecimen();
 			specimen.setVisit(getVisit());
 			specimen.setParentSpecimen(this);
-			specimen.setCollectionStatus(Specimen.MISSED_COLLECTION);
+			specimen.setCollectionStatus(status);
 			getChildCollection().add(specimen);
 
-			specimen.createMissedChildSpecimens();
+			specimen.createChildSpecimens(status);
 		}
+	}
+
+	private void autoCollectParentSpecimens(Specimen childSpmn) {
+		Specimen parentSpmn = childSpmn.getParentSpecimen();
+		while (parentSpmn != null && parentSpmn.isPending()) {
+			parentSpmn.setCollectionStatus(COLLECTED);
+			parentSpmn.setStatusChanged(true);
+
+			Date createdOn = childSpmn.getCreatedOn();
+			if (parentSpmn.isPrimary()) {
+				parentSpmn.setCreatedOn(createdOn != null ? createdOn : getReceivedEvent().getTime());
+				parentSpmn.addOrUpdateCollRecvEvents();
+			} else {
+				parentSpmn.setCreatedOn(createdOn != null ? createdOn : Calendar.getInstance().getTime());
+			}
+
+			parentSpmn.addToChildrenEvent(childSpmn);
+
+			childSpmn = parentSpmn;
+			parentSpmn = parentSpmn.getParentSpecimen();
+		}
+
+		if (parentSpmn != null) {
+			//
+			// this means the parent specimen was pre-collected.
+			// therefore need to add a processing event for its
+			// recently collected child specimen
+			//
+			parentSpmn.addToChildrenEvent(childSpmn);
+		}
+	}
+
+	private void updateVisit(Visit visit, SpecimenRequirement sr) {
+		setVisit(visit);
+		setCollectionProtocol(visit.getCollectionProtocol());
+		setSpecimenRequirement(sr);
+		getSpecimensPool().forEach(poolSpmn -> poolSpmn.updateVisit(visit, null));
+		getChildCollection().forEach(child -> child.updateVisit(visit, null));
+	}
+
+	private void updateExternalIds(Collection<SpecimenExternalIdentifier> otherExternalIds) {
+		for (SpecimenExternalIdentifier externalId : otherExternalIds) {
+			SpecimenExternalIdentifier existing = getExternalIdByName(getExternalIds(), externalId.getName());
+			if (existing == null) {
+				SpecimenExternalIdentifier newId = new SpecimenExternalIdentifier();
+				newId.setSpecimen(this);
+				newId.setName(externalId.getName());
+				newId.setValue(externalId.getValue());
+				getExternalIds().add(newId);
+			} else {
+				existing.setValue(externalId.getValue());
+			}
+		}
+
+		getExternalIds().removeIf(externalId -> getExternalIdByName(otherExternalIds, externalId.getName()) == null);
+	}
+
+	private SpecimenExternalIdentifier getExternalIdByName(Collection<SpecimenExternalIdentifier> externalIds, String name) {
+		return externalIds.stream().filter(externalId -> StringUtils.equals(externalId.getName(), name)).findFirst().orElse(null);
+	}
+
+	private List<Specimen> createPendingSpecimens(SpecimenRequirement sr, Specimen parent) {
+		List<Specimen> result = new ArrayList<>();
+
+		for (SpecimenRequirement childSr : sr.getOrderedChildRequirements()) {
+			Specimen specimen = childSr.getSpecimen();
+			specimen.setParentSpecimen(parent);
+			specimen.setVisit(parent.getVisit());
+			specimen.setCollectionStatus(Specimen.PENDING);
+			specimen.setLabelIfEmpty();
+
+			parent.addChildSpecimen(specimen);
+			daoFactory.getSpecimenDao().saveOrUpdate(specimen);
+			EventPublisher.getInstance().publish(new SpecimenSavedEvent(specimen));
+
+			result.add(specimen);
+			result.addAll(createPendingSpecimens(childSr, specimen));
+		}
+
+		return result;
 	}
 }

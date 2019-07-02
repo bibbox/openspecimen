@@ -4,9 +4,10 @@ package com.krishagni.catissueplus.core.biospecimen.events;
 import java.util.Date;
 
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
+import com.krishagni.catissueplus.core.common.AttributeModifiedSupport;
 import com.krishagni.catissueplus.core.common.events.UserSummary;
 
-public class CollectionProtocolSummary implements Comparable<CollectionProtocolSummary> {
+public class CollectionProtocolSummary extends AttributeModifiedSupport implements Comparable<CollectionProtocolSummary> {
 	private Long id;
 
 	private String shortTitle;
@@ -30,6 +31,8 @@ public class CollectionProtocolSummary implements Comparable<CollectionProtocolS
 	private Boolean manualPpidEnabled;
 
 	private Boolean specimenCentric;
+
+	private Long catalogId;
 
 	public Long getId() {
 		return id;
@@ -127,6 +130,14 @@ public class CollectionProtocolSummary implements Comparable<CollectionProtocolS
 		this.specimenCentric = specimenCentric;
 	}
 
+	public Long getCatalogId() {
+		return catalogId;
+	}
+
+	public void setCatalogId(Long catalogId) {
+		this.catalogId = catalogId;
+	}
+
 	@Override
 	public int compareTo(CollectionProtocolSummary cpSummary) {
 		return this.shortTitle.toUpperCase().compareTo(cpSummary.getShortTitle().toUpperCase());
@@ -149,5 +160,6 @@ public class CollectionProtocolSummary implements Comparable<CollectionProtocolS
 		detail.setPpidFmt(cp.getPpidFormat());
 		detail.setManualPpidEnabled(cp.isManualPpidEnabled());
 		detail.setSpecimenCentric(cp.isSpecimenCentric());
+		detail.setCatalogId(cp.getCatalogId());
 	}
 }

@@ -15,6 +15,8 @@ angular.module('os.query.defineview', ['os.query.models'])
     function init() {
       initAggFnsDesc();
 
+      $scope.dctx = {havingClause: queryCtx.havingClause};
+      $scope.outputColumnExprs = queryCtx.outputColumnExprs;
       $scope.wideRowMode = angular.copy(queryCtx.wideRowMode); 
       $scope.reporting = angular.copy(queryCtx.reporting);
       $scope.pivotTable = (queryCtx.reporting.type == 'crosstab');
@@ -46,13 +48,19 @@ angular.module('os.query.defineview', ['os.query.models'])
     }
 
     $scope.ok = function() {
+      var init = false;
       if (!$scope.selectedFields || $scope.selectedFields.length == 0) {
-        $scope.selectedFields = getSelectedFields(forms);
+        $scope.selectedFields = getSelectedFields(forms, true);
+        init = true;
       }
 
       if (!$scope.selectedFields || $scope.selectedFields.length == 0) {
         Alerts.error('queries.no_fields_selected');
         return;
+      }
+
+      if (init) {
+        prepareAggFns($scope.selectedFields, aggFns, true);
       }
 
       var rptParams = $scope.reporting.params;
@@ -81,9 +89,11 @@ angular.module('os.query.defineview', ['os.query.models'])
 
       sanitizeSelectedFields($scope.selectedFields);
       $modalInstance.close(angular.extend(queryCtx, {
+         outputColumnExprs: $scope.outputColumnExprs,
          wideRowMode: $scope.wideRowMode, 
          selectedFields: $scope.selectedFields, 
-         reporting: $scope.reporting
+         reporting: $scope.reporting,
+         havingClause: $scope.dctx.havingClause
         })
       );
     }
@@ -97,13 +107,17 @@ angular.module('os.query.defineview', ['os.query.models'])
       $scope.wideRowMode = wideRows == true ? 'DEEP' : 'SHALLOW';
     };
 
+    $scope.setOutputColumnExprs = function(checked) {
+      $scope.outputColumnExprs = checked;
+    }
+
     $scope.showCurrField = function(field) {
       $scope.currField = field;
     };
 
     $scope.toggleAggFn = function(field, fn) {
       if (fn.opted && !fn.desc) {
-        fn.desc = field.label + " " + fn.label;
+        fn.desc = (field.displayLabel || field.label) + " " + fn.label;
       } else if (!fn.opted) {
         fn.desc = undefined;
       }
@@ -387,7 +401,11 @@ angular.module('os.query.defineview', ['os.query.models'])
         }
 
         if (!isAgg) {
-          reportFields.push({id: field.name, name:  field.name, value: field.form + ": " + field.label});
+          reportFields.push({
+            id   : field.name,
+            name : field.name,
+            value: (field.displayLabel || (field.form + ": " + field.label))
+          });
         }
       }
 
@@ -514,6 +532,19 @@ angular.module('os.query.defineview', ['os.query.models'])
       node.form.getFields().then(
         function(fields) {
           node.children = processFields(node.form.caption, node.form.name + ".", fields);
+          node.children = node.children.sort(
+            function(f1, f2) {
+              if (f1.type == 'field' && f2.type == 'field') {
+                return 0;
+              } else if (f1.type == 'field') {
+                return -1;
+              } else if (f2.type == 'field') {
+                return 1;
+              } else {
+                return f1.val < f2.val ? -1 : (f1.val > f2.val) ? 1 : 0;
+              }
+            }
+          );
           deferred.resolve(node.children);
         }
       );
@@ -576,12 +607,12 @@ angular.module('os.query.defineview', ['os.query.models'])
         var currLevel = level;
         var fieldParts;
         if (typeof selectedFields[i] == "string") {
-          fieldParts = selectedFields[i].split(".", 2);
+          fieldParts = selectedFields[i].split(".", currLevel + 1);
         } else {
-          fieldParts = selectedFields[i].name.split(".", 2);
+          fieldParts = selectedFields[i].name.split(".", currLevel + 1);
         }
 
-        if (Form.isExtendedField(fieldParts[1])) {
+        if (currLevel < fieldParts.length && Form.isExtendedField(fieldParts[currLevel])) {
           currLevel++;
         }
 
@@ -607,11 +638,12 @@ angular.module('os.query.defineview', ['os.query.models'])
             sfSelectedFields.push(selectedFields[i]);
             ++i;
           }
-          orderAndSetSelectedFields(sfSelectedFields, fieldNode, level + 1);
+          orderAndSetSelectedFields(sfSelectedFields, fieldNode, currLevel + 1);
         } else {
           fieldNode.checked = true;
           if (typeof selectedFields[i] != "string") {
             fieldNode.aggFns = selectedFields[i].aggFns;
+            fieldNode.displayLabel = selectedFields[i].displayLabel;
           }
           ++i;
         }
@@ -644,7 +676,11 @@ angular.module('os.query.defineview', ['os.query.models'])
       for (var i = 0; i < forms.length; ++i) {
         if (forms[i].checked && forms[i].type == 'temporal') {
           var name = '$temporal.' + forms[i].form.id;
-          selected.push(incCaption ? {name: name, label: forms[i].val, form: forms[i].val} : name);
+          if (incCaption) {
+            selected.push({name: name, label: forms[i].val, displayLabel: forms[i].displayLabel, form: forms[i].val});
+          } else {
+            selected.push(name);
+          }
         } else if (forms[i].children) {
           var fields = forms[i].children;
           for (var j = 0; j < fields.length; ++j) {
@@ -657,6 +693,7 @@ angular.module('os.query.defineview', ['os.query.models'])
                   form: field.form, 
                   name: field.name, 
                   label: field.val, 
+                  displayLabel: field.displayLabel,
                   type: field.dataType, 
                   aggFns: field.aggFns
                 });
@@ -668,6 +705,7 @@ angular.module('os.query.defineview', ['os.query.models'])
                     form: field.form, 
                     name: field.name, 
                     label: field.val, 
+                    displayLabel: field.displayLabel,
                     type: field.dataType
                   });
                 }
@@ -684,19 +722,19 @@ angular.module('os.query.defineview', ['os.query.models'])
       var selectedFieldsMap = {};
       angular.forEach(queryCtx.selectedFields, 
         function(selectedField) {
-          var copy = angular.copy(selectedField);
-          if (typeof copy == "string" && copy.indexOf("$temporal.") == 0) {
-            selectedFieldsMap[copy] = copy;
-            return;
-          }
-
-          var form;
+          var copy = angular.copy(selectedField), fieldName, form;
           if (typeof copy == "string") {
+            fieldName = copy;
             form = copy.split(".", 1);
           } else {
+            fieldName = copy.name;
             form = copy.name.split(".", 1);
           }
-         
+
+          if (form == '$temporal') {
+            form = fieldName;
+          }
+
           if (!selectedFieldsMap[form]) {
             selectedFieldsMap[form] = [];
           }

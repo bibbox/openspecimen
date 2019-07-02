@@ -8,8 +8,13 @@
       <a class="list-group-item" ng-repeat="visit in visits" 
         ui-sref="participant-detail.visits({visitId: visit.id, eventId: visit.eventId})"
         ui-sref-active="active">
+
         <h5 class="list-group-item-heading">
-          <os-event-desc event-point="visit.eventPoint" event-label="visit.eventLabel"></os-event-desc>
+          <span os-tooltip="{{'visits.spr_help' | translate}}" placement="right" class="fa fa-file-text-o"
+            ng-click="viewSpr($event, visit.id, visit.eventId)" ng-if="!!visit.sprName">
+          </span>
+          <os-event-desc event-point="visit.eventPoint" event-point-unit="visit.eventPointUnit"
+            event-label="visit.eventLabel"></os-event-desc>
         </h5>
 
         <p class="list-group-item-text">
@@ -18,8 +23,13 @@
           </span>
           <span class="status" ng-if="visit.status == 'Pending' || !visit.status">
             {{'visits.status.pending' | translate}}
-            <span ng-if="visit.anticipatedVisitDate != null">
-              | {{visit.anticipatedVisitDate | date: global.dateFmt}}
+            <span ng-switch on="!!visit.id && !!visit.visitDate">
+              <span ng-switch-when="true">| {{visit.visitDate | date: global.dateFmt}}</span>
+              <span ng-switch-default>
+                <span ng-if="visit.anticipatedVisitDate != null">
+                  | {{visit.anticipatedVisitDate | date: global.dateFmt}}
+                </span>
+              </span>
             </span>
           </span>
           <span class="status" ng-if="visit.status == 'Complete'">
@@ -27,6 +37,9 @@
           </span>
           <span class="status" ng-if="visit.status == 'Missed Collection'">
             {{'visits.status.missed' | translate}} | {{visit.visitDate | date: global.dateFmt}}
+          </span>
+          <span class="status" ng-if="visit.status == 'Not Collected'">
+            {{'visits.status.not_collected' | translate}} | {{visit.visitDate | date: global.dateFmt}}
           </span>
         </p>
 
@@ -40,9 +53,8 @@
 
   <div class="col-xs-9">
     <os-specimen-tree cp="cp" cpr="cpr" visit="visit" specimens="specimens" allowed-ops="specimenAllowedOps" 
-      reload="reload()" collection-date="visit.visitDate" pending-spmns-disp-interval="pendingSpmnsDispInterval">
+      reload="reload()" pending-spmns-disp-interval="pendingSpmnsDispInterval">
     </os-specimen-tree>
-  </div>
   </div>
 </div>
 

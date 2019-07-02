@@ -1,5 +1,6 @@
 package com.krishagni.catissueplus.core.de.events;
 
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -13,7 +14,7 @@ import org.codehaus.jackson.annotate.JsonProperty;
 import com.krishagni.catissueplus.core.de.domain.DeObject;
 import com.krishagni.catissueplus.core.de.domain.DeObject.Attr;
 
-public class ExtensionDetail {
+public class ExtensionDetail implements Serializable {
 	private Long id;
 	
 	private Long objectId;
@@ -22,7 +23,9 @@ public class ExtensionDetail {
 
 	private String formCaption;
 	
-	private List<AttrDetail> attrs = new ArrayList<AttrDetail>();
+	private List<AttrDetail> attrs = new ArrayList<>();
+
+	private Map<String, Object> attrsMap;
 	
 	public Long getId() {
 		return id;
@@ -62,6 +65,7 @@ public class ExtensionDetail {
 
 	public void setAttrs(List<AttrDetail> attrs) {
 		this.attrs = attrs;
+		this.attrsMap = null;
 	}
 
 	@JsonProperty
@@ -74,11 +78,17 @@ public class ExtensionDetail {
 			attr.setValue(entry.getValue());
 			attrs.add(attr);
 		}
+
+		this.attrsMap = null;
 	}
 
 	@JsonIgnore
 	public Map<String, Object> getAttrsMap() {
-		return getAttrsMap(attrs);
+		if (attrsMap == null) {
+			attrsMap = getAttrsMap(attrs);
+		}
+
+		return attrsMap;
 	}
 	
 	public static ExtensionDetail from(DeObject extension) {
@@ -86,7 +96,11 @@ public class ExtensionDetail {
 	}
 
 	public static ExtensionDetail from(DeObject extension, boolean excludePhi) {
-		if (extension == null || extension.getId() == null) {
+		return from(extension, excludePhi, false);
+	}
+
+	public static ExtensionDetail from(DeObject extension, boolean excludePhi, boolean lenient) {
+		if (extension == null || (!lenient && extension.getId() == null)) {
 			return null;
 		}
 		
@@ -129,7 +143,7 @@ public class ExtensionDetail {
 		return attrsMap;
 	}
 	
-	public static class AttrDetail {
+	public static class AttrDetail implements Serializable {
 		private String name;
 		
 		private String udn;

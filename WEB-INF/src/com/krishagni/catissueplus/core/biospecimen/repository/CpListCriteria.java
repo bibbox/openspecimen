@@ -1,17 +1,24 @@
 
 package com.krishagni.catissueplus.core.biospecimen.repository;
 
+import java.util.Set;
+
+import com.krishagni.catissueplus.core.common.access.SiteCpPair;
 import com.krishagni.catissueplus.core.common.events.AbstractListCriteria;
 
 public class CpListCriteria extends AbstractListCriteria<CpListCriteria> {
 	
 	private String title;
+
+	private String irbId;
 	
 	private Long piId;
 	
 	private String repositoryName;
 	
 	private boolean includePi;
+
+	private Set<SiteCpPair> siteCps;
 	
 	@Override
 	public CpListCriteria self() {
@@ -24,6 +31,15 @@ public class CpListCriteria extends AbstractListCriteria<CpListCriteria> {
 	
 	public CpListCriteria title(String title) {
 		this.title = title;
+		return self();
+	}
+
+	public String irbId() {
+		return irbId;
+	}
+
+	public CpListCriteria irbId(String irbId) {
+		this.irbId = irbId;
 		return self();
 	}
 	
@@ -51,6 +67,15 @@ public class CpListCriteria extends AbstractListCriteria<CpListCriteria> {
 	
 	public CpListCriteria includePi(boolean includePi) {
 		this.includePi = includePi;
+		return self();
+	}
+
+	public Set<SiteCpPair> siteCps() {
+		return siteCps;
+	}
+
+	public CpListCriteria siteCps(Set<SiteCpPair> siteCps) {
+		this.siteCps = siteCps;
 		return self();
 	}
 }

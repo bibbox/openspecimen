@@ -5,6 +5,8 @@ import java.util.List;
 
 import org.apache.commons.lang3.StringUtils;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 public class Filter {
 	
 	public enum Op {
@@ -26,7 +28,7 @@ public class Filter {
 
 		private String symbol;
 
-		private Op(String symbol) {
+		Op(String symbol) {
 			this.symbol = symbol;
 		}
 
@@ -37,7 +39,7 @@ public class Filter {
 		public boolean isUnary() {
 			return this == EXISTS || this == NOT_EXISTS || this == ANY;
 		}
-	};
+	}
 	
 	private int id;
 
@@ -48,10 +50,16 @@ public class Filter {
 	private String[] values;
 	
 	private String expr;
+
+	private Long subQueryId;
 	
 	private String desc;
 	
 	private boolean parameterized;
+
+	private boolean hideOptions;
+
+	private transient SavedQuery subQuery;
 
 	public int getId() {
 		return id;
@@ -93,6 +101,14 @@ public class Filter {
 		this.expr = expr;
 	}
 
+	public Long getSubQueryId() {
+		return subQueryId;
+	}
+
+	public void setSubQueryId(Long subQueryId) {
+		this.subQueryId = subQueryId;
+	}
+
 	public String getDesc() {
 		return desc;
 	}
@@ -107,6 +123,23 @@ public class Filter {
 
 	public void setParameterized(boolean parameterized) {
 		this.parameterized = parameterized;
+	}
+
+	public boolean isHideOptions() {
+		return hideOptions;
+	}
+
+	public void setHideOptions(boolean hideOptions) {
+		this.hideOptions = hideOptions;
+	}
+
+	@JsonIgnore
+	public SavedQuery getSubQuery() {
+		return subQuery;
+	}
+
+	public void setSubQuery(SavedQuery subQuery) {
+		this.subQuery = subQuery;
 	}
 
 	public void setEqValues(List<Object> values) {
@@ -126,7 +159,7 @@ public class Filter {
 	}
 
 	private boolean isParameterizableConditionValue() {
-		if (!isParameterized()) {
+		if (!isParameterized() || getSubQueryId() != null) {
 			return false;
 		}
 

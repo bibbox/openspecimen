@@ -12,13 +12,26 @@ angular.module('os.administrative.order',
       .state('order-root', {
         abstract: true,
         template: '<div ui-view></div>',
-        controller: function($scope) {
+        controller: function($scope, printDistLabels) {
           // Storage Container Authorization Options
           $scope.orderResource = {
             createOpts: {resource: 'Order', operations: ['Create']},
             updateOpts: {resource: 'Order', operations: ['Update']},
             deleteOpts: {resource: 'Order', operations: ['Delete']},
-            importOpts: {resource: 'Order', operations: ['Bulk Import']}
+            importOpts: {resource: 'Order', operations: ['Export Import']}
+          }
+
+          $scope.orctx = {
+            printDistLabels: printDistLabels
+          }
+        },
+        resolve: {
+          printDistLabels: function(SettingUtil) {
+            return SettingUtil.getSetting('administrative', 'allow_dist_label_printing').then(
+              function(setting) {
+                return setting.value == 'true' || setting.value == true;
+              }
+            );
           }
         },
         parent: 'signed-in'
@@ -30,7 +43,7 @@ angular.module('os.administrative.order',
         parent: 'order-root'
       })
       .state('order-addedit', {
-        url: '/order-addedit/:orderId?requestId&specimenListId',
+        url: '/order-addedit/:orderId?requestId&specimenListId&allReservedSpmns&dpId',
         templateUrl: 'modules/administrative/order/addedit.html',
         controller: 'OrderAddEditCtrl',
         resolve: {
@@ -42,12 +55,29 @@ angular.module('os.administrative.order',
             return null;
           },
 
-          order: function($stateParams, specimenList, DistributionOrder) {
-            if ($stateParams.orderId) {
+          order: function($stateParams, $q, specimenList, DistributionProtocol, DistributionOrder) {
+            if (!!$stateParams.orderId) {
               return DistributionOrder.getById($stateParams.orderId);
             }
 
-            return new DistributionOrder({status: 'PENDING', orderItems: [], specimenList: specimenList});
+            var allReservedSpmns = undefined;
+            var p = null;
+            if ($stateParams.dpId && $stateParams.dpId > 0) {
+              allReservedSpmns = !specimenList && ($stateParams.allReservedSpmns == 'true');
+              p = DistributionProtocol.getById($stateParams.dpId);
+            }
+
+            return $q.when(p).then(
+              function(dp) {
+                return new DistributionOrder({
+                  status: 'PENDING',
+                  distributionProtocol: dp,
+                  orderItems: [],
+                  specimenList: specimenList,
+                  allReservedSpmns: allReservedSpmns
+                });
+              }
+            );
           },
 
           spmnRequest: function($stateParams, $injector, order) {
@@ -77,6 +107,30 @@ angular.module('os.administrative.order',
             }
 
             return null;
+          },
+
+          maxSpmnsLimit: function(SettingUtil) {
+            return SettingUtil.getSetting('administrative', 'max_order_spmns_ui_limit').then(
+              function(setting) {
+                return (setting.value && +setting.value) || 100;
+              }
+            )
+          },
+
+          customFields: function($injector, $q, CpConfigSvc) {
+            if (!$injector.has('sdeFieldsSvc')) {
+              return [];
+            }
+
+            var cpDictQ = CpConfigSvc.getDictionary(-1, []);
+            var fieldsQ = CpConfigSvc.getWorkflowData(-1, 'order-addedit-specimens', []);
+            return $q.all([cpDictQ, fieldsQ]).then(
+              function(resps) {
+                var cpDict = resps[0] || [];
+                var fields = (resps[1] && resps[1].columns) || [];
+                return $injector.get('sdeFieldsSvc').commonFns().overrideFields(cpDict, fields);
+              }
+            );
           }
         },
         parent: 'order-root'
@@ -86,11 +140,39 @@ angular.module('os.administrative.order',
         templateUrl: 'modules/common/import/add.html',
         controller: 'ImportObjectCtrl',
         resolve: {
-          importDetail: function() {
+          importDetail: function(DistributionProtocol) {
             return {
               breadcrumbs: [{state: 'order-list', title: 'orders.list'}],
               objectType: 'distributionOrder',
               csvType: 'MULTIPLE_ROWS_PER_OBJ',
+              title: 'orders.bulk_import',
+              onSuccess: {state: 'order-list'},
+              entityLabel: 'orders.dp',
+              entitiesFn: function(searchTerm) {
+                var filterOpts = {activityStatus: 'Active', query: searchTerm, excludeExpiredDps: true};
+                return DistributionProtocol.query(filterOpts).then(
+                  function(dps) {
+                    return dps.map(function(dp) { return {id: dp.id, name: dp.shortTitle}; });
+                  }
+                );
+              },
+              entities: []
+            };
+          }
+        },
+        parent: 'signed-in'
+      })
+      .state('order-ret-spmns-import', {
+        url: '/return-specimens-import',
+        templateUrl: 'modules/common/import/add.html',
+        controller: 'ImportObjectCtrl',
+        resolve: {
+          importDetail: function() {
+            return {
+              breadcrumbs: [{state: 'order-list', title: 'orders.returned_specimens'}],
+              objectType: 'returnSpecimen',
+              showImportType: false,
+              importType: 'CREATE',
               title: 'orders.bulk_import',
               onSuccess: {state: 'order-list'}
             };
@@ -107,7 +189,7 @@ angular.module('os.administrative.order',
             return {
               breadcrumbs: [{state: 'order-list', title: 'orders.list'}],
               title: 'orders.bulk_import_jobs',
-              objectTypes: ['distributionOrder']
+              objectTypes: ['distributionOrder', 'returnSpecimen']
             };
           }
         },
@@ -146,6 +228,9 @@ angular.module('os.administrative.order',
         },
         parent: 'order-root'
       });
-  }).run(function(UrlResolver) {
+  }).run(function(UrlResolver, QuickSearchSvc) {
     UrlResolver.regUrlState('order-overview', 'order-detail.overview', 'orderId');
+
+    var opts = {caption: 'entities.distribution_order', state: 'order-detail.overview'};
+    QuickSearchSvc.register('distribution_order', opts);
   });;

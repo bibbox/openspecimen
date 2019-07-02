@@ -33,19 +33,21 @@ public class LabelGeneratorImpl implements LabelGenerator {
 
 	@Override
 	public boolean isValidLabelTmpl(String labelTmpl) {
-		boolean valid = true;
+		boolean valid = true, haveTokens = false;
 		
 		Matcher matcher = labelPattern.matcher(labelTmpl);		
 		while (matcher.find()) {
+			haveTokens = true;
+
 			Pair<String, String[]> tokenArgs = getTokenNameArgs(matcher.group(1));
 			LabelTmplToken token = tokenRegistrar.getToken(tokenArgs.first());
-			if (token == null) {
+			if (token == null || !token.areArgsValid(tokenArgs.second())) {
 				valid = false;
 				break;
 			}			
 		}
 		
-		return valid;
+		return valid && haveTokens;
 	}	
 	
 	@Override

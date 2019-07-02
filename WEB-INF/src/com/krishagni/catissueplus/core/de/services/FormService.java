@@ -53,7 +53,9 @@ public interface FormService {
 	public ResponseEvent<EntityFormRecords> getEntityFormRecords(RequestEvent<GetEntityFormRecordsOp> req);
 	
 	public ResponseEvent<FormDataDetail> getFormData(RequestEvent<FormRecordCriteria> req);
-	
+
+	public ResponseEvent<List<FormDataDetail>> getLatestRecords(RequestEvent<FormRecordCriteria> req);
+
 	public ResponseEvent<FormDataDetail> saveFormData(RequestEvent<FormDataDetail> req);
 	
 	public ResponseEvent<List<FormData>> saveBulkFormData(RequestEvent<List<FormData>> req);
@@ -82,6 +84,8 @@ public interface FormService {
 	public void addFormContextProc(String entity, FormContextProcessor proc);
 
 	public Map<String, Object> getExtensionInfo(Long cpId, String entityType);
+
+	public Map<String, Object> getExtensionInfo(boolean cpBased, String entityType, Long entityId);
 
 	public List<FormSummary> getEntityForms(Long cpId, String[] entityTypes);
 

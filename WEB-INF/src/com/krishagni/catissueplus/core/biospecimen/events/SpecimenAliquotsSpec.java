@@ -3,6 +3,7 @@ package com.krishagni.catissueplus.core.biospecimen.events;
 import java.math.BigDecimal;
 import java.util.Date;
 
+import com.krishagni.catissueplus.core.common.events.UserSummary;
 import com.krishagni.catissueplus.core.de.events.ExtensionDetail;
 
 public class SpecimenAliquotsSpec {
@@ -13,10 +14,22 @@ public class SpecimenAliquotsSpec {
 	private String cpShortTitle;
 	
 	private Integer noOfAliquots;
+
+	private String labels;
+
+	private String barcodes;
 	
 	private BigDecimal qtyPerAliquot;
+
+	private String specimenClass;
+
+	private String type;
+
+	private BigDecimal concentration;
 	
 	private Date createdOn;
+
+	private UserSummary createdBy;
 
 	private String parentContainerName;
 
@@ -35,6 +48,10 @@ public class SpecimenAliquotsSpec {
 	private Integer incrParentFreezeThaw;
 
 	private Boolean closeParent;
+
+	private Boolean createDerived;
+
+	private Boolean printLabel;
 
 	private ExtensionDetail extensionDetail;
 
@@ -70,6 +87,22 @@ public class SpecimenAliquotsSpec {
 		this.noOfAliquots = noOfAliquots;
 	}
 
+	public String getLabels() {
+		return labels;
+	}
+
+	public void setLabels(String labels) {
+		this.labels = labels;
+	}
+
+	public String getBarcodes() {
+		return barcodes;
+	}
+
+	public void setBarcodes(String barcodes) {
+		this.barcodes = barcodes;
+	}
+
 	public BigDecimal getQtyPerAliquot() {
 		return qtyPerAliquot;
 	}
@@ -78,12 +111,44 @@ public class SpecimenAliquotsSpec {
 		this.qtyPerAliquot = qtyPerAliquot;
 	}
 
+	public String getSpecimenClass() {
+		return specimenClass;
+	}
+
+	public void setSpecimenClass(String specimenClass) {
+		this.specimenClass = specimenClass;
+	}
+
+	public String getType() {
+		return type;
+	}
+
+	public void setType(String type) {
+		this.type = type;
+	}
+
+	public BigDecimal getConcentration() {
+		return concentration;
+	}
+
+	public void setConcentration(BigDecimal concentration) {
+		this.concentration = concentration;
+	}
+
 	public Date getCreatedOn() {
 		return createdOn;
 	}
 
 	public void setCreatedOn(Date createdOn) {
 		this.createdOn = createdOn;
+	}
+
+	public UserSummary getCreatedBy() {
+		return createdBy;
+	}
+
+	public void setCreatedBy(UserSummary createdBy) {
+		this.createdBy = createdBy;
 	}
 
 	public String getParentContainerName() {
@@ -159,8 +224,28 @@ public class SpecimenAliquotsSpec {
 	}
 
 	public boolean closeParent() {
-		return closeParent == null ? false : closeParent;
+		return closeParent != null && closeParent;
 	}
+
+	public Boolean getCreateDerived() {
+		return createDerived;
+	}
+
+	public void setCreateDerived(Boolean createDerived) {
+		this.createDerived = createDerived;
+	}
+
+	public boolean createDerived() { return createDerived != null && createDerived; }
+
+	public Boolean getPrintLabel() {
+		return printLabel;
+	}
+
+	public void setPrintLabel(Boolean printLabel) {
+		this.printLabel = printLabel;
+	}
+
+	public boolean printLabel() { return printLabel != null && printLabel; }
 
 	public ExtensionDetail getExtensionDetail() {
 		return extensionDetail;

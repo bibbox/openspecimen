@@ -14,8 +14,10 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.BeanUtils;
 
 import com.krishagni.catissueplus.core.common.PlusTransactional;
+import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
 import com.krishagni.catissueplus.core.common.events.ResponseEvent;
+import com.krishagni.catissueplus.core.common.util.Utility;
 import com.krishagni.catissueplus.core.de.events.ExecuteQueryEventOp;
 import com.krishagni.catissueplus.core.de.events.FacetDetail;
 import com.krishagni.catissueplus.core.de.events.GetFacetValuesOp;
@@ -37,25 +39,17 @@ public class DefaultListGenerator implements ListGenerator {
 
 	@Override
 	@PlusTransactional
-	public ListDetail getList(ListConfig cfg, List<Column> searchCriteria) {
+	public ListDetail getList(ListConfig cfg, List<Column> searchCriteria, Column orderBy) {
 		if (CollectionUtils.isEmpty(cfg.getColumns())) {
-			// TODO: Error empty column list
+			throw OpenSpecimenException.userError(ListError.NO_COLUMNS);
 		}
 
-		if (StringUtils.isBlank(cfg.getCriteria()) && StringUtils.isBlank(cfg.getRestriction())) {
-			// TODO: No list restricting criteria
-		}
-
-		return getListDetail(cfg, searchCriteria);
+		return getListDetail(cfg, searchCriteria, orderBy);
 	}
 
 	@Override
 	@PlusTransactional
 	public int getListSize(ListConfig cfg, List<Column> searchCriteria) {
-		if (StringUtils.isBlank(cfg.getCriteria()) && StringUtils.isBlank(cfg.getRestriction())) {
-			// TODO: No list restricting criteria
-		}
-
 		return getListSize(cfg, getCriteria(cfg, searchCriteria));
 	}
 
@@ -79,14 +73,14 @@ public class DefaultListGenerator implements ListGenerator {
 		return resp.getPayload().get(0).getValues();
 	}
 
-	private String getDataAql(ListConfig cfg, String criteria) {
+	private String getDataAql(ListConfig cfg, String criteria, Column orderBy) {
 		StringBuilder aql = new StringBuilder()
-			.append("select ").append(getDistinctExpr(cfg)).append(" ").append(getSelectExpr(cfg))
+			.append("select ").append(getDistinctExpr(cfg, orderBy)).append(" ").append(getSelectExpr(cfg))
 			.append(" where ").append(criteria);
 
-		String orderBy = getOrderExpr(cfg);
-		if (StringUtils.isNotBlank(orderBy)) {
-			aql.append(" order by ").append(orderBy);
+		String orderByExpr = orderBy != null ? getOrderExpr(orderBy) : getOrderExpr(cfg);
+		if (StringUtils.isNotBlank(orderByExpr)) {
+			aql.append(" order by ").append(orderByExpr);
 		}
 
 		aql.append(" limit ").append(cfg.getStartAt()).append(", ").append(cfg.getMaxResults());
@@ -100,14 +94,25 @@ public class DefaultListGenerator implements ListGenerator {
 			.toString();
 	}
 
-	private String getDistinctExpr(ListConfig cfg) {
+	private String getDistinctExpr(ListConfig cfg, Column orderBy) {
 		if (!cfg.isDistinct()) {
 			return StringUtils.EMPTY;
 		}
 
+		List<Column> toAdd = new ArrayList<>();
+		if (orderBy != null) {
+			toAdd.add(orderBy);
+		} else if (cfg.getOrderBy() != null) {
+			toAdd.addAll(cfg.getOrderBy());
+		}
+
 		StringBuilder distinct = new StringBuilder("distinct ");
-		distinct.append(cfg.getOrderBy().stream().map(expr -> getSelectExpr(expr)).collect(Collectors.joining(", ")));
-		return distinct.append(", ").toString();
+		if (!toAdd.isEmpty()) {
+			distinct.append(toAdd.stream().map(this::getSelectExpr).collect(Collectors.joining(", ")))
+				.append(", ");
+		}
+
+		return distinct.toString();
 	}
 
 	private String getSelectExpr(ListConfig cfg) {
@@ -158,6 +163,10 @@ public class DefaultListGenerator implements ListGenerator {
 			criteria.append("(").append(searchCriteriaAql).append(")");
 		}
 
+		if (criteria.length() == 0) {
+			throw OpenSpecimenException.userError(ListError.NO_CRITERIA);
+		}
+
 		return criteria.toString();
 	}
 
@@ -166,12 +175,8 @@ public class DefaultListGenerator implements ListGenerator {
 			return StringUtils.EMPTY;
 		}
 
-		if (CollectionUtils.isEmpty(cfg.getFilters())) {
-			// TODO: error out when no filters are pre-configured
-		}
-
-		Map<String, Column> filtersMap = cfg.getFilters().stream()
-			.collect(Collectors.toMap(column -> column.getExpr(), column -> column));
+		Map<String, Column> filtersMap = Utility.nullSafeStream(cfg.getFilters())
+			.collect(Collectors.toMap(Column::getExpr, column -> column));
 
 		List<String> invalidFilters = new ArrayList<>();
 		Map<String, Container> formsCache = new HashMap<>();
@@ -192,7 +197,7 @@ public class DefaultListGenerator implements ListGenerator {
 		}
 
 		if (CollectionUtils.isNotEmpty(invalidFilters)) {
-			// TODO: error out specifying invalid filter expressions
+			throw OpenSpecimenException.userError(ListError.INVALID_FILTERS, invalidFilters);
 		}
 
 		return aqls.stream().collect(Collectors.joining(" and "));
@@ -280,13 +285,13 @@ public class DefaultListGenerator implements ListGenerator {
 			return null;
 		}
 
-		return expr + " contains \"" + strValue + "\"";
+		return expr + " contains " + stringLiteral(strValue);
 	}
 
 	private String getInAql(String expr, List<Object> values) {
 		String inVals = values.stream()
-			.map(value -> value != null ? "\"" + value.toString() + "\"" : null)
-			.filter(value -> StringUtils.isNotBlank(value))
+			.map(value -> stringLiteral(value.toString()))
+			.filter(StringUtils::isNotBlank)
 			.collect(Collectors.joining(", "));
 
 		if (StringUtils.isBlank(inVals)) {
@@ -294,6 +299,18 @@ public class DefaultListGenerator implements ListGenerator {
 		}
 
 		return expr + " in (" + inVals + ")";
+	}
+
+	private String stringLiteral(String input) {
+		if (StringUtils.isBlank(input)) {
+			return StringUtils.EMPTY;
+		}
+
+		return "\"" + escapeQuotes(input) + "\"";
+	}
+
+	private String escapeQuotes(String input) {
+		return input.replaceAll("\"", "\\\\\"");
 	}
 
 	private String getOrderExpr(ListConfig cfg) {
@@ -309,10 +326,10 @@ public class DefaultListGenerator implements ListGenerator {
 		return expr;
 	}
 
-	private ListDetail getListDetail(ListConfig cfg, List<Column> searchCriteria) {
+	private ListDetail getListDetail(ListConfig cfg, List<Column> searchCriteria, Column orderBy) {
 		String criteria = getCriteria(cfg, searchCriteria);
 
-		ListDetail result = getListDetail(cfg, getListData(cfg, criteria));
+		ListDetail result = getListDetail(cfg, orderBy, getListData(cfg, criteria, orderBy));
 		if (result.getRows().size() == cfg.getMaxResults()) {
 			if (cfg.isIncludeCount()) {
 				result.setSize(getListSize(cfg, criteria));
@@ -324,8 +341,8 @@ public class DefaultListGenerator implements ListGenerator {
 		return result;
 	}
 
-	private QueryExecResult getListData(ListConfig cfg, String criteria) {
-		return executeQuery(getDataAql(cfg, criteria), cfg.getCpId(), cfg.getDrivingForm());
+	private QueryExecResult getListData(ListConfig cfg, String criteria, Column orderBy) {
+		return executeQuery(getDataAql(cfg, criteria, orderBy), cfg.getCpId(), cfg.getDrivingForm());
 	}
 
 	private int getListSize(ListConfig cfg, String criteria) {
@@ -347,8 +364,11 @@ public class DefaultListGenerator implements ListGenerator {
 		return resp.getPayload();
 	}
 
-	private ListDetail getListDetail(ListConfig cfg, QueryExecResult result) {
-		int startIdx = cfg.isDistinct() ? cfg.getOrderBy().size() : 0;
+	private ListDetail getListDetail(ListConfig cfg, Column orderBy, QueryExecResult result) {
+		int startIdx = 0;
+		if (cfg.isDistinct()) {
+			startIdx = orderBy != null ? 1 : (cfg.getOrderBy() != null ? cfg.getOrderBy().size() : 0);
+		}
 
 		List<Row> rows = new ArrayList<>();
 		for (String[] rowData : result.getRows()) {
@@ -409,7 +429,7 @@ public class DefaultListGenerator implements ListGenerator {
 		String formName, fieldName;
 		if (exprParts[1].equals("extensions") || exprParts[1].equals("customFields")) {
 			if (exprParts.length < 4) {
-				throw new IllegalArgumentException("Invalid expression: " + expr);
+				throw OpenSpecimenException.userError(ListError.INVALID_FIELD, expr);
 			}
 
 			formName = exprParts[2];
@@ -423,7 +443,7 @@ public class DefaultListGenerator implements ListGenerator {
 		if (form == null) {
 			form = Container.getContainer(formName);
 			if (form == null) {
-				throw new IllegalArgumentException("Invalid expression: " + expr);
+				throw OpenSpecimenException.userError(ListError.INVALID_FIELD, expr);
 			}
 
 			formsCache.put(formName, form);
@@ -431,7 +451,7 @@ public class DefaultListGenerator implements ListGenerator {
 
 		Control field = form.getControlByUdn(fieldName, "\\.");
 		if (field == null) {
-			throw new IllegalArgumentException("Invalid filter: " + expr);
+			throw OpenSpecimenException.userError(ListError.INVALID_FIELD, expr);
 		}
 
 		return field;

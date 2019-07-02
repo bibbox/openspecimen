@@ -9,7 +9,6 @@ angular.module('os.biospecimen.cp',
     'os.biospecimen.cp.consents',
     'os.biospecimen.cp.events',
     'os.biospecimen.cp.specimens',
-    'os.biospecimen.cp.catalog',
     'os.biospecimen.cp.dp'
   ])
 
@@ -41,17 +40,28 @@ angular.module('os.biospecimen.cp',
           $scope.codingEnabled = $scope.global.appProps.cp_coding_enabled;
         },
         resolve: {
-          cpsCtx: function(currentUser, AuthorizationService) {
-            return {
-              participantImportAllowed: AuthorizationService.isAllowed({
-                resource: 'ParticipantPhi',
-                operations: ['Bulk Import']
-              }),
+          cpsCtx: function(currentUser, authInit, AuthorizationService) {
+            var cpCreateAllowed = AuthorizationService.isAllowed({
+              resource: 'CollectionProtocol',
+              operations: ['Create']
+            });
 
-              visitSpecimenImportAllowed: AuthorizationService.isAllowed({
-                resource: 'VisitAndSpecimen',
-                operations: ['Bulk Import']
-              })
+            var participantEximAllowed = AuthorizationService.isAllowed({
+              resource: 'ParticipantPhi',
+              operations: ['Export Import']
+            });
+
+            var visitSpmnEximAllowed = AuthorizationService.isAllowed({
+              resource: 'VisitAndSpecimen',
+              operations: ['Export Import']
+            });
+
+            return {
+              cpCreateAllowed: cpCreateAllowed,
+              participantImportAllowed: participantEximAllowed,
+              visitSpecimenImportAllowed: visitSpmnEximAllowed,
+              participantExportAllowed: participantEximAllowed,
+              visitSpecimenExportAllowed: visitSpmnEximAllowed
             }
           }
         },
@@ -69,9 +79,11 @@ angular.module('os.biospecimen.cp',
           },
           
           view: function($rootScope, $state, cpList) {
-            if ($rootScope.stateChangeInfo.fromState.name == 'login') {
+            if ($rootScope.stateChangeInfo.fromState.name == 'login' ||
+              $rootScope.stateChangeInfo.fromState.name == 'sc-catalog-dashboard' ||
+              $rootScope.stateChangeInfo.fromState.parent == 'sc-catalog-main')  {
               if (cpList.length == 1) {
-                $state.go('participant-list', {cpId: cpList[0].id});
+                $state.go('cp-summary-view', {cpId: cpList[0].id});
               } else if (cpList.length == 0) {
                 $state.go('home');
               }
@@ -139,19 +151,59 @@ angular.module('os.biospecimen.cp',
         templateUrl: 'modules/common/import/list.html',
         controller: 'ImportJobsListCtrl',
         resolve: {
-          importDetail: function() {
+          importDetail: function(ImportUtil) {
+            var objectTypes = [
+              'cprMultiple', 'otherCpr', 'cpr', 'participant', 'consent', 'visit',
+              'specimen', 'specimenDerivative', 'specimenAliquot',
+              'masterSpecimen', 'specimenDisposal', 'extensions'
+            ];
+
             return {
               breadcrumbs: [
                 {state: 'cp-list', title: "cp.list"}
               ],
+              objectTypes: objectTypes.concat(ImportUtil.getPluginTypes()),
               title: 'bulk_imports.jobs_list',
-              objectTypes: [
-                "cprMultiple", 'otherCpr', 'cpr', 'participant', 'consent', 'visit',
-                'specimen', 'specimenDerivative', 'specimenAliquot',
-                'masterSpecimen', 'specimenDisposal', 'extensions'
-              ],
               objectParams: {cpId: -1}
             }
+          }
+        },
+        parent: 'cps'
+      })
+      .state('export-multi-cp-objs', {
+        url: '/export-multi-cp-objs',
+        templateUrl: 'modules/common/export/add.html',
+        controller: 'AddEditExportJobCtrl',
+        resolve: {
+          cp: function(CollectionProtocol) {
+            return new CollectionProtocol({id: -1});
+          },
+
+          allowedEntityTypes: function(cp, cpsCtx) {
+            var entityTypes = [];
+            if (cpsCtx.participantExportAllowed) {
+              entityTypes.push('CommonParticipant');
+              entityTypes.push('Participant');
+            }
+
+            if (cpsCtx.visitSpecimenExportAllowed) {
+              entityTypes.push('SpecimenCollectionGroup');
+            }
+
+            if (cpsCtx.visitSpecimenExportAllowed) {
+              entityTypes.push('Specimen');
+              entityTypes.push('SpecimenEvent');
+            }
+
+            return entityTypes;
+          },
+
+          forms: function(cp, allowedEntityTypes) {
+            return allowedEntityTypes.length > 0 ? cp.getForms(allowedEntityTypes) : [];
+          },
+
+          exportDetail: function(cp, allowedEntityTypes, forms, ExportUtil) {
+            return ExportUtil.getExportDetail(cp, allowedEntityTypes, forms);
           }
         },
         parent: 'cps'
@@ -209,6 +261,14 @@ angular.module('os.biospecimen.cp',
             }
 
             return SpecimenRequirement.listFor(eventId);
+          },
+
+          aliquotQtyReq: function(SettingUtil) {
+            return SettingUtil.getSetting('biospecimen', 'mandatory_aliquot_qty').then(
+              function(resp) {
+                return resp.value == 'true' || resp.value == true || resp.value == 1 || resp.value == '1';
+              }
+            );
           }
         },
         controller: 'CpSpecimensCtrl'
@@ -229,24 +289,20 @@ angular.module('os.biospecimen.cp',
         parent: 'cp-detail.settings',
         controller: 'CpLabelSettingsCtrl'
       })
-      .state('cp-detail.settings.catalog', {
-        url: '/catalog',
-        templateUrl: 'modules/biospecimen/cp/catalog-settings.html',
+      .state('cp-detail.settings.forms', {
+        url: '/forms',
+        templateUrl: 'modules/biospecimen/cp/form-settings.html',
         parent: 'cp-detail.settings',
         resolve: {
-          catalogSetting: function(cp) {
-            if (cp.catalogSetting) {
-              return cp.catalogSetting;
-            }
+          forms: function(cp) {
+            return cp.getForms(['CommonParticipant', 'Participant', 'SpecimenCollectionGroup', 'Specimen']);
+          },
 
-            return cp.getCatalogSetting().then(
-              function(setting) {
-                cp.catalogSetting = setting || {};
-              }
-            );
+          formsWf: function(cp, CpConfigSvc) {
+            return CpConfigSvc.getWorkflow(cp.id, 'forms');
           }
         },
-        controller: 'CpCatalogSettingsCtrl'
+        controller: 'CpFormSettingsCtrl'
       })
       .state('cp-detail.settings.container', {
         url: '/container',
@@ -278,10 +334,19 @@ angular.module('os.biospecimen.cp',
         templateUrl: 'modules/biospecimen/cp/dp-settings.html',
         parent: 'cp-detail.settings',
         controller: 'CpDpSettingsCtrl'
-      });
+      })
+      .state('cp-detail.settings.import-workflows', {
+        url: '/import-workflows',
+        templateUrl: 'modules/biospecimen/cp/import-workflows.html',
+        parent: 'cp-detail.settings',
+        controller: 'CpImportWorkflowsCtrl'
+      })
     })
 
-    .run(function(UrlResolver) {
+    .run(function(UrlResolver, QuickSearchSvc) {
       UrlResolver.regUrlState('cp-overview', 'cp-detail.overview', 'cpId');
+
+      var opts = {caption: 'entities.collection_protocol', state: 'cp-detail.overview'};
+      QuickSearchSvc.register('collection_protocol', opts);
     });
   

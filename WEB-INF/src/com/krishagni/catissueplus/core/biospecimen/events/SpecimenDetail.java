@@ -3,24 +3,26 @@ package com.krishagni.catissueplus.core.biospecimen.events;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.codehaus.jackson.annotate.JsonIgnore;
 import org.codehaus.jackson.annotate.JsonProperty;
 import org.codehaus.jackson.map.annotate.JsonSerialize;
-import org.springframework.util.CollectionUtils;
 
 import com.krishagni.catissueplus.core.administrative.events.StorageLocationSummary;
 import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
 import com.krishagni.catissueplus.core.biospecimen.domain.SpecimenRequirement;
+import com.krishagni.catissueplus.core.biospecimen.domain.Visit;
 import com.krishagni.catissueplus.core.common.ListenAttributeChanges;
+import com.krishagni.catissueplus.core.common.util.Utility;
 import com.krishagni.catissueplus.core.de.events.ExtensionDetail;
 
-@JsonSerialize(include= JsonSerialize.Inclusion.NON_NULL)
 @ListenAttributeChanges
 public class SpecimenDetail extends SpecimenInfo {
 
@@ -66,6 +68,8 @@ public class SpecimenDetail extends SpecimenInfo {
 
 	private ExtensionDetail extensionDetail;
 
+	private boolean reserved;
+
 	//
 	// transient variables specifying action to be performed
 	//
@@ -74,6 +78,20 @@ public class SpecimenDetail extends SpecimenInfo {
 	private boolean printLabel;
 
 	private Integer incrParentFreezeThaw;
+
+	private Date transferTime;
+
+	private String transferComments;
+
+	private boolean autoCollectParents;
+
+	private String uid;
+
+	private String parentUid;
+
+	private Long dpId;
+
+	private StorageLocationSummary holdingLocation;
 
 	public CollectionEventDetail getCollectionEvent() {
 		return collectionEvent;
@@ -139,26 +157,32 @@ public class SpecimenDetail extends SpecimenInfo {
 		this.specimensPool = specimensPool;
 	}
 
+	@JsonIgnore
 	public StorageLocationSummary getContainerLocation() {
 		return containerLocation;
 	}
 
+	@JsonProperty
 	public void setContainerLocation(StorageLocationSummary containerLocation) {
 		this.containerLocation = containerLocation;
 	}
 
+	@JsonIgnore
 	public Long getContainerTypeId() {
 		return containerTypeId;
 	}
 
+	@JsonProperty
 	public void setContainerTypeId(Long containerTypeId) {
 		this.containerTypeId = containerTypeId;
 	}
 
+	@JsonIgnore
 	public String getContainerTypeName() {
 		return containerTypeName;
 	}
 
+	@JsonProperty
 	public void setContainerTypeName(String containerTypeName) {
 		this.containerTypeName = containerTypeName;
 	}
@@ -179,18 +203,22 @@ public class SpecimenDetail extends SpecimenInfo {
 		this.comments = comments;
 	}
 
+	@JsonIgnore
 	public Boolean getCloseAfterChildrenCreation() {
 		return closeAfterChildrenCreation;
 	}
 
+	@JsonProperty
 	public void setCloseAfterChildrenCreation(Boolean closeAfterChildrenCreation) {
 		this.closeAfterChildrenCreation = closeAfterChildrenCreation;
 	}
 
+	@JsonIgnore
 	public Boolean getCloseParent() {
 		return closeParent;
 	}
 
+	@JsonProperty
 	public void setCloseParent(Boolean closeParent) {
 		this.closeParent = closeParent;
 	}
@@ -211,6 +239,7 @@ public class SpecimenDetail extends SpecimenInfo {
 		this.reqCode = reqCode;
 	}
 
+	@JsonIgnore
 	public boolean closeParent() {
 		return closeParent == null ? false : closeParent;
 	}
@@ -221,6 +250,14 @@ public class SpecimenDetail extends SpecimenInfo {
 
 	public void setExtensionDetail(ExtensionDetail extensionDetail) {
 		this.extensionDetail = extensionDetail;
+	}
+
+	public boolean isReserved() {
+		return reserved;
+	}
+
+	public void setReserved(boolean reserved) {
+		this.reserved = reserved;
 	}
 
 	@JsonIgnore
@@ -256,6 +293,70 @@ public class SpecimenDetail extends SpecimenInfo {
 		this.incrParentFreezeThaw = incrParentFreezeThaw;
 	}
 
+	@JsonIgnore
+	public Date getTransferTime() {
+		return transferTime;
+	}
+
+	@JsonProperty
+	public void setTransferTime(Date transferTime) {
+		this.transferTime = transferTime;
+	}
+
+	@JsonIgnore
+	public String getTransferComments() {
+		return transferComments;
+	}
+
+	@JsonProperty
+	public void setTransferComments(String transferComments) {
+		this.transferComments = transferComments;
+	}
+
+	@JsonIgnore
+	public boolean isAutoCollectParents() {
+		return autoCollectParents;
+	}
+
+	@JsonProperty
+	public void setAutoCollectParents(boolean autoCollectParents) {
+		this.autoCollectParents = autoCollectParents;
+	}
+
+	public String getUid() {
+		return uid;
+	}
+
+	public void setUid(String uid) {
+		this.uid = uid;
+	}
+
+	public String getParentUid() {
+		return parentUid;
+	}
+
+	public void setParentUid(String parentUid) {
+		this.parentUid = parentUid;
+	}
+
+	public Long getDpId() {
+		return dpId;
+	}
+
+	public void setDpId(Long dpId) {
+		this.dpId = dpId;
+	}
+
+	@JsonIgnore
+	public StorageLocationSummary getHoldingLocation() {
+		return holdingLocation;
+	}
+
+	@JsonProperty
+	public void setHoldingLocation(StorageLocationSummary holdingLocation) {
+		this.holdingLocation = holdingLocation;
+	}
+
 	public static SpecimenDetail from(Specimen specimen) {
 		return from(specimen, true, true);
 	}
@@ -271,16 +372,18 @@ public class SpecimenDetail extends SpecimenInfo {
 		SpecimenRequirement sr = specimen.getSpecimenRequirement();
 		if (!excludeChildren) {
 			if (sr == null) {
-				List<SpecimenDetail> children = from(specimen.getChildCollection());
+				List<SpecimenDetail> children = Utility.nullSafeStream(specimen.getChildCollection())
+					.map(child -> from(child, partial, excludePhi, excludeChildren))
+					.collect(Collectors.toList());
 				sort(children);
 				result.setChildren(children);
 			} else {
 				if (sr.isPooledSpecimenReq()) {
-					result.setSpecimensPool(getSpecimens(sr.getSpecimenPoolReqs(), specimen.getSpecimensPool()));
+					result.setSpecimensPool(getSpecimens(specimen.getVisit(), sr.getSpecimenPoolReqs(), specimen.getSpecimensPool(), partial, excludePhi, excludeChildren));
 				}
 				result.setPoolSpecimen(sr.isSpecimenPoolReq());
 
-				result.setChildren(getSpecimens(sr.getChildSpecimenRequirements(), specimen.getChildCollection()));
+				result.setChildren(getSpecimens(specimen.getVisit(), sr.getChildSpecimenRequirements(), specimen.getChildCollection(), partial, excludePhi, excludeChildren));
 			}
 
 			if (specimen.getPooledSpecimen() != null) {
@@ -289,7 +392,10 @@ public class SpecimenDetail extends SpecimenInfo {
 			}
 		}
 
-		result.setLabelFmt(specimen.getLabelTmpl());
+		//
+		// false to ensure we don't end up in infinite recurssion
+		//
+		result.setLabelFmt(specimen.getLabelTmpl(false));
 		if (sr != null && sr.getLabelAutoPrintModeToUse() != null) {
 			result.setLabelAutoPrintMode(sr.getLabelAutoPrintModeToUse().name());
 		}
@@ -297,26 +403,27 @@ public class SpecimenDetail extends SpecimenInfo {
 		result.setReqCode(sr != null ? sr.getCode() : null);
 		result.setBiohazards(new HashSet<>(specimen.getBiohazards()));
 		result.setComments(specimen.getComment());
+		result.setReserved(specimen.isReserved());
 
 		if (!partial) {
 			result.setExtensionDetail(ExtensionDetail.from(specimen.getExtension(), excludePhi));
+
+			if (specimen.isPrimary()) {
+				result.setCollectionEvent(CollectionEventDetail.from(specimen.getCollectionEvent()));
+				result.setReceivedEvent(ReceivedEventDetail.from(specimen.getReceivedEvent()));
+			} else {
+				result.setCollectionEvent(CollectionEventDetail.from(specimen.getCollRecvDetails()));
+				result.setReceivedEvent(ReceivedEventDetail.from(specimen.getCollRecvDetails()));
+			}
 		}
-		
+
+		result.setUid(specimen.getUid());
+		result.setParentUid(specimen.getParentUid());
 		return result;
 	}
 	
 	public static List<SpecimenDetail> from(Collection<Specimen> specimens) {
-		List<SpecimenDetail> result = new ArrayList<SpecimenDetail>();
-		
-		if (CollectionUtils.isEmpty(specimens)) {
-			return result;
-		}
-		
-		for (Specimen specimen : specimens) {
-			result.add(SpecimenDetail.from(specimen));
-		}
-		
-		return result;
+		return Utility.nullSafeStream(specimens).map(SpecimenDetail::from).collect(Collectors.toList());
 	}
 	
 	public static SpecimenDetail from(SpecimenRequirement anticipated) {
@@ -337,20 +444,6 @@ public class SpecimenDetail extends SpecimenInfo {
 		return result;		
 	}
 
-	public static List<SpecimenDetail> fromAnticipated(Collection<SpecimenRequirement> anticipatedSpecimens) {
-		List<SpecimenDetail> result = new ArrayList<SpecimenDetail>();
-		
-		if (CollectionUtils.isEmpty(anticipatedSpecimens)) {
-			return result;
-		}
-		
-		for (SpecimenRequirement anticipated : anticipatedSpecimens) {
-			result.add(SpecimenDetail.from(anticipated));
-		}
-		
-		return result;
-	}	
-	
 	public static void sort(List<SpecimenDetail> specimens) {
 		Collections.sort(specimens);
 		
@@ -362,12 +455,17 @@ public class SpecimenDetail extends SpecimenInfo {
 	}
 	
 	public static List<SpecimenDetail> getSpecimens(
-			Collection<SpecimenRequirement> anticipated, 
-			Collection<Specimen> specimens) {
-		
-		List<SpecimenDetail> result = SpecimenDetail.from(specimens);
-		merge(anticipated, result, null, getReqSpecimenMap(result));
+			Visit visit,
+			Collection<SpecimenRequirement> anticipated,
+			Collection<Specimen> specimens,
+			boolean partial,
+			boolean excludePhi,
+			boolean excludeChildren) {
+		List<SpecimenDetail> result = Utility.stream(specimens)
+			.map(s -> SpecimenDetail.from(s, partial, excludePhi, excludeChildren))
+			.collect(Collectors.toList());
 
+		merge(visit, anticipated, result, null, getReqSpecimenMap(result));
 		SpecimenDetail.sort(result);
 		return result;
 	}
@@ -390,6 +488,7 @@ public class SpecimenDetail extends SpecimenInfo {
 	}
 	
 	private static void merge(
+			Visit visit,
 			Collection<SpecimenRequirement> anticipatedSpecimens, 
 			List<SpecimenDetail> result, 
 			SpecimenDetail currentParent,
@@ -398,10 +497,11 @@ public class SpecimenDetail extends SpecimenInfo {
 		for (SpecimenRequirement anticipated : anticipatedSpecimens) {
 			SpecimenDetail specimen = reqSpecimenMap.get(anticipated.getId());
 			if (specimen != null) {
-				merge(anticipated.getChildSpecimenRequirements(), result, specimen, reqSpecimenMap);
-			} else {
+				merge(visit, anticipated.getChildSpecimenRequirements(), result, specimen, reqSpecimenMap);
+			} else if (!anticipated.isClosed()) {
 				specimen = SpecimenDetail.from(anticipated);
-				
+				setVisitDetails(visit, specimen);
+
 				if (currentParent == null) {
 					result.add(specimen);
 				} else {
@@ -410,5 +510,23 @@ public class SpecimenDetail extends SpecimenInfo {
 				}				
 			}						
 		}
+	}
+
+	private static void setVisitDetails(Visit visit, SpecimenDetail specimen) {
+		if (visit == null) {
+			return;
+		}
+
+		specimen.setVisitId(visit.getId());
+		specimen.setVisitName(visit.getName());
+		specimen.setSprNo(visit.getSurgicalPathologyNumber());
+		specimen.setVisitDate(visit.getVisitDate());
+		Utility.nullSafeStream(specimen.getChildren()).forEach(child -> setVisitDetails(visit, child));
+	}
+
+	private static List<SpecimenDetail> fromAnticipated(Collection<SpecimenRequirement> anticipatedSpecimens) {
+		return Utility.nullSafeStream(anticipatedSpecimens)
+			.filter(anticipated -> !anticipated.isClosed())
+			.map(SpecimenDetail::from).collect(Collectors.toList());
 	}
 }

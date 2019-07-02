@@ -6,7 +6,7 @@ angular.module('os.biospecimen.common')
     }
 
     function loadSpecimenTypes() {
-      return PvManager.loadPvsByParent('specimen-class', '', true, transformer);
+      return PvManager.loadPvsByParent('specimen-class', '', true, transformer, 1000);
     }
 
     function loadLocalTypes(options) {
@@ -69,6 +69,7 @@ angular.module('os.biospecimen.common')
       scope.onTypeSelect = function(type) {
         type = type || {specimenClass: '', type: ''};
         angular.extend(scope.specimen, type);
+        scope.onSelect({type: type});
       }
 
       SpecimenTypeUtil.setClass(formCtrl, [scope.specimen], scope.options);
@@ -92,7 +93,8 @@ angular.module('os.biospecimen.common')
 
       scope: {
         specimen: '=',
-        options:  '=?'
+        options:  '=?',
+        onSelect: '&'
       },
 
       replace: true,
@@ -100,7 +102,7 @@ angular.module('os.biospecimen.common')
       template: 
         '<div>' +
         '  <os-select ng-model="model.value" list="types" group-by="\'specimenClass\'"' +
-        '    select-prop="type" display-prop="type" on-select="onTypeSelect($item)">' +
+        '    select-prop="type" display-prop="type" on-select="onTypeSelect($item)" append-to-body="true">' +
         '  </os-select>' +
         '</div>',
 
@@ -108,6 +110,10 @@ angular.module('os.biospecimen.common')
         var selectEl = tElem.find('os-select');
         if (tAttrs.hasOwnProperty('mdInput')) {
           selectEl.attr('os-md-input', '');
+        }
+
+        if (tAttrs.ngRequired) {
+          selectEl.attr('ng-required', tAttrs.ngRequired);
         }
 
         angular.forEach(tAttrs,

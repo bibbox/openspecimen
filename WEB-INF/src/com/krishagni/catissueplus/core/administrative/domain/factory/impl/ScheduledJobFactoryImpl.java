@@ -1,6 +1,7 @@
 package com.krishagni.catissueplus.core.administrative.domain.factory.impl;
 
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.HashSet;
 import java.util.List;
 
@@ -16,24 +17,33 @@ import com.krishagni.catissueplus.core.administrative.domain.factory.ScheduledJo
 import com.krishagni.catissueplus.core.administrative.domain.factory.ScheduledJobFactory;
 import com.krishagni.catissueplus.core.administrative.domain.factory.UserErrorCode;
 import com.krishagni.catissueplus.core.administrative.events.ScheduledJobDetail;
+import com.krishagni.catissueplus.core.administrative.services.impl.ScheduledQueryTask;
 import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
 import com.krishagni.catissueplus.core.common.errors.ActivityStatusErrorCode;
 import com.krishagni.catissueplus.core.common.errors.ErrorType;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.UserSummary;
 import com.krishagni.catissueplus.core.common.util.Status;
+import com.krishagni.catissueplus.core.de.domain.SavedQuery;
+import com.krishagni.catissueplus.core.de.events.SavedQuerySummary;
+import com.krishagni.catissueplus.core.de.services.SavedQueryErrorCode;
 
 public class ScheduledJobFactoryImpl implements ScheduledJobFactory {
 
 	private DaoFactory daoFactory;
+
+	private com.krishagni.catissueplus.core.de.repository.DaoFactory deDaoFactory;
 	
 	public void setDaoFactory(DaoFactory daoFactory) {
 		this.daoFactory = daoFactory;
 	}
 
+	public void setDeDaoFactory(com.krishagni.catissueplus.core.de.repository.DaoFactory deDaoFactory) {
+		this.deDaoFactory = deDaoFactory;
+	}
+
 	@Override
 	public ScheduledJob createScheduledJob(ScheduledJobDetail detail) {
-
 		ScheduledJob job = new ScheduledJob();
 		OpenSpecimenException ose = new OpenSpecimenException(ErrorType.USER_ERROR);
 
@@ -42,6 +52,9 @@ public class ScheduledJobFactoryImpl implements ScheduledJobFactory {
 		setStartAndEndDates(detail, job, ose);
 		setActivityStatus(detail, job, ose);
 		setType(detail, job, ose);
+		setFixedArgs(detail, job, ose);
+		setSavedQuery(detail, job, ose);
+		setRunAs(detail, job, ose);
 		setRecipients(detail, job, ose);
 		
 		job.setRtArgsProvided(detail.getRtArgsProvided());
@@ -61,17 +74,9 @@ public class ScheduledJobFactoryImpl implements ScheduledJobFactory {
 		job.setName(name);
 	}
 
-	//
-	// this method requires to be invoked after setting repeat schedule
-	//
 	private void setStartAndEndDates(ScheduledJobDetail detail,	ScheduledJob job, OpenSpecimenException ose) {
-		if (job.getRepeatSchedule() == null || job.getRepeatSchedule().equals(RepeatSchedule.ONDEMAND)) {
-			return;
-		}
-		
 		if (detail.getStartDate() == null) {
-			ose.addError(ScheduledJobErrorCode.START_DATE_REQUIRED);
-			return;
+			detail.setStartDate(Calendar.getInstance().getTime());
 		}
 		
 		if (detail.getEndDate() != null && detail.getEndDate().before(detail.getStartDate())) {
@@ -82,16 +87,6 @@ public class ScheduledJobFactoryImpl implements ScheduledJobFactory {
 		job.setStartDate(detail.getStartDate());
 		job.setEndDate(detail.getEndDate());
 		
-	}
-	
-	private void setCreatedBy(ScheduledJobDetail detail, ScheduledJob job, OpenSpecimenException ose) {
-		User createdBy = getUser(detail.getCreatedBy());
-		if (createdBy == null) {
-			ose.addError(UserErrorCode.NOT_FOUND);
-			return;
-		}
-		
-		job.setCreatedBy(createdBy);
 	}
 	
 	private void setActivityStatus(ScheduledJobDetail detail, ScheduledJob job,	OpenSpecimenException ose) {
@@ -131,13 +126,17 @@ public class ScheduledJobFactoryImpl implements ScheduledJobFactory {
 		setScheduledHour(detail, job, ose);
 		setScheduledDayOfWeek(detail, job, ose);
 		setScheduledDayOfMonth(detail, job, ose);
+		setHourlyInterval(detail, job, ose);
+		setMinutelyInterval(detail, job, ose);
 	}
 
 	private void setScheduledMinute(ScheduledJobDetail detail, ScheduledJob job, OpenSpecimenException ose) {
 		Integer scheduledMinute = detail.getScheduledMinute();
-		if(job.getRepeatSchedule() == RepeatSchedule.MINUTELY){
+		if (job.getRepeatSchedule() == RepeatSchedule.MINUTELY) {
+			job.setScheduledMinute(0);
 			return;
 		}
+
 		if (scheduledMinute == null || scheduledMinute < 0 || scheduledMinute > 59) {
 			ose.addError(ScheduledJobErrorCode.INVALID_SCHEDULED_TIME);
 			return;
@@ -182,13 +181,49 @@ public class ScheduledJobFactoryImpl implements ScheduledJobFactory {
 		}
 		
 		Integer dayOfMonth = detail.getScheduledDayOfMonth();
-		
+
 		if (dayOfMonth == null || dayOfMonth < 1 || dayOfMonth > 31) {
 			ose.addError(ScheduledJobErrorCode.INVALID_SCHEDULED_TIME);
-			return;	
+			return;
 		}
 	
 		job.setScheduledDayOfMonth(dayOfMonth);
+	}
+
+	private void setHourlyInterval(ScheduledJobDetail detail, ScheduledJob job, OpenSpecimenException ose) {
+		if (job.getRepeatSchedule() != RepeatSchedule.HOURLY) {
+			return;
+		}
+
+		Integer hourlyInterval = detail.getHourlyInterval();
+		if (hourlyInterval == null) {
+			hourlyInterval = 1;
+		}
+
+		if (hourlyInterval <= 0) {
+			ose.addError(ScheduledJobErrorCode.INVALID_SCHEDULED_TIME);
+			return;
+		}
+
+		job.setHourlyInterval(hourlyInterval);
+	}
+
+	private void setMinutelyInterval(ScheduledJobDetail detail, ScheduledJob job, OpenSpecimenException ose) {
+		if (job.getRepeatSchedule() != RepeatSchedule.MINUTELY) {
+			return;
+		}
+
+		Integer minutelyInterval = detail.getMinutelyInterval();
+		if (minutelyInterval == null) {
+			minutelyInterval = 1;
+		}
+
+		if (minutelyInterval < 0) {
+			ose.addError(ScheduledJobErrorCode.INVALID_SCHEDULED_TIME);
+			return;
+		}
+
+		job.setMinutelyInterval(minutelyInterval);
 	}
 	
 	private void setType(ScheduledJobDetail detail, ScheduledJob job, OpenSpecimenException ose) {
@@ -220,6 +255,11 @@ public class ScheduledJobFactoryImpl implements ScheduledJobFactory {
 	}
 	
 	private void setTaskImplFqn(ScheduledJobDetail detail, ScheduledJob job, OpenSpecimenException ose) {
+		if (job.getType() == Type.QUERY) {
+			job.setTaskImplfqn(ScheduledQueryTask.class.getName());
+			return;
+		}
+
 		String fqn = detail.getTaskImplFqn();
 		if (StringUtils.isBlank(fqn)) {
 			ose.addError(ScheduledJobErrorCode.TASK_IMPL_FQN_REQUIRED);
@@ -234,6 +274,45 @@ public class ScheduledJobFactoryImpl implements ScheduledJobFactory {
 		}
 		
 		job.setTaskImplfqn(fqn);
+	}
+
+	private void setFixedArgs(ScheduledJobDetail detail, ScheduledJob job, OpenSpecimenException ose) {
+		job.setFixedArgs(detail.getFixedArgs());
+	}
+
+	private void setSavedQuery(ScheduledJobDetail detail, ScheduledJob job, OpenSpecimenException ose) {
+		if (job.getType() != Type.QUERY) {
+			return;
+		}
+
+		SavedQuerySummary queryDetail = detail.getSavedQuery();
+		if (queryDetail == null || queryDetail.getId() == null) {
+			ose.addError(ScheduledJobErrorCode.QUERY_REQ);
+			return;
+		}
+
+		SavedQuery query = deDaoFactory.getSavedQueryDao().getQuery(queryDetail.getId());
+		if (query == null) {
+			ose.addError(SavedQueryErrorCode.NOT_FOUND, queryDetail.getId());
+			return;
+		}
+
+		job.setSavedQuery(query);
+	}
+
+	private void setRunAs(ScheduledJobDetail detail, ScheduledJob job, OpenSpecimenException ose) {
+		UserSummary runAs = detail.getRunAs();
+		if (runAs == null || runAs.getId() == null) {
+			return;
+		}
+
+		User user = daoFactory.getUserDao().getById(runAs.getId());
+		if (user == null) {
+			ose.addError(UserErrorCode.NOT_FOUND, runAs.getId());
+			return;
+		}
+
+		job.setRunAs(user);
 	}
 	
 	private void setRecipients(ScheduledJobDetail detail, ScheduledJob job, OpenSpecimenException ose) {

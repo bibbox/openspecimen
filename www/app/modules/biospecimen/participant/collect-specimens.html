@@ -1,35 +1,8 @@
 <div>
-  <div os-page-header>
-    <div class="os-page-header-content">
-      <ul os-breadcrumbs>
-        <li>
-          <a ui-sref="cp-list-view({cpId: cpr.cpId})">
-            <span>{{cpr.cpShortTitle}}</span>
-          </a> 
-        </li>
-        <li ng-if="!cp.specimenCentric">
-          <a ui-sref="participant-detail.overview({cprId: cpr.id})">
-            <span>{{cpr.ppid}}</span>
-          </a>
-        </li>
-        <li ng-if="!cp.specimenCentric">
-          <a ui-sref="participant-detail.visits({visitId: visit.id, eventId: visit.eventId})" translate="visits.list">
-            Visits
-          </a>
-        </li>
-      </ul>
-
-      <h3>
-        <span>Specimen Collection</span>
-        <span ng-if="!cp.specimenCentric">
-          : <os-event-desc event-point="visit.eventPoint" event-label="visit.eventLabel"></os-event-desc>
-        </span>
-      </h3>
-    </div>
-  </div>
+  <div ng-include="'modules/biospecimen/participant/collect-specimens-header.html'" os-replace-with-children></div>
 
   <div class="container">
-    <form name="collectionForm" os-form-validator="collectionForm" novalidate ng-if="customFieldGroups.length <= 0">
+    <form name="collectionForm" os-no-label-form os-form-validator="collectionForm" novalidate>
       <div ng-include src="'specimen_coll_visit_details.html'" ng-if="showCollVisitDetails"></div>
 
       <table class="os-table os-table-fixed os-table-tree bulk-edit os-border os-table-muted-hdr">
@@ -43,26 +16,50 @@
             <th class="col os-col-25">
               <div class="os-col-60 os-no-left-padding">
                 <span translate="specimens.container">Container</span>
-                <span style="font-weight: normal" ng-switch on="autoPosAllocate">
-                  <span>(</span>
-                  <a ng-switch-when="true" ng-click="manuallySelectContainers()">
-                    <span translate="specimens.manual_selection">Manual Selection</span>
-                  </a>
-                  <a ng-switch-default ng-click="applyFirstLocationToAll()">
-                    <span translate="specimens.copy_first_to_all">Copy First To All</span>
-                  </a>
-                  <span>)</span>
+                <span class="os-more-options">
+                  <div dropdown style="margin: -3px 0px 0px 5px;">
+                    <button class="btn btn-xs btn-default dropdown-toggle">
+                      <span translate="common.buttons.more">More</span>
+                      <span class="fa fa-caret-down"></span>
+                    </button>
+                    <ul class="dropdown-menu" role="menu">
+                      <li ng-if="autoPosAllocate">
+                        <a ng-click="reallocatePositions()">
+                          <span translate="specimens.reallocate">Reallocate</span>
+                        </a>
+                      </li>
+                      <li ng-if="autoPosAllocate">
+                        <a ng-click="selectPositionsManually()">
+                          <span translate="specimens.manual_selection">Manual selection</span>
+                        </a>
+                      </li>
+                      <li ng-if="!autoPosAllocate">
+                        <a ng-click="applyFirstLocationToAll()">
+                          <span translate="common.copy_first_to_all">Copy first to all</span>
+                        </a>
+                      </li>
+                      <li>
+                        <a ng-click="selectPositionsManually(true)">
+                          <span translate="specimens.clear_positions">Clear positions</span>
+                        </a>
+                      </li>
+                    </ul>
+                  </div>
                 </span>
               </div>
-              <div class="os-col-15 os-no-left-padding">
-                <span translate="specimens.row">Row</span>
-              </div>
-              <div class="os-col-15 os-no-left-padding">
-                <span translate="specimens.column">Column</span>
+              <div class="os-col-30 os-no-left-padding">
+                <span translate="specimens.position">Position</span>
               </div>
             </th>
             <th class="col os-col-10">Status</th>
-            <th class="col os-col-5">Print</th>
+            <th class="col os-col-5">
+              <div class="pull-left">
+                <span class="fa fa-print"></span>
+              </div>
+              <div class="pull-left" style="margin-left: 12px;">
+                <span class="fa fa-ban"></span>
+              </div>
+            </th>
             <th class="col os-col-5">&nbsp;</th>
           </tr>
         </thead>
@@ -71,21 +68,27 @@
             ng-repeat="specimen in specimens | openedTreeNodes" ng-form="sform" ng-if="specimen.showInTree">
             <td class="col os-col-30">
               <div ng-style="{'padding-left': (specimen.hasChildren ? specimen.depth * 20 : specimen.depth * 20 + 16) + 'px'}">
-                <a ng-if="specimen.hasChildren && specimen.isOpened" 
+                <a ng-if="specimen.hasChildren && specimen.isOpened"
                   class="fa fa-chevron-circle-down"
                   ng-click="closeSpecimenNode(specimen)">
                 </a>
-                <a ng-if="specimen.hasChildren && !specimen.isOpened" 
+                <a ng-if="specimen.hasChildren && !specimen.isOpened"
                   class="fa fa-chevron-circle-right"
                   ng-click="openSpecimenNode(specimen)">
                 </a>
                 <span class="fa fa-circle"
                   ng-class="{'os-status-collected': specimen.existingStatus == 'Collected',
                              'os-status-pending': specimen.existingStatus == 'Pending' || !specimen.existingStatus,
-                             'os-status-not-collected': specimen.existingStatus == 'Missed Collection'}">
+                             'os-status-not-collected': specimen.existingStatus == 'Missed Collection' ||
+                                                        specimen.existingStatus == 'Not Collected'}">
                 </span>
-                <os-specimen-desc specimen="specimen" show-req-label="true"></os-specimen-desc>
+                <os-specimen-desc cp="cp" specimen="specimen" show-req-label="true"></os-specimen-desc>
 
+                <span class="pull-right">
+                  <button class="btn btn-xs btn-default" ng-click="remove(specimen)">
+                    <span class="fa fa-remove"></span>
+                  </button>
+                </span>
                 <span ng-if="specimen.aliquotGrp.length > 1">
                   <div class="btn-group">
                     <button class="btn btn-xs btn-default" ng-if="specimen.expanded"
@@ -99,9 +102,9 @@
                       <span>({{specimen.aliquotGrp.length}})</span>
                     </button>
                     <button class="btn btn-xs btn-default" ng-disabled="specimen.expanded"
-                       ng-if = "!cp.manualSpecLabelEnabled && !specimen.label && !!specimen.labelFmt"
                        bs-popover trigger="click" data-container="body"
-                       placement="bottom" content-template="aliquot-count.html">
+                       placement="bottom" content-template="aliquot-count.html"
+                       ng-if="!cp.manualSpecLabelEnabled && !!specimen.labelFmt">
                        <span class="fa fa-ellipsis-h"></span>
                     </button>
                   </div>
@@ -109,19 +112,25 @@
               </div>
             </td>
             <td class="col os-col-15" ng-switch="barcodingEnabled">
-              <div ng-switch-when="true" os-unique-items>
-                <div ng-switch="!!specimen.aliquotGrp && !specimen.expanded">
-                  <span ng-switch-when="true">
-                    <textarea os-md-input rows="1" name="barcode"
-                      ng-model="specimen.aliquotBarcodes" edit-when="!specimen.pBarcode"
-                      ng-blur="assignBarcodes(specimen, specimen.aliquotBarcodes)">
-                    </textarea>
-                  </span>
+              <div ng-switch-when="true" ng-switch="spmnBarcodesAutoGen">
+                <div ng-switch-when="true">
+                  <span translate="specimens.auto">Auto</span>
+                </div>
+                <div ng-switch-default os-unique-items>
+                  <div ng-switch="!!specimen.aliquotGrp && !specimen.expanded">
+                    <span ng-switch-when="true">
+                      <textarea os-md-input rows="1" name="barcode"
+                        ng-model="specimen.aliquotBarcodes" edit-when="!specimen.pBarcode"
+                        ng-focus="getBarcodes(specimen, $event)"
+                        ng-blur="assignBarcodes(specimen, specimen.aliquotBarcodes)">
+                      </textarea>
+                    </span>
 
-                  <span ng-switch-default>
-                    <input type="text" os-md-input edit-when="!specimen.pBarcode"
-                      name="barcode" ng-model="specimen.barcode" os-unique-item>
-                  </span>
+                    <span ng-switch-default>
+                      <input type="text" os-md-input edit-when="!specimen.pBarcode"
+                        name="barcode" ng-model="specimen.barcode" os-unique-item>
+                    </span>
+                  </div>
                 </div>
               </div>
               <div ng-switch-default ng-switch="!cp.manualSpecLabelEnabled && !specimen.label && !!specimen.labelFmt">
@@ -133,9 +142,11 @@
                     <span ng-switch-when="true">
                       <textarea os-md-input rows="1" name="label"
                         ng-model="specimen.aliquotLabels" edit-when="!specimen.pLabel"
+                        ng-focus="getLabels(specimen, $event)"
                         ng-blur="assignLabels(specimen, specimen.aliquotLabels)" required>
                       </textarea>
                     </span>
+
                     <span ng-switch-default>
                       <input type="text" os-md-input edit-when="!specimen.pLabel"
                         name="label" ng-model="specimen.label"
@@ -154,7 +165,7 @@
                 </span>
                 <span ng-switch-when="false">
                   <os-spmn-measure name="qty" specimen="specimen" quantity="specimen.initialQty"
-                    md-input ng-required="specimen.lineage == 'Aliquot'"
+                    md-input ng-required="specimen.lineage == 'Aliquot' && aliquotQtyReq"
                     on-change="changeQuantity(specimen, specimen.initialQty)">
                   </os-spmn-measure>
                 </span>
@@ -173,11 +184,16 @@
             </td>
             <td class="col os-col-10" style="overflow: visible;">
               <os-select os-md-input edit-when="specimen.existingStatus != 'Collected'" list="specimenStatuses" 
-                ng-model="specimen.status" on-change="statusChanged(specimen)" required>
+                ng-model="specimen.status" on-select="statusChanged(specimen)" required>
               </os-select>
             </td>
-            <td class="col os-col-5">
-              <os-checkbox ng-model="specimen.printLabel" ng-change="togglePrintLabels(specimen)"></os-checkbox>
+            <td class="col">
+              <div class="pull-left">
+                <os-checkbox ng-model="specimen.printLabel" ng-change="togglePrintLabels(specimen)"></os-checkbox>
+              </div>
+              <div class="pull-left" style="margin-left: 12px;" ng-show="specimen.children.length > 0">
+                <os-checkbox ng-model="specimen.closeAfterChildrenCreation"></os-checkbox>
+              </div>
             </td>
             <td class="col os-col-5">
               <button class="btn btn-xs btn-default" ng-click="remove(specimen)">
@@ -193,45 +209,6 @@
       <div class="row">
         <div class="col-xs-10">
           <button type="submit" class="btn btn-primary" os-form-submit="saveSpecimens()" mousedown-click="true"> 
-            <span translate="common.buttons.submit"> Submit </span>
-          </button>
-          <button class="btn os-btn-text" ng-click="back()">
-            <span translate="common.buttons.cancel"> Cancel </span>
-          </button>
-        </div>
-      </div>
-    </form>
-
-    <form name="collectionForm" os-form-validator="collectionForm" novalidate ng-if="customFieldGroups.length > 0">
-      <div ng-if="customFieldGroups[0].visitFields">
-        <sde-form-fields name="visit" table="customFieldGroups[0].multiple" opts="customFieldGroups[0].opts"
-          base-fields="customFieldGroups[0].baseFields" fields="customFieldGroups[0].fields"
-          obj="customFieldGroups[0].input">
-        </sde-form-fields>
-      </div>
-      <div ng-repeat="group in customFieldGroups" ng-if="!group.noMatch && !group.visitFields">
-        <div class="panel panel-default">
-          <div class="panel-heading">
-            <span>{{group.title}}</span>
-            <a ng-click="group.opts.$$sdeFormFields.copyFirstToAll()">
-              <span>(</span>
-              <span translate="specimens.copy_first_to_all">Copy First To All</span>
-              <span>)</span>
-            </a>
-          </div>
-          <div class="panel-body">
-            <sde-form-fields name="samples" table="group.multiple" opts="group.opts"
-              base-fields="group.baseFields" fields="group.fields" obj="group.input">
-            </sde-form-fields>
-          </div>
-        </div>
-      </div>
-
-      <div class="os-divider"></div>
-
-      <div class="row">
-        <div class="col-xs-10">
-          <button type="submit" class="btn btn-primary" ng-click="updateSpecimens()">
             <span translate="common.buttons.submit"> Submit </span>
           </button>
           <button class="btn os-btn-text" ng-click="back()">
@@ -258,7 +235,7 @@
             </div>
             <div class="col-xs-3 input">
               <os-date-picker name="visitDate" date="visit.visitDate" required md-type="true"
-                placeholder="{{'specimens.visit_date' | translate}}">
+                on-change="updateCollDate()" placeholder="{{'specimens.visit_date' | translate}}">
               </os-date-picker>
               <div os-field-error field="collectionForm.visitDate"></div>
             </div>
@@ -322,7 +299,8 @@
             <div os-field-error field="collectionForm.receiveDate"></div>
           </div>
           <div class="col-xs-1 input os-md-time">
-            <timepicker class="os-time-no-wheels" os-md-input ng-model="collDetail.receiveDate" show-meridian="false"></timepicker>
+            <timepicker class="os-time-no-wheels" os-md-input ng-model="collDetail.receiveDate" show-meridian="false">
+            </timepicker>
           </div>
         </div>
       </div>
@@ -342,6 +320,26 @@
       </button>
       <button class="btn os-btn-text-secondary" ng-click="closePopover()">
         <span translate="common.buttons.cancel"> Cancel </span>
+      </button>
+    </div>
+  </div>
+</script>
+
+<script type="text/ng-template" id="modules/biospecimen/participant/collect-barcodes.html">
+  <div class="os-modal">
+    <div class="os-modal-header">
+      <span translate="{{title}}"></span>
+    </div>
+    <div class="os-modal-body os-no-label-form">
+      <textarea class="form-control" rows="5" ng-model="inputBarcodes" placeholder="{{placeholder | translate}}">
+      </textarea>
+    </div>
+    <div class="os-modal-footer">
+      <button class="btn os-btn-text" ng-click="cancel()">
+        <span translate="common.buttons.cancel">Cancel</span>
+      </button>
+      <button class="btn btn-primary" ng-click="ok()">
+        <span translate="common.buttons.done">Done</span>
       </button>
     </div>
   </div>

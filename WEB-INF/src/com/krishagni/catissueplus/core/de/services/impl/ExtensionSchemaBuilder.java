@@ -2,13 +2,20 @@ package com.krishagni.catissueplus.core.de.services.impl;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 import org.apache.commons.lang.StringUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
+import org.springframework.util.ResourceUtils;
 
 import com.krishagni.catissueplus.core.common.PlusTransactional;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
+import com.krishagni.catissueplus.core.common.service.TemplateService;
 import com.krishagni.catissueplus.core.de.domain.FormErrorCode;
 import com.krishagni.catissueplus.core.de.repository.FormDao;
 import com.krishagni.catissueplus.core.importer.domain.ObjectSchema;
@@ -16,6 +23,7 @@ import com.krishagni.catissueplus.core.importer.domain.ObjectSchema.Field;
 import com.krishagni.catissueplus.core.importer.domain.ObjectSchema.Record;
 import com.krishagni.catissueplus.core.importer.services.ObjectSchemaBuilder;
 
+import edu.common.dynamicextensions.domain.nui.CheckBox;
 import edu.common.dynamicextensions.domain.nui.Container;
 import edu.common.dynamicextensions.domain.nui.Control;
 import edu.common.dynamicextensions.domain.nui.DataType;
@@ -25,8 +33,16 @@ import edu.common.dynamicextensions.domain.nui.MultiSelectControl;
 import edu.common.dynamicextensions.domain.nui.SubFormControl;
 
 public class ExtensionSchemaBuilder implements ObjectSchemaBuilder {
+	private static final Log logger = LogFactory.getLog(ExtensionSchemaBuilder.class);
+
+	private TemplateService templateService;
+
 	private FormDao formDao;
-	
+
+	public void setTemplateService(TemplateService templateService) {
+		this.templateService = templateService;
+	}
+
 	public void setFormDao(FormDao formDao) {
 		this.formDao = formDao;
 	}
@@ -51,12 +67,36 @@ public class ExtensionSchemaBuilder implements ObjectSchemaBuilder {
 		
 		return getObjectSchema(form, entityType);
 	}
-	
+
+	@Override
+	public String insertAdditionalFields(String path) {
+		StringBuilder templates = new StringBuilder();
+
+		try {
+			PathMatchingResourcePatternResolver resolver = new PathMatchingResourcePatternResolver(getClass().getClassLoader());
+			Resource[] resources = resolver.getResources("classpath*:" + path);
+			for (Resource resource : resources) {
+				String filePath = resource.getURL().getPath();
+				if (ResourceUtils.isJarURL(resource.getURL())) {
+					filePath = filePath.substring(filePath.lastIndexOf("!") + 1);
+				} else {
+					filePath = resource.getURL().getPath();
+				}
+
+				templates.append(templateService.render(filePath, new HashMap<>()));
+			}
+		} catch (Exception e) {
+			logger.error("Error inserting additional fields from " + path, e);
+		}
+
+		return templates.toString();
+	}
+
 	private  ObjectSchema getObjectSchema(Container form, String entityType) {
 		Record record = new Record();  
 		
 		List<Field> fields = new ArrayList<Field>();
-		fields.add(getField("recordId", "Record ID"));
+		fields.add(getField("recordId", form.getCaption() + " ID"));
 		
 		if (entityType.equals("Participant") || entityType.equals("CommonParticipant")) {
 			fields.add(getField("cpShortTitle", "Collection Protocol"));
@@ -123,6 +163,8 @@ public class ExtensionSchemaBuilder implements ObjectSchemaBuilder {
 			}
 		} else if (ctrl instanceof FileUploadControl) {
 			field.setType("defile");
+		} else if (ctrl instanceof CheckBox) {
+			field.setType("boolean");
 		}
 
 		return field;

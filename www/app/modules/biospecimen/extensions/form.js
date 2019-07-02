@@ -3,7 +3,7 @@
 * Css changes are in extension.css file.
 */
 angular.module('os.biospecimen.extensions', ['os.biospecimen.models'])
-  .directive('osDeForm', function($http, $rootScope, Form, ApiUrls, ExtensionsUtil, LocationChangeListener) {
+  .directive('osDeForm', function($http, $rootScope, Form, ApiUrls, ExtensionsUtil, LocationChangeListener, SettingUtil) {
     return {
       restrict: 'A',
       controller: function() {
@@ -30,6 +30,12 @@ angular.module('os.biospecimen.extensions', ['os.biospecimen.models'])
       },
 
       link: function(scope, element, attrs, ctrl) {
+        var parentForm = attrs.parentForm && scope[attrs.parentForm];
+        if (parentForm) {
+          parentForm.osExtnCtrls = parentForm.osExtnCtrls || [];
+          parentForm.osExtnCtrls.push(ctrl);
+        }
+
         if (!!attrs.ctrl) {
           var parts = attrs.ctrl.split("\.")
           var obj = scope;
@@ -70,6 +76,7 @@ angular.module('os.biospecimen.extensions', ['os.biospecimen.models'])
             onPrint        : opts.onPrint,
             onDelete       : opts.onDelete,
             showActionBtns : opts.showActionBtns,
+            showSaveNext   : opts.showSaveNext,
             showPanel      : opts.showPanel,
             customHdrs     : hdrs,
             skipLogicFieldValue   : opts.skipLogicFieldValue ||
@@ -79,11 +86,17 @@ angular.module('os.biospecimen.extensions', ['os.biospecimen.models'])
             disableFields  : opts.disableFields || []
           };
 
-          ctrl.form = new edu.common.de.Form(args);
-          ctrl.form.render();
+          SettingUtil.getSetting('common', 'de_form_html_markup').then(
+            function(setting) {
+              args.allowHtmlCaptions = setting.value;
+              ctrl.form = new edu.common.de.Form(args);
+              ctrl.form.render();
+              LocationChangeListener.preventChange();
+              addWatchForDomChanges(opts);
+            }
+          );
+
           onceRendered = true;
-          LocationChangeListener.preventChange();
-          addWatchForDomChanges(opts); 
         }, true);
 
         if (attrs.extendedObj) {
@@ -124,6 +137,12 @@ angular.module('os.biospecimen.extensions', ['os.biospecimen.models'])
             function(index) {
               angular.element(this).addClass("col-xs-3");
               angular.element(this).siblings().wrapAll("<div class='col-xs-6'></div>");
+            }
+          );
+
+          element.find('.de-note').each(
+            function() {
+              angular.element(this).addClass("col-xs-offset-3 col-xs-8");
             }
           );
         }

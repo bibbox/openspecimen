@@ -2,18 +2,29 @@ package com.krishagni.catissueplus.core.importer.domain;
 
 import java.io.File;
 import java.io.InputStream;
-import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.TreeMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
-import com.thoughtworks.xstream.XStream;
-import com.thoughtworks.xstream.io.xml.Dom4JDriver;
+import org.apache.commons.lang3.StringUtils;
 
-public class ObjectSchema {	
+import com.thoughtworks.xstream.XStream;
+import com.thoughtworks.xstream.converters.reflection.PureJavaReflectionProvider;
+import com.thoughtworks.xstream.io.xml.Dom4JDriver;
+import com.thoughtworks.xstream.security.AnyTypePermission;
+import com.thoughtworks.xstream.security.NoTypePermission;
+
+public class ObjectSchema {
+	private static AtomicInteger idGen = new AtomicInteger(0);
+
 	private String name;
 
 	private boolean flattened;
+
+	private String fieldSeparator;
 	
 	private Record record;
 	
@@ -33,6 +44,18 @@ public class ObjectSchema {
 		this.flattened = flattened;
 	}
 
+	public String getFieldSeparator() {
+		return fieldSeparator;
+	}
+
+	public void setFieldSeparator(String fieldSeparator) {
+		if (StringUtils.isNotBlank(fieldSeparator)) {
+			fieldSeparator = fieldSeparator.substring(0, 1);
+		}
+
+		this.fieldSeparator = fieldSeparator;
+	}
+
 	public Record getRecord() {
 		return record;
 	}
@@ -42,10 +65,7 @@ public class ObjectSchema {
 	}
 
 	public List<String> getKeyColumnNames() {
-		return record.getFields().stream()
-			.filter(field -> field.isKey())
-			.map(keyField -> keyField.getCaption())
-			.collect(Collectors.toList());
+		return record.getFields().stream().filter(Field::isKey).map(Field::getCaption).collect(Collectors.toList());
 	}
 	
 	public static ObjectSchema parseSchema(String filePath) {
@@ -59,13 +79,18 @@ public class ObjectSchema {
 	}
 	
 	private static XStream getSchemaParser() {
-		XStream xstream = new XStream(new Dom4JDriver());
-		
+		XStream xstream = new XStream(new PureJavaReflectionProvider(), new Dom4JDriver());
+		xstream.addPermission(NoTypePermission.NONE);
+		xstream.addPermission(AnyTypePermission.ANY);
+
 		xstream.alias("object-schema", ObjectSchema.class);
+		xstream.aliasAttribute(ObjectSchema.class, "fieldSeparator", "field-separator");
 		
 		xstream.alias("record", Record.class);
 		xstream.aliasAttribute(Record.class, "type", "type");
+		xstream.aliasAttribute(Record.class, "cpBased", "cpBased");
 		xstream.aliasAttribute(Record.class, "entityType", "entityType");
+		xstream.aliasAttribute(Record.class, "digestAttribute", "digest");
 		xstream.addImplicitCollection(Record.class, "subRecords", "record", Record.class);
 		
 		xstream.alias("field", Field.class);
@@ -75,6 +100,8 @@ public class ObjectSchema {
 	}
 
 	public static class Record {
+		private Integer id = idGen.incrementAndGet();
+
 		private String name;
 		
 		private String attribute;
@@ -82,14 +109,24 @@ public class ObjectSchema {
 		private String caption;
 		
 		private String type;
+
+		private boolean cpBased = true; // for backward compatibility, default value is true
 		
 		private String entityType;
 		
 		private boolean multiple;
+
+		private String digestAttribute;
 		
 		private List<Record> subRecords;
 		
 		private List<Field> fields;
+
+		private Collection<Object> orderedFields;
+
+		public Integer getId() {
+			return id;
+		}
 
 		public String getName() {
 			return name;
@@ -123,6 +160,14 @@ public class ObjectSchema {
 			this.type = type;
 		}
 
+		public boolean isCpBased() {
+			return cpBased;
+		}
+
+		public void setCpBased(boolean cpBased) {
+			this.cpBased = cpBased;
+		}
+
 		public String getEntityType() {
 			return entityType;
 		}
@@ -139,12 +184,21 @@ public class ObjectSchema {
 			this.multiple = multiple;
 		}
 
+		public String getDigestAttribute() {
+			return digestAttribute;
+		}
+
+		public void setDigestAttribute(String digestAttribute) {
+			this.digestAttribute = digestAttribute;
+		}
+
 		public List<Record> getSubRecords() {
-			return subRecords == null ? Collections.<Record>emptyList() : subRecords;
+			return subRecords == null ? Collections.emptyList() : subRecords;
 		}
 
 		public void setSubRecords(List<Record> subRecords) {
 			this.subRecords = subRecords;
+			this.orderedFields = null;
 		}
 
 		public List<Field> getFields() {
@@ -153,11 +207,31 @@ public class ObjectSchema {
 
 		public void setFields(List<Field> fields) {
 			this.fields = fields;
+			this.orderedFields = null;
 		}
-				
+
+		public Collection<Object> getOrderedFields() {
+			if (orderedFields != null) {
+				return orderedFields;
+			}
+
+			TreeMap<Integer, Object> result = new TreeMap<>();
+			if (fields != null) {
+				fields.forEach(field -> result.put(field.getId(), field));
+			}
+
+			if (subRecords != null) {
+				subRecords.forEach(sr -> result.put(sr.getId(), sr));
+			}
+
+			orderedFields = result.values();
+			return orderedFields;
+		}
 	}
 	
 	public static class Field {
+		private Integer id = idGen.incrementAndGet();
+
 		private String caption;
 		
 		private String attribute;
@@ -169,6 +243,10 @@ public class ObjectSchema {
 		private boolean multiple;
 		
 		private boolean key;
+
+		public Integer getId() {
+			return id;
+		}
 
 		public String getCaption() {
 			return caption;

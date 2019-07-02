@@ -2,13 +2,16 @@
 package com.krishagni.catissueplus.core.common.events;
 
 import java.io.Serializable;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
 import java.util.List;
+import java.util.stream.Collectors;
+
+import org.apache.commons.lang.StringUtils;
 
 import com.fasterxml.jackson.annotation.JsonFilter;
 import com.krishagni.catissueplus.core.administrative.domain.User;
+import com.krishagni.catissueplus.core.common.util.Utility;
 
 @JsonFilter("withoutId")
 public class UserSummary implements Serializable {
@@ -16,6 +19,8 @@ public class UserSummary implements Serializable {
 	private static final long serialVersionUID = -8113791999197573026L;
 
 	private Long id;
+
+	private String type;
 
 	private String firstName;
 
@@ -41,12 +46,22 @@ public class UserSummary implements Serializable {
 
 	private Date creationDate;
 
+	private String activityStatus;
+
 	public Long getId() {
 		return id;
 	}
 
 	public void setId(Long id) {
 		this.id = id;
+	}
+
+	public String getType() {
+		return type;
+	}
+
+	public void setType(String type) {
+		this.type = type;
 	}
 
 	public String getFirstName() {
@@ -145,40 +160,58 @@ public class UserSummary implements Serializable {
 		this.creationDate = creationDate;
 	}
 
+	public String getActivityStatus() {
+		return activityStatus;
+	}
+
+	public void setActivityStatus(String activityStatus) {
+		this.activityStatus = activityStatus;
+	}
+
+	public String formattedName() {
+		StringBuilder name = new StringBuilder();
+		if (StringUtils.isNotBlank(firstName)) {
+			name.append(firstName);
+		}
+
+		if (StringUtils.isNotBlank(lastName)) {
+			if (name.length() > 0) {
+				name.append(" ");
+			}
+
+			name.append(lastName);
+		}
+
+		return name.toString();
+	}
+
 	public static UserSummary from(User user) {
-		UserSummary userSummary = new UserSummary();
-		userSummary.setId(user.getId());
-		userSummary.setFirstName(user.getFirstName());
-		userSummary.setLastName(user.getLastName());
-		userSummary.setLoginName(user.getLoginName());
-		userSummary.setDomain(user.getAuthDomain().getName());
-		userSummary.setEmailAddress(user.getEmailAddress());
-		userSummary.setAdmin(user.isAdmin());
-		userSummary.setInstituteAdmin(user.isInstituteAdmin());
-		userSummary.setCreationDate(user.getCreationDate());
-		userSummary.setManageForms(user.getManageForms());
+		UserSummary result = new UserSummary();
+		result.setId(user.getId());
+		result.setType(user.getType().name());
+		result.setFirstName(user.getFirstName());
+		result.setLastName(user.getLastName());
+		result.setLoginName(user.getLoginName());
+		result.setDomain(user.getAuthDomain().getName());
+		result.setEmailAddress(user.getEmailAddress());
+		result.setAdmin(user.isAdmin());
+		result.setInstituteAdmin(user.isInstituteAdmin());
+		result.setCreationDate(user.getCreationDate());
+		result.setManageForms(user.getManageForms());
+		result.setActivityStatus(user.getActivityStatus());
 
 		if (user.getInstitute() != null) {
-			userSummary.setInstituteName(user.getInstitute().getName());
+			result.setInstituteName(user.getInstitute().getName());
 		}
 
 		if (user.getPrimarySite() != null) {
-			userSummary.setPrimarySite(user.getPrimarySite().getName());
+			result.setPrimarySite(user.getPrimarySite().getName());
 		}
 
-		return userSummary;
+		return result;
 	}
 	
 	public static List<UserSummary> from(Collection<User> users) {
-		List<UserSummary> result = new ArrayList<UserSummary>();
-		if (users == null) {
-			return result;
-		}	
-
-		for (User user : users) {
-			result.add(UserSummary.from(user));
-		}
-		
-		return result;
+		return Utility.nullSafeStream(users).map(UserSummary::from).collect(Collectors.toList());
 	}
 }

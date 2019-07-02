@@ -7,7 +7,7 @@ angular.module('os.administrative.user.roles', ['os.administrative.models', 'os.
     
     function init() {
       $scope.currentRole = {};
-      $scope.userRoles = {};
+      $scope.userRoles   = {};
       createUserRolesJson(userRoles);
 
       $scope.addMode = false;
@@ -100,10 +100,12 @@ angular.module('os.administrative.user.roles', ['os.administrative.models', 'os.
       });
 
       angular.forEach($scope.userRoles.siteCpRoles, function(role) {
-        cpsToRemove.push(role.collectionProtocol);
+        if (role.site == site) {
+          cpsToRemove.push(role.collectionProtocol);
+        }
       });
 
-      var cpListOpts = {detailedList: false, maxResults: 1000};
+      var cpListOpts = {detailedList: false, maxResults: CollectionProtocol.MAX_CPS};
       if (site != $scope.all) {
         cpListOpts["repositoryName"] = site;
       }

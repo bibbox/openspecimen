@@ -25,6 +25,10 @@
   </div>
 
   <div class="container">
+    <div class="alert alert-info os-lean-box" ng-show="lctx.checkList.count > 0">
+      <span> {{'common.items_selected_info' | translate: lctx.checkList}} </span>
+    </div>
+
     <table class="os-table">
       <thead class="os-table-head">
         <tr class="row">
@@ -67,7 +71,9 @@
             <os-specimen-desc specimen="spmn" detailed="true"></os-specimen-desc>
           </td>
           <td class="col">
-            <span>{{spmn.storageLocation.name}}</span>
+            <a ui-sref="container-detail.locations({containerId: spmn.storageLocation.id})">
+              <os-disp-storage-position position="spmn.storageLocation"></os-disp-storage-position>
+            </a>
           </td>
         </tr>
       </tbody>
@@ -78,50 +84,54 @@
 </div>
 
 <script type="text/ng-template" id="modules/administrative/container/specimens-search">
-  <div class="os-search">
-    <div class="os-head">
-      <h3 class="os-title" translate="common.filters.title">
-        Filters
-      </h3>
-    </div>
-    <div class="os-body">
-      <div class="form-group">
-        <os-pvs ng-model="lctx.filterOpts.specimenType" attribute="specimen_type" show-only-leaf-values="true"
-          os-md-input placeholder="{{'specimens.type' | translate}}">
-        </os-pvs>
+  <div>
+    <div class="os-search">
+      <div class="os-head">
+        <h3 class="os-title" translate="common.filters.title">
+          Filters
+        </h3>
       </div>
+      <div class="os-body">
+        <div class="form-group">
+          <os-pvs ng-model="lctx.filterOpts.specimenType" attribute="specimen_type" show-only-leaf-values="true"
+            os-md-input placeholder="{{'specimens.type' | translate}}">
+          </os-pvs>
+        </div>
 
-      <div class="form-group">
-        <os-pvs ng-model="lctx.filterOpts.anatomicSite" attribute="anatomic_site" show-only-leaf-values="true"
-          os-md-input placeholder="{{'specimens.anatomic_site' | translate}}">
-        </os-pvs>
-      </div>
+        <div class="form-group">
+          <os-pvs ng-model="lctx.filterOpts.anatomicSite" attribute="anatomic_site" show-only-leaf-values="true"
+            os-md-input placeholder="{{'specimens.anatomic_site' | translate}}">
+          </os-pvs>
+        </div>
 
-      <div class="form-group">
-        <input type="text" ng-model="lctx.filterOpts.ppid"
-          os-md-input placeholder="{{'specimens.ppid' | translate}}">
-      </div>
+        <div class="form-group">
+          <input type="text" ng-model="lctx.filterOpts.ppid"
+            os-md-input placeholder="{{'specimens.ppid' | translate}}">
+        </div>
 
-      <div class="form-group" ng-switch on="ctx.container.calcAllowedCollectionProtocols.length > 0">
-        <span ng-switch-when="true">
-          <os-select list="ctx.container.calcAllowedCollectionProtocols"
-            ng-model="lctx.filterOpts.cpShortTitle" os-md-input placeholder="{{'specimens.cp' | translate}}">
+        <div class="form-group" ng-switch on="ctx.container.calcAllowedCollectionProtocols.length > 0">
+          <span ng-switch-when="true">
+            <os-select list="ctx.container.calcAllowedCollectionProtocols"
+              ng-model="lctx.filterOpts.cpShortTitle" os-md-input placeholder="{{'specimens.cp' | translate}}">
+            </os-select>
+          </span>
+          <span ng-switch-when="false">
+            <os-select list="lctx.cps" display-prop="shortTitle" select-prop="id"
+              ng-model="lctx.filterOpts.cpId" os-md-input refresh="loadCps" placeholder="{{'specimens.cp' | translate}}">
+            </os-select>
+          </span>
+        </div>
+
+        <div class="form-group">
+          <os-select list="lctx.containers" display-prop="name" select-prop="name" ng-model="lctx.filterOpts.container"
+            os-md-input refresh="loadContainers" placeholder="{{'specimens.container' | translate}}">
           </os-select>
-        </span>
-        <span ng-switch-when="false">
-          <os-select list="lctx.cps" display-prop="shortTitle" select-prop="id"
-            ng-model="lctx.filterOpts.cpId" os-md-input refresh="loadCps" placeholder="{{'specimens.cp' | translate}}">
-          </os-select>
-        </span>
-      </div>
+        </div>
 
-      <div class="form-group">
-        <os-select list="lctx.containers" display-prop="name" select-prop="name" ng-model="lctx.filterOpts.container"
-          os-md-input refresh="loadContainers" placeholder="{{'specimens.container' | translate}}">
-        </os-select>
+        <os-clear-filters opts="lctx.filterOpts"></os-clear-filters>
       </div>
-
-      <os-clear-filters opts="lctx.filterOpts"></os-clear-filters>
     </div>
+
+    <os-list-page-size opts="lctx.pagerOpts" on-change="pageSizeChanged()"></os-list-page-size>
   </div>
 </script>

@@ -10,6 +10,7 @@ import krishagni.catissueplus.beans.FormRecordEntryBean;
 
 import com.krishagni.catissueplus.core.administrative.repository.FormListCriteria;
 import com.krishagni.catissueplus.core.common.Pair;
+import com.krishagni.catissueplus.core.common.access.SiteCpPair;
 import com.krishagni.catissueplus.core.common.events.DependentEntityDetail;
 import com.krishagni.catissueplus.core.common.repository.Dao;
 import com.krishagni.catissueplus.core.de.domain.Form;
@@ -21,6 +22,8 @@ import com.krishagni.catissueplus.core.de.events.ObjectCpDetail;
 
 public interface FormDao extends Dao<FormContextBean> {
 	public Form getFormById(Long formId);
+
+	public Form getFormByName(String name);
 
 	public List<Form> getFormsByIds(Collection<Long> formIds);
 
@@ -57,16 +60,20 @@ public interface FormDao extends Dao<FormContextBean> {
 	public FormSummary getFormByContext(Long formCtxtId);
 		
 	public FormContextBean getFormContext(Long formId, Long cpId, String entity);	
-	
+
+	public FormContextBean getFormContext(boolean cpBased, String entityType, Long entityId, Long formId);
+
 	public FormContextBean getQueryFormContext(Long formId);
 
 	public List<FormContextBean> getFormContexts(Collection<Long> cpIds, String entityType);
 
-	public Pair<String, Long> getFormNameContext(Long cpId, String entityType);
+	public Pair<String, Long> getFormNameContext(Long cpId, String entityType, Long entityId);
 	
 	public void saveOrUpdateRecordEntry(FormRecordEntryBean recordEntry);
 	
 	public List<FormRecordEntryBean> getRecordEntries(Long formCtxtId, Long objectId);
+
+	public Map<Long, Pair<Long, Long>> getLatestRecordIds(Long formId, String entityType, List<Long> objectIds);
 
 	public FormRecordEntryBean getRecordEntry(Long formCtxtId, Long objectId, Long recordId);
 
@@ -102,14 +109,17 @@ public interface FormDao extends Dao<FormContextBean> {
 
 	int deleteFormContexts(Long cpId, List<String> entityTypes);
 
+	// object id -> record id
+	Map<Long, List<Long>> getRecordIds(Long formCtxtId, Collection<Long> objectIds);
+
 	//
 	// used by form data exporter
 	//
-	List<Map<String, Object>> getRegistrationRecords(Long cpId, Long formId, List<String> ppids, int startAt, int maxResults);
+	List<Map<String, Object>> getRegistrationRecords(Long cpId, Collection<SiteCpPair> siteCps, Long formId, List<String> ppids, int startAt, int maxResults);
 
-	List<Map<String, Object>> getParticipantRecords(Long cpId, Long formId, List<String> ppids, int startAt, int maxResults);
+	List<Map<String, Object>> getParticipantRecords(Long cpId, Collection<SiteCpPair> siteCps, Long formId, List<String> ppids, int startAt, int maxResults);
 
-	List<Map<String, Object>> getVisitRecords(Long cpId, Long formId, List<String> visitNames, int startAt, int maxResults);
+	List<Map<String, Object>> getVisitRecords(Long cpId, Collection<SiteCpPair> siteCps, Long formId, List<String> visitNames, int startAt, int maxResults);
 
-	List<Map<String, Object>> getSpecimenRecords(Long cpId, Long formId, String entityType, List<String> spmnLabels, int startAt, int maxResults);
+	List<Map<String, Object>> getSpecimenRecords(Long cpId, Collection<SiteCpPair> siteCps, Long formId, String entityType, List<String> spmnLabels, int startAt, int maxResults);
 }

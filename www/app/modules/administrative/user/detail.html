@@ -8,8 +8,12 @@
           </a>
         </li>
       </ul>
-
-      <h3>{{user.lastName}} {{user.firstName}}</h3>
+      <h3>
+        <span>{{user | osUserDisplayName}}</span>
+        <span class="btn os-status-closed" ng-if="user.activityStatus == 'Closed'" translate="common.archived">
+          Archived
+        </span>
+      </h3>
     </div>
 
     <div class="os-btns right">
@@ -47,13 +51,13 @@
     <ul>
       <li ui-sref-active="active">
         <a ui-sref=".overview">
-          <i class="fa fa-eye"></i>
+          <span class="fa fa-eye"></span>
           <span class="os-title" translate="user.menu.overview">Overview</span>
         </a>
       </li>
       <li ng-if="user.type == 'NONE'" ui-sref-active="active">
         <a ui-sref=".roles">
-          <i class="fa fa-users"></i>
+          <span class="fa fa-users"></span>
           <span class="os-title" translate="user.menu.roles">Roles</span>
         </a>
       </li>

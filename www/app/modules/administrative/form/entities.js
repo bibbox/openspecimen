@@ -2,10 +2,10 @@ angular.module('os.administrative.form.entities', ['os.common'])
   .factory('FormEntityReg', function(osDisplayList) {
     var list = osDisplayList();
 
-    list.addItem({name: 'Participant', key: 'entities.participant_reg', caption: ''});
-    list.addItem({name: 'CommonParticipant', key: 'entities.participant', caption: '', allCps: true});
-    list.addItem({name: 'SpecimenCollectionGroup', key: 'entities.visit', caption: ''});
-    list.addItem({name: 'Specimen', key: 'entities.specimen', caption: ''});
+    list.addItem({name: 'Participant', key: 'entities.participant_reg_form', caption: ''});
+    list.addItem({name: 'CommonParticipant', key: 'entities.participant_form', caption: '', allCps: true});
+    list.addItem({name: 'SpecimenCollectionGroup', key: 'entities.visit_form', caption: ''});
+    list.addItem({name: 'Specimen', key: 'entities.specimen_form', caption: ''});
     list.addItem({name: 'SpecimenEvent', key: 'entities.specimen_event', caption: '', allCps: true});
 
     list.addItem({
@@ -41,6 +41,24 @@ angular.module('os.administrative.form.entities', ['os.common'])
     list.addItem({
       name: 'DistributionProtocolExtension',
       caption: '', key: 'entities.dp_extension',
+      allCps: true, multipleRecs: false
+    });
+
+    list.addItem({
+      name: 'DpRequirementExtension',
+      caption: '', key: 'entities.dp_req_extension',
+      allCps: true, multipleRecs: false
+    });
+
+    list.addItem({
+      name: 'OrderExtension',
+      caption: '', key: 'entities.order_extension',
+      allCps: true, multipleRecs: false, allowEdits: false
+    });
+
+    list.addItem({
+      name: 'StorageContainerExtension',
+      caption: '', key: 'entities.container_extension',
       allCps: true, multipleRecs: false
     });
 

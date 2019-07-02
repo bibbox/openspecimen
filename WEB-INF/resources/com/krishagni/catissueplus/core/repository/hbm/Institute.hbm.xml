@@ -17,15 +17,13 @@
 
     <property name="activityStatus" column="ACTIVITY_STATUS"/>
     
-    <set
-      name="users"
-      table="CATISSUE_USER">
+    <set name="users" table="CATISSUE_USER" lazy="extra">
       <key column="INSTITUTE_ID"/>
       <one-to-many  class="com.krishagni.catissueplus.core.administrative.domain.User" />
       <filter name="activeEntity"/>
     </set>
     
-    <set name="sites" inverse="false" cascade="none">
+    <set name="sites" cascade="none" lazy="extra" mutable="false">
       <key column="INSTITUTE_ID"/>
       <one-to-many class="com.krishagni.catissueplus.core.administrative.domain.Site"/>
       <filter name="activeEntity"/>
@@ -51,6 +49,32 @@
       group by
         institute.id
     </query>
-    
+
+    <sql-query name="getDependentEntities">
+      <return-scalar column="entityName" type="string"/>
+      <return-scalar column="count" type="int"/>
+
+      select
+        'site' as entityName, count(s.identifier) as count
+      from
+        catissue_site s
+        inner join catissue_institution i on i.identifier = s.institute_id
+      where
+        s.activity_status != 'Disabled' and
+        i.activity_status != 'Disabled' and
+        i.identifier = :instituteId
+
+      union all
+
+      select
+        'user' as entityName, count(u.identifier) as count
+      from
+        catissue_user u
+        inner join catissue_institution i on i.identifier = u.institute_id
+      where
+        u.activity_status != 'Disabled' and
+        i.activity_status != 'Disabled' and
+        i.identifier = :instituteId
+    </sql-query>
   </class>
 </hibernate-mapping>

@@ -14,12 +14,15 @@ import java.util.stream.Collectors;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang.StringUtils;
 import org.hibernate.Criteria;
+import org.hibernate.criterion.DetachedCriteria;
+import org.hibernate.criterion.Disjunction;
 import org.hibernate.criterion.Junction;
 import org.hibernate.criterion.MatchMode;
 import org.hibernate.criterion.Order;
 import org.hibernate.criterion.ProjectionList;
 import org.hibernate.criterion.Projections;
 import org.hibernate.criterion.Restrictions;
+import org.hibernate.criterion.Subqueries;
 
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolEvent;
@@ -29,7 +32,7 @@ import com.krishagni.catissueplus.core.biospecimen.domain.SpecimenRequirement;
 import com.krishagni.catissueplus.core.biospecimen.events.CollectionProtocolSummary;
 import com.krishagni.catissueplus.core.biospecimen.repository.CollectionProtocolDao;
 import com.krishagni.catissueplus.core.biospecimen.repository.CpListCriteria;
-import com.krishagni.catissueplus.core.common.Pair;
+import com.krishagni.catissueplus.core.common.access.SiteCpPair;
 import com.krishagni.catissueplus.core.common.events.UserSummary;
 import com.krishagni.catissueplus.core.common.repository.AbstractDao;
 import com.krishagni.catissueplus.core.common.util.Status;
@@ -155,11 +158,27 @@ public class CollectionProtocolDaoImpl extends AbstractDao<CollectionProtocol> i
 	
 	@SuppressWarnings("unchecked")
 	@Override
-	public List<Long> getCpIdsBySiteIds(Collection<Long> siteIds) {
-		return sessionFactory.getCurrentSession()
-				.getNamedQuery(GET_CP_IDS_BY_SITE_IDS)
-				.setParameterList("siteIds", siteIds)
-				.list();
+	public List<Long> getCpIdsBySiteIds(Collection<Long> instituteIds, Collection<Long> siteIds, Collection<String> sites) {
+		Criteria query = getCurrentSession().createCriteria(CollectionProtocol.class, "cp")
+			.createAlias("cp.sites", "cpSite")
+			.createAlias("cpSite.site", "site")
+			.setProjection(Projections.distinct(Projections.property("cp.id")));
+
+		if (CollectionUtils.isNotEmpty(sites)) {
+			query.add(Restrictions.in("site.name", sites));
+		}
+
+		Disjunction siteCond = Restrictions.disjunction();
+		if (CollectionUtils.isNotEmpty(instituteIds)) {
+			query.createAlias("site.institute", "institute");
+			siteCond.add(Restrictions.in("institute.id", instituteIds));
+		}
+
+		if (CollectionUtils.isNotEmpty(siteIds)) {
+			siteCond.add(Restrictions.in("site.id", siteIds));
+		}
+
+		return (List<Long>) query.add(siteCond).list();
 	}
 
 	@Override
@@ -169,13 +188,12 @@ public class CollectionProtocolDaoImpl extends AbstractDao<CollectionProtocol> i
 
 	@SuppressWarnings("unchecked")
 	@Override
-	public Set<Pair<Long, Long>> getSiteCps(Collection<Long> cpIds) {
+	public Set<SiteCpPair> getSiteCps(Collection<Long> cpIds) {
 		List<Object[]> rows = getSessionFactory().getCurrentSession()
 				.getNamedQuery(GET_SITE_IDS_BY_CP_IDS)
 				.setParameterList("cpIds", cpIds)
 				.list();
-
-		return rows.stream().map(row -> Pair.make((Long)row[1], (Long)row[0])).collect(Collectors.toSet());
+		return rows.stream().map(row -> SiteCpPair.make((Long) row[1], (Long) row[2], (Long) row[0])).collect(Collectors.toSet());
 	}
 	
 	@Override
@@ -244,16 +262,6 @@ public class CollectionProtocolDaoImpl extends AbstractDao<CollectionProtocol> i
 				.list();
 		
 		return CollectionUtils.isEmpty(events) ? null : events.iterator().next();
-	}
-
-	@Override
-	public int getMinEventPoint(Long cpId) {
-		Number minEventPoint = (Number)sessionFactory.getCurrentSession()
-			.getNamedQuery(GET_MIN_CPE_CAL_POINT)
-			.setLong("cpId", cpId)
-			.uniqueResult();
-
-		return minEventPoint != null ? minEventPoint.intValue() : 0;
 	}
 
 	@Override
@@ -357,16 +365,16 @@ public class CollectionProtocolDaoImpl extends AbstractDao<CollectionProtocol> i
 	private Criteria getCpQuery(CpListCriteria cpCriteria) {
 		Criteria query = sessionFactory.getCurrentSession().createCriteria(CollectionProtocol.class)
 				.setFirstResult(cpCriteria.startAt())
-				.add(Restrictions.eq("activityStatus", Status.ACTIVITY_STATUS_ACTIVE.getStatus()))
+				.add(Restrictions.ne("activityStatus", Status.ACTIVITY_STATUS_DISABLED.getStatus()))
 				.createAlias("principalInvestigator", "pi");
 		
 		return addSearchConditions(query, cpCriteria);
 	}
 
-	private Criteria addSearchConditions(Criteria query, CpListCriteria cpCriteria) {
-		String searchString = cpCriteria.query();
+	private Criteria addSearchConditions(Criteria query, CpListCriteria crit) {
+		String searchString = crit.query();
 		if (StringUtils.isBlank(searchString)) {
-			searchString = cpCriteria.title();
+			searchString = crit.title();
 		} 
 		
 		if (StringUtils.isNotBlank(searchString)) {
@@ -374,26 +382,30 @@ public class CollectionProtocolDaoImpl extends AbstractDao<CollectionProtocol> i
 					.add(Restrictions.ilike("title", searchString, MatchMode.ANYWHERE))
 					.add(Restrictions.ilike("shortTitle", searchString, MatchMode.ANYWHERE));
 			
-			if (StringUtils.isNotBlank(cpCriteria.query())) {
+			if (StringUtils.isNotBlank(crit.query())) {
 				searchCond.add(Restrictions.ilike("irbIdentifier", searchString, MatchMode.ANYWHERE));
 			}	
 			
 			query.add(searchCond);
 		}
-		
-		Long piId = cpCriteria.piId();
-		if (piId != null) {
-			query.add(Restrictions.eq("pi.id", piId));
+
+		if (StringUtils.isBlank(crit.query()) && StringUtils.isNotBlank(crit.irbId())) {
+			query.add(Restrictions.ilike("irbIdentifier", crit.irbId(), MatchMode.ANYWHERE));
+		}
+
+		if (crit.piId() != null) {
+			query.add(Restrictions.eq("pi.id", crit.piId()));
 		}
 		
-		String repositoryName = cpCriteria.repositoryName();
+		String repositoryName = crit.repositoryName();
 		if (StringUtils.isNotBlank(repositoryName)) {
 			query.createCriteria("sites", "cpSite")
 				.createAlias("cpSite.site", "site")
 				.add(Restrictions.eq("site.name", repositoryName));
 		}
 
-		applyIdsFilter(query, "id", cpCriteria.ids());
+		applyIdsFilter(query, "id", crit.ids());
+		addSiteCpsCond(query, crit.siteCps());
 		return query;
 	}
 	
@@ -409,6 +421,7 @@ public class CollectionProtocolDaoImpl extends AbstractDao<CollectionProtocol> i
 		projs.add(Projections.property("ppidFormat"));
 		projs.add(Projections.property("manualPpidEnabled"));
 		projs.add(Projections.property("specimenCentric"));
+		projs.add(Projections.property("catalogId"));
 
 		if (cpCriteria.includePi()) {
 			projs.add(Projections.property("pi.id"));
@@ -431,6 +444,7 @@ public class CollectionProtocolDaoImpl extends AbstractDao<CollectionProtocol> i
 		cp.setPpidFmt((String)fields[idx++]);
 		cp.setManualPpidEnabled((Boolean)fields[idx++]);
 		cp.setSpecimenCentric((Boolean)fields[idx++]);
+		cp.setCatalogId((Long)fields[idx++]);
 
 		if (includePi) {
 			UserSummary user = new UserSummary();
@@ -442,6 +456,42 @@ public class CollectionProtocolDaoImpl extends AbstractDao<CollectionProtocol> i
 		}
 		
 		return cp;		
+	}
+
+	private void addSiteCpsCond(Criteria query, Collection<SiteCpPair> siteCps) {
+		if (CollectionUtils.isEmpty(siteCps)) {
+			return;
+		}
+
+		boolean siteAdded = false, instAdded = false;
+		DetachedCriteria filter = DetachedCriteria.forClass(CollectionProtocol.class, "cp");
+		Disjunction orCond = Restrictions.disjunction();
+
+		for (SiteCpPair siteCp : siteCps) {
+			if (siteCp.getCpId() != null) {
+				orCond.add(Restrictions.eq("cp.id", siteCp.getCpId()));
+			} else {
+				if (!siteAdded) {
+					filter.createAlias("cp.sites", "cpSite")
+						.createAlias("cpSite.site", "site");
+					siteAdded = true;
+				}
+
+				if (siteCp.getSiteId() != null) {
+					orCond.add(Restrictions.eq("site.id", siteCp.getSiteId()));
+				} else {
+					if (!instAdded) {
+						filter.createAlias("site.institute", "institute");
+						instAdded = true;
+					}
+
+					orCond.add(Restrictions.eq("institute.id", siteCp.getInstituteId()));
+				}
+			}
+		}
+
+		filter.add(orCond).setProjection(Projections.distinct(Projections.property("cp.id")));
+		query.add(Subqueries.propertyIn("id", filter));
 	}
 
 	private static final String FQN = CollectionProtocol.class.getName();
@@ -465,8 +515,6 @@ public class CollectionProtocolDaoImpl extends AbstractDao<CollectionProtocol> i
 	private static final String GET_EXPIRING_CPS = FQN + ".getExpiringCps";
 	
 	private static final String GET_CP_BY_CODE = FQN + ".getByCode";
-	
-	private static final String GET_CP_IDS_BY_SITE_IDS = FQN + ".getCpIdsBySiteIds";
 	
 	private static final String GET_SITE_IDS_BY_CP_IDS = FQN + ".getRepoIdsByCps";
 	

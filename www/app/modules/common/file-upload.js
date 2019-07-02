@@ -5,7 +5,9 @@ angular.module('openspecimen')
       restrict: 'A',
       replace: true,
       scope: {
-        ctrl: '='
+        ctrl: '=',
+
+        onUpload: '&'
       },      
       controller: function() {
         this.data = null;
@@ -34,15 +36,19 @@ angular.module('openspecimen')
         this.fail = function(resp) {
           var xhr = resp.xhr('responseText');
           var status = Math.floor(xhr.status / 100);
-          if (status == 4) {
-            var responses = eval(xhr.response);
-            var errMsgs = [];
-            angular.forEach(responses, function(err) {
-              errMsgs.push(err.message + "(" + err.code + ")");
-            });
+
+          var responses = eval(xhr.response);
+          var errMsgs = [];
+          angular.forEach(responses, function(err) {
+            errMsgs.push(err.message + "(" + err.code + ")");
+          });
+
+          if (errMsgs.length > 0) {
             Alerts.errorText(errMsgs);
+          } else if (status == 4) {
+            Alerts.error('common.ui_error');
           } else if (status == 5) {
-            Alerts.error("common.server_error");
+            Alerts.error('common.server_error');
           }
 
           this.q.reject(resp);
@@ -59,18 +65,30 @@ angular.module('openspecimen')
 
         $timeout(function() {
           scope.ctrl = ctrl;
+          scope.caption = attrs.caption || 'No File Selected';
 
           element.find('input').fileupload({
             dataType: 'json',
             beforeSend: function(xhr) {
-              xhr.setRequestHeader('X-OS-API-TOKEN', $http.defaults.headers.common['X-OS-API-TOKEN']);
+              if ($http.defaults.headers.common['X-OS-API-TOKEN']) {
+                xhr.setRequestHeader('X-OS-API-TOKEN', $http.defaults.headers.common['X-OS-API-TOKEN']);
+              }
             },
             add: function (e, data) {
               element.find('span').text(data.files[0].name);
               ctrl.data = data;
+              if (attrs.uploadOnSelect == 'true' || attrs.uploadOnSelect == true) {
+                ctrl.submit();
+              }
             },
             done: function(e, data) {
+              var filename = "Unknown";
+              if (data.originalFiles && data.originalFiles.length > 0) {
+                filename = data.originalFiles[0].name;
+              }
+
               ctrl.done(data);
+              scope.onUpload({filename: filename, result: data.result});
             },
             fail: function(e, data) {
               ctrl.fail(data);
@@ -83,8 +101,8 @@ angular.module('openspecimen')
       template: 
         '<div class="os-file-upload">' +
           '<input class="form-control" name="file" type="file">' +
-          '<span class="name" translate="common.no_file_selected">' +
-             'No File Selected' +
+          '<span class="name">' +
+             '{{caption}}' +
           '</span>' +
         '</div>'
     };

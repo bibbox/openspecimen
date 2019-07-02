@@ -1,43 +1,69 @@
 angular.module('os.administrative.order')
-  .controller('OrderItemsCtrl', function($scope, order) {
+  .controller('OrderItemsCtrl', function($scope, $state, order, CommentsUtil, DistributionLabelPrinter) {
   
-    var ctx = {
-      totalItems: 0,
-      currPage: 1,
-      itemsPerPage: 100,
-      items: [],
-      loading: false
-    };
+    var ctx;
 
     function init() {
-      $scope.ctx = ctx;
-      loadOrderItems(); 
-      $scope.$watch('ctx.currPage', loadOrderItems);
+      ctx = $scope.ctx = {
+        showRetrieveBtn: false,
+        params: {
+          listName: 'order-specimens-list-view',
+          objectId: order.id,
+          hideEmptyColumns: true
+        }
+      };
+      showOrHideRetrieve();
     }
 
-    function loadOrderItems() {
-      //
-      // if pending order is created using specimen list, show specimen list link
-      //
-      if (order.status === 'PENDING' && !!order.specimenList) {
+    function showOrHideRetrieve() {
+      ctx.showRetrieveBtn = false;
+      if (order.status != 'EXECUTED') {
         return;
       }
 
-      var startAt     = (ctx.currPage - 1) * ctx.itemsPerPage;
-      var maxResults  = ctx.itemsPerPage + 1;
-      var queryParams = {startAt: startAt, maxResults: maxResults};
-      ctx.loading = true;
-      order.getOrderItems(queryParams).then(
-        function(orderItems) {
-          ctx.totalItems = (ctx.currPage - 1) * ctx.itemsPerPage + orderItems.length;
-          if (orderItems.length >= maxResults) {
-            orderItems.splice(orderItems.length - 1, 1);
-          }
-
-          ctx.items = orderItems;
-          ctx.loading = false;
+      order.getOrderItems({maxResults: 1, storedInDistributionContainer: true}).then(
+        function(items) {
+          ctx.showRetrieveBtn = (items.length > 0);
         }
       );
+    }
+
+    $scope.retrieveSpecimens = function() {
+      var opts = {
+        header: 'specimen_list.retrieve_specimens', headerParams: {},
+        placeholder: 'specimen_list.retrieve_reason',
+        button: 'specimen_list.retrieve_specimens'
+      };
+
+      CommentsUtil.getComments(opts,
+        function(comments) {
+          order.retrieveSpecimens({comments: comments}).then(
+            function(count) {
+              ctx.listCtrl.loadList();
+              ctx.showRetrieveBtn = false;
+            }
+          );
+        }
+      );
+    }
+
+    $scope.printLabels = function() {
+      var itemIds = ctx.listCtrl.getSelectedItems().map(function(item) { return item.hidden.orderItemId_ });
+      if (itemIds.length == 0) {
+        alert("No order items selected");
+        return;
+      }
+
+      DistributionLabelPrinter.printLabels({orderId: order.id, itemIds: itemIds}, order.name + '.csv');
+    }
+
+    $scope.setListCtrl = function(listCtrl) {
+      ctx.listCtrl = listCtrl;
+      ctx.showSearch = listCtrl.haveFilters;
+    }
+
+    $scope.showSpecimen = function(row) {
+      $state.go('specimen', {specimenId: row.hidden.specimenId});
     }
 
     init();

@@ -52,7 +52,7 @@
     </record>
 
     <field>
-      <type>date</type>
+      <type>datetime</type>
       <caption>#getMessage("order_execution_date")</caption>
       <attribute>executionDate</attribute>
     </field>
@@ -71,6 +71,10 @@
       <caption>#getMessage("order_status")</caption>
       <attribute>status</attribute>
     </field>
+
+    <record type="customFields" cpBased="false" entityType="OrderExtension">
+      <attribute>extensionDetail</attribute>
+    </record>
 
     <record>
       <attribute>orderItem</attribute>
@@ -101,6 +105,33 @@
         <caption>#getMessage("order_item_quantity")</caption>
         <attribute>quantity</attribute>
       </field>
+
+      <record>
+        <caption>#getMessage("order_item_location")</caption>
+        <attribute>holdingLocation</attribute>
+
+        <field>
+          <caption>#getMessage("order_item_location_container")</caption>
+          <attribute>name</attribute>
+        </field>
+
+        <field>
+          <caption>#getMessage("order_item_location_row")</caption>
+          <attribute>positionY</attribute>
+        </field>
+
+        <field>
+          <caption>#getMessage("order_item_location_column")</caption>
+          <attribute>positionX</attribute>
+        </field>
+
+        <field>
+          <caption>#getMessage("order_item_location_position")</caption>
+          <attribute>position</attribute>
+        </field>
+      </record>
+
+      $schemaBuilder.insertAdditionalFields("/com/**/schema/order-item/*.xml")
 
       <field>
         <caption>#getMessage("order_item_status")</caption>

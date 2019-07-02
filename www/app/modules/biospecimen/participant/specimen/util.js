@@ -1,10 +1,25 @@
 angular.module('os.biospecimen.specimen')
-  .factory('SpecimenUtil', function($modal, $q, $parse, $location, Specimen, PvManager, Alerts, Util) {
+  .factory('SpecimenUtil', function(
+    $modal, $q, $parse, $location,
+    ParticipantSpecimensViewState, Specimen, PvManager, Alerts, Util) {
+
     var URL_LEN_LIMIT = 8192; // 8 KB
 
     function collectAliquots(scope) {
       var spec = scope.aliquotSpec;
+      if (!spec.type || !spec.specimenClass) {
+        return [];
+      }
+
       var parent = scope.parentSpecimen;
+      if (parent.availableQty == '') {
+        delete parent.availableQty;
+      }
+
+      if (parent.initialQty == '') {
+        delete parent.initialQty;
+      }
+
       var extensionDetail = getExtensionDetail(scope);
       if (!extensionDetail) {
         extensionDetail = scope.aliquotSpec.extensionDetail;
@@ -24,9 +39,9 @@ angular.module('os.biospecimen.specimen')
           });
           return;
         }
-      } else if (!!spec.qtyPerAliquot) {
+      } else if (spec.specimenClass == parent.specimenClass && spec.type == parent.type && !!spec.qtyPerAliquot) {
         spec.noOfAliquots = Math.floor(parent.availableQty / spec.qtyPerAliquot);
-      } else if (!!spec.noOfAliquots) {
+      } else if (spec.specimenClass == parent.specimenClass && spec.type == parent.type && !!spec.noOfAliquots) {
         spec.qtyPerAliquot = Math.round(parent.availableQty / spec.noOfAliquots * 10000) / 10000;
       }
 
@@ -41,18 +56,22 @@ angular.module('os.biospecimen.specimen')
       parent.isOpened = parent.hasChildren = true;
       parent.depth = 0;
       parent.closeAfterChildrenCreation = spec.closeParent;
+      parent.storageType = (!parent.storageLocation || !parent.storageLocation.name) && (parent.storageType || 'Virtual');
 
       var derived = undefined;
-      if (spec.specimenClass != parent.specimenClass || spec.type != parent.type) {
+      if ((parent.lineage != 'Derived' && spec.createDerived) ||
+          spec.specimenClass != parent.specimenClass || spec.type != parent.type) {
         derived = getSpmnToSave(
           'Derived', spec, parent,
           Math.round(spec.qtyPerAliquot * spec.noOfAliquots),
+          spec.concentration,
           scope.cpr.derivativeLabelFmt);
       }
 
       var aliquot = getSpmnToSave(
         'Aliquot', spec, (derived ? derived : parent),
         spec.qtyPerAliquot,
+        spec.concentration,
         scope.cpr.aliquotLabelFmt);
 
       var aliquots = [];
@@ -126,12 +145,14 @@ angular.module('os.biospecimen.specimen')
             delete scope.derivative.storageLocation.reservationId;
           }
 
+          ParticipantSpecimensViewState.specimensUpdated(scope);
           scope.revertEdit();
         }
       );
     }
 
-    function getNewDerivative(scope) {
+    function getNewDerivative(scope, opts) {
+      var incrStep = opts && opts.incrFreezeThawCycles ? 1 : 0;
       return new Specimen({
         parentId: scope.parentSpecimen.id,
         lineage: 'Derived',
@@ -144,8 +165,8 @@ angular.module('os.biospecimen.specimen')
         laterality: scope.parentSpecimen.laterality, 
         closeParent: false,
         createdOn : Date.now(),
-        incrParentFreezeThaw: 1,
-        freezeThawCycles: scope.parentSpecimen.freezeThawCycles + 1
+        incrParentFreezeThaw: incrStep,
+        freezeThawCycles: scope.parentSpecimen.freezeThawCycles + incrStep
       });
     }
 
@@ -230,29 +251,6 @@ angular.module('os.biospecimen.specimen')
       return url.length;
     }
 
-    function ensureAllBarcodesExist(barcodes, specimens, errorOpts) {
-      var spmnsMap = specimens.reduce(
-        function(map, spmn) {
-          map[spmn.barcode] = spmn;
-          return map;
-        },
-        {}
-      );
-
-      var notFoundBarcodes = barcodes.filter(
-        function(barcode) {
-          return !spmnsMap[barcode];
-        }
-      );
-
-      if (notFoundBarcodes.length != 0) {
-        showError(notFoundBarcodes, errorOpts);
-        return deferred(undefined);
-      }
-
-      return deferred(specimens);
-    }
-
     function deferred(resp) {
       var deferred = $q.defer();
       deferred.resolve(resp);
@@ -260,21 +258,33 @@ angular.module('os.biospecimen.specimen')
     }
 
     function resolveSpecimens(labels, barcodes, specimens, errorOpts) {
-      if (!labels || labels.length == 0) {
-        return ensureAllBarcodesExist(barcodes, specimens, errorOpts);
+      var inputs, attr;
+      if (!!labels && labels.length > 0) {
+        inputs = labels;
+        attr = 'label';
+      } else {
+        inputs = barcodes;
+        attr = 'barcode';
       }
 
+      return resolveSpecimens1(inputs, attr, specimens, errorOpts);
+    }
+
+    //
+    // labels could be either specimen label or barcode
+    //
+    function resolveSpecimens1(labels, attr, specimens, errorOpts) {
       var specimensMap = {};
       angular.forEach(specimens, function(spmn) {
-        if (!specimensMap[spmn.label]) {
-          specimensMap[spmn.label] = [spmn];
+        if (!specimensMap[spmn[attr]]) {
+          specimensMap[spmn[attr]] = [spmn];
         } else {
-          specimensMap[spmn.label].push(spmn);
+          specimensMap[spmn[attr]].push(spmn);
         }
       });
 
       //
-      // {label: label, specimens; [s1, s2], selected: s1}
+      // {label: label/barcode, specimens; [s1, s2], selected: s1}
       //
       var labelsInfo = [];
       var dupLabels = [], notFoundLabels = [];
@@ -312,12 +322,15 @@ angular.module('os.biospecimen.specimen')
         resolve: {
           labels: function() {
             return dupLabels;
+          },
+          attr: function() {
+            return attr;
           }
         }
       }).result.then(
         function(spmns) {
           //
-          // Duplicate labels info passed to modal is a sub-view of labelsInfo list;
+          // Duplicate labels/barcodes info passed to modal is a sub-view of labelsInfo list;
           // therefore any updates/selection done in modal are visible in labelsInfo
           // list as well
           //
@@ -346,19 +359,22 @@ angular.module('os.biospecimen.specimen')
       }, opts));
     }
 
-    function getSpmnToSave(lineage, spec, parent, qty, fmt) {
+    function getSpmnToSave(lineage, spec, parent, qty, concentration, fmt) {
       return new Specimen({
         lineage: lineage,
         specimenClass: spec.specimenClass,
         type: spec.type,
         parentId: parent.id,
         initialQty: qty,
+        concentration: concentration,
+        pathology: spec.pathology || parent.pathology,
         storageLocation: {name: '', positionX:'', positionY: ''},
         status: 'Pending',
         children: [],
         cprId: parent.cprId,
         visitId: parent.visitId,
         createdOn: spec.createdOn,
+        createdBy: spec.createdBy,
         freezeThawCycles: spec.freezeThawCycles,
         incrParentFreezeThaw: spec.incrParentFreezeThaw,
         comments: spec.comments,
@@ -372,15 +388,16 @@ angular.module('os.biospecimen.specimen')
       });
     }
 
-    function sdeGroupSpecimens(baseFields, groups, specimens) {
+    function sdeGroupSpecimens(baseFields, groups, specimens, ctxtObjs, otherOpts) {
       var result = [];
       var unmatched = [].concat(specimens);
 
+      groups = groups || [];
       for (var i = 0; i < groups.length; ++i) {
         var group = groups[i];
         var selectedSpmns = [];
         if (!group.criteria) {
-          selectedSpmns = specimens.map(function(spmn) { return {specimen: spmn} });
+          selectedSpmns = specimens.map(sdeGroupInput(ctxtObjs));
           unmatched.length = 0;
         } else {
           var exprs = group.criteria.rules.map(
@@ -397,8 +414,9 @@ angular.module('os.biospecimen.specimen')
 
           var expr = $parse(exprs.join(group.criteria.op == 'AND' ? ' && ' : ' || '));
           for (var j = specimens.length - 1; j >= 0; j--) {
-            if (expr({specimen: specimens[j]})) {
-              selectedSpmns.unshift({specimen: specimens[j]});
+            var input = sdeGroupInput(ctxtObjs)(specimens[j]);
+            if (expr(input)) {
+              selectedSpmns.unshift(input);
 
               var uidx = unmatched.indexOf(specimens[j]);
               if (uidx > -1) {
@@ -409,25 +427,99 @@ angular.module('os.biospecimen.specimen')
         }
 
         if (selectedSpmns.length != 0) {
+          var cofrc = (!angular.isDefined(group.enableCofrc) || group.enableCofrc === 'true' || group.enableCofrc === true);
+          var hcfa = group.hideCopyFirstToAll;
+          hcfa = angular.isDefined(hcfa) && (hcfa === 'true' || hcfa === true);
+
           result.push({
             multiple: true,
             title: group.title,
             fields: { table: group.fields },
             baseFields: baseFields,
             input: selectedSpmns,
-            opts: { static: true }
+            lastRow: angular.copy(selectedSpmns[selectedSpmns.length - 1]),
+            opts: angular.extend({static: true, enableCofrc: cofrc, cofrc: cofrc, hideCopyFirstToAll: hcfa}, otherOpts || {})
           });
         }
       }
 
       if (unmatched.length > 0) {
+        var input = unmatched.map(sdeGroupInput(ctxtObjs));
         result.push({
-          input: unmatched.map(function(specimen) { return {specimen: specimen}; }),
-          noMatch: true
+          input: input,
+          noMatch: true,
+          lastRow: angular.copy(input[input.length - 1]),
+          opts: otherOpts || {}
         });
       }
 
       return result;
+    }
+
+    function sdeGroupInput(ctxtObjs) {
+      return function(specimen) {
+        return angular.extend({specimen: specimen}, ctxtObjs);
+      };
+    }
+
+    function getAllDescendantsByProp0(groups, parentIdProp, parentId) {
+      var result = [];
+      angular.forEach(groups,
+        function(group) {
+          angular.forEach(group.input,
+            function(obj) {
+              if (obj.specimen && obj.specimen[parentIdProp] == parentId) {
+                result.push(obj);
+              }
+            }
+          );
+        }
+      );
+
+      return result;
+    }
+
+    function getAllDescendantsByProp(groups, id, idProp, parentIdProp, allDescendants) {
+      var result = getAllDescendantsByProp0(groups, parentIdProp, id);
+      if (allDescendants) {
+        var childrenIds = result.map(function(obj) { return obj.specimen[idProp]; });
+        angular.forEach(childrenIds,
+          function(childId) {
+            result = result.concat(getAllDescendantsByProp(groups, childId, idProp, parentIdProp, allDescendants));
+          }
+        )
+      }
+
+      return result;
+    }
+
+    function sdeGroupSetChildrenValue(groups, object, prop, value, allDescendants) {
+      var spmn = object.specimen;
+
+      var idProp, parentIdProp;
+      if (spmn.uid !== undefined && spmn.uid !== null) {
+        idProp = 'uid';
+        parentIdProp = 'parentUid';
+      } else {
+        idProp = 'id';
+        parentIdProp = 'parentId';
+      }
+
+      var descendants = getAllDescendantsByProp(groups, spmn[idProp], idProp, parentIdProp, allDescendants);
+      if (descendants.length == 0) {
+        return;
+      }
+
+      var expr = $parse(prop);
+      if (angular.isObject(value)) {
+        value = angular.copy(value);
+      }
+
+      angular.forEach(descendants,
+        function(descendant) {
+          expr.assign(descendant, value);
+        }
+      );
     }
 
     return {
@@ -449,12 +541,15 @@ angular.module('os.biospecimen.specimen')
 
       showInsufficientQtyWarning: showInsufficientQtyWarning,
 
-      sdeGroupSpecimens: sdeGroupSpecimens
+      sdeGroupSpecimens: sdeGroupSpecimens,
+
+      sdeGroupSetChildrenValue: sdeGroupSetChildrenValue
     };
   })
-  .controller('ResolveSpecimensCtrl', function($scope, $modalInstance, labels, Alerts) {
+  .controller('ResolveSpecimensCtrl', function($scope, $modalInstance, labels, attr, Alerts) {
     function init() {
       $scope.labels = labels;
+      $scope.attr = attr;
     }
 
     $scope.cancel = function() {

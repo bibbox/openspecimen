@@ -20,9 +20,10 @@ angular.module('os.biospecimen.cp.list', ['os.biospecimen.models'])
     }
 
     function setList(list) {
+      pagerOpts.refreshOpts(list);
+
       $scope.cpList = list;
       $scope.ctx.checkList = new CheckList(list);
-      pagerOpts.refreshOpts(list);
     }
 
     function getCpCount() {
@@ -45,14 +46,6 @@ angular.module('os.biospecimen.cp.list', ['os.biospecimen.models'])
       $state.go('cp-summary-view', {cpId: cp.id});
     };
 
-    $scope.viewCatalog = function(cp) {
-      cp.getCatalogQuery().then(
-        function(query) {
-          $state.go('query-results', {queryId: query.id, cpId: cp.id});
-        }
-      );
-    }
-
     $scope.deleteCps = function() {
       var cps = $scope.ctx.checkList.getSelectedItems();
 
@@ -60,10 +53,15 @@ angular.module('os.biospecimen.cp.list', ['os.biospecimen.models'])
         confirmDelete:  'cp.delete_cps',
         successMessage: 'cp.cps_deleted',
         pendingMessage: 'cp.cps_delete_pending',
-        onBulkDeletion: loadCollectionProtocols
+        onBulkDeletion: loadCollectionProtocols,
+        askReason:      true
       }
 
       DeleteUtil.bulkDelete({bulkDelete: CollectionProtocol.bulkDelete}, getCpIds(cps), opts);
+    }
+
+    $scope.pageSizeChanged = function() {
+      filterOpts.maxResults = pagerOpts.recordsPerPage + 1;
     }
 
     init();

@@ -1,8 +1,9 @@
 
 angular.module('os.biospecimen.visit.addedit', [])
   .controller('AddEditVisitCtrl', function(
-    $scope, $state, $stateParams, cp, cpr, visit, latestVisit, extensionCtxt, hasDict, mrnAccessRestriction,
-    PvManager, ExtensionsUtil) {
+    $scope, $state, $stateParams, cp, cpr, visit, latestVisit,
+    extensionCtxt, hasDict, layout, onValueChangeCb, mrnAccessRestriction,
+    ParticipantSpecimensViewState, PvManager, ExtensionsUtil) {
 
     function loadPvs() {
       $scope.visitStatuses = PvManager.getPvs('visit-status');
@@ -14,25 +15,29 @@ angular.module('os.biospecimen.visit.addedit', [])
       angular.extend(currVisit, {cprId: cpr.id, cpTitle: cpr.cpTitle});
 
       $scope.visitCtx = {
-        obj: {visit: $scope.currVisit, cp: cp},
+        obj: {visit: $scope.currVisit, cpr: cpr, cp: cp},
+        opts: {viewCtx: $scope, layout: layout, onValueChange: onValueChangeCb, mdInput: false},
         inObjs: ['visit'],
         mrnAccessRestriction: mrnAccessRestriction
       }
 
       if (!currVisit.id) {
         angular.extend(currVisit, {
-          visitDate: currVisit.anticipatedVisitDate || new Date(),
+          visitDate: new Date(),
           status: 'Complete',
           clinicalDiagnoses: latestVisit ? latestVisit.clinicalDiagnoses : currVisit.clinicalDiagnoses,
           site: getVisitSite(cpr, latestVisit, currVisit)
         });
         delete currVisit.anticipatedVisitDate;
+      } else if (currVisit.status == 'Pending') {
+        currVisit.visitDate = new Date();
       }
 
       if ($stateParams.missedVisit == 'true') {
         angular.extend(currVisit, {status: 'Missed Collection'});
       } else if ($stateParams.newVisit == 'true') {
         angular.extend(currVisit, {id: undefined, name: undefined, status: 'Complete', visitDate: new Date()});
+        $scope.visit = currVisit;
       }
 
       $scope.deFormCtrl = {};
@@ -66,9 +71,15 @@ angular.module('os.biospecimen.visit.addedit', [])
         $scope.currVisit.extensionDetail = formCtrl.getFormData();
       }
 
+      if ($scope.currVisit.eventLabel != visit.eventLabel) {
+        $scope.currVisit.eventId = undefined;
+      }
+
       $scope.currVisit.$saveOrUpdate().then(
         function(result) {
-          angular.extend($scope.visit, result);
+          ParticipantSpecimensViewState.specimensUpdated($scope);
+
+          angular.extend($scope.visit, angular.extend({clinicalStatus: null, cohort: null}, result));
           $state.go('visit-detail.overview', {visitId: result.id, eventId: result.eventId});
         }
       );

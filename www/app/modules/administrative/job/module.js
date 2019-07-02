@@ -12,14 +12,13 @@ angular.module('os.administrative.job',
         abstract: true,
         template: '<div ui-view></div>',
         controller: function($scope) {
-          // Storage Container Authorization Options
           $scope.jobResource = {
             readOpts  : {resource: 'ScheduledJob', operations: ['Read']},
             createOpts: {resource: 'ScheduledJob', operations: ['Create']},
             updateOpts: {resource: 'ScheduledJob', operations: ['Update']},
             runOpts   : {resource: 'ScheduledJob', operations: ['Read']},
             deleteOpts: {resource: 'ScheduledJob', operations: ['Delete']}
-          }
+          };
         },
         parent: 'signed-in'
       })
@@ -30,16 +29,29 @@ angular.module('os.administrative.job',
         parent: 'job-root'
       })
       .state('job-addedit', {
-        url: '/job-addedit/:jobId',
+        url: '/job-addedit/:jobId?queryId',
         templateUrl: 'modules/administrative/job/addedit.html',
         controller: 'JobAddEditCtrl',
         resolve: {
-          job: function($stateParams, ScheduledJob) {
+          query: function($stateParams, SavedQuery) {
+            if (!!$stateParams.jobId) {
+              return null;
+            }
+
+            if ($stateParams.queryId) {
+              return SavedQuery.getById($stateParams.queryId);
+            }
+          },
+
+          job: function($stateParams, query, ScheduledJob) {
             if (!!$stateParams.jobId) {
               return ScheduledJob.getById($stateParams.jobId);
             }
 
             return new ScheduledJob({
+              name: query && query.title,
+              type: !query ? 'INTERNAL' : 'QUERY',
+              savedQuery: query,
               repeatSchedule: 'ONDEMAND',
               recipients: [],
               startDate: new Date()

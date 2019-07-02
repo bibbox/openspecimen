@@ -15,25 +15,30 @@ import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.InitializingBean;
 
+import com.krishagni.catissueplus.core.audit.services.impl.DeleteLogUtil;
 import com.krishagni.catissueplus.core.biospecimen.ConfigParams;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
 import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
 import com.krishagni.catissueplus.core.biospecimen.domain.Visit;
+import com.krishagni.catissueplus.core.biospecimen.domain.VisitSavedEvent;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.CpErrorCode;
+import com.krishagni.catissueplus.core.biospecimen.domain.factory.CpeErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.VisitErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.VisitFactory;
 import com.krishagni.catissueplus.core.biospecimen.events.CpEntityDeleteCriteria;
 import com.krishagni.catissueplus.core.biospecimen.events.FileDetail;
-import com.krishagni.catissueplus.core.biospecimen.events.FileDownloadDetail;
-import com.krishagni.catissueplus.core.biospecimen.events.LabelPrintJobSummary;
+import com.krishagni.catissueplus.core.biospecimen.events.MatchedVisitDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.PrintVisitNameDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.SpecimenDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.SprDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.SprLockDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.VisitDetail;
+import com.krishagni.catissueplus.core.biospecimen.events.VisitSearchDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.VisitSpecimenDetail;
+import com.krishagni.catissueplus.core.biospecimen.matching.VisitsLookup;
 import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
 import com.krishagni.catissueplus.core.biospecimen.repository.SpecimenListCriteria;
 import com.krishagni.catissueplus.core.biospecimen.repository.VisitsListCriteria;
@@ -42,22 +47,23 @@ import com.krishagni.catissueplus.core.biospecimen.services.SpecimenService;
 import com.krishagni.catissueplus.core.biospecimen.services.SprPdfGenerator;
 import com.krishagni.catissueplus.core.biospecimen.services.VisitService;
 import com.krishagni.catissueplus.core.common.OpenSpecimenAppCtxProvider;
-import com.krishagni.catissueplus.core.common.Pair;
 import com.krishagni.catissueplus.core.common.PlusTransactional;
 import com.krishagni.catissueplus.core.common.access.AccessCtrlMgr;
+import com.krishagni.catissueplus.core.common.access.SiteCpPair;
 import com.krishagni.catissueplus.core.common.domain.LabelPrintJob;
 import com.krishagni.catissueplus.core.common.domain.PrintItem;
 import com.krishagni.catissueplus.core.common.errors.ErrorType;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.DependentEntityDetail;
 import com.krishagni.catissueplus.core.common.events.EntityQueryCriteria;
-import com.krishagni.catissueplus.core.common.events.FileType;
+import com.krishagni.catissueplus.core.common.events.LabelPrintJobSummary;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
 import com.krishagni.catissueplus.core.common.events.ResponseEvent;
 import com.krishagni.catissueplus.core.common.service.ConfigurationService;
 import com.krishagni.catissueplus.core.common.service.LabelGenerator;
 import com.krishagni.catissueplus.core.common.service.LabelPrinter;
 import com.krishagni.catissueplus.core.common.service.ObjectAccessor;
+import com.krishagni.catissueplus.core.common.service.impl.EventPublisher;
 import com.krishagni.catissueplus.core.common.util.ConfigUtil;
 import com.krishagni.catissueplus.core.common.util.Utility;
 import com.krishagni.catissueplus.core.exporter.domain.ExportJob;
@@ -65,7 +71,9 @@ import com.krishagni.catissueplus.core.exporter.services.ExportService;
 import com.krishagni.rbac.common.errors.RbacErrorCode;
 
 public class VisitServiceImpl implements VisitService, ObjectAccessor, InitializingBean {
-	private Log logger = LogFactory.getLog(VisitServiceImpl.class);
+	private static final Log logger = LogFactory.getLog(VisitServiceImpl.class);
+
+	private static String defaultVisitSprDir;
 
 	private DaoFactory daoFactory;
 
@@ -78,8 +86,10 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 	private LabelGenerator visitNameGenerator;
 	
 	private SprPdfGenerator sprText2PdfGenerator;
-	
-	private static String defaultVisitSprDir;
+
+	private VisitsLookup defaultVisitsLookup;
+
+	private VisitsLookup visitsLookup;
 
 	private ExportService exportSvc;
 
@@ -105,6 +115,10 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 	
 	public void setSprText2PdfGenerator(SprPdfGenerator sprText2PdfGenerator) {
 		this.sprText2PdfGenerator = sprText2PdfGenerator;
+	}
+
+	public void setDefaultVisitsLookup(VisitsLookup defaultVisitsLookup) {
+		this.defaultVisitsLookup = defaultVisitsLookup;
 	}
 
 	public void setExportSvc(ExportService exportSvc) {
@@ -220,7 +234,11 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 			Visit visit = getVisit(crit.getId(), crit.getName());
 			raiseErrorIfSpecimenCentric(visit);
 			AccessCtrlMgr.getInstance().ensureDeleteVisitRights(visit);
+
 			visit.delete(!crit.isForceDelete());
+			visit.setOpComments(crit.getReason());
+
+			DeleteLogUtil.getInstance().log(visit);
 			return ResponseEvent.response(VisitDetail.from(visit));
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
@@ -247,6 +265,7 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 			// 
 			Visit visit = daoFactory.getVisitsDao().getById(savedVisit.getId());
 			Map<Long, Specimen> reqSpecimenMap = visit.getSpecimens().stream()
+				.filter(s -> s.getSpecimenRequirement() != null) // OPSMN-4227: Complete -> Missed -> Pending -> Complete
 				.collect(Collectors.toMap(s -> s.getSpecimenRequirement().getId(), s -> s));
 			setSpecimenIds(specimens, reqSpecimenMap);
 			
@@ -287,10 +306,10 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 
 	@Override
 	@PlusTransactional
-	public ResponseEvent<FileDetail> getSpr(RequestEvent<FileDownloadDetail> req) {
+	public ResponseEvent<FileDetail> getSpr(RequestEvent<FileDetail> req) {
 		try {
-			FileDownloadDetail detail = req.getPayload();
-			Visit visit = getVisit(detail.getId(), detail.getName());
+			FileDetail input = req.getPayload();
+			Visit visit = getVisit(input.getId(), input.getName());
 			
 			AccessCtrlMgr.getInstance().ensureReadSprRights(visit);
 			
@@ -304,8 +323,8 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 			}
 			
 			String fileExtension = file.getName().substring(file.getName().lastIndexOf('.'));
-			if (isPdfType(detail.getType()) && isTextFile(file)) {
-				Map<String, Object> props = Collections.<String, Object>singletonMap("visit", visit);
+			if (isPdfType(input.getContentType()) && isTextFile(file)) {
+				Map<String, Object> props = Collections.singletonMap("visit", visit);
 				file = sprText2PdfGenerator.generate(file, props);
 				fileExtension = ".pdf";
 			}
@@ -440,7 +459,19 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 		visit.setSprLocked(detail.isLocked());
 		return ResponseEvent.response(detail);
 	}
-	
+
+	@Override
+	@PlusTransactional
+	public ResponseEvent<List<MatchedVisitDetail>> getMatchingVisits(RequestEvent<VisitSearchDetail> req) {
+		try {
+			return ResponseEvent.response(getVisitsLookup().getVisits(req.getPayload()));
+		} catch (OpenSpecimenException ose) {
+			return ResponseEvent.error(ose);
+		} catch (Exception e) {
+			return ResponseEvent.serverError(e);
+		}
+	}
+
 	@SuppressWarnings("unchecked")
 	@Override
 	public LabelPrinter<Visit> getLabelPrinter() {
@@ -466,7 +497,7 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 	@PlusTransactional
 	@Override
 	public List<Visit> getSpecimenVisits(List<String> specimenLabels) {
-		List<Pair<Long, Long>> siteCps = AccessCtrlMgr.getInstance().getReadAccessSpecimenSiteCps();
+		List<SiteCpPair> siteCps = AccessCtrlMgr.getInstance().getReadAccessSpecimenSiteCps();
 		if (siteCps != null && siteCps.isEmpty()) {
 			return Collections.emptyList();
 		}
@@ -498,7 +529,12 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 			value = Long.valueOf(value.toString());
 		}
 
-		return daoFactory.getVisitsDao().getCprVisitIds(key, value);
+		Map<String, Object> ids = daoFactory.getVisitsDao().getCprVisitIds(key, value);
+		if (ids == null || ids.isEmpty()) {
+			throw OpenSpecimenException.userError(VisitErrorCode.NOT_FOUND, value);
+		}
+
+		return ids;
 	}
 
 	@Override
@@ -513,6 +549,7 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 
 	@Override
 	public void afterPropertiesSet() {
+		cfgSvc.registerChangeListener(ConfigParams.MODULE, (name, value) -> { visitsLookup = null; });
 		exportSvc.registerObjectsGenerator("visit", this::getVisitsGenerator);
 	}
 
@@ -523,7 +560,7 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 			AccessCtrlMgr.getInstance().ensureCreateOrUpdateVisitRights(existing);
 		}
 
-		Visit visit = null;
+		Visit visit;
 		if (partial) {
 			visit = visitFactory.createVisit(existing, input);
 		} else {
@@ -542,10 +579,16 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 		OpenSpecimenException ose = new OpenSpecimenException(ErrorType.USER_ERROR);
 		ensureValidAndUniqueVisitName(existing, visit, ose);
 		ose.checkAndThrow();
-		
+
 		if (existing == null) {
+			if (visit.isEventClosed()) {
+				throw OpenSpecimenException.userError(CpeErrorCode.CLOSED, visit.getCpEvent().getEventLabel());
+			}
+
 			if (visit.isMissed()) {
 				visit.createMissedSpecimens();
+			} else if (visit.isNotCollected()) {
+				visit.createNotCollectedSpecimens();
 			}
 			
 			existing = visit;
@@ -557,6 +600,12 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 		daoFactory.getVisitsDao().saveOrUpdate(existing);
 		existing.addOrUpdateExtension();
 		existing.printLabels(prevVisitStatus);
+
+		if (existing.isDeleted()) {
+			DeleteLogUtil.getInstance().log(existing);
+		}
+
+		EventPublisher.getInstance().publish(new VisitSavedEvent(existing));
 		return existing;
 	}
 
@@ -632,7 +681,7 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 			setVisitId(visitId, specimen.getChildren());
 		}
 	}
-	
+
 	private File getSprFile(Long visitId) {
 		String path = getSprDirPath(visitId);
 		File dir = new File(path);
@@ -696,8 +745,8 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 		return contentType.startsWith("text/") || contentType.equals("application/pdf");
 	}
 	
-	private boolean isPdfType(FileType type) {
-		return type != null && type.equals(FileType.PDF);
+	private boolean isPdfType(String type) {
+		return StringUtils.isNotBlank(type) && type.equals("pdf");
 	}
 	
 	private void setSpecimenIds(List<SpecimenDetail> inputSpecimens, Map<Long, Specimen> reqSpecimenMap) {
@@ -718,6 +767,10 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 				specimenDetail.setId(specimen.getId());
 				if (StringUtils.isBlank(specimenDetail.getLabel())) {
 					specimenDetail.setLabel(specimen.getLabel());
+				}
+
+				if (StringUtils.isBlank(specimenDetail.getBarcode())) {
+					specimenDetail.setBarcode(specimen.getBarcode());
 				}
 			}
 
@@ -778,15 +831,57 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 		}
 	}
 
+	private VisitsLookup getVisitsLookup() {
+		if (visitsLookup == null) {
+			initVisitsLookup(ConfigUtil.getInstance().getStrSetting(ConfigParams.MODULE, ConfigParams.VISITS_LOOKUP_FLOW, null));
+		}
+
+		return visitsLookup;
+	}
+
+	private void initVisitsLookup(String lookupFlow) {
+		if (StringUtils.isBlank(lookupFlow)) {
+			visitsLookup = defaultVisitsLookup;
+			return;
+		}
+
+		VisitsLookup result = null;
+		try {
+			lookupFlow = lookupFlow.trim();
+			if (lookupFlow.startsWith("bean:")) {
+				result = OpenSpecimenAppCtxProvider.getBean(lookupFlow.substring("bean:".length()).trim());
+			} else {
+				String className = lookupFlow;
+				if (lookupFlow.startsWith("class:")) {
+					className = lookupFlow.substring("class:".length()).trim();
+				}
+
+
+				Class<VisitsLookup> klass = (Class<VisitsLookup>) Class.forName(className);
+				result = BeanUtils.instantiate(klass);
+			}
+		} catch (Exception e) {
+			logger.error("Invalid visits lookup flow configuration setting: " + lookupFlow, e);
+		}
+
+		if (result == null) {
+			throw OpenSpecimenException.userError(VisitErrorCode.INVALID_LOOKUP_FLOW, lookupFlow);
+		}
+
+		visitsLookup = result;
+	}
+
 	private Function<ExportJob, List<? extends Object>> getVisitsGenerator() {
 		return new Function<ExportJob, List<? extends Object>>() {
 			private boolean endOfVisits;
 
 			private boolean paramsInited;
 
+			private boolean pdfReports;
+
 			private VisitsListCriteria crit;
 
-			private int startAt;
+			private Long lastId;
 
 			@Override
 			public List<? extends Object> apply(ExportJob exportJob) {
@@ -796,22 +891,36 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 					return Collections.emptyList();
 				}
 
-				List<Visit> visits = daoFactory.getVisitsDao().getVisitsList(crit.startAt(startAt));
-				startAt += visits.size();
+				List<Visit> visits = daoFactory.getVisitsDao().getVisitsList(crit.lastId(lastId));
 				if (CollectionUtils.isNotEmpty(crit.names()) || visits.size() < 100) {
 					endOfVisits = true;
 				}
 
 				List<VisitDetail> records = new ArrayList<>();
 				for (Visit visit : visits) {
+					lastId = visit.getId();
+
 					try {
 						boolean hasPhi = AccessCtrlMgr.getInstance().ensureReadVisitRights(visit, true);
 						VisitDetail detail = VisitDetail.from(visit, false, !hasPhi);
-						if (hasPhi) {
-							detail.setSprFile(getSprFile(visit.getId()));
+						records.add(detail);
+						if (!hasPhi) {
+							continue;
 						}
 
-						records.add(detail);
+						File file = getSprFile(visit.getId());
+						if (file == null) {
+							continue;
+						}
+
+						String fileExtension = file.getName().substring(file.getName().lastIndexOf('.'));
+						if (pdfReports && isTextFile(file)) {
+							file = sprText2PdfGenerator.generate(file, Collections.singletonMap("visit", visit));
+							fileExtension = ".pdf";
+						}
+
+						detail.setSprFile(file);
+						detail.setSprName(visit.getName() + fileExtension);
 					} catch (OpenSpecimenException ose) {
 						if (!ose.containsError(RbacErrorCode.ACCESS_DENIED)) {
 							logger.error("Encountered error exporting visit record", ose);
@@ -833,38 +942,45 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 				}
 
 				Long cpId = getCpId(params);
-				List<Pair<Long, Long>> siteCps = AccessCtrlMgr.getInstance().getReadAccessSpecimenSiteCps(cpId);
+				List<SiteCpPair> siteCps = AccessCtrlMgr.getInstance().getReadAccessSpecimenSiteCps(cpId, false);
 				if (siteCps != null && siteCps.isEmpty()) {
 					endOfVisits = true;
-					return;
-				}
-
-				crit = new VisitsListCriteria()
-					.cpId(cpId)
-					.names(Utility.csvToStringList(params.get("visitNames")))
-					.siteCps(siteCps)
-					.useMrnSites(AccessCtrlMgr.getInstance().isAccessRestrictedBasedOnMrn());
-
-				if (!crit.names().isEmpty()) {
-					crit.limitItems(false);
+				} else if (!AccessCtrlMgr.getInstance().hasVisitSpecimenEximRights(cpId)) {
+					endOfVisits = true;
 				} else {
-					crit.limitItems(true).maxResults(100);
+					crit = new VisitsListCriteria()
+						.cpId(cpId)
+						.names(Utility.csvToStringList(params.get("visitNames")))
+						.siteCps(siteCps)
+						.useMrnSites(AccessCtrlMgr.getInstance().isAccessRestrictedBasedOnMrn());
+
+					if (!crit.names().isEmpty()) {
+						crit.limitItems(false);
+					} else {
+						crit.limitItems(true).maxResults(100);
+					}
 				}
 
+				pdfReports = job.getParams() != null && StringUtils.equals(job.getParams().get("sprFileType"), "pdf");
 				paramsInited = true;
 			}
 
 			private Long getCpId(Map<String, String> params) {
+				Long cpId = null;
+
 				String cpIdStr = params.get("cpId");
 				if (StringUtils.isNotBlank(cpIdStr)) {
 					try {
-						return Long.parseLong(cpIdStr);
+						cpId = Long.parseLong(cpIdStr);
+						if (cpId == -1L) {
+							cpId = null;
+						}
 					} catch (Exception e) {
 						logger.error("Invalid CP ID: " + cpIdStr, e);
 					}
 				}
 
-				return null;
+				return cpId;
 			}
 		};
 	}

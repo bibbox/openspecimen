@@ -15,6 +15,13 @@
 
     <property name="barcode" column="BARCODE"/>
 
+    <property name="usedFor" column="USED_FOR">
+      <type name="org.hibernate.type.EnumType">
+        <param name="enumClass">com.krishagni.catissueplus.core.administrative.domain.StorageContainer$UsageMode</param>
+        <param name="type">12</param>
+      </type>
+    </property>
+
     <property name="temperature" column="TEMPERATURE"/>
 
     <property name="noOfColumns" column="NO_OF_COLS"/>
@@ -23,9 +30,14 @@
 
     <property name="positionLabelingMode" column="POS_LABELING_MODE" not-null="true">
       <type name="org.hibernate.type.EnumType">
-        <param name="enumClass">
-          com.krishagni.catissueplus.core.administrative.domain.StorageContainer$PositionLabelingMode
-        </param>
+        <param name="enumClass">com.krishagni.catissueplus.core.administrative.domain.StorageContainer$PositionLabelingMode</param>
+        <param name="type">12</param>
+      </type>
+    </property>
+
+    <property name="positionAssignment" column="POS_ASSIGNMENT" not-null="true">
+      <type name="org.hibernate.type.EnumType">
+        <param name="enumClass">com.krishagni.catissueplus.core.administrative.domain.StorageContainer$PositionAssignment</param>
         <param name="type">12</param>
       </type>
     </property>
@@ -40,34 +52,20 @@
 
     <many-to-one name="autoFreezerProvider" column="AUTO_FREEZER_PROVIDER_ID"/>
 
-    <many-to-one
-      name="type"
-      class="com.krishagni.catissueplus.core.administrative.domain.ContainerType"
-      column="TYPE_ID"/>
+    <many-to-one name="type" column="TYPE_ID"/>
 
-    <many-to-one
-      name="site"
-      class="com.krishagni.catissueplus.core.administrative.domain.Site"
-      column="SITE_ID"/>
+    <many-to-one name="site" column="SITE_ID"/>
 
-    <many-to-one
-      name="parentContainer"
-      class="com.krishagni.catissueplus.core.administrative.domain.StorageContainer"
-      column="PARENT_CONTAINER_ID"/>
+    <many-to-one name="parentContainer" column="PARENT_CONTAINER_ID"/>
 
     <property name="cellDisplayProp" column="CELL_DISPLAY_PROP">
       <type name="org.hibernate.type.EnumType">
-        <param name="enumClass">
-          com.krishagni.catissueplus.core.administrative.domain.StorageContainer$CellDisplayProp
-        </param>
+        <param name="enumClass">com.krishagni.catissueplus.core.administrative.domain.StorageContainer$CellDisplayProp</param>
         <param name="type">12</param>
       </type>
     </property>
 
-    <many-to-one
-      name="createdBy"
-      class="com.krishagni.catissueplus.core.administrative.domain.User"
-      column="CREATED_BY"/>
+    <many-to-one name="createdBy" column="CREATED_BY"/>
 
     <property name="activityStatus" column="ACTIVITY_STATUS"/>
 
@@ -84,14 +82,14 @@
     <set name="ancestorContainers" table="OS_CONTAINERS_HIERARCHY">
       <key column="DESCENDENT_ID"/>
       <many-to-many class="com.krishagni.catissueplus.core.administrative.domain.StorageContainer" column="ANCESTOR_ID">
-        <filter name="activeEntity"/>
+        <filter name="activeEntity" condition="activity_status != 'Disabled'"/>
       </many-to-many>
     </set>
 
     <set name="descendentContainers" table="OS_CONTAINERS_HIERARCHY">
       <key column="ANCESTOR_ID"/>
       <many-to-many class="com.krishagni.catissueplus.core.administrative.domain.StorageContainer" column="DESCENDENT_ID">
-        <filter name="activeEntity"/>
+        <filter name="activeEntity" condition="activity_status != 'Disabled'"/>
       </many-to-many>
     </set>
 
@@ -105,9 +103,14 @@
       <element column="SPECIMEN_TYPE" type="string"/>
     </set>
             
-    <set name="allowedCps" table="OS_STOR_CONTAINER_CPS" inverse="false">
+    <set name="allowedCps" table="OS_STOR_CONTAINER_CPS">
       <key column="STORAGE_CONTAINER_ID"/>
       <many-to-many class="com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol" column="CP_ID"/>
+    </set>
+
+    <set name="allowedDps" table="OS_STOR_CONTAINER_DPS">
+      <key column="STORAGE_CONTAINER_ID"/>
+      <many-to-many class="com.krishagni.catissueplus.core.administrative.domain.DistributionProtocol" column="DP_ID"/>
     </set>
 
     <set name="compAllowedSpecimenClasses" table="OS_STOR_CONT_COMP_SPEC_CLASSES" cascade="all-delete-orphan">
@@ -120,9 +123,14 @@
       <element column="SPECIMEN_TYPE" type="string"/>
     </set>
             
-    <set name="compAllowedCps" table="OS_STOR_CONTAINER_COMP_CPS" inverse="false">
+    <set name="compAllowedCps" table="OS_STOR_CONTAINER_COMP_CPS">
       <key column="STORAGE_CONTAINER_ID"/>
       <many-to-many class="com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol" column="CP_ID"/>
+    </set>
+
+    <set name="compAllowedDps" table="OS_STOR_CONTAINER_COMP_DPS">
+      <key column="STORAGE_CONTAINER_ID"/>
+      <many-to-many class="com.krishagni.catissueplus.core.administrative.domain.DistributionProtocol" column="DP_ID"/>
     </set>
 
     <one-to-one
@@ -147,14 +155,16 @@
 
     <query name="getSpecimensCount">
       select
-        count(pos)
+        c.id, count(pos)
       from
         com.krishagni.catissueplus.core.administrative.domain.StorageContainer c
         join c.descendentContainers d
         join d.occupiedPositions pos
       where
-        c.id = :containerId
+        c.id in (:containerIds)
         and pos.occupyingSpecimen is not null
+      group by
+        c.id
     </query>
 
     <query name="deletePositionsByReservationIds">
@@ -169,8 +179,21 @@
         delete from
           com.krishagni.catissueplus.core.administrative.domain.StorageContainerPosition p
         where
-          p.reservationTime < :expireTime
+          (p.blocked is null or p.blocked = 0) and p.reservationTime < :expireTime
       ]]>
+    </query>
+
+    <query name="getShippedContainers">
+      select
+        c
+      from
+        com.krishagni.catissueplus.core.administrative.domain.Shipment s
+        join s.shipmentContainers sc
+        join sc.container c
+      where
+        c.id in (:containerIds) and
+        s.status = 'SHIPPED' and
+        s.activityStatus != 'Disabled'
     </query>
 
     <sql-query name="getLeafContainerIds">
@@ -206,13 +229,14 @@
       <return-scalar column="containerName" type="string"/>
       <return-scalar column="noOfRows"      type="int"/>
       <return-scalar column="noOfColumns"   type="int"/>
+      <return-scalar column="posAssignment" type="string"/>
       <return-scalar column="parentId"      type="long"/>
       <return-scalar column="rowNo"         type="int"/>
       <return-scalar column="colNo"         type="int"/>
 
       select
         s.identifier as containerId, s.name as containerName,
-        s.no_of_rows as noOfRows, s.no_of_cols as noOfColumns,
+        s.no_of_rows as noOfRows, s.no_of_cols as noOfColumns, s.pos_assignment as posAssignment,
         s.parent_container_id as parentId, p.pos_two as rowNo, p.pos_one as colNo
       from
         os_storage_containers s
@@ -224,7 +248,7 @@
 
       select
         s.identifier as containerId, s.name as containerName,
-        s.no_of_rows as noOfRows, s.no_of_cols as noOfColumns,
+        s.no_of_rows as noOfRows, s.no_of_cols as noOfColumns, s.pos_assignment as posAssignment,
         null as parentId, null as rowNo, null as colNo
       from
         os_storage_containers s
@@ -237,13 +261,14 @@
       <return-scalar column="containerName" type="string"/>
       <return-scalar column="noOfRows"      type="int"/>
       <return-scalar column="noOfColumns"   type="int"/>
+      <return-scalar column="posAssignment" type="string"/>
       <return-scalar column="parentId"      type="long"/>
       <return-scalar column="rowNo"         type="int"/>
       <return-scalar column="colNo"         type="int"/>
 
       select
         s.identifier as containerId, s.name as containerName,
-        s.no_of_rows as noOfRows, s.no_of_cols as noOfColumns,
+        s.no_of_rows as noOfRows, s.no_of_cols as noOfColumns, null as posAssignment,
         s.parent_container_id as parentId, p.pos_two as rowNo, p.pos_one as colNo
       from
         os_storage_containers s
@@ -262,7 +287,7 @@
       where
         c.store_specimens = 1 and
         c.activity_status = 'Active' and
-        (p.reservation_time is null or p.reservation_time > :reservedLaterThan) and
+        (p.reservation_time is null or p.reservation_time > :reservedLaterThan or p.blocked = 1) and
         (
           allowed_cps.cp_id = :cpId or
           (allowed_cps.cp_id is null and
@@ -340,6 +365,23 @@
         f.identifier = :containerId
       group by
         s.specimen_type
+    </sql-query>
+
+    <sql-query name="getDescendantContainerIds">
+      <return-scalar column="ancestorId" type="long"/>
+      <return-scalar column="descendantId" type="long"/>
+
+      select
+        a.identifier as ancestorId, d.identifier as descendantId
+      from
+        os_storage_containers a
+        inner join os_containers_hierarchy h on h.ancestor_id = a.identifier
+        inner join os_storage_containers d on d.identifier = h.descendent_id
+      where
+        a.identifier in (:containerIds) and
+        a.activity_status != 'Disabled' and
+        d.activity_status != 'Disabled' and
+        a.identifier != d.identifier
     </sql-query>
   </class>
 </hibernate-mapping>

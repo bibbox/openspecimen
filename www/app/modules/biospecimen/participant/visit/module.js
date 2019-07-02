@@ -3,22 +3,36 @@ angular.module('os.biospecimen.visit', [
     'ui.router',
     'os.biospecimen.participant.specimen-tree',
     'os.biospecimen.extensions',
+    'os.biospecimen.extensions.util',
     'os.biospecimen.visit.addedit',
     'os.biospecimen.visit.spr',
-    'os.biospecimen.visit.detail',
-    'os.biospecimen.visit.search'
+    'os.biospecimen.visit.detail'
   ])
   .config(function($stateProvider) {
     $stateProvider
+      .state('visit', {
+        url: '/visits/:visitId',
+        controller: function($state, params) {
+          $state.go('visit-detail.overview', params, {location: 'replace'});
+        },
+        resolve: {
+          params: function($stateParams, Visit) {
+            return Visit.getRouteIds($stateParams.visitId);
+          }
+        },
+        parent: 'signed-in'
+      })
       .state('visit-root', {
         url: '/visits?visitId&eventId',
         template: '<div ui-view></div>',
         resolve: {
-          visit: function($stateParams, cpr, Visit) {
+          visit: function($stateParams, cp, cpr, Visit) {
             if (!!$stateParams.visitId && $stateParams.visitId > 0) {
               return Visit.getById($stateParams.visitId);
             } else if (!!$stateParams.eventId) {
               return Visit.getAnticipatedVisit($stateParams.eventId, cpr.registrationDate);
+            } else if (cp.specimenCentric) {
+              return new Visit({cpId: cp.id});
             }
 
             return null;
@@ -34,6 +48,14 @@ angular.module('os.biospecimen.visit', [
             } else {
               return cp.storeSprEnabled;
             }
+          },
+
+          showVisitActivity: function(cp, CpConfigSvc) {
+            return CpConfigSvc.getCommonCfg(cp.id, 'showVisitActivity').then(
+              function(value) {
+                return (value === null || value === undefined || value === '') ? true : (value == true);
+              }
+            );
           }
         },
         controller: function($scope, cpr, visit) {
@@ -89,12 +111,31 @@ angular.module('os.biospecimen.visit', [
             }
           );
         },
-        controller: function($scope, hasFieldsFn, ExtensionsUtil) {
+        controller: function($scope, cpr, hasFieldsFn, showVisitActivity, spmnReqs, osRightDrawerSvc, ExtensionsUtil) {
           ExtensionsUtil.createExtensionFieldMap($scope.visit);
           $scope.visitCtx = {
-            obj: {visit: $scope.visit},
-            inObjs: ['visit'],
-            showEdit: hasFieldsFn(['visit'], [])
+            obj: {cpr: cpr, visit: $scope.visit},
+            spmnReqs: spmnReqs,
+            inObjs: ['visit', 'calcVisit'],
+            showEdit: hasFieldsFn(['visit'], []),
+            showActivity: showVisitActivity
+          };
+
+          if (showVisitActivity) {
+            osRightDrawerSvc.open();
+          }
+
+          $scope.toggleShowActivity = function() {
+            $scope.visitCtx.showActivity = !$scope.visitCtx.showActivity;
+          }
+        },
+        resolve: {
+          spmnReqs: function(cp, CpConfigSvc) {
+            return CpConfigSvc.getCommonCfg(cp.id, 'addSpecimen', {}).then(
+              function(data) {
+                return (data && data.requirements) || [];
+              }
+            );
           }
         },
         parent: 'visit-detail'
@@ -102,18 +143,45 @@ angular.module('os.biospecimen.visit', [
       .state('visit-detail.extensions', {
         url: '/extensions',
         template: '<div ui-view></div>',
-        controller: function($scope, visit) {
+        controller: function($scope, visit, forms, records, ExtensionsUtil) {
           $scope.extnOpts = {
             update: $scope.specimenResource.updateOpts,
             entity: visit,
             isEntityActive: visit.activityStatus == 'Active'
+          }
+
+          ExtensionsUtil.linkFormRecords(forms, records);
+        },
+        resolve: {
+          orderSpec: function(cp, CpConfigSvc) {
+            return CpConfigSvc.getWorkflowData(cp.id, 'forms', {}).then(
+              function(wf) {
+                return [{type: 'SpecimenCollectionGroup', forms: wf['SpecimenCollectionGroup'] || []}];
+              }
+            );
+          },
+          forms: function(visit, orderSpec, ExtensionsUtil) {
+            return visit.getForms().then(
+              function(forms) {
+                return ExtensionsUtil.sortForms(forms, orderSpec);
+              } 
+            ) 
+          },
+          records: function(visit) {
+            return visit.getRecords();
+          },
+          viewOpts: function() {
+            return {
+              goBackFn: null,
+              showSaveNext: true
+            };
           }
         },
         abstract: true,
         parent: 'visit-detail'
       })
       .state('visit-detail.extensions.list', {
-        url: '/list',
+        url: '/list?formId&formCtxtId&recordId',
         templateUrl: 'modules/biospecimen/extensions/list.html',
         controller: 'FormsListCtrl',
         parent: 'visit-detail.extensions'
@@ -155,13 +223,7 @@ angular.module('os.biospecimen.visit', [
        });
   })
 
-  .run(function(QuickSearchSvc, VisitSearchSvc) {
-    var opts = {
-      template: 'modules/biospecimen/participant/visit/quick-search.html',
-      caption: 'entities.visit',
-      order : 2,
-      search: VisitSearchSvc.search
-    };
-
+  .run(function(QuickSearchSvc) {
+    var opts = {caption: 'entities.visit', state: 'visit-detail.overview'};
     QuickSearchSvc.register('visit', opts);
   });

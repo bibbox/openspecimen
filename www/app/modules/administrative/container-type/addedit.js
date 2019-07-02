@@ -2,18 +2,27 @@ angular.module('os.administrative.containertype.addedit', ['os.administrative.mo
   .controller('ContainerTypeAddEditCtrl', function(
     $scope, $state, containerType, ContainerType, PvManager, Util) {
     
+    var defTypes = undefined;
+
     function init() {
       $scope.containerType = containerType;
-      loadPvs();
+      $scope.containerTypes = [];
+      $scope.positionLabelingSchemes = PvManager.getPvs('container-position-labeling-schemes');
+      $scope.positionAssignments = PvManager.getPvs('container-position-assignments');
     }
 
-    function loadPvs() {
-      $scope.positionLabelingSchemes = PvManager.getPvs('container-position-labeling-schemes');
+    function loadTypes(searchTerm) {
+      if (defTypes && (!searchTerm || defTypes.length <= 100)) {
+        $scope.containerTypes = defTypes;
+        return;
+      }
 
-      $scope.containerTypes = [];
-      ContainerType.query().then(
-        function(containerTypes) {
-          $scope.containerTypes = containerTypes;
+      ContainerType.query({name: searchTerm, maxResults: 101}).then(
+        function(types) {
+          $scope.containerTypes = types;
+          if (!searchTerm) {
+            defTypes = types;
+          }
         }
       );
     }
@@ -21,6 +30,8 @@ angular.module('os.administrative.containertype.addedit', ['os.administrative.mo
     $scope.onStoreSpecimenEnabled = function() {
       $scope.containerType.canHold = undefined;
     };
+
+    $scope.searchTypes = loadTypes;
 
     $scope.save = function() {
       var containerType = angular.copy($scope.containerType);

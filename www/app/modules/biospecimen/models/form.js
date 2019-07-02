@@ -53,7 +53,7 @@ angular.module('os.biospecimen.models.form', ['os.common.models'])
     };
 
     Form.getDefinition = function(formId) {
-      return $http.get(Form.url() + formId + '/definition').then(
+      return $http.get(Form.url() + formId + '/definition', {params: {maxPvs: 100}}).then(
         function(result) {
           return result.data;
         }
@@ -76,30 +76,25 @@ angular.module('os.biospecimen.models.form', ['os.common.models'])
     };
 
     Form.listFor = function(url, objectId, params) {
-      var result = [];
-    
-      $http.get(url + objectId + '/forms', {params: params}).then(
+      return $http.get(url + objectId + '/forms', {params: params}).then(
         function(resp) {
           var opts = angular.extend({objectId: objectId}, params);
+          var result = [];
           angular.forEach(resp.data, function(form) {
             form.id = form.formId;
             result.push(new Form(angular.extend(form, opts)));
           });
+          return result;
         }
       );
-
-      return result;
     };
 
     Form.listRecords = function(url) {
-      var records = [];
-      $http.get(url).then(
+      return $http.get(url).then(
         function(resp) {
-          Util.unshiftAll(records, createRecordsList(resp.data));
+          return createRecordsList(resp.data);
         }
       );
-
-      return records;
     };
 
     Form.deleteRecord = function(formId, recordId) {
@@ -129,6 +124,15 @@ angular.module('os.biospecimen.models.form', ['os.common.models'])
       );
     }
 
+    Form.getLatestRecords = function(formId, entityType, objectIds) {
+      var params = {entityType: entityType, objectId: objectIds};
+      return $http.get(Form.url() + formId + '/latest-records', {params: params}).then(
+        function(resp) {
+          return resp.data;
+        }
+      );
+    }
+
     Form.prototype.getRecords = function() {
       var result = [];
       var params = {objectId: this.objectId, entityType: this.entityType};
@@ -140,6 +144,15 @@ angular.module('os.biospecimen.models.form', ['os.common.models'])
 
       return result;
     };
+
+    Form.prototype.getRecord = function(recordId, opts) {
+      var params = {params: opts};
+      return $http.get(Form.url() + this.$id() + '/data/' + recordId, params).then(
+        function(resp) {
+          return resp.data;
+        }
+      );
+    }
 
     Form.prototype.getFields = function() {
       var cpId = -1;
@@ -231,7 +244,8 @@ angular.module('os.biospecimen.models.form', ['os.common.models'])
         fqn, 
         fields, 
         function(field) {
-          return field.type != 'SUBFORM' || !Form.isExtendedField(field.name);
+          // return field.type != 'SUBFORM' || (!Form.isExtendedField(field.name) && field.flatten);
+          return field.type != 'SUBFORM';
         });
     };
 
@@ -247,14 +261,25 @@ angular.module('os.biospecimen.models.form', ['os.common.models'])
     function getExtnForms(fqn, fields) {
       var extnForms = [];
       for (var i = 0; i < fields.length; ++i) {
-        if (fields[i].type != 'SUBFORM' || !Form.isExtendedField(fields[i].name)) { 
+        // if (fields[i].type != 'SUBFORM' || (!Form.isExtendedField(fields[i].name) && fields[i].flatten)) {
+        //   continue;
+        // }
+
+        if (fields[i].type != 'SUBFORM') {
           continue;
         }
 
-        var extnSubForm = fields[i];
+        var extnSubForm;
+        if (Form.isExtendedField(fields[i].name)) {
+          extnSubForm = fields[i];
+        } else {
+          extnSubForm = {name: '', subFields: [fields[i]]};
+        }
+
         for (var j = 0; j < extnSubForm.subFields.length; ++j) {
           var subForm = extnSubForm.subFields[j];
-          var extnFields = flattenFields(fqn + extnSubForm.name + "." + subForm.name + ".", subForm.subFields);
+          var prefix  = !!extnSubForm.name ? (extnSubForm.name + '.') : ''
+          var extnFields = flattenFields(fqn + prefix + subForm.name + '.', subForm.subFields);
           for (var k = 0; k < extnFields.length; ++k) {
             extnFields[k].extensionForm = subForm.caption;
           }
@@ -262,7 +287,7 @@ angular.module('os.biospecimen.models.form', ['os.common.models'])
         }
       }
 
-      return extnForms;
+      return extnForms.sort(function(f1, f2) { return f1.caption < f2.caption ? -1 : (f1.caption > f2.caption ? 1 : 0); });
     };
 
     return Form;

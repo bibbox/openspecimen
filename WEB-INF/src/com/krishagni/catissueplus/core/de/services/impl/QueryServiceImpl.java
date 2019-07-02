@@ -1,9 +1,11 @@
 package com.krishagni.catissueplus.core.de.services.impl;
 
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Collection;
 import java.util.Collections;
@@ -11,6 +13,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
@@ -21,6 +24,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiConsumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -36,11 +40,14 @@ import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 
+import com.krishagni.catissueplus.core.administrative.domain.ScheduledJob;
 import com.krishagni.catissueplus.core.administrative.domain.User;
 import com.krishagni.catissueplus.core.administrative.repository.UserDao;
+import com.krishagni.catissueplus.core.common.OpenSpecimenAppCtxProvider;
 import com.krishagni.catissueplus.core.common.PlusTransactional;
 import com.krishagni.catissueplus.core.common.access.AccessCtrlMgr;
 import com.krishagni.catissueplus.core.common.access.AccessCtrlMgr.ParticipantReadAccess;
+import com.krishagni.catissueplus.core.common.access.SiteCpPair;
 import com.krishagni.catissueplus.core.common.domain.Notification;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
@@ -83,6 +90,9 @@ import com.krishagni.catissueplus.core.de.repository.DaoFactory;
 import com.krishagni.catissueplus.core.de.repository.SavedQueryDao;
 import com.krishagni.catissueplus.core.de.services.QueryService;
 import com.krishagni.catissueplus.core.de.services.SavedQueryErrorCode;
+import com.krishagni.catissueplus.core.init.ImportQueryForms;
+import com.krishagni.catissueplus.core.init.ImportSpecimenEventForms;
+import com.krishagni.rbac.common.errors.RbacErrorCode;
 
 import edu.common.dynamicextensions.domain.nui.Container;
 import edu.common.dynamicextensions.domain.nui.Control;
@@ -176,6 +186,26 @@ public class QueryServiceImpl implements QueryService {
 			@Override
 			public void onConfigChange(String name, String value) {
 				refreshConfig();
+
+				if (!StringUtils.equals(name, "floating_point_precision")) {
+					return;
+				}
+
+				try {
+					logger.info("Reloading query forms ...");
+					ImportQueryForms importQueryForms = OpenSpecimenAppCtxProvider.getBean("importQueryForms");
+					importQueryForms.afterPropertiesSet();
+				} catch (Exception e) {
+					logger.error("Error reloading query forms ... ", e);
+				}
+
+				try {
+					logger.info("Reloading specimen event forms ...");
+					ImportSpecimenEventForms importSpeForms = OpenSpecimenAppCtxProvider.getBean("importSpeForms");
+					importSpeForms.afterPropertiesSet();
+				} catch (Exception e) {
+					logger.error("Error reloading specimen event forms ...", e);
+				}
 			}
 		});
 	}
@@ -185,18 +215,16 @@ public class QueryServiceImpl implements QueryService {
 	public ResponseEvent<SavedQueriesList> getSavedQueries(RequestEvent<ListSavedQueriesCriteria> req) {
 		try {
 			ListSavedQueriesCriteria crit = req.getPayload();
-			
 			if (crit.startAt() < 0 || crit.maxResults() <= 0) {
 				return ResponseEvent.userError(SavedQueryErrorCode.INVALID_PAGINATION_FILTER);
 			}
 
-			Long userId = AuthUtil.getCurrentUser().getId();
-			List<SavedQuerySummary> queries = daoFactory.getSavedQueryDao().getQueries(
-				userId, crit.startAt(), crit.maxResults(), crit.query());
+			crit.userId(AuthUtil.getCurrentUser().getId());
+			List<SavedQuerySummary> queries = daoFactory.getSavedQueryDao().getQueries(crit);
 			
 			Long count = null;
 			if (crit.countReq()) {
-				count = daoFactory.getSavedQueryDao().getQueriesCount(userId, crit.query());
+				count = daoFactory.getSavedQueryDao().getQueriesCount(crit);
 			}
 			
 			return ResponseEvent.response(SavedQueriesList.create(queries, count));
@@ -241,12 +269,12 @@ public class QueryServiceImpl implements QueryService {
 			SavedQuery savedQuery = getSavedQuery(queryDetail);
 			daoFactory.getSavedQueryDao().saveOrUpdate(savedQuery);
 			return ResponseEvent.response(SavedQueryDetail.fromSavedQuery(savedQuery));
-		} catch (QueryParserException qpe) {
-			return ResponseEvent.userError(SavedQueryErrorCode.MALFORMED, qpe.getMessage());
+		} catch (QueryParserException | IllegalArgumentException ex) {
+			return ResponseEvent.userError(SavedQueryErrorCode.MALFORMED, ex.getMessage());
 		} catch (QueryException qe) {
 			return ResponseEvent.userError(getErrorCode(qe.getErrorCode()), qe.getMessage());
-		} catch (IllegalArgumentException iae) {
-			return ResponseEvent.userError(SavedQueryErrorCode.MALFORMED, iae.getMessage());
+		} catch (OpenSpecimenException ose) {
+			return ResponseEvent.error(ose);
 		} catch (Exception e) {
 			return ResponseEvent.serverError(e);
 		}	
@@ -284,6 +312,8 @@ public class QueryServiceImpl implements QueryService {
 			return ResponseEvent.userError(getErrorCode(qe.getErrorCode()), qe.getMessage());
 		} catch (IllegalArgumentException iae) {
 			return ResponseEvent.userError(SavedQueryErrorCode.MALFORMED, iae.getMessage());
+		} catch (OpenSpecimenException ose) {
+			return ResponseEvent.error(ose);
 		} catch (Exception e) {
 			return ResponseEvent.serverError(e);
 		}
@@ -304,6 +334,14 @@ public class QueryServiceImpl implements QueryService {
 				return ResponseEvent.userError(SavedQueryErrorCode.OP_NOT_ALLOWED);
 			}
 
+			if (!query.getDependentQueries().isEmpty()) {
+				return ResponseEvent.userError(
+					SavedQueryErrorCode.DEPS_FOUND,
+					query.getDependentQueries().stream().limit(5).collect(Collectors.toSet()));
+			}
+
+			query.getScheduledJobs().forEach(ScheduledJob::delete);
+			query.getSubQueries().clear();
 			query.setDeletedOn(Calendar.getInstance().getTime());
 			daoFactory.getSavedQueryDao().saveOrUpdate(query);
 			return ResponseEvent.response(queryId);
@@ -345,12 +383,10 @@ public class QueryServiceImpl implements QueryService {
 					.setDbRowsCount(queryResult.getDbRowsCount())
 					.setColumnIndices(indices)
 			);
-		} catch (QueryParserException qpe) {
+		} catch (QueryParserException | IllegalArgumentException qpe) {
 			return ResponseEvent.userError(SavedQueryErrorCode.MALFORMED, qpe.getMessage());
 		} catch (QueryException qe) {
 			return ResponseEvent.userError(getErrorCode(qe.getErrorCode()), qe.getMessage());
-		} catch (IllegalArgumentException iae) {
-			return ResponseEvent.userError(SavedQueryErrorCode.MALFORMED, iae.getMessage());
 		} catch (IllegalAccessError iae) {
 			return ResponseEvent.userError(SavedQueryErrorCode.OP_NOT_ALLOWED, iae.getMessage());
 		} catch (OpenSpecimenException ose) {
@@ -421,13 +457,11 @@ public class QueryServiceImpl implements QueryService {
 		boolean queryCntIncremented = false;
 		try {
 			queryCntIncremented = incConcurrentQueriesCnt();
-			return ResponseEvent.response(exportQueryData(req.getPayload(), null));
-		} catch (QueryParserException qpe) {
+			return ResponseEvent.response(exportData(req.getPayload(), null, null));
+		} catch (QueryParserException | IllegalArgumentException qpe) {
 			return ResponseEvent.userError(SavedQueryErrorCode.MALFORMED, qpe.getMessage());
 		} catch (QueryException qe) {
 			return ResponseEvent.userError(getErrorCode(qe.getErrorCode()), qe.getMessage());
-		} catch (IllegalArgumentException iae) {
-			return ResponseEvent.userError(SavedQueryErrorCode.MALFORMED, iae.getMessage());
 		} catch (IllegalAccessError iae) {
 			return ResponseEvent.userError(SavedQueryErrorCode.OP_NOT_ALLOWED, iae.getMessage());
 		} catch (OpenSpecimenException ose) {
@@ -540,7 +574,7 @@ public class QueryServiceImpl implements QueryService {
 			folderDetails.setOwner(owner);
 			
 			QueryFolder queryFolder = queryFolderFactory.createQueryFolder(folderDetails);
-			Set<User> newUsers = new HashSet<User>(queryFolder.getSharedWith());
+			Set<User> newUsers = new HashSet<>(queryFolder.getSharedWith());
 			newUsers.removeAll(existing.getSharedWith());
 			existing.update(queryFolder);
 			
@@ -807,82 +841,15 @@ public class QueryServiceImpl implements QueryService {
 	@Override
 	@PlusTransactional
 	public QueryDataExportResult exportQueryData(final ExecuteQueryEventOp opDetail, final ExportProcessor processor) {
-		OutputStream out = null;
-
-		try {
-			final Authentication auth = AuthUtil.getAuth();
-			final User user = AuthUtil.getCurrentUser();
-			final String filename = getExportFilename(opDetail, processor);
-			final OutputStream fout = new FileOutputStream(getExportDataDir() + File.separator + filename);
-			out = fout;
-
-			if (processor != null) {
-				processor.headers(out);
-			}
-
-			final Query query = getQuery(opDetail);
-			Future<Boolean> result = exportThreadPool.submit(new Callable<Boolean>() {
-				@Override
-				@PlusTransactional
-				public Boolean call() throws Exception {
-					SecurityContextHolder.getContext().setAuthentication(auth);
-
-					QueryResultExporter exporter = new QueryResultCsvExporter(Utility.getFieldSeparator());
-					try {
-						QueryResponse resp = exporter.export(fout, query, getResultScreener(query));
-						insertAuditLog(user, opDetail, resp);
-						notifyExportCompleted();
-					} catch (Exception e) {
-						logger.error("Error exporting query data", e);
-						throw OpenSpecimenException.serverError(e);
-					} finally {
-						IOUtils.closeQuietly(fout);
-					}
-
-					return true;
-				}
-
-				private void notifyExportCompleted() {
-					try {
-						User user = userDao.getById(AuthUtil.getCurrentUser().getId());
-						if (user.isSysUser()) {
-							return;
-						}
-
-						SavedQuery savedQuery = null;
-						Long queryId = opDetail.getSavedQueryId();
-						if (queryId != null) {
-							savedQuery = daoFactory.getSavedQueryDao().getQuery(queryId);
-						}
-						sendQueryDataExportedEmail(user, savedQuery, filename);
-						notifyQueryDataExported(user, savedQuery, filename);
-					} catch (Exception e) {
-						logger.error("Error sending email with query exported data", e);
-					}
-				}
-			});
-
-			boolean completed = false;
-			try {
-				out = null;
-				completed = result.get(ONLINE_EXPORT_TIMEOUT_SECS, TimeUnit.SECONDS);
-				out = fout;
-			} catch (TimeoutException te) {
-				completed = false;
-			}
-
-			return QueryDataExportResult.create(filename, completed, result);
-		} catch (OpenSpecimenException ose) {
-			throw ose;
-		} catch (Exception e) {
-			throw OpenSpecimenException.serverError(e);
-		} finally {
-			if (out != null) {
-				IOUtils.closeQuietly(out);
-			}
-		}
+		return exportData(opDetail, processor, null);
 	}
-	
+
+	@Override
+	@PlusTransactional
+	public QueryDataExportResult exportQueryData(final ExecuteQueryEventOp opDetail, BiConsumer<QueryResultData, OutputStream> qdConsumer) {
+		return exportData(opDetail, null, qdConsumer);
+	}
+
 	@Override
 	@PlusTransactional
 	public ResponseEvent<List<FacetDetail>> getFacetValues(RequestEvent<GetFacetValuesOp> req) {
@@ -910,8 +877,10 @@ public class QueryServiceImpl implements QueryService {
 				String filename = "query-forms/" + dirName + "/" + resource.getFilename();
 				templates.append(templateService.render(filename, new HashMap<>()));
 			}
+		} catch (FileNotFoundException fe) {
+			logger.debug("Error rendering custom query forms", fe);
 		} catch (Exception e) {
-			logger.error("Error rendering query forms", e);
+			logger.error("Error rendering custom query forms", e);
 		}
 		
 		return templates.toString();
@@ -923,6 +892,10 @@ public class QueryServiceImpl implements QueryService {
 		savedQuery.setCpId(detail.getCpId());
 		savedQuery.setSelectList(detail.getSelectList());
 		savedQuery.setFilters(detail.getFilters());
+		savedQuery.setSubQueries(Arrays.stream(detail.getFilters())
+			.map(Filter::getSubQueryId)
+			.filter(Objects::nonNull)
+			.collect(Collectors.toSet()));
 		savedQuery.setQueryExpression(detail.getQueryExpression());
 		if (detail.getId() == null) {
 			savedQuery.setCreatedBy(AuthUtil.getCurrentUser());
@@ -930,16 +903,19 @@ public class QueryServiceImpl implements QueryService {
 		
 		savedQuery.setLastUpdatedBy(AuthUtil.getCurrentUser());
 		savedQuery.setLastUpdated(Calendar.getInstance().getTime());
+		savedQuery.setHavingClause(detail.getHavingClause());
 		savedQuery.setReporting(detail.getReporting());
 		savedQuery.setWideRowMode(detail.getWideRowMode());
+		savedQuery.setOutputColumnExprs(detail.isOutputColumnExprs());
 		return savedQuery;
 	}
 
 	private String getAql(SavedQueryDetail queryDetail) {
 		return AqlBuilder.getInstance().getQuery(
-				queryDetail.getSelectList(),
-				queryDetail.getFilters(),
-				queryDetail.getQueryExpression());
+			queryDetail.getSelectList(),
+			queryDetail.getFilters(),
+			queryDetail.getQueryExpression(),
+			queryDetail.getHavingClause());
 	}
 
 	private Query getQuery(ExecuteQueryEventOp op) {
@@ -955,6 +931,7 @@ public class QueryServiceImpl implements QueryService {
 			.wideRowMode(WideRowMode.valueOf(op.getWideRowMode()))
 			.ic(true)
 			.outputIsoDateTime(op.isOutputIsoDateTime())
+			.outputExpression(op.isOutputColumnExprs())
 			.dateFormat(ConfigUtil.getInstance().getDeDateFmt())
 			.timeFormat(ConfigUtil.getInstance().getTimeFmt());
 		query.compile(rootForm, op.getAql());
@@ -985,49 +962,33 @@ public class QueryServiceImpl implements QueryService {
 			if (cpId != null && cpId != -1) {
 				return cpForm + ".id = " + cpId;
 			}
-		} else {			
-			Set<Long> cpIds = AccessCtrlMgr.getInstance().getReadableCpIds();
-			if (cpIds == null || cpIds.isEmpty()) {
-				throw new IllegalAccessError("User does not have access to any CP");
-			}
-						
+		} else {
 			if (cpId != null && cpId != -1) {
-				if (cpIds.contains(cpId)) {
-					return cpForm + ".id = " + cpId; 
-				}
-				
-				throw new IllegalAccessError("Access to cp is not permitted: " + cpId);
+				AccessCtrlMgr.getInstance().ensureReadCpRights(cpId);
+				return cpForm + ".id = " + cpId;
 			} else {
-				List<String> restrictions = new ArrayList<String>();
-				List<Long> cpIdList = new ArrayList<Long>(cpIds);
-				
-				int startIdx = 0, numCpIds = cpIdList.size();
-				int chunkSize = 999;
-				while (startIdx < numCpIds) {
-					int endIdx = startIdx + chunkSize;
-					if (endIdx > numCpIds) {
-						endIdx = numCpIds;
-					}
-					
-					restrictions.add(getCpIdRestriction(cpIdList.subList(startIdx, endIdx)));
-					startIdx = endIdx;
+				Set<SiteCpPair> siteCps = AccessCtrlMgr.getInstance().getReadableSiteCps();
+				if (CollectionUtils.isEmpty(siteCps)) {
+					throw OpenSpecimenException.userError(RbacErrorCode.ACCESS_DENIED);
 				}
-				
-				return "(" + StringUtils.join(restrictions, " or ") + ")";
+
+				List<String> cpSitesConds = new ArrayList<>(); // joined by or
+				for (SiteCpPair siteCp : siteCps) {
+					String cond = getAqlSiteIdRestriction("CollectionProtocol.cpSites.siteId", siteCp);
+					if (siteCp.getCpId() != null) {
+						cond += " and CollectionProtocol.id = " + siteCp.getCpId();
+					}
+
+					cpSitesConds.add("(" + cond + ")");
+				}
+
+				return "(" + StringUtils.join(cpSitesConds, " or ") + ")";
 			}
 		}
 		
 		return null;
 	}
 	
-	private String getCpIdRestriction(List<Long> cpIds) {
-		return new StringBuilder(cpForm)
-			.append(".id in (")
-			.append(StringUtils.join(cpIds, ", "))
-			.append(")")
-			.toString();
-	}
-			
 	private String getAqlWithCpIdInSelect(User user, boolean isCount, String aql) {
 		if (user.isAdmin() || isCount) {
 			return aql;
@@ -1248,17 +1209,26 @@ public class QueryServiceImpl implements QueryService {
 		String[] fieldParts = facet.split("\\.");
 		String rootForm = fieldParts[0];
 
-		String formName = null, fieldName = null;
-		if (fieldParts[1].equals("extensions") || fieldParts[1].equals("customFields")) {
-			if (fieldParts.length < 4) {
-				throw new IllegalArgumentException("Invalid facet: " + facet);
+		int idx = fieldParts.length - 1;
+		while (idx >= 0) {
+			if (fieldParts[idx].equals("extensions") || fieldParts[idx].equals("customFields")) {
+				break;
 			}
 
-			formName = fieldParts[2];
-			fieldName = StringUtils.join(fieldParts, ".", 3, fieldParts.length);
-		} else {
+			--idx;
+		}
+
+		if ((idx + 2) >= fieldParts.length) {
+			throw new IllegalArgumentException("Invalid facet: " + facet);
+		}
+
+		String formName = null, fieldName = null;
+		if (idx == -1) {
 			formName = fieldParts[0];
 			fieldName = StringUtils.join(fieldParts, ".", 1, fieldParts.length);
+		} else {
+			formName = fieldParts[idx + 1];
+			fieldName = StringUtils.join(fieldParts, ".", idx + 2, fieldParts.length);
 		}
 
 		Container form = Container.getContainer(formName);
@@ -1300,11 +1270,14 @@ public class QueryServiceImpl implements QueryService {
 		aqlFmtArgs.add(restrictionCond);
 
 		String aql = String.format(aqlFmt, aqlFmtArgs.toArray());
-		Query query = Query.createQuery();
-		query.wideRowMode(WideRowMode.OFF)
-			.compile(rootForm, aql, getRestriction(AuthUtil.getCurrentUser(), cpId));
-		QueryResponse queryResp = query.getData();
+		Query query = Query.createQuery()
+			.ic(true)
+			.dateFormat(ConfigUtil.getInstance().getDeDateFmt())
+			.timeFormat(ConfigUtil.getInstance().getTimeFmt())
+			.wideRowMode(WideRowMode.OFF);
+		query.compile(rootForm, aql, getRestriction(AuthUtil.getCurrentUser(), cpId));
 
+		QueryResponse queryResp = query.getData();
 		QueryResultData queryResult = queryResp.getResultData();
 		queryResult.setScreener(screener);
 
@@ -1373,4 +1346,136 @@ public class QueryServiceImpl implements QueryService {
 
 		return SavedQueryErrorCode.MALFORMED;
 	}
+
+	private QueryDataExportResult exportData(ExecuteQueryEventOp op, ExportProcessor proc, BiConsumer<QueryResultData, OutputStream> procFn) {
+		OutputStream out = null;
+
+		try {
+			if (proc == null) {
+				proc = new DefaultQueryExportProcessor(op.getCpId());
+			}
+
+			ExportQueryDataTask task = new ExportQueryDataTask();
+			task.op = op;
+			task.auth = AuthUtil.getAuth();
+			task.user = AuthUtil.getCurrentUser();
+			task.filename = getExportFilename(op, procFn == null ? proc : null);
+			task.query = getQuery(op);
+			task.procFn = procFn;
+			task.fout = new FileOutputStream(getExportDataDir() + File.separator + task.filename);
+			out = task.fout;
+
+			if (procFn == null) {
+				proc.headers(out);
+			}
+
+			Future<Boolean> promise = null;
+			boolean completed;
+			if (op.isSynchronous()) {
+				completed = task.call();
+			} else {
+				promise = exportThreadPool.submit(task);
+				try {
+					out = null;
+					completed = promise.get(ONLINE_EXPORT_TIMEOUT_SECS, TimeUnit.SECONDS);
+					out = task.fout;
+				} catch (TimeoutException te) {
+					completed = true;
+				}
+			}
+
+			return QueryDataExportResult.create(task.filename, completed, promise);
+		} catch (OpenSpecimenException ose) {
+			throw ose;
+		} catch (Exception e) {
+			throw OpenSpecimenException.serverError(e);
+		} finally {
+			if (out != null) {
+				IOUtils.closeQuietly(out);
+			}
+		}
+	}
+
+	private class ExportQueryDataTask implements Callable<Boolean> {
+		private Authentication auth;
+
+		private User user;
+
+		private String filename;
+
+		private OutputStream fout;
+
+		private Query query;
+
+		private ExecuteQueryEventOp op;
+
+		private BiConsumer<QueryResultData, OutputStream> procFn;
+
+		@Override
+		@PlusTransactional
+		public Boolean call() {
+			SecurityContextHolder.getContext().setAuthentication(auth);
+
+			try {
+				QueryResponse resp;
+				if (procFn == null) {
+					QueryResultExporter exporter = new QueryResultCsvExporter(Utility.getFieldSeparator());
+					resp = exporter.export(fout, query, getResultScreener(query));
+				} else {
+					resp = query.getData();
+					QueryResultData data = resp.getResultData();
+					data.setScreener(getResultScreener(query));
+					procFn.accept(data, fout);
+				}
+
+				insertAuditLog(user, op, resp);
+				notifyExportCompleted();
+			} catch (Exception e) {
+				logger.error("Error exporting query data", e);
+				throw OpenSpecimenException.serverError(e);
+			} finally {
+				IOUtils.closeQuietly(fout);
+			}
+
+			return true;
+		}
+
+		private void notifyExportCompleted() {
+			try {
+				if (op.isSynchronous()) {
+					return;
+				}
+
+				User user = userDao.getById(AuthUtil.getCurrentUser().getId());
+				if (user.isSysUser()) {
+					return;
+				}
+
+				SavedQuery savedQuery = null;
+				Long queryId = op.getSavedQueryId();
+				if (queryId != null) {
+					savedQuery = daoFactory.getSavedQueryDao().getQuery(queryId);
+				}
+				sendQueryDataExportedEmail(user, savedQuery, filename);
+				notifyQueryDataExported(user, savedQuery, filename);
+			} catch (Exception e) {
+				logger.error("Error sending email with query exported data", e);
+			}
+		}
+	}
+
+	private String getAqlSiteIdRestriction(String property, SiteCpPair siteCp) {
+		if (siteCp.getSiteId() != null) {
+			return property + " = " + siteCp.getSiteId();
+		} else {
+			return property + " in " + sql(String.format(INSTITUTE_SITE_IDS_SQL, siteCp.getInstituteId()));
+		}
+	}
+
+	private String sql(String sql) {
+		return "sql(\"" + sql + "\")";
+	}
+
+	private static final String INSTITUTE_SITE_IDS_SQL =
+		"select identifier from catissue_site where institute_id = %d and activity_status != 'Disabled'";
 }

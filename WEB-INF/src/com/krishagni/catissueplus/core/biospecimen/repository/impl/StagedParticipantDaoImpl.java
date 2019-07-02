@@ -20,6 +20,11 @@ import com.krishagni.catissueplus.core.common.repository.AbstractDao;
 public class StagedParticipantDaoImpl extends AbstractDao<StagedParticipant> implements StagedParticipantDao {
 
 	@Override
+	public Class<StagedParticipant> getType() {
+		return StagedParticipant.class;
+	}
+
+	@Override
 	@SuppressWarnings("unchecked")	
 	public List<StagedParticipant> getByPmis(List<PmiDetail> pmis) {
 		Criteria query = getByPmisQuery(pmis);
@@ -36,12 +41,20 @@ public class StagedParticipantDaoImpl extends AbstractDao<StagedParticipant> imp
 	}
 
 	@Override
-	public boolean cleanupOldParticipants(int olderThanDays) {
+	@SuppressWarnings("unchecked")
+	public List<StagedParticipant> getByMrn(String mrn) {
+		return getCurrentSession().getNamedQuery(GET_BY_MRN)
+			.setParameter("mrn", mrn.toLowerCase())
+			.list();
+	}
+
+	@Override
+	public int deleteOldParticipants(int olderThanDays) {
 		Date olderThanDt = Date.from(Instant.now().minus(Duration.ofDays(olderThanDays)));
-		int executed = getCurrentSession().getNamedQuery(DELETE_OLD_PARTICIPANTS)
-			.setTimestamp("olderThanDt", olderThanDt)
-			.executeUpdate();
-		return (executed > 0);
+		deleteOldParticipantRecs(DEL_OLD_PARTICIPANT_PMIS, olderThanDt);
+		deleteOldParticipantRecs(DEL_OLD_PARTICIPANT_RACES, olderThanDt);
+		deleteOldParticipantRecs(DEL_OLD_PARTICIPANT_ETHNICITIES, olderThanDt);
+		return deleteOldParticipantRecs(DEL_OLD_PARTICIPANTS, olderThanDt);
 	}
 
 	private Criteria getByPmisQuery(List<PmiDetail> pmis) {
@@ -65,9 +78,21 @@ public class StagedParticipantDaoImpl extends AbstractDao<StagedParticipant> imp
 		return added ? query.add(junction) : null;
 	}
 
+	private int deleteOldParticipantRecs(String query, Date olderThanDt) {
+		return getCurrentSession().getNamedQuery(query).setTimestamp("olderThanDt", olderThanDt).executeUpdate();
+	}
+
 	private static final String FQN = StagedParticipant.class.getName();
 
 	private static final String GET_BY_EMPI = FQN + ".getByEmpi";
 
-	private static final String DELETE_OLD_PARTICIPANTS = FQN + ".deleteOldParticipants";
+	private static final String GET_BY_MRN = FQN + ".getByMrn";
+
+	private static final String DEL_OLD_PARTICIPANTS = FQN + ".deleteOldParticipants";
+
+	private static final String DEL_OLD_PARTICIPANT_PMIS = FQN + ".deleteOldParticipantPmis";
+
+	private static final String DEL_OLD_PARTICIPANT_RACES = FQN + ".deleteOldParticipantRaces";
+
+	private static final String DEL_OLD_PARTICIPANT_ETHNICITIES = FQN + ".deleteOldParticipantEthnicities";
 }

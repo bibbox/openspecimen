@@ -69,6 +69,39 @@ angular.module('os.biospecimen.common.specimenprops', [])
       getProps: getProps
     }
   })
+  .directive('osSpecimenTypeProp', function(SpecimenPropsSvc) {
+    return {
+      restrict: 'E',
+
+      template: '<span></span>',
+
+      replace: true,
+
+      scope: {
+        specimen: '='
+      },
+
+      link: function(scope, element, attrs) {
+        if (!attrs.prop) {
+          return;
+        }
+
+        scope.$watchGroup(['specimen.specimenClass', 'specimen.type'], function() {
+          var spmn = scope.specimen;
+          if (!spmn.specimenClass) {
+            return;
+          }
+
+          SpecimenPropsSvc.getProps(spmn.specimenClass, spmn.type).then(
+            function(typeProps) {
+              var props = typeProps.props || {};
+              element.html(props[attrs.prop]);
+            }
+          );
+        });
+      }
+    }
+  })
   .directive('osSpecimenUnit', function(SpecimenPropsSvc) {
     return {
       restrict: 'E',
@@ -128,6 +161,7 @@ angular.module('os.biospecimen.common.specimenprops', [])
         inputEl.attr('name',        tAttrs.name);
         inputEl.attr('ng-model',    tAttrs.quantity);
         inputEl.attr('placeholder', tAttrs.placeholder);
+        inputEl.attr('ng-focus',    tAttrs.ngFocus);
 
         if (tAttrs.ngRequired) {
           inputEl.attr('ng-required', tAttrs.ngRequired);
@@ -184,7 +218,7 @@ angular.module('os.biospecimen.common.specimenprops', [])
         '      measure="{{measure || \'quantity\'}}">' +
         '    </os-specimen-unit>' +
         '  </span>' +
-        '  <span ng-switch-when="false" translate="common.not_specified"></span>' +
+        '  <span ng-switch-default>{{value | osNoValue}}</span>' +
         '</span>'
     }
   });

@@ -27,6 +27,11 @@
     </field>  
 
     <field>
+      <caption>#getMessage("specimen_concentration")</caption>
+      <attribute>concentration</attribute>
+    </field>
+
+    <field>
       <caption>#getMessage("specimen_location_container")</caption>
       <attribute>containerName</attribute>
     </field>
@@ -51,6 +56,16 @@
       <caption>#getMessage("specimen_created_on")</caption>
       <attribute>createdOn</attribute>
     </field>
+
+    <record>
+      <caption>#getMessage("specimen_created_by")</caption>
+      <attribute>createdBy</attribute>
+
+      <field>
+        <caption>#getMessage("specimen_event_user_email")</caption>
+        <attribute>emailAddress</attribute>
+      </field>
+    </record>
 
     <field>
       <caption>#getMessage("specimen_freeze_thaw_cycles")</caption>

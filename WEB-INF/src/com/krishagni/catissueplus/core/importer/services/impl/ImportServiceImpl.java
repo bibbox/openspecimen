@@ -15,6 +15,9 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.zip.ZipFile;
 
@@ -24,10 +27,9 @@ import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.exception.ExceptionUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.hibernate.SessionFactory;
-import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
+import org.hibernate.Hibernate;
+import org.springframework.context.ApplicationListener;
+import org.springframework.context.event.ContextRefreshedEvent;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionStatus;
@@ -65,42 +67,40 @@ import com.krishagni.catissueplus.core.importer.events.ImportObjectDetail;
 import com.krishagni.catissueplus.core.importer.events.ObjectSchemaCriteria;
 import com.krishagni.catissueplus.core.importer.repository.ImportJobDao;
 import com.krishagni.catissueplus.core.importer.repository.ListImportJobsCriteria;
-import com.krishagni.catissueplus.core.importer.services.ImportListener;
 import com.krishagni.catissueplus.core.importer.services.ImportService;
 import com.krishagni.catissueplus.core.importer.services.ObjectImporter;
 import com.krishagni.catissueplus.core.importer.services.ObjectImporterFactory;
+import com.krishagni.catissueplus.core.importer.services.ObjectImporterLifecycle;
 import com.krishagni.catissueplus.core.importer.services.ObjectReader;
 import com.krishagni.catissueplus.core.importer.services.ObjectSchemaFactory;
 
 import edu.common.dynamicextensions.query.cachestore.LinkedEhCacheMap;
 import edu.common.dynamicextensions.util.ZipUtility;
 
-public class ImportServiceImpl implements ImportService {
+public class ImportServiceImpl implements ImportService, ApplicationListener<ContextRefreshedEvent> {
 	private static final Log logger = LogFactory.getLog(ImportServiceImpl.class);
 
-	private static final int MAX_RECS_PER_TXN = 10000;
+	private static final int MAX_RECS_PER_TXN = 5000;
 
 	private static final String CFG_MAX_TXN_SIZE = "import_max_records_per_txn";
-
-	private static Map<Long, ImportJob> runningJobs = new HashMap<>();
 
 	private ConfigurationService cfgSvc;
 
 	private ImportJobDao importJobDao;
 
-	private ThreadPoolTaskExecutor taskExecutor;
-	
 	private ObjectSchemaFactory schemaFactory;
 	
 	private ObjectImporterFactory importerFactory;
 	
-	private PlatformTransactionManager transactionManager;
-
 	private TransactionTemplate txTmpl;
 
 	private TransactionTemplate newTxTmpl;
 
-	private SessionFactory sessionFactory;
+	private BlockingQueue<ImportJob> queuedJobs = new LinkedBlockingQueue<>();
+
+	private volatile ImportJob currentJob = null;
+
+	private volatile long lastRefreshTime = 0;
 
 	public void setCfgSvc(ConfigurationService cfgSvc) {
 		this.cfgSvc = cfgSvc;
@@ -110,10 +110,6 @@ public class ImportServiceImpl implements ImportService {
 		this.importJobDao = importJobDao;
 	}
 	
-	public void setTaskExecutor(ThreadPoolTaskExecutor taskExecutor) {
-		this.taskExecutor = taskExecutor;
-	}
-
 	public void setSchemaFactory(ObjectSchemaFactory schemaFactory) {
 		this.schemaFactory = schemaFactory;
 	}
@@ -123,17 +119,11 @@ public class ImportServiceImpl implements ImportService {
 	}
 
 	public void setTransactionManager(PlatformTransactionManager transactionManager) {
-		this.transactionManager = transactionManager;
-
-		this.txTmpl = new TransactionTemplate(this.transactionManager);
+		this.txTmpl = new TransactionTemplate(transactionManager);
 		this.txTmpl.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRED);
 
-		this.newTxTmpl = new TransactionTemplate(this.transactionManager);
+		this.newTxTmpl = new TransactionTemplate(transactionManager);
 		this.newTxTmpl.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
-	}
-
-	public void setSessionFactory(SessionFactory sessionFactory) {
-		this.sessionFactory = sessionFactory;
 	}
 
 	@Override
@@ -217,7 +207,6 @@ public class ImportServiceImpl implements ImportService {
 	}	
 	
 	@Override
-	@PlusTransactional
 	public ResponseEvent<ImportJobDetail> importObjects(RequestEvent<ImportDetail> req) {
 		ImportJob job = null;
 		try {
@@ -227,7 +216,7 @@ public class ImportServiceImpl implements ImportService {
 			if (isZipFile(inputFile)) {
 				inputFile = inflateAndGetInputCsvFile(inputFile, detail.getInputFileId());
 			}
-			
+
 			//
 			// Ensure transaction size is well within configured limits
 			//
@@ -237,7 +226,6 @@ public class ImportServiceImpl implements ImportService {
 			}
 
 			job = createImportJob(detail);
-			importJobDao.saveOrUpdate(job, true);
 
 			//
 			// Set up file in job's directory
@@ -245,20 +233,13 @@ public class ImportServiceImpl implements ImportService {
 			createJobDir(job.getId());
 			moveToJobDir(inputFile, job.getId());
 
-			runningJobs.put(job.getId(), job);
-			taskExecutor.submit(new ImporterTask(AuthUtil.getAuth(), job, detail.getListener(), detail.isAtomic()));
+			queuedJobs.offer(job);
 			return ResponseEvent.response(ImportJobDetail.from(job));
+		} catch (CsvException csve) {
+			return ResponseEvent.userError(ImportJobErrorCode.RECORD_PARSE_ERROR, csve.getLocalizedMessage());
+		} catch (OpenSpecimenException ose) {
+			return ResponseEvent.error(ose);
 		} catch (Exception e) {
-			if (job != null && job.getId() != null) {
-				runningJobs.remove(job.getId());
-			}
-
-			if (e instanceof OpenSpecimenException) {
-				return ResponseEvent.error((OpenSpecimenException) e);
-			} else if (e instanceof CsvException) {
-				return ResponseEvent.userError(ImportJobErrorCode.RECORD_PARSE_ERROR, e.getLocalizedMessage());
-			}
-
 			return ResponseEvent.serverError(e);
 		}
 	}
@@ -266,20 +247,38 @@ public class ImportServiceImpl implements ImportService {
 	@Override
 	public ResponseEvent<ImportJobDetail> stopJob(RequestEvent<Long> req) {
 		try {
-			ImportJob job = runningJobs.get(req.getPayload());
-			if (job == null || !job.isInProgress()) {
-				return ResponseEvent.userError(ImportJobErrorCode.NOT_IN_PROGRESS, req.getPayload());
-			}
+			Long jobId = req.getPayload();
 
-			ensureAccess(job).stop();
-			for (int i = 0; i < 5; ++i) {
-				TimeUnit.SECONDS.sleep(1);
-				if (!job.isInProgress()) {
+			ImportJob toRemove = null;
+			for (ImportJob job : queuedJobs) {
+				if (job.getId().equals(jobId)) {
+					toRemove = job;
 					break;
 				}
 			}
 
-			return ResponseEvent.response(ImportJobDetail.from(job));
+			if (toRemove == null && currentJob != null && currentJob.getId().equals(jobId)) {
+				toRemove = currentJob;
+			}
+
+			if (toRemove == null || (!toRemove.isQueued() && !toRemove.isInProgress())) {
+				return ResponseEvent.userError(ImportJobErrorCode.NOT_IN_PROGRESS, req.getPayload());
+			}
+
+			ensureAccess(toRemove);
+			toRemove.stop();
+			queuedJobs.remove(toRemove);
+
+			for (int i = 0; i < 5; ++i) {
+				TimeUnit.SECONDS.sleep(1);
+				if (!toRemove.isQueued() && !toRemove.isInProgress()) {
+					break;
+				}
+			}
+
+			return ResponseEvent.response(ImportJobDetail.from(toRemove));
+		} catch (OpenSpecimenException ose) {
+			return ResponseEvent.error(ose);
 		} catch (Exception e) {
 			return ResponseEvent.serverError(e);
 		}
@@ -294,7 +293,7 @@ public class ImportServiceImpl implements ImportService {
 				return ResponseEvent.userError(ImportJobErrorCode.OBJ_SCHEMA_NOT_FOUND, detail.getObjectType());
 			}
 
-			return ResponseEvent.response(ObjectReader.getSchemaFields(schema));
+			return ResponseEvent.response(ObjectReader.getSchemaFields(schema, detail.getFieldSeparator()));
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
 		} catch (Exception e) {
@@ -340,6 +339,28 @@ public class ImportServiceImpl implements ImportService {
 				file.delete();
 			}
 		}
+	}
+
+	@Override
+	public void onApplicationEvent(ContextRefreshedEvent event) {
+		boolean startScheduler = (lastRefreshTime == 0L);
+		lastRefreshTime = System.currentTimeMillis();
+		if (!startScheduler) {
+			return;
+		}
+
+		Executors.newSingleThreadExecutor().submit(() -> {
+			try {
+				while ((System.currentTimeMillis() - lastRefreshTime) < 60 * 1000) {
+					Thread.sleep(10 * 1000);
+				}
+
+				logger.info("Starting bulk import jobs scheduler");
+				runImportJobScheduler();
+			} catch (Exception e) {
+				logger.fatal("Bulk import jobs scheduler thread got killed", e);
+			}
+		});
 	}
 
 	private boolean isZipFile(String zipFilename) {
@@ -457,7 +478,8 @@ public class ImportServiceImpl implements ImportService {
 			filesDir.renameTo(new File(getFilesDirPath(jobId)));
 		}
 	}
-	
+
+	@PlusTransactional
 	private ImportJob createImportJob(ImportDetail detail) { // TODO: ensure checks are done
 		OpenSpecimenException ose = new OpenSpecimenException(ErrorType.USER_ERROR);
 
@@ -465,14 +487,17 @@ public class ImportServiceImpl implements ImportService {
 		job.setCreatedBy(AuthUtil.getCurrentUser());
 		job.setCreationTime(Calendar.getInstance().getTime());
 		job.setName(detail.getObjectType());
-		job.setStatus(Status.IN_PROGRESS);
+		job.setStatus(Status.QUEUED);
+		job.setAtomic(detail.isAtomic());
 		job.setParams(detail.getObjectParams());
+		job.setFieldSeparator(detail.getFieldSeparator());
 
 		setImportType(detail, job, ose);
 		setCsvType(detail, job, ose);
 		setDateAndTimeFormat(detail, job, ose);
 		ose.checkAndThrow();
 
+		importJobDao.saveOrUpdate(job, true);
 		return job;		
 	}
 
@@ -508,12 +533,65 @@ public class ImportServiceImpl implements ImportService {
 		job.setTimeFormat(timeFormat);
 	}
 
-	private class ImporterTask implements Runnable {
-		private Authentication auth;
-		
-		private ImportJob job;
+	private void runImportJobScheduler() {
+		try {
+			int failedJobs = markInProgressJobsAsFailed();
+			logger.info("Marked " + failedJobs + " in-progress jobs from previous incarnation as failed");
 
-		private ImportListener callback;
+			loadJobQueue();
+
+			while (true) {
+				logger.info("Probing for queued bulk import jobs");
+				ImportJob job = queuedJobs.take();
+
+				try {
+					logger.info("Picked import job " + job.getId() + " for processing");
+					new ImporterTask(job).run();
+				} catch (Throwable t) {
+					logger.error("Error running the job " + job.getId() + " to completion", t);
+				}
+			}
+		} catch (Throwable t) {
+			logger.error("Import jobs scheduler encountered a fatal exception. Stopping to run import jobs.", t);
+		}
+	}
+
+	@PlusTransactional
+	private int markInProgressJobsAsFailed() {
+		return importJobDao.markInProgressJobsAsFailed();
+	}
+
+	@PlusTransactional
+	private void loadJobQueue() {
+		logger.info("Loading bulk import jobs queue");
+
+		ListImportJobsCriteria crit = new ListImportJobsCriteria()
+			.status(Status.QUEUED.name())
+			.maxResults(100);
+
+		int startAt = 0;
+		boolean endOfJobs = false;
+		while (!endOfJobs) {
+			List<ImportJob> jobs = importJobDao.getImportJobs(crit.startAt(startAt));
+			jobs.forEach(job -> {
+				if (!Hibernate.isInitialized(job.getCreatedBy())) {
+					Hibernate.initialize(job.getCreatedBy());
+				}
+
+				job.getParams().size();
+
+				queuedJobs.offer(job);
+			});
+
+			endOfJobs = (queuedJobs.size() < 100);
+			startAt += queuedJobs.size();
+		}
+
+		logger.info("Loaded " + startAt + " bulk import jobs in queue from previous incarnation");
+	}
+
+	private class ImporterTask implements Runnable {
+		private ImportJob job;
 
 		private boolean atomic;
 
@@ -521,25 +599,27 @@ public class ImportServiceImpl implements ImportService {
 
 		private long failedRecords = 0;
 
-		public ImporterTask(Authentication auth, ImportJob job, ImportListener callback, boolean atomic) {
-			this.auth = auth;
+		ImporterTask(ImportJob job) {
 			this.job = job;
-			this.callback = callback;
-			this.atomic = atomic;
+			this.atomic = Boolean.TRUE.equals(job.getAtomic());
 		}
 
 		@Override
 		public void run() {
-			SecurityContextHolder.getContext().setAuthentication(auth);
-
 			ObjectReader objReader = null;
 			CsvWriter csvWriter = null;
+
 			try {
+				currentJob = job;
+
+				AuthUtil.setCurrentUser(job.getCreatedBy());
 				ImporterContextHolder.getInstance().newContext();
+				saveJob(totalRecords, failedRecords, Status.IN_PROGRESS);
+
 				ObjectSchema schema = schemaFactory.getSchema(job.getName(), job.getParams());
 				String filePath = getJobDir(job.getId()) + File.separator + "input.csv";
-				csvWriter = getOutputCsvWriter(job);
-				objReader = new ObjectReader(filePath, schema, job.getDateFormat(), job.getTimeFormat());
+				csvWriter = getOutputCsvWriter(schema, job);
+				objReader = new ObjectReader(filePath, schema, job.getDateFormat(), job.getTimeFormat(), job.getFieldSeparator());
 
 				List<String> columnNames = objReader.getCsvColumnNames();
 				columnNames.add("OS_IMPORT_STATUS");
@@ -549,31 +629,27 @@ public class ImportServiceImpl implements ImportService {
 
 				Status status = processRows(objReader, csvWriter);
 				saveJob(totalRecords, failedRecords, status);
-
-				if (status == Status.COMPLETED) {
-					success();
-				} else {
-					failed(OpenSpecimenException.userError(ImportJobErrorCode.FAIL, failedRecords, totalRecords));
-				}
-			} catch (Exception e) {
-				logger.error("Error running import records job", e);
+			} catch (Throwable t) {
+				logger.error("Error running import records job", t);
 				saveJob(totalRecords, failedRecords, Status.FAILED);
-				failed(e);
 
 				String[] errorLine = null;
-				if (e instanceof CsvException) {
-					errorLine = ((CsvException) e).getErroneousLine();
+				if (t instanceof CsvException) {
+					errorLine = ((CsvException) t).getErroneousLine();
 				}
 
 				if (errorLine == null) {
-					errorLine = new String[] { e.getMessage() };
+					errorLine = new String[] { t.getMessage() };
 				}
 
-				csvWriter.writeNext(errorLine);
-				csvWriter.writeNext(new String[] { ExceptionUtils.getFullStackTrace(e) });
+				if (csvWriter != null) {
+					csvWriter.writeNext(errorLine);
+					csvWriter.writeNext(new String[] { ExceptionUtils.getFullStackTrace(t) });
+				}
 			} finally {
 				ImporterContextHolder.getInstance().clearContext();
-				runningJobs.remove(job.getId());
+				AuthUtil.clearCurrentUser();
+				currentJob = null;
 
 				IOUtils.closeQuietly(objReader);
 				closeQuietly(csvWriter);
@@ -582,7 +658,6 @@ public class ImportServiceImpl implements ImportService {
 				// Delete uploaded files
 				//
 				FileUtils.deleteQuietly(new File(getFilesDirPath(job.getId())));
-
 				sendJobStatusNotification();
 			}
 		}
@@ -608,13 +683,23 @@ public class ImportServiceImpl implements ImportService {
 		private Status processRows0(ObjectReader objReader, CsvWriter csvWriter) {
 			boolean stopped;
 			ObjectImporter<Object, Object> importer = importerFactory.getImporter(job.getName());
+			startImporter(job.getId(), importer);
+
 			if (job.getCsvtype() == CsvType.MULTIPLE_ROWS_PER_OBJ) {
 				stopped = processMultipleRowsPerObj(objReader, csvWriter, importer);
 			} else {
 				stopped = processSingleRowPerObj(objReader, csvWriter, importer);
 			}
 
-			return stopped ? Status.STOPPED : (failedRecords > 0) ? Status.FAILED : Status.COMPLETED;
+			shutdownImporter(job.getId(), importer, stopped);
+
+			if (stopped) {
+				return Status.STOPPED;
+			} else if (failedRecords > 0) {
+				return Status.FAILED;
+			} else {
+				return Status.COMPLETED;
+			}
 		}
 
 		private boolean processSingleRowPerObj(ObjectReader objReader, CsvWriter csvWriter, ObjectImporter<Object, Object> importer) {
@@ -654,7 +739,7 @@ public class ImportServiceImpl implements ImportService {
 		}
 
 		private boolean processMultipleRowsPerObj(ObjectReader objReader, CsvWriter csvWriter, ObjectImporter<Object, Object> importer) {
-			LinkedEhCacheMap<String, MergedObject> objectsMap =  new LinkedEhCacheMap<String, MergedObject>();
+			LinkedEhCacheMap<String, MergedObject> objectsMap =  new LinkedEhCacheMap<>();
 			
 			while (true) {
 				String errMsg = null;
@@ -736,12 +821,13 @@ public class ImportServiceImpl implements ImportService {
 		private String importObject(final ObjectImporter<Object, Object> importer, Object object, Map<String, String> params) {
 			try {
 				ImportObjectDetail<Object> detail = new ImportObjectDetail<>();
+				detail.setId(job.getId().toString());
 				detail.setCreate(job.getType() == Type.CREATE);
 				detail.setObject(object);
 				detail.setParams(params);
 				detail.setUploadedFilesDir(getFilesDirPath(job.getId()));
 				
-				final RequestEvent<ImportObjectDetail<Object>> req = new RequestEvent<ImportObjectDetail<Object>>(detail);
+				final RequestEvent<ImportObjectDetail<Object>> req = new RequestEvent<>(detail);
 				ResponseEvent<Object> resp = txTmpl.execute(
 						new TransactionCallback<ResponseEvent<Object>>() {
 							@Override
@@ -775,12 +861,42 @@ public class ImportServiceImpl implements ImportService {
 				}
 			}
 		}
-		
+
+		private void startImporter(Long jobId, ObjectImporter<Object, Object> importer) {
+			if (!(importer instanceof ObjectImporterLifecycle)) {
+				return;
+			}
+
+			txTmpl.execute((txnStatus) -> {
+				((ObjectImporterLifecycle) importer).start(jobId.toString());
+				return null;
+			});
+		}
+
+		private void shutdownImporter(Long jobId, ObjectImporter<Object, Object> importer, boolean stopped) {
+			if (!(importer instanceof ObjectImporterLifecycle)) {
+				return;
+			}
+
+			try {
+				Map<String, Object> runCtxt = new HashMap<>();
+				runCtxt.put("stopped", stopped);
+				runCtxt.put("failedRecords", failedRecords);
+
+				txTmpl.execute((txnStatus) -> {
+					((ObjectImporterLifecycle) importer).stop(jobId.toString(), runCtxt);
+					return null;
+				});
+			} catch (Exception e) {
+				logger.error("Error stopping the importer", e);
+			}
+		}
+
 		private void saveJob(long totalRecords, long failedRecords, Status status) {
 			job.setTotalRecords(totalRecords);
 			job.setFailedRecords(failedRecords);
 			job.setStatus(status);
-			
+
 			if (status != Status.IN_PROGRESS) {
 				job.setEndTime(Calendar.getInstance().getTime());
 			}
@@ -794,9 +910,17 @@ public class ImportServiceImpl implements ImportService {
 			});
 		}
 
-		private CsvWriter getOutputCsvWriter(ImportJob job) 
+		private CsvWriter getOutputCsvWriter(ObjectSchema schema, ImportJob job)
 		throws IOException {
-			return CsvFileWriter.createCsvFileWriter(new FileWriter(getJobOutputFilePath(job.getId())));
+			char fieldSeparator = Utility.getFieldSeparator();
+			if (StringUtils.isNotBlank(job.getFieldSeparator())) {
+				fieldSeparator = job.getFieldSeparator().charAt(0);
+			} else if (StringUtils.isNotBlank(schema.getFieldSeparator())) {
+				fieldSeparator = schema.getFieldSeparator().charAt(0);
+			}
+
+			FileWriter writer = new FileWriter(getJobOutputFilePath(job.getId()));
+			return CsvFileWriter.createCsvFileWriter(writer, fieldSeparator, '"');
 		}
 				
 		private void closeQuietly(CsvWriter writer) {
@@ -809,38 +933,30 @@ public class ImportServiceImpl implements ImportService {
 			}
 		}
 
-		private void success() {
-			if (callback != null) {
-				callback.success();
-			}
-		}
-
-		private void failed(Throwable t) {
-			if (callback != null) {
-				callback.fail(t);
-			}
-		}
-
 		private void sendJobStatusNotification() {
-			String entityName = getEntityName();
-			String op = getMsg("bulk_import_ops_" + job.getType());
-			String [] subjParams = new String[] {
-				job.getId().toString(),
-				op,
-				entityName
-			};
+			try {
+				String entityName = getEntityName();
+				String op = getMsg("bulk_import_ops_" + job.getType());
+				String [] subjParams = new String[] {
+					job.getId().toString(),
+					op,
+					entityName
+				};
 
-			Map<String, Object> props = new HashMap<>();
-			props.put("job", job);
-			props.put("entityName", entityName);
-			props.put("op", op);
-			props.put("status", getMsg("bulk_import_statuses_" + job.getStatus()));
-			props.put("atomic", atomic);
-			props.put("$subject", subjParams);
-			props.put("ccAdmin", isCopyNotifToAdminEnabled());
+				Map<String, Object> props = new HashMap<>();
+				props.put("job", job);
+				props.put("entityName", entityName);
+				props.put("op", op);
+				props.put("status", getMsg("bulk_import_statuses_" + job.getStatus()));
+				props.put("atomic", atomic);
+				props.put("$subject", subjParams);
+				props.put("ccAdmin", isCopyNotifToAdminEnabled());
 
-			String[] rcpts = {job.getCreatedBy().getEmailAddress()};
-			EmailUtil.getInstance().sendEmail(JOB_STATUS_EMAIL_TMPL, rcpts, null, props);
+				String[] rcpts = {job.getCreatedBy().getEmailAddress()};
+				EmailUtil.getInstance().sendEmail(JOB_STATUS_EMAIL_TMPL, rcpts, null, props);
+			} catch (Throwable t) {
+				logger.error("Failed to send import job status e-mail notification", t);
+			}
 		}
 
 		private String getEntityName() {

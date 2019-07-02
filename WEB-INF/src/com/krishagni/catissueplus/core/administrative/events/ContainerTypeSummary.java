@@ -4,8 +4,11 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import com.krishagni.catissueplus.core.administrative.domain.ContainerType;
+import com.krishagni.catissueplus.core.common.AttributeModifiedSupport;
+import com.krishagni.catissueplus.core.common.ListenAttributeChanges;
 
-public class ContainerTypeSummary {
+@ListenAttributeChanges
+public class ContainerTypeSummary extends AttributeModifiedSupport {
 	private Long id;
 	
 	private String name;
@@ -17,6 +20,8 @@ public class ContainerTypeSummary {
 	private int noOfRows;
 
 	private String positionLabelingMode;
+
+	private String positionAssignment;
 
 	private String columnLabelingScheme;
 
@@ -76,6 +81,14 @@ public class ContainerTypeSummary {
 		this.positionLabelingMode = positionLabelingMode;
 	}
 
+	public String getPositionAssignment() {
+		return positionAssignment;
+	}
+
+	public void setPositionAssignment(String positionAssignment) {
+		this.positionAssignment = positionAssignment;
+	}
+
 	public String getColumnLabelingScheme() {
 		return columnLabelingScheme;
 	}
@@ -123,6 +136,7 @@ public class ContainerTypeSummary {
 		detail.setNoOfColumns(containerType.getNoOfColumns());
 		detail.setNoOfRows(containerType.getNoOfRows());
 		detail.setPositionLabelingMode(containerType.getPositionLabelingMode().name());
+		detail.setPositionAssignment(containerType.getPositionAssignment().name());
 		detail.setColumnLabelingScheme(containerType.getColumnLabelingScheme());
 		detail.setRowLabelingScheme(containerType.getRowLabelingScheme());
 		detail.setTemperature(containerType.getTemperature());

@@ -368,7 +368,7 @@ edu.common.de.Form = function(args) {
     if (args.showPanel == false) {
       this.formDiv.append(formCtrls);
     } else {
-      var panel = edu.common.de.Utility.panel(caption, formCtrls, 'default');
+      var panel = edu.common.de.Utility.panel(caption, formCtrls, 'default', args);
       this.formDiv.append(panel);
     }
     this.setValue(this.formData);
@@ -508,7 +508,14 @@ edu.common.de.Form = function(args) {
   };
 
   this.fieldLabel = function(name, label) {
-    return $("<label/>").addClass("control-label").prop('for', name).append(label);
+    var labelEl = $("<span/>");
+    if (args.allowHtmlCaptions != false && args.allowHtmlCaptions != 'false') {
+      labelEl.append(label);
+    } else {
+      labelEl.text(label);
+    }
+
+    return $("<label/>").addClass("control-label").prop('for', name).append(labelEl);
   };
 
   this.getActionButtons = function() {
@@ -530,11 +537,21 @@ edu.common.de.Form = function(args) {
     
     var btns =   $("<div/>").addClass("modal-footer")
       .append(cancel).append(deleteForm)
-      .append(print).append(save);
+      .append(print);
+
+    if (args.showSaveNext == true || args.showSaveNext == 'true') {
+      var saveNext  = $("<button/>").attr({"type": "button", "id": "saveNextForm"})
+        .addClass("btn btn-primary")
+        .append("Save and Next");
+      saveNext.on("click", function() { that.save(true); });
+      btns.append(saveNext);
+    }
+
+    btns.append(save);
     return edu.common.de.Utility.row().append(btns);
   };
 
-  this.save = function() {
+  this.save = function(next) {
     if (!this.validate()) {
       if (args.onValidationError) {
         args.onValidationError();
@@ -564,15 +581,19 @@ edu.common.de.Form = function(args) {
       dataType: 'json',
       data: JSON.stringify(formData)
     }).done(function(data) { 
+      that.formDiv.removeClass('de-form-submitting');
       that.recordId = data.id;
       if (args.onSaveSuccess) {
-        args.onSaveSuccess(data);     
+        args.onSaveSuccess(data, next);
       }
     }).fail(function(data) { 
+      that.formDiv.removeClass('de-form-submitting');
       if (args.onSaveError) {
         args.onSaveError(data);
       }
     });
+
+    that.formDiv.addClass('de-form-submitting');
   };
 
   this.cancel = function() {
@@ -725,7 +746,7 @@ edu.common.de.TextField = function(id, field) {
 
   this.render = function() {
     this.inputEl = $("<input/>")
-      .prop({id: id, type: 'text', title: field.toolTip, value: field.defaultValue})
+      .prop({id: id, type: 'text', title: field.toolTip})
       .addClass("form-control");
 
     this.validator = new edu.common.de.FieldValidator(field.validationRules, this);
@@ -733,6 +754,9 @@ edu.common.de.TextField = function(id, field) {
   };
 
   this.postRender = function() {
+    if (!this.recId && this.inputEl.val().trim().length == 0 && field.defaultValue) {
+      this.inputEl.val(field.defaultValue);
+    }
   };
 
   this.getName = function() {
@@ -787,6 +811,9 @@ edu.common.de.NumberField = function(id, field) {
   };
 
   this.postRender = function() {
+    if (!this.recId && this.inputEl.val().trim().length == 0 && field.defaultValue) {
+      this.inputEl.val(field.defaultValue);
+    }
   };
 
   this.getName = function() {
@@ -844,6 +871,9 @@ edu.common.de.TextArea = function(id, field) {
   };
 
   this.postRender = function() {
+    if (!this.recId && this.inputEl.val().trim().length == 0 && field.defaultValue) {
+      this.inputEl.val(field.defaultValue);
+    }
   };
 
   this.getName = function() {
@@ -944,7 +974,8 @@ edu.common.de.DatePicker = function(id, field, args) {
     if (this.timeEl) {
       this.timeEl.timepicker({
         showMeridian: false,
-        minuteStep: 1
+        minuteStep: 1,
+        defaultTime: (field.defaultType == 'CURRENT_DATE') ? 'current' : false
       });
     }
 
@@ -1066,6 +1097,10 @@ edu.common.de.BooleanCheckbox = function(id, field) {
   };
 
   this.postRender = function() {
+    if (!this.recId && this.dataEl.val() != 'true' && field.defaultChecked == true) {
+      this.dataEl.val('true');
+      this.dataEl.prop('checked', true);
+    }
   };
 
   this.getName = function() {
@@ -1263,7 +1298,22 @@ edu.common.de.SelectField = function(id, field, args) {
     this.control = new Select2Search(this.inputEl, {multiple: this.isMultiSelect});
     this.control.onQuery(qFunc).onChange(onChange);
     this.control.onInitSelection(initSelection).render();
-    this.control.setValue(this.value);
+
+    var hasValue = false;
+    if (this.isMultiSelect) {
+      if (this.value instanceof Array && this.value.length > 0) {
+        this.setValue(this.recId, this.value);
+        hasValue = true;
+      }
+    } else if (this.value) {
+      this.setValue(this.recId, this.value);
+      hasValue = true;
+    }
+
+    var defValue = field.defaultValue && field.defaultValue.value;
+    if (!hasValue && !this.recId && defValue) {
+      this.setValue(this.recId, this.isMultiSelect ? [defValue] : defValue);
+    }
   };
 
   this.getName = function() {
@@ -1337,8 +1387,15 @@ edu.common.de.GroupField = function(id, field) {
         defaultVal = true;
       }
 
-      var btn = $("<input/>").prop({type: type, name: field.name + id, value: pv.value, title: field.toolTip, checked: defaultVal});
-      currentDiv.append($("<label/>").addClass(typeclass).append(btn).append(pv.value).css("width", width));
+      var btn = $("<input/>").prop({
+        type: type,
+        name: field.name + id,
+        value: pv.value,
+        title: field.toolTip,
+        checked: defaultVal});
+
+      var option = $("<span/>").text(pv.value);
+      currentDiv.append($("<label/>").addClass(typeclass).append(btn).append(option).css("width", width));
       this.inputEls.push(btn);
       ++count;
     }
@@ -1350,6 +1407,16 @@ edu.common.de.GroupField = function(id, field) {
   };
 
   this.postRender = function() {
+    if (!this.recId && field.defaultValue && field.defaultValue.value) {
+      var value = this.getValue().value;
+      if (value instanceof Array) {
+        if (value.length == 0) {
+          this.setValue(this.recId, [field.defaultValue.value]);
+        }
+      } else if (!value || value.trim().length == 0) {
+        this.setValue(this.recId, field.defaultValue.value);
+      }
+    }
   };
 
   this.getName = function() {
@@ -1536,6 +1603,8 @@ edu.common.de.SubFormField = function(id, sfField, args) {
   };
 
   this.setValue = function(recId, value) {
+    value = value || [];
+
     this.recId = recId;
     this.sfFieldsEl.children().remove();
     this.fieldObjsRows = [];
@@ -1577,12 +1646,20 @@ edu.common.de.SubFormField = function(id, sfField, args) {
 
   this.getHeading = function() {
     var heading = $("<div/>").addClass("form-group clearfix").css("white-space", "nowrap");
+
+    var captionElFactory;
+    if (args.allowHtmlCaptions != 'false' && args.allowHtmlCaptions != false) {
+      captionEl = function(caption) { return $("<span/>").append(caption); };
+    } else {
+      captionEl = function(caption) { return $("<span/>").text(caption); };
+    }
+
     for (var i = 0; i < this.fields.length; ++i) {
       var field = this.fields[i];
       var column = $("<div/>").css("width", this.fieldWidth + '%')
         .css("min-width", getSfFieldMinWidth(field))
         .addClass("de-sf-cell")
-        .append(field.caption);
+        .append(captionEl(field.caption));
       heading.append(column);
     }
 
@@ -1726,7 +1803,7 @@ edu.common.de.FileUploadField = function(id, field, args) {
     var that = this;
     this.inputEl  = $("<div/>") 
       .prop({title: field.toolTip})
-      .addClass("de-fileupload form-control clearfix");
+      .addClass("de-fileupload form-control");
     this.fileNameSpan = $("<span/>");
     this.inputEl.append(this.fileNameSpan);
 
@@ -1818,10 +1895,11 @@ edu.common.de.FileUploadField = function(id, field, args) {
       } else {
         var url = "#";
         if (typeof args.fileDownloadUrl == "function") {
-          url = args.fileDownloadUrl(args.id, this.recId, field.fqn);
+          url = args.fileDownloadUrl(args.id, this.recId, field.fqn, this.value.fileId);
         } else {
           url = args.fileDownloadUrl;
         }
+
         var link = $("<a/>").attr({href: url, target: "_blank"}).text(this.value.filename);
         this.fileNameSpan.append(link);
       }
@@ -1832,7 +1910,12 @@ edu.common.de.FileUploadField = function(id, field, args) {
       this.fileNameSpan.text("");
       this.fileNameSpan.children().remove();
       this.removeBtn.addClass("hidden");
-      this.fileNameInput.val("").change();
+
+      if (!!this.fileNameInput.val()) {
+        this.fileNameInput.val("").change();
+      } else {
+        this.fileNameInput.val("");
+      }
     }
 
     return this;
@@ -1864,11 +1947,18 @@ edu.common.de.FileUploadField = function(id, field, args) {
   };
 };
 
-edu.common.de.Note = function(id, field) {
+edu.common.de.Note = function(id, field, args) {
   this.inputEl = null;
 
   this.render = function() {
-    this.inputEl = $("<div/>").html(field.caption);
+    var captionEl = $("<span/>");
+    if (args.allowHtmlCaptions != 'false' && args.allowHtmlCaptions != false) {
+      captionEl.append(field.caption);
+    } else {
+      captionEl.text(field.caption);
+    }
+
+    this.inputEl = $("<div class='de-note'/>").append(captionEl);
     if (field.heading == true || field.type == 'heading') {
       this.inputEl.addClass('de-heading');
     }
@@ -1941,15 +2031,23 @@ edu.common.de.Utility = {
   /**
    * Valid values for context are primary, success, info, warning, danger
    */
-  panel: function(title, content, context) {
+  panel: function(title, content, context, opts) {
     if (!context) {
       context = "default";
     }
 
     var panelDiv = $("<div/>").addClass("panel").addClass("panel-" + context);
     if (title) {
+      var textEl = $("<span/>");
+      if (opts.allowHtmlCaptions == 'false' || opts.allowHtmlCaptions == false) {
+        textEl.text(title);
+      } else {
+        textEl.append(title);
+      }
+
+      var titleDiv = $("<div/>").addClass("panel-title").append(textEl);
+
       var panelHeading = $("<div/>").addClass("panel-heading");
-      var titleDiv = $("<div/>").addClass("panel-title").append(title);
       panelHeading.append(titleDiv);
       panelDiv.append(panelHeading);
     }
@@ -2091,7 +2189,7 @@ edu.common.de.LookupField = function(params, callback) {
   };
 
   var initSelection = function(elem, callback) {
-    if (!that.value) {
+    if (!that.value && field.defaultType != 'none') {
       $.when(that.getDefaultValue()).done(
         function(result) {
           that.value = result.id;
@@ -2099,7 +2197,7 @@ edu.common.de.LookupField = function(params, callback) {
           callback(result);
         }
       );
-    } else {
+    } else if (!!that.value) {
       $.when(that.lookup(that.value)).done(
         function(result) {
           callback(result);
@@ -2205,7 +2303,7 @@ edu.common.de.LookupField = function(params, callback) {
     if (params) {
       searchFilters = params.searchFilters || {};
     }
-    return this.svc.getEntities(qTerm, searchFilters);
+    return this.svc.getEntities(qTerm, searchFilters, field);
   };
 };
 
@@ -2220,7 +2318,7 @@ edu.common.de.LookupSvc = function(params) {
 
   var defaultValue;
 
-  this.getEntities = function(queryTerm, searchFilters) {
+  this.getEntities = function(queryTerm, searchFilters, field) {
     var deferred = $.Deferred();
 
     var resultKey = '_default';
@@ -2249,7 +2347,7 @@ edu.common.de.LookupSvc = function(params) {
         type: 'GET', 
         url: baseUrl, 
         headers: this.getHeaders(), 
-        data: this.searchRequest(queryTerm, searchFilters)
+        data: this.searchRequest(queryTerm, searchFilters, field)
       });
     } else if (xhrMap[resultKey]) {
       xhr = xhrMap[resultKey];
@@ -2258,7 +2356,7 @@ edu.common.de.LookupSvc = function(params) {
         type: 'GET', 
         url: baseUrl, 
         headers: this.getHeaders(), 
-        data: this.searchRequest(queryTerm, searchFilters)});
+        data: this.searchRequest(queryTerm, searchFilters, field)});
     }
    
    

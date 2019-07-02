@@ -5,12 +5,20 @@ import java.util.Map;
 
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang.StringUtils;
+import org.hibernate.envers.Audited;
 
 import com.krishagni.catissueplus.core.de.domain.DeObject;
 
+@Audited
 public abstract class BaseExtensionEntity extends BaseEntity {
 	private DeObject extension;
-	
+
+	protected Integer extensionRev;
+
+	public DeObject getExtensionIfPresent() {
+		return extension;
+	}
+
 	public DeObject getExtension() {
 		if (extension == null) {
 			extension = createExtension();
@@ -28,11 +36,21 @@ public abstract class BaseExtensionEntity extends BaseEntity {
 			return;			
 		}
 		
-		extension.saveOrUpdate();
+		if (extension.saveOrUpdate()) {
+			extensionRev = (extensionRev == null) ? 1 : extensionRev + 1;
+		}
 	}
-	
+
+	public Integer getExtensionRev() {
+		return extensionRev;
+	}
+
+	public void setExtensionRev(Integer extensionRev) {
+		this.extensionRev = extensionRev;
+	}
+
 	public boolean hasPhiFields() {
-		return getExtension() == null ? false : getExtension().hasPhiFields();
+		return getExtension() != null && getExtension().hasPhiFields();
 	}
 	
 	public void copyExtensionTo(BaseExtensionEntity entity) {
@@ -57,7 +75,7 @@ public abstract class BaseExtensionEntity extends BaseEntity {
 			
 			@Override
 			public String getFormName() {
-				return getFormNameByEntityType(getCpId());
+				return getFormNameByEntityType();
 			}
 			
 			@Override
@@ -68,7 +86,17 @@ public abstract class BaseExtensionEntity extends BaseEntity {
 			@Override
 			public Long getCpId() {
 				return BaseExtensionEntity.this.getCpId();
-			} 
+			}
+
+			@Override
+			public boolean isCpBased() {
+				return BaseExtensionEntity.this.isCpBased();
+			}
+
+			@Override
+			public Long getEntityId() {
+				return BaseExtensionEntity.this.getEntityId();
+			}
 		};
 		
 		if (StringUtils.isBlank(extnObj.getFormName())) {
@@ -86,8 +114,16 @@ public abstract class BaseExtensionEntity extends BaseEntity {
 	
 	public abstract String getEntityType();
 
-	protected Long getCpId() {
+	public Long getCpId() {
 		return -1L;
+	}
+
+	public boolean isCpBased() {
+		return true;
+	}
+
+	public Long getEntityId() {
+		return null;
 	}
 	
 	private Long getRecordId(DeObject extnObj) {

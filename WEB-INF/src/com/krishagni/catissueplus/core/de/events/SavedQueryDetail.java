@@ -16,10 +16,16 @@ public class SavedQueryDetail extends SavedQuerySummary {
 	private QueryExpressionNode[] queryExpression;
 
 	private Object[] selectList;
+
+	private String havingClause;
 	
 	private ReportSpec reporting;
 	
 	private String wideRowMode;
+
+	private boolean outputColumnExprs;
+
+	private Long[] dependentQueries;
 
 	public Long getCpId() {
 		return cpId;
@@ -60,7 +66,15 @@ public class SavedQueryDetail extends SavedQuerySummary {
 	public void setSelectList(Object[] selectList) {
 		this.selectList = selectList;
 	}
-	
+
+	public String getHavingClause() {
+		return havingClause;
+	}
+
+	public void setHavingClause(String havingClause) {
+		this.havingClause = havingClause;
+	}
+
 	public ReportSpec getReporting() {
 		return reporting;
 	}
@@ -77,6 +91,22 @@ public class SavedQueryDetail extends SavedQuerySummary {
 		this.wideRowMode = wideRowMode;
 	}
 
+	public boolean isOutputColumnExprs() {
+		return outputColumnExprs;
+	}
+
+	public void setOutputColumnExprs(boolean outputColumnExprs) {
+		this.outputColumnExprs = outputColumnExprs;
+	}
+
+	public Long[] getDependentQueries() {
+		return dependentQueries;
+	}
+
+	public void setDependentQueries(Long[] dependentQueries) {
+		this.dependentQueries = dependentQueries;
+	}
+
 	public static SavedQueryDetail fromSavedQuery(SavedQuery savedQuery){
 		SavedQueryDetail detail = new SavedQueryDetail();
 		
@@ -90,8 +120,11 @@ public class SavedQueryDetail extends SavedQuerySummary {
 		detail.setFilters(savedQuery.getFilters());
 		detail.setQueryExpression(savedQuery.getQueryExpression());
 		detail.setSelectList(savedQuery.getSelectList());
+		detail.setHavingClause(savedQuery.getHavingClause());
 		detail.setReporting(savedQuery.getReporting());
 		detail.setWideRowMode(savedQuery.getWideRowMode());
+		detail.setOutputColumnExprs(savedQuery.isOutputColumnExprs());
+		detail.setDependentQueries(savedQuery.getDependentQueries().toArray(new Long[0]));
 		return detail;
 	}	
 }

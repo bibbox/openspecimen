@@ -2,6 +2,7 @@
 package com.krishagni.catissueplus.core.administrative.domain.factory.impl;
 
 import java.util.Calendar;
+import java.util.UUID;
 
 import org.apache.commons.lang.StringUtils;
 
@@ -15,11 +16,11 @@ import com.krishagni.catissueplus.core.administrative.domain.factory.UserFactory
 import com.krishagni.catissueplus.core.administrative.events.UserDetail;
 import com.krishagni.catissueplus.core.auth.domain.AuthDomain;
 import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
-import com.krishagni.catissueplus.core.common.CommonValidator;
 import com.krishagni.catissueplus.core.common.errors.ActivityStatusErrorCode;
 import com.krishagni.catissueplus.core.common.errors.ErrorType;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.util.Status;
+import com.krishagni.catissueplus.core.common.util.Utility;
 
 public class UserFactoryImpl implements UserFactory {
 
@@ -132,10 +133,14 @@ public class UserFactoryImpl implements UserFactory {
 	private void setLoginName(UserDetail detail, User user, OpenSpecimenException ose) {
 		String loginName = detail.getLoginName();
 		if (StringUtils.isBlank(loginName)) {
-			ose.addError(UserErrorCode.LOGIN_NAME_REQUIRED);
-			return;
+			if (!user.isContact()) {
+				ose.addError(UserErrorCode.LOGIN_NAME_REQUIRED);
+				return;
+			}
+
+			loginName = UUID.randomUUID().toString();
 		}
-		
+
 		user.setLoginName(loginName);
 	}
 	
@@ -197,7 +202,7 @@ public class UserFactoryImpl implements UserFactory {
 	}
 
 	private void ensurePrimarySiteBelongsToInstitute(Site primarySite, Institute institute, OpenSpecimenException ose) {
-		if (!primarySite.getInstitute().equals(institute)) {
+		if (institute != null && !primarySite.getInstitute().equals(institute)) {
 			ose.addError(SiteErrorCode.INVALID_SITE_INSTITUTE, primarySite.getName(), institute.getName());
 		}
 	}
@@ -208,7 +213,20 @@ public class UserFactoryImpl implements UserFactory {
 			status = Status.ACTIVITY_STATUS_ACTIVE.getStatus();
 		}
 
+		if (!isValidStatus(status)) {
+			ose.addError(ActivityStatusErrorCode.INVALID, status);
+		}
+
 		user.setActivityStatus(status);
+	}
+
+	private boolean isValidStatus(String status) {
+		return status.equals(Status.ACTIVITY_STATUS_ACTIVE.getStatus()) ||
+			status.equals(Status.ACTIVITY_STATUS_DISABLED.getStatus()) ||
+			status.equals(Status.ACTIVITY_STATUS_CLOSED.getStatus()) ||
+			status.equals(Status.ACTIVITY_STATUS_LOCKED.getStatus()) ||
+			status.equals(Status.ACTIVITY_STATUS_EXPIRED.getStatus()) ||
+			status.equals(Status.ACTIVITY_STATUS_PENDING.getStatus());
 	}
 
 	private void setActivityStatus(UserDetail detail, User existing, User user, OpenSpecimenException ose) {
@@ -221,7 +239,7 @@ public class UserFactoryImpl implements UserFactory {
 	
 	private void setEmailAddress(UserDetail detail, User user, OpenSpecimenException ose) {
 		String email = detail.getEmailAddress();
-		if (!CommonValidator.isEmailValid(email)) {
+		if (!Utility.isValidEmail(email)) {
 			ose.addError(UserErrorCode.INVALID_EMAIL);
 			return;
 		}
@@ -265,8 +283,12 @@ public class UserFactoryImpl implements UserFactory {
 	private void setAuthDomain(UserDetail detail, User user, OpenSpecimenException ose) {
 		String domainName = detail.getDomainName();
 		if (StringUtils.isBlank(domainName)) {
-			ose.addError(UserErrorCode.DOMAIN_NAME_REQUIRED);
-			return;
+			if (!user.isContact()) {
+				ose.addError(UserErrorCode.DOMAIN_NAME_REQUIRED);
+				return;
+			}
+
+			domainName = User.DEFAULT_AUTH_DOMAIN;
 		}
 
 		AuthDomain authDomain = daoFactory.getAuthDao().getAuthDomainByName(domainName);
@@ -291,6 +313,10 @@ public class UserFactoryImpl implements UserFactory {
 			case SUPER:
 			case INSTITUTE:
 				user.setManageForms(true);
+				break;
+
+			case CONTACT:
+				user.setManageForms(false);
 				break;
 
 			default:

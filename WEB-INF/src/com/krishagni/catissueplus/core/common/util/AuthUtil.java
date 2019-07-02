@@ -1,12 +1,14 @@
 package com.krishagni.catissueplus.core.common.util;
 
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.net.URLDecoder;
 
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -18,6 +20,8 @@ import org.springframework.security.web.authentication.WebAuthenticationDetailsS
 
 import com.krishagni.catissueplus.core.administrative.domain.Institute;
 import com.krishagni.catissueplus.core.administrative.domain.User;
+import com.krishagni.catissueplus.core.common.domain.ConfigErrorCode;
+import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 
 public class AuthUtil {
 	private static final Log logger = LogFactory.getLog(AuthUtil.class);
@@ -26,6 +30,10 @@ public class AuthUtil {
 
 	public static Authentication getAuth() {
 		return SecurityContextHolder.getContext().getAuthentication();
+	}
+
+	public static boolean isSignedIn() {
+		return getCurrentUser() != null;
 	}
 	
 	public static User getCurrentUser() {
@@ -122,7 +130,7 @@ public class AuthUtil {
 
 	public static void setTokenCookie(HttpServletRequest httpReq, HttpServletResponse httpResp, String authToken) {
 		Cookie cookie = new Cookie("osAuthToken", authToken);
-		cookie.setPath(httpReq.getContextPath());
+		cookie.setPath(getContextPath(httpReq));
 		cookie.setHttpOnly(true);
 		cookie.setSecure(httpReq.isSecure());
 
@@ -143,5 +151,24 @@ public class AuthUtil {
 
 	public static String getAuthTokenFromHeader(HttpServletRequest httpReq) {
 		return httpReq.getHeader(OS_AUTH_TOKEN_HDR);
+	}
+
+	private static String getContextPath(HttpServletRequest httpReq) {
+		String path = ConfigUtil.getInstance().getAppUrl();
+		if (StringUtils.isBlank(path)) {
+			path = httpReq.getContextPath();
+		} else {
+			try {
+				path = new URL(path).getPath();
+			} catch (MalformedURLException url) {
+				throw OpenSpecimenException.userError(ConfigErrorCode.INVALID_SETTING_VALUE, path);
+			}
+		}
+
+		if (StringUtils.isBlank(path)) {
+			path = "/";
+		}
+
+		return path;
 	}
 }

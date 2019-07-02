@@ -8,11 +8,6 @@
   <span translate="cp.view_sop">View SOP</span>
 </a>
 
-<a ng-if="!!cp.catalogQuery" class="btn default" ui-sref="query-results({queryId: cp.catalogQuery.id, cpId: cp.id})">
-  <span class="fa fa-table"></span>
-  <span translate="participant.buttons.specimen_catalog">Specimen Catalog</span>
-</a>
-
 <div os-show-if-menu-items-present dropdown class="os-inline-btn">
   <button class="default dropdown-toggle">
     <span translate="common.buttons.more">More</span>
@@ -48,6 +43,13 @@
       <a ng-click="generateCpReport()">
         <span class="fa fa-file-text-o"></span>
         <span translate="participant.generate_report">Generate Report</span>
+      </a>
+    </li>
+
+    <li show-if-allowed="cpReadOpts">
+      <a ui-sref="cp-detail.overview({cpId: cp.id})" >
+        <span class="fa fa-calendar"></span>
+        <span translate="cp.view_details">View CP Details</span>
       </a>
     </li>
 

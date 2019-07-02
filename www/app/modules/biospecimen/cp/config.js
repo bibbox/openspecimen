@@ -3,6 +3,8 @@ angular.module('openspecimen')
   .factory('CpConfigSvc', function(CollectionProtocol, $q) {
     var cpWorkflowsMap = {};
 
+    var cpWorkflowsQ = {};
+
     var listCfgsMap = {};
 
     var summarySt = undefined;
@@ -48,12 +50,23 @@ angular.module('openspecimen')
         return d.promise;
       }
 
-      return CollectionProtocol.getWorkflows(cpId).then(
+      if (cpWorkflowsQ[cpId]) {
+        return cpWorkflowsQ[cpId];
+      }
+
+      cpWorkflowsQ[cpId] = CollectionProtocol.getWorkflows(cpId).then(
         function(cpWorkflows) {
           cpWorkflowsMap[cpId] = cpWorkflows;
+          delete cpWorkflowsQ[cpId];
           return cpWorkflows;
+        },
+
+        function() {
+          delete cpWorkflowsQ[cpId];
         }
       );
+
+      return cpWorkflowsQ[cpId];
     }
 
     function getWorkflowData(cpId, name, defVal) {
@@ -61,6 +74,92 @@ angular.module('openspecimen')
         function(cfg) {
           var workflow = cfg.workflows[name];
           return workflow ? (workflow.data || defVal || {}) : (defVal || {});
+        }
+      );
+    }
+
+    function getWorkflow(cpId, name) {
+      return loadWorkflows(cpId).then(
+        function(cfg) {
+          return cfg.workflows[name];
+        }
+      );
+    }
+
+    function saveWorkflow(cpId, workflow) {
+      return CollectionProtocol.saveWorkflows(cpId, [workflow], true).then(
+        function(resp) {
+          if (cpWorkflowsMap[cpId]) {
+            cpWorkflowsMap[cpId].workflows[workflow.name] = workflow;
+          }
+
+          return resp;
+        }
+      );
+    }
+
+    function getCommonCfg(cpId, propName) {
+      return getConfig(cpId, 'common', propName);
+    }
+
+    function getConfig(cpId, wfName, propName) {
+      cpId = cpId || -1;
+      return getWorkflowData(cpId, wfName).then(
+        function(data) {
+          if ((data[propName] != null && data[propName] != undefined) || cpId == -1) {
+            return data[propName];
+          }
+
+          return getWorkflowData(-1, wfName).then(
+            function(data) {
+              return data[propName];
+            }
+          );
+        }
+      );
+    }
+
+    function getValue(cpId, wfName, propName) {
+      var result = {status: 'ok', value: undefined};
+      getConfig(cpId, wfName, propName).then(
+        function(cfg) {
+          result.value = cfg;
+        }
+      );
+
+      return result;
+    }
+
+    function getOnValueChangeFns(cpId, wfOrder, result) {
+      if (wfOrder.length == 0) {
+        return result;
+      }
+
+      return getWorkflowData(cpId, wfOrder[0], {}).then(
+        function(data) {
+          result = angular.extend(result, data.onValueChange || {});
+          return getOnValueChangeFns(cpId, wfOrder.slice(1), result);
+        }
+      );
+    }
+
+    function setWorkflows(cp, workflows) {
+      cpWorkflowsMap[cp.id] = workflows;
+      delete cpWorkflowsQ[cp.id];
+
+      var pattern = 'cp-' + cp.id + '-';
+      var matchingKeys = [];
+      angular.forEach(listCfgsMap,
+        function(value, key) {
+          if (key.indexOf(pattern) == 0) {
+            matchingKeys.push(key);
+          }
+        }
+      );
+
+      angular.forEach(matchingKeys,
+        function(key) {
+          delete listCfgsMap[key];
         }
       );
     }
@@ -87,6 +186,8 @@ angular.module('openspecimen')
         // template provider
         return getRegParticipantCtrl(cpId, cprId);
       },
+
+      getWorkflow: getWorkflow,
 
       getWorkflowData: getWorkflowData,
 
@@ -116,6 +217,31 @@ angular.module('openspecimen')
                 return sysDict.fields || defValue || [];
               }
             );
+          }
+        );
+      },
+
+      getLayout: function(cpId, defValue) {
+        return getWorkflowData(cpId, 'dictionary').then(
+          function(data) {
+            if (data.layout) {
+              return data.layout;
+            }
+
+            return getWorkflowData(-1, 'dictionary').then(
+              function(sysDict) {
+                return sysDict.layout || defValue || [];
+              }
+            );
+          }
+        );
+      },
+
+      getOnValueChangeCallbacks: function(cpId, wfLuOrder) {
+        return getWorkflowData(-1, 'dictionary', {}).then(
+          function(data) {
+            var result = angular.extend({}, data.onValueChange || {});
+            return getOnValueChangeFns(cpId, (wfLuOrder || []).slice().reverse(), result);
           }
         );
       },
@@ -159,6 +285,16 @@ angular.module('openspecimen')
             return (data.participant || {})[src || 'OpenSpecimen'] || [];
           }
         );
-      }
+      },
+
+      saveWorkflow: saveWorkflow,
+
+      getCommonCfg: getCommonCfg,
+
+      getConfig: getConfig,
+
+      getValue: getValue,
+
+      setWorkflows: setWorkflows
     }
   });

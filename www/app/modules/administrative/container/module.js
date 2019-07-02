@@ -23,7 +23,7 @@ angular.module('os.administrative.container',
             createOpts: {resource: 'StorageContainer', operations: ['Create']},
             updateOpts: {resource: 'StorageContainer', operations: ['Update']},
             deleteOpts: {resource: 'StorageContainer', operations: ['Delete']},
-            importOpts: {resource: 'StorageContainer', operations: ['Bulk Import']}
+            importOpts: {resource: 'StorageContainer', operations: ['Export Import']}
           }
         },
         parent: 'signed-in'
@@ -43,7 +43,12 @@ angular.module('os.administrative.container',
               return Container.getById($stateParams.containerId);
             }
 
-            return new Container({allowedCollectionProtocols: [], allowedSpecimenClasses: [], allowedSpecimenTypes: []});
+            return new Container({
+              allowedCollectionProtocols: [],
+              allowedSpecimenClasses: [],
+              allowedSpecimenTypes: [],
+              allowedDistributionProtocols: []
+            });
           },
           containerType: function($stateParams, ContainerType) {
             if ($stateParams.containerTypeId) {
@@ -54,6 +59,9 @@ angular.module('os.administrative.container',
           },
           barcodingEnabled: function(CollectionProtocol) {
             return CollectionProtocol.getBarcodingEnabled();
+          },
+          extensionCtxt: function(Container) {
+            return Container.getExtensionCtxt();
           }
         },
         controller: 'ContainerAddEditCtrl',
@@ -182,26 +190,7 @@ angular.module('os.administrative.container',
       });
   })
 
-  .run(function($state, $translate, QuickSearchSvc, Container, Alerts) {
-    var opts = {
-      template: 'modules/administrative/container/quick-search.html',
-      caption: 'entities.container',
-      order: 4,
-      search: function(searchData) {
-        var nameOrBarcode = searchData.containerName;
-        Container.getByName(nameOrBarcode, nameOrBarcode).then(
-          function(container) {
-            if (container == undefined) {
-              Alerts.error('search.error', {entity: 'Container', key: nameOrBarcode});
-              return;
-            }
-
-            $state.go('container-detail.locations', {containerId: container.id});
-          }
-        );
-      }
-    };
-
-    QuickSearchSvc.register('container', opts);
-
+  .run(function(QuickSearchSvc) {
+    var opts = {caption: 'entities.container', state: 'container-detail.locations'};
+    QuickSearchSvc.register('storage_container', opts);
   });

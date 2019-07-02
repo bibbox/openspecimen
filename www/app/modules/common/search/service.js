@@ -1,5 +1,5 @@
 angular.module('os.common.search.service', [])
-  .factory('QuickSearchSvc', function($translate) {
+  .factory('QuickSearchSvc', function($translate, $http, ApiUrls) {
     var entitySearchMap = {}
 
     function register(entityName, searchOpts) {
@@ -8,37 +8,39 @@ angular.module('os.common.search.service', [])
       }
 
       entitySearchMap[entityName] = searchOpts;
-
     }
 
-    function getTemplate(entity) {
-      var opts = entitySearchMap[entity];
-      return !!opts ? opts.template : null;
+    function search(term) {
+      return $http.get(ApiUrls.getBaseUrl() + 'search', {params: {term: term}}).then(
+        function(resp) {
+          var result = resp.data;
+          angular.forEach(result, setMatchCaption);
+          if (result.length == 0) {
+            result.push({id: 0, key: term, caption: $translate.instant('search.user_manual', {term: term})});
+          } else if (result.length > 20) {
+            result.unshift({id: -2, caption: $translate.instant('search.many_matches')});
+          }
+
+          return result;
+        }
+      );
     }
 
-    function search(entity, searchData) {
-      var opts = entitySearchMap[entity];
-      opts.search(searchData);
+    function setMatchCaption(match) {
+      var opts = entitySearchMap[match.entity];
+      match.group = $translate.instant(opts && opts.caption);
+      match.caption = match.value;
     }
 
-    function getEntities() {
-      var results = [];
-      angular.forEach(entitySearchMap, function(value, key) {
-        results.push({name: key, caption: $translate.instant(value.caption), order: value.order});
-      });
-
-      results = results.sort(function(a, b) {return (a.order > b.order) - (b.order > a.order);});
-
-      return results;
+    function getState(entity) {
+      return entitySearchMap[entity] && entitySearchMap[entity].state;
     }
 
     return {
       register: register,
 
-      getEntities: getEntities,
+      search: search,
 
-      getTemplate: getTemplate,
-
-      search: search
+      getState: getState
     };
-  })
+  });

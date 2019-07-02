@@ -64,6 +64,11 @@
   padding: 0px 4px;
 }
 
+.fa.os-status-reserved:before {
+  color: rgba(128, 0, 128, 0.7);
+  padding: 0px 4px;
+}
+
 .fa.os-status-distributed:before {
   color: #5bc0de;
   padding: 0px 4px;
@@ -96,15 +101,47 @@
   padding: 0px 4px;
 }
 
-.fa.os-lineage-new:before, 
-.fa.os-lineage-aliquot:before, 
-.fa.os-lineage-derivative:before {
-  color: #f0ad4e;
-  padding: 0px 4px;
-}
-
+.panel .panel-heading .os-status-closed,
 .os-page-header .os-status-closed {
   background: #d9534f!important;
+}
+
+.panel .panel-heading .os-status-info,
+.os-page-header .os-stauts-info {
+  background: #46b8da!important;
+}
+
+.panel .panel-heading .os-status-reserved,
+.os-page-header .os-status-reserved {
+  background: rgba(128, 0, 128, 0.7)!important;
+}
+
+.os-page-header .os-status-collected {
+  background: #5cb85c!important;
+}
+
+.os-page-header .os-status-pending {
+  background: #f0ad4e!important;
+}
+
+.os-page-header .os-status-virtual {
+  background: #99f!important;
+}
+
+.os-page-header .os-status-distributed {
+  background: #5bc0de!important;
+}
+
+.panel .panel-heading .os-status-info,
+.os-page-header .os-status-info,
+.panel .panel-heading .os-status-closed,
+.os-page-header .os-status-closed,
+.panel .panel-heading .os-status-reserved,
+.os-page-header .os-status-reserved,
+.os-page-header .os-status-pending,
+.os-page-header .os-status-virtual,
+.os-page-header .os-status-collected,
+.os-page-header .os-status-distributed {
   padding: 0px 4px;
   color: #fff;
   font-weight: bold;
@@ -114,6 +151,11 @@
 }
 
 /** Used in CP events **/
+
+.os-cpe-container {
+  height: calc(100% - 10px);
+}
+
 .os-cpe-item {
   position: relative;
 }
@@ -278,6 +320,15 @@
   box-shadow: none;
 }
 
+table .os-md-time table td.form-group input {
+  width: 100%!important;
+  max-width: 50px;
+}
+
+table .os-md-time table {
+  margin-top: -4px;
+}
+
 .os-text-checkbox:after {
   display: block;
   content: ' ';
@@ -346,4 +397,80 @@
 
 .os-ctrl-padding-top {
   padding-top: 8px;
+}
+
+.os-cp-settings-popover {
+  max-height: 252px;
+  width: 275px;
+  overflow: auto;
+}
+
+/** Scroll bar **/
+.os-participant-tree::-webkit-scrollbar,
+.os-specimen-tree-body::-webkit-scrollbar {
+  height: 10px;
+  width: 10px;
+}
+
+.os-participant-tree::-webkit-scrollbar-thumb:vertical,
+.os-participant-tree::-webkit-scrollbar-thumb:horizontal,
+.os-specimen-tree-body::-webkit-scrollbar-thumb:vertical,
+.os-specimen-tree-body::-webkit-scrollbar-thumb:horizontal {
+  background: #d0d0d0;
+}
+
+.os-participant-tree::-webkit-scrollbar-track:hover,
+.os-specimen-tree-body::-webkit-scrollbar-track:hover {
+  background: #f5f5f5;
+  border: 1px solid #ddd;
+}
+
+.os-participant-tree::-webkit-scrollbar-track,
+.os-specimen-tree-body::-webkit-scrollbar-track {
+  background: #ffffff;
+}
+
+.os-participant-tree {
+  padding-right: 15px;
+}
+
+/* Used for the panel / container containing the sticky specimen tree table */
+.os-specimen-tree-pane {
+  display: block;
+  height: 100%;
+  overflow-y: auto;
+}
+
+/* Tree table body */
+.os-specimen-tree-body {
+  height: calc(100% - 41px);
+  overflow-x: auto;
+  overflow-y: auto;
+  padding-top: 0px; /* remove the padding of panel so that the scrolled table cells do not appear in the padding region */
+}
+
+.os-specimen-tree-body .os-table .os-table-head .row .col {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: white;
+  padding-top: 23px; /* 8px for table cell and 15px to compensate the panel padding */
+}
+
+.os-tree-scroll-up-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 100%;
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  font-size: 24px;
+  font-weight: bold;
+  background: white;
+  border: 1px solid #ddd;
+}
+
+.os-tree-image-icon {
+  color: inherit;
+  padding-right: 4px;
 }

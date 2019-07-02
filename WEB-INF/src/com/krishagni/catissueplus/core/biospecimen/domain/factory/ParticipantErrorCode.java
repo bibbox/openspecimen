@@ -14,8 +14,6 @@ public enum ParticipantErrorCode implements ErrorCode {
 	
 	INVALID_ETHNICITY,
 	
-	INVALID_GENOTYPE,
-	
 	INVALID_UID,
 	
 	INVALID_MPI,
@@ -33,6 +31,10 @@ public enum ParticipantErrorCode implements ErrorCode {
 	DUP_MRN,
 	
 	DUP_MRN_SITE,
+
+	EMPI_MRN_DIFF,
+
+	MRN_DIFF,
 	
 	EMPI_REQUIRED,
 	
@@ -44,7 +46,11 @@ public enum ParticipantErrorCode implements ErrorCode {
 
 	LF_UPDATE_NOT_ALLOWED,
 
-	INVALID_LOOKUP_FLOW;
+	INVALID_LOOKUP_FLOW,
+
+	STAGED_ID_REQ,
+
+	STAGED_NOT_FOUND;
 
 	public String code() {
 		return "PARTICIPANT_" + this.name();

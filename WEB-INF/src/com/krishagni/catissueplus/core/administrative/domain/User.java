@@ -29,11 +29,14 @@ import com.krishagni.catissueplus.core.common.events.DependentEntityDetail;
 import com.krishagni.catissueplus.core.common.util.ConfigUtil;
 import com.krishagni.catissueplus.core.common.util.Status;
 import com.krishagni.catissueplus.core.common.util.Utility;
+import com.krishagni.rbac.domain.SubjectAccess;
+import com.krishagni.rbac.domain.SubjectRole;
 
 @Configurable
 @Audited
 public class User extends BaseEntity implements UserDetails {
 	public enum Type {
+		CONTACT,
 		SUPER,
 		INSTITUTE,
 		NONE
@@ -77,7 +80,11 @@ public class User extends BaseEntity implements UserDetails {
 
 	private Boolean manageForms;
 	
-	private Set<Password> passwords = new HashSet<Password>();
+	private Set<Password> passwords = new HashSet<>();
+
+	private Set<SubjectRole> roles = new HashSet<>();
+
+	private Set<SubjectAccess> acl = new HashSet<>();
 	
 	@Autowired 
 	private DaoFactory daoFactory;
@@ -204,6 +211,10 @@ public class User extends BaseEntity implements UserDetails {
 		this.type = type;
 	}
 
+	public boolean isContact() {
+		return Type.CONTACT == getType();
+	}
+
 	public boolean isAdmin() {
 		return Type.SUPER == getType();
 	}
@@ -232,7 +243,25 @@ public class User extends BaseEntity implements UserDetails {
 	public void setPasswords(Set<Password> passwords) {
 		this.passwords = passwords;
 	}
-	
+
+	@NotAudited
+	public Set<SubjectRole> getRoles() {
+		return roles;
+	}
+
+	public void setRoles(Set<SubjectRole> roles) {
+		this.roles = roles;
+	}
+
+	@NotAudited
+	public Set<SubjectAccess> getAcl() {
+		return acl;
+	}
+
+	public void setAcl(Set<SubjectAccess> acl) {
+		this.acl = acl;
+	}
+
 	@Override
 	public Collection<? extends GrantedAuthority> getAuthorities() {
 		Set<GrantedAuthority> authorities = new HashSet<GrantedAuthority>();
@@ -266,6 +295,8 @@ public class User extends BaseEntity implements UserDetails {
 	}
 
 	public void update(User user) {
+		setType(user.getType());
+
 		updateStatus(user.getActivityStatus());
 		if (isDisabled()) {
 			return;
@@ -273,19 +304,25 @@ public class User extends BaseEntity implements UserDetails {
 
 		setFirstName(user.getFirstName());
 		setLastName(user.getLastName());
-		setAuthDomain(user.getAuthDomain());
 		setAddress(user.getAddress());
 		setInstitute(user.getInstitute());
 		setPrimarySite(user.getPrimarySite());
 		setEmailAddress(user.getEmailAddress());
-		setLoginName(user.getLoginName());
 		setPhoneNumber(user.getPhoneNumber());
 		setComments(user.getComments());
-		setType(user.getType());
-		setManageForms(user.canManageForms());
+
+		if (!isContact()) {
+			setAuthDomain(user.getAuthDomain());
+			setLoginName(user.getLoginName());
+			setManageForms(user.canManageForms());
+		}
 	}
 
 	public void changePassword(String newPassword) {
+		if (isContact()) {
+			return;
+		}
+
 		if (StringUtils.isBlank(newPassword) || !isValidPasswordPattern(newPassword)) {
 			throw OpenSpecimenException.userError(UserErrorCode.PASSWD_VIOLATES_RULES);
 		}
@@ -311,7 +348,11 @@ public class User extends BaseEntity implements UserDetails {
 	public List<DependentEntityDetail> getDependentEntities() {
 		return daoFactory.getUserDao().getDependentEntities(getId());
 	}
-	
+
+	public void close() {
+		setActivityStatus(Status.ACTIVITY_STATUS_CLOSED.getStatus());
+	}
+
 	public void delete() {
 		List<DependentEntityDetail> dependentEntities = getDependentEntities();
 		if (!dependentEntities.isEmpty()) {

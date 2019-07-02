@@ -1,13 +1,23 @@
 package com.krishagni.catissueplus.core.common.errors;
 
-public enum CommonErrorCode implements ErrorCode {	
+public enum CommonErrorCode implements ErrorCode {
+	SERVER_ERROR,
+
+	INVALID_INPUT,
+
 	INVALID_REQUEST,
 
 	SQL_EXCEPTION,
 
 	FILE_NOT_FOUND,
 
-	EXCEPTION_NOT_FOUND;
+	FILE_SEND_ERROR,
+
+	EXCEPTION_NOT_FOUND,
+
+	CUSTOM_FIELD_LEVEL_REQ,
+
+	CUSTOM_FIELD_NAME_REQ;
 
 	@Override
 	public String code() {

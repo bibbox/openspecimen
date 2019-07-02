@@ -18,10 +18,13 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.ws.rs.core.HttpHeaders;
 
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.codec.Base64;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
+import org.springframework.web.context.request.ServletWebRequest;
 import org.springframework.web.filter.GenericFilterBean;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.krishagni.catissueplus.core.administrative.domain.User;
 import com.krishagni.catissueplus.core.audit.domain.UserApiCallLog;
 import com.krishagni.catissueplus.core.audit.services.AuditService;
@@ -33,6 +36,7 @@ import com.krishagni.catissueplus.core.auth.services.UserAuthenticationService;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
 import com.krishagni.catissueplus.core.common.events.ResponseEvent;
 import com.krishagni.catissueplus.core.common.util.AuthUtil;
+import com.krishagni.catissueplus.rest.RestErrorController;
 
 public class AuthTokenFilter extends GenericFilterBean {
 	private static final String OS_CLIENT_HDR = "X-OS-API-CLIENT";
@@ -43,7 +47,7 @@ public class AuthTokenFilter extends GenericFilterBean {
 	
 	private UserAuthenticationService authService;
 	
-	private Map<String, List<String>> excludeUrls = new HashMap<String, List<String>>();
+	private Map<String, List<String>> excludeUrls = new HashMap<>();
 	
 	private AuditService auditService;
 	
@@ -64,12 +68,7 @@ public class AuthTokenFilter extends GenericFilterBean {
 	}
 
 	public void addExcludeUrl(String method, String resourceUrl) {
-		List<String> urls = excludeUrls.get(method);
-		if (urls == null) {
-			urls = new ArrayList<String>();
-			excludeUrls.put(method, urls);
-		}
-
+		List<String> urls = excludeUrls.computeIfAbsent(method, (key) -> new ArrayList<>());
 		if (urls.indexOf(resourceUrl) == -1) {
 			urls.add(resourceUrl);
 		}
@@ -79,12 +78,21 @@ public class AuthTokenFilter extends GenericFilterBean {
 		this.auditService = auditService;
 	}
 
-	public void doFilter(ServletRequest req, ServletResponse resp, FilterChain chain) 
-	throws IOException, ServletException {
+	public void doFilter(ServletRequest req, ServletResponse resp, FilterChain chain)
+	throws IOException {
 		if (!(req instanceof HttpServletRequest)) {
 			throw new IllegalAccessError("Unknown protocol request");
 		}
-		
+
+		try {
+			doFilter0(req, resp, chain);
+		} catch (Exception e) {
+			sendError((HttpServletRequest) req, (HttpServletResponse) resp, e);
+		}
+	}
+
+	private void doFilter0(ServletRequest req, ServletResponse resp, FilterChain chain)
+	throws IOException, ServletException {
 		HttpServletRequest httpReq = (HttpServletRequest)req;
 		HttpServletResponse httpResp = (HttpServletResponse)resp;
 		
@@ -99,23 +107,11 @@ public class AuthTokenFilter extends GenericFilterBean {
 		httpResp.setDateHeader("Expires", 0);
 
 		if (httpReq.getMethod().equalsIgnoreCase("options")) {
-			httpResp.setStatus(HttpServletResponse.SC_OK);	
+			httpResp.setStatus(HttpServletResponse.SC_OK);
 			return;
 		}
 
-		List<String> urls = excludeUrls.get(httpReq.getMethod());
-		if (urls == null) {
-			urls = Collections.emptyList();
-		}
-
-		for (String url : urls) {
-			if (matches(httpReq, url)) {
-				chain.doFilter(req, resp);
-				return;
-			}
-		}
-
-		User userDetails = null;
+		User user = null;
 		String authToken = AuthUtil.getAuthTokenFromHeader(httpReq);
 		if (authToken == null) {
 			authToken = AuthUtil.getTokenFromCookie(httpReq);
@@ -129,40 +125,53 @@ public class AuthTokenFilter extends GenericFilterBean {
 
 			ResponseEvent<AuthToken> atResp = authService.validateToken(new RequestEvent<>(tokenDetail));
 			if (atResp.isSuccessful()) {
-				userDetails = atResp.getPayload().getUser();
+				user = atResp.getPayload().getUser();
 				loginAuditLog = atResp.getPayload().getLoginAuditLog();
 			}
 		} else if(httpReq.getHeader(HttpHeaders.AUTHORIZATION) != null) {
-			userDetails = doBasicAuthentication(httpReq, httpResp);
+			user = doBasicAuthentication(httpReq, httpResp);
 		}
 		
-		if (userDetails == null) {
+		if (user == null) {
 			String clientHdr = httpReq.getHeader(OS_CLIENT_HDR);
 			if (clientHdr != null && clientHdr.equals("webui")) {
-				AuthUtil.clearTokenCookie(httpReq, httpResp);
-				setUnauthorizedResp(httpResp);
+				setUnauthorizedResp(req, resp, chain, false);
 			} else {
-				setRequireAuthResp(httpResp);
+				setRequireAuthResp(req, resp, chain);
 			}
 			return;
 		}
 
-		AuthUtil.setCurrentUser(userDetails, authToken, httpReq);
+		if (user.isContact() || user.isClosed()) {
+			AuthUtil.clearTokenCookie(httpReq, httpResp);
+			httpResp.sendError(
+				HttpServletResponse.SC_UNAUTHORIZED,
+				String.format(
+					"%s (%d) is not allowed to sign-in. Type = %s, Status = %s",
+					user.formattedName(), user.getId(), user.getType().name(), user.getActivityStatus()
+				)
+			);
+			return;
+		}
+
+		AuthUtil.setCurrentUser(user, authToken, httpReq);
 		Date callStartTime = Calendar.getInstance().getTime();
 		chain.doFilter(req, resp);
 		AuthUtil.clearCurrentUser();
-	
-		UserApiCallLog userAuditLog = new UserApiCallLog();
-		userAuditLog.setUser(userDetails);
-		userAuditLog.setUrl(httpReq.getRequestURI().toString());
-		userAuditLog.setMethod(httpReq.getMethod());
-		userAuditLog.setCallStartTime(callStartTime);
-		userAuditLog.setCallEndTime(Calendar.getInstance().getTime());
-		userAuditLog.setResponseCode(Integer.toString(httpResp.getStatus()));
-		userAuditLog.setLoginAuditLog(loginAuditLog);
-		auditService.insertApiCallLog(userAuditLog);
+
+		if (isRecordableApi(httpReq)) {
+			UserApiCallLog userAuditLog = new UserApiCallLog();
+			userAuditLog.setUser(user);
+			userAuditLog.setUrl(httpReq.getRequestURI());
+			userAuditLog.setMethod(httpReq.getMethod());
+			userAuditLog.setCallStartTime(callStartTime);
+			userAuditLog.setCallEndTime(Calendar.getInstance().getTime());
+			userAuditLog.setResponseCode(Integer.toString(httpResp.getStatus()));
+			userAuditLog.setLoginAuditLog(loginAuditLog);
+			auditService.insertApiCallLog(userAuditLog);
+		}
 	}
-	
+
 	private User doBasicAuthentication(HttpServletRequest httpReq, HttpServletResponse httpResp) throws UnsupportedEncodingException {
 		String header = httpReq.getHeader(HttpHeaders.AUTHORIZATION);
 		if (header == null || !header.startsWith(BASIC_AUTH)) {
@@ -191,17 +200,57 @@ public class AuthTokenFilter extends GenericFilterBean {
 		return null;
 	}
 
-	private void setRequireAuthResp(HttpServletResponse httpResp) throws IOException {
-		httpResp.setHeader(HttpHeaders.WWW_AUTHENTICATE, "Basic realm=\"OpenSpecimen\"");
-		setUnauthorizedResp(httpResp);
+	private void setRequireAuthResp(ServletRequest req, ServletResponse resp, FilterChain chain)
+	throws IOException, ServletException {
+		if (requiresSignIn(req)) {
+			HttpServletResponse httpResp = (HttpServletResponse)resp;
+			httpResp.setHeader(HttpHeaders.WWW_AUTHENTICATE, "Basic realm=\"OpenSpecimen\"");
+			setUnauthorizedResp(req, resp, chain, true);
+		} else {
+			chain.doFilter(req, resp);
+		}
 	}
 
-	private void setUnauthorizedResp(HttpServletResponse httpResp) throws IOException {
-		httpResp.sendError(HttpServletResponse.SC_UNAUTHORIZED,
+	private void setUnauthorizedResp(ServletRequest req, ServletResponse resp, FilterChain chain, boolean reqSignIn)
+	throws IOException, ServletException {
+		if (reqSignIn || requiresSignIn(req)) {
+			HttpServletResponse httpResp = (HttpServletResponse)resp;
+			AuthUtil.clearTokenCookie((HttpServletRequest) req, httpResp);
+			httpResp.sendError(HttpServletResponse.SC_UNAUTHORIZED,
 				"You must supply valid credentials to access the OpenSpecimen REST API");
+		} else {
+			chain.doFilter(req, resp);
+		}
+	}
+
+	private boolean requiresSignIn(ServletRequest req) {
+		HttpServletRequest httpReq = (HttpServletRequest)req;
+
+		List<String> urls = excludeUrls.get(httpReq.getMethod());
+		if (urls == null) {
+			urls = Collections.emptyList();
+		}
+
+		boolean requiresSignIn = true;
+		for (String url : urls) {
+			if (matches(httpReq, url)) {
+				requiresSignIn = false;
+				break;
+			}
+		}
+
+		return requiresSignIn;
+	}
+
+	private boolean isRecordableApi(HttpServletRequest httpReq) {
+		return !matches(httpReq, "/user-notifications/unread-count/**");
 	}
 
 	private boolean matches(HttpServletRequest httpReq, String url) {
+		return new AntPathRequestMatcher(getUrlPattern(url), httpReq.getMethod(), true).matches(httpReq);
+	}
+
+	private String getUrlPattern(String url) {
 		if (!url.startsWith("/**")) {
 			String prefix = "/**";
 			if (!url.startsWith("/")) {
@@ -211,6 +260,31 @@ public class AuthTokenFilter extends GenericFilterBean {
 			url = prefix + url;
 		}
 
-		return new AntPathRequestMatcher(url, httpReq.getMethod(), true).matches(httpReq);
+		return url;
+	}
+
+	private void sendError(HttpServletRequest httpReq, HttpServletResponse httpResp, Exception e)
+	throws IOException {
+		ResponseEntity<Object> resp = new RestErrorController().handleOtherException(e, new ServletWebRequest(httpReq));
+
+		httpResp.setContentType("application/json");
+		httpResp.setStatus(resp.getStatusCodeValue());
+		httpResp.getOutputStream().write(toJsonString(resp.getBody()).getBytes());
+		httpResp.getOutputStream().flush();
+		httpResp.getOutputStream().close();
+	}
+
+	private String toJsonString(Object body) {
+		String unknownError = "[{\"message\": \"Unknown error\"}]";
+		if (body == null) {
+			return unknownError;
+		}
+
+		try {
+			return new ObjectMapper().writeValueAsString(body);
+		} catch (Exception e) {
+			e.printStackTrace();
+			return unknownError;
+		}
 	}
 }

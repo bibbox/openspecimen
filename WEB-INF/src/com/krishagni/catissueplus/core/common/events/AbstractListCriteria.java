@@ -3,11 +3,14 @@ package com.krishagni.catissueplus.core.common.events;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.apache.commons.lang3.StringUtils;
 import org.codehaus.jackson.annotate.JsonProperty;
 import org.hibernate.criterion.MatchMode;
 
 
-public abstract class AbstractListCriteria<T extends ListCriteria<T>> implements ListCriteria<T> {	
+public abstract class AbstractListCriteria<T extends ListCriteria<T>> implements ListCriteria<T> {
+	private Long lastId;
+
 	private int startAt;
 	
 	private int maxResults;
@@ -21,9 +24,22 @@ public abstract class AbstractListCriteria<T extends ListCriteria<T>> implements
 	private boolean exactMatch;
 	
 	private boolean includeStat;
+
+	private boolean includeExtensions;
 	
 	private List<Long> ids = new ArrayList<>();
-	
+
+	@Override
+	public Long lastId() {
+		return lastId;
+	}
+
+	@Override
+	public T lastId(Long lastId) {
+		this.lastId = lastId;
+		return self();
+	}
+
 	@Override
 	public int startAt() {
 		return startAt <= 0 ? 0 : startAt;
@@ -109,7 +125,17 @@ public abstract class AbstractListCriteria<T extends ListCriteria<T>> implements
 		this.includeStat = includeStat;
 		return self();
 	}
-		
+
+	@JsonProperty("includeExtensions")
+	public boolean includeExtensions() {
+		return includeExtensions;
+	}
+
+	public T includeExtensions(boolean includeExtensions) {
+		this.includeExtensions = includeExtensions;
+		return self();
+	}
+
 	@Override
 	public List<Long> ids() {
 		return ids;
@@ -122,4 +148,18 @@ public abstract class AbstractListCriteria<T extends ListCriteria<T>> implements
 	}
 	
 	public abstract T self();
+
+	public String toString() {
+		return new StringBuilder()
+			.append("last id = ").append(lastId()).append(", ")
+			.append("start at = ").append(startAt()).append(", ")
+			.append("max results = ").append(maxResults()).append(", ")
+			.append("limit items = ").append(limitItems()).append(", ")
+			.append("include phi = ").append(includePhi()).append(", ")
+			.append("query = ").append(query()).append(", ")
+			.append("exact match = ").append(exactMatch()).append(", ")
+			.append("include stat = ").append(includeStat()).append(", ")
+			.append("ids = ").append(StringUtils.join(ids(), ","))
+			.toString();
+	}
 }

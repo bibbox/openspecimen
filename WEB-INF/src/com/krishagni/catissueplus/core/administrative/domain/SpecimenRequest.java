@@ -2,19 +2,33 @@ package com.krishagni.catissueplus.core.administrative.domain;
 
 import java.util.Calendar;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import com.krishagni.catissueplus.core.administrative.domain.factory.SpecimenRequestErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.domain.BaseExtensionEntity;
+import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
+import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.util.AuthUtil;
 import com.krishagni.catissueplus.core.common.util.Status;
 
 public class SpecimenRequest extends BaseExtensionEntity {
+	private static final String ENTITY_NAME = "specimen_request";
+
+	public enum ScreeningStatus {
+		PENDING,
+		APPROVED,
+		REJECTED
+	}
+
 	private Long catalogId;
 
 	private String catalogQueryDef;
+
+	private User requestor;
 
 	private String requestorEmailId;
 
@@ -22,9 +36,19 @@ public class SpecimenRequest extends BaseExtensionEntity {
 
 	private Date dateOfRequest;
 
+	private ScreeningStatus screeningStatus = ScreeningStatus.PENDING;
+
+	private User screenedBy;
+
+	private Date dateOfScreening;
+
+	private String screeningComments;
+
 	private User processedBy;
 
 	private Date dateOfProcessing;
+
+	private CollectionProtocol cp;
 
 	private DistributionProtocol dp;
 
@@ -35,6 +59,8 @@ public class SpecimenRequest extends BaseExtensionEntity {
 	private String activityStatus;
 
 	private String comments;
+
+	private Set<DistributionOrder> orders = new HashSet<>();
 
 	public Long getCatalogId() {
 		return catalogId;
@@ -52,8 +78,16 @@ public class SpecimenRequest extends BaseExtensionEntity {
 		this.catalogQueryDef = catalogQueryDef;
 	}
 
+	public User getRequestor() {
+		return requestor;
+	}
+
+	public void setRequestor(User requestor) {
+		this.requestor = requestor;
+	}
+
 	public String getRequestorEmailId() {
-		return requestorEmailId;
+		return requestor != null ? requestor.getEmailAddress() : requestorEmailId;
 	}
 
 	public void setRequestorEmailId(String requestorEmailId) {
@@ -76,6 +110,38 @@ public class SpecimenRequest extends BaseExtensionEntity {
 		this.dateOfRequest = dateOfRequest;
 	}
 
+	public ScreeningStatus getScreeningStatus() {
+		return screeningStatus;
+	}
+
+	public void setScreeningStatus(ScreeningStatus screeningStatus) {
+		this.screeningStatus = screeningStatus;
+	}
+
+	public User getScreenedBy() {
+		return screenedBy;
+	}
+
+	public void setScreenedBy(User screenedBy) {
+		this.screenedBy = screenedBy;
+	}
+
+	public Date getDateOfScreening() {
+		return dateOfScreening;
+	}
+
+	public void setDateOfScreening(Date dateOfScreening) {
+		this.dateOfScreening = dateOfScreening;
+	}
+
+	public String getScreeningComments() {
+		return screeningComments;
+	}
+
+	public void setScreeningComments(String screeningComments) {
+		this.screeningComments = screeningComments;
+	}
+
 	public User getProcessedBy() {
 		return processedBy;
 	}
@@ -90,6 +156,14 @@ public class SpecimenRequest extends BaseExtensionEntity {
 
 	public void setDateOfProcessing(Date dateOfProcessing) {
 		this.dateOfProcessing = dateOfProcessing;
+	}
+
+	public CollectionProtocol getCp() {
+		return cp;
+	}
+
+	public void setCp(CollectionProtocol cp) {
+		this.cp = cp;
 	}
 
 	public DistributionProtocol getDp() {
@@ -132,6 +206,14 @@ public class SpecimenRequest extends BaseExtensionEntity {
 		this.comments = comments;
 	}
 
+	public Set<DistributionOrder> getOrders() {
+		return orders;
+	}
+
+	public void setOrders(Set<DistributionOrder> orders) {
+		this.orders = orders;
+	}
+
 	@Override
 	public String getEntityType() {
 		return "SpecimenRequest-" + catalogId;
@@ -168,5 +250,71 @@ public class SpecimenRequest extends BaseExtensionEntity {
 
 	public boolean isClosed() {
 		return Status.ACTIVITY_STATUS_CLOSED.getStatus().equals(getActivityStatus());
+	}
+
+	public boolean isApproved() {
+		return ScreeningStatus.APPROVED == getScreeningStatus();
+	}
+
+	public boolean isRejected() { return ScreeningStatus.REJECTED == getScreeningStatus(); }
+
+	public void approve(User user, Date time, String comments) {
+		if (isApproved()) {
+			// already approved, no change
+			return;
+		}
+
+		updateScreeningStatus(ScreeningStatus.APPROVED, user, time, comments);
+	}
+
+	public void reject(User user, Date time, String comments) {
+		if (isRejected()) {
+			return;
+		}
+
+		if (isApproved()) {
+			ensureReqIsNotUsedInOrder();
+		}
+
+		updateScreeningStatus(ScreeningStatus.REJECTED, user, time, comments);
+		close(comments);
+	}
+
+	public void resetScreeningStatus() {
+		if (isApproved()) {
+			ensureReqIsNotUsedInOrder();
+		}
+
+		updateScreeningStatus(ScreeningStatus.PENDING, null, null, null);
+	}
+
+	public static String getEntityName() {
+		return ENTITY_NAME;
+	}
+
+	private void updateScreeningStatus(ScreeningStatus inputStatus, User user, Date time, String comments) {
+		if (user == null && inputStatus != ScreeningStatus.PENDING) {
+			user = AuthUtil.getCurrentUser();
+		}
+
+		if (time == null && inputStatus != ScreeningStatus.PENDING) {
+			time = Calendar.getInstance().getTime();
+		}
+
+		if (time != null && time.after(getDateOfRequest())) {
+			time = Calendar.getInstance().getTime();
+		}
+
+		setScreeningStatus(inputStatus);
+		setScreenedBy(user);
+		setDateOfScreening(time);
+		setScreeningComments(comments);
+	}
+
+	private void ensureReqIsNotUsedInOrder() {
+		if (!getOrders().isEmpty()) {
+			String names = getOrders().stream().map(DistributionOrder::getName).collect(Collectors.joining(", "));
+			throw OpenSpecimenException.userError(SpecimenRequestErrorCode.USED_IN_ORDER, getId(), names);
+		}
 	}
 }

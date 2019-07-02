@@ -1,20 +1,35 @@
 angular.module('os.administrative.container.addedit', ['os.administrative.models'])
   .controller('ContainerAddEditCtrl', function(
-    $scope, $state, $stateParams, $q, container, containerType, barcodingEnabled,
-    Container, ContainerType, CollectionProtocol, PvManager, Util, Alerts) {
+    $scope, $state, $stateParams, $q, container, containerType, barcodingEnabled, extensionCtxt,
+    Container, ContainerType, CollectionProtocol, DistributionProtocol, ExtensionsUtil, PvManager, Util, Alerts) {
 
     var allSpecimenTypes = undefined;
     var allowedCps = undefined;
+    var allowedDps = undefined;
+    var defTypes   = undefined;
 
     function init() {
+      container.usedFor = (!container.id && 'STORAGE') || container.usedFor;
       container.storageLocation = container.storageLocation || {};
       container.$$regular = !container.id;
       container.$$dimensionless = !!container.id && container.noOfRows == null && container.noOfColumns == null;
       container.automated = !container.id ? false : container.automated;
+      if (container.$$dimensionless) {
+        container.noOfRows = container.noOfColumns = null;
+        container.typeId = container.typeName = null;
+      }
 
       $scope.container = container;
 
-      $scope.ctx = {mode: 'single', view: '', capacityReq: !!container.capacity, barcodingEnabled: barcodingEnabled};
+      $scope.ctx = {
+        mode: 'single',
+        view: '',
+        capacityReq: !!container.capacity,
+        barcodingEnabled: barcodingEnabled,
+        positionAssignments: PvManager.getPvs('container-position-assignments'),
+        extnOpts: ExtensionsUtil.getExtnOpts(container, extensionCtxt),
+        deFormCtrl: {}
+      };
       if ($stateParams.mode == 'createHierarchy') {
         $scope.ctx.mode = 'hierarchy';
       }
@@ -25,9 +40,11 @@ angular.module('os.administrative.container.addedit', ['os.administrative.models
        * Therefore we copy pre-selected cps and then use it when all CPs are loaded
        */
       allowedCps = angular.copy(container.allowedCollectionProtocols);
+      allowedDps = angular.copy(container.allowedDistributionProtocols);
 
       $scope.cps = [];
       $scope.specimenTypes = [];
+      $scope.containerTypes = [];
       loadPvs();
 
       $scope.specimenTypeSelectorOpts = {
@@ -56,7 +73,6 @@ angular.module('os.administrative.container.addedit', ['os.administrative.models
         restrictCpsAndSpecimenTypes();
       }
 
-      loadContainerTypes();
       setContainerTypeProps(containerType);
 
       watchParentContainer();
@@ -83,29 +99,47 @@ angular.module('os.administrative.container.addedit', ['os.administrative.models
       } else {
         loadAllCpsAndSpecimenTypes();
       }
-
     };
 
-    function loadContainerTypes() {
-      $scope.containerTypes = [];
-      ContainerType.query().then(function(containerTypes) {
-        $scope.containerTypes = containerTypes;
-      });
+    function loadContainerTypes(searchTerm) {
+      if (defTypes && (!searchTerm || defTypes.length <= 100)) {
+        $scope.containerTypes = defTypes;
+        return;
+      }
+
+      ContainerType.query({name: searchTerm, maxResults: 101}).then(
+        function(types) {
+          $scope.containerTypes = types;
+          if (!searchTerm) {
+            defTypes = types;
+          }
+        }
+      );
     }
     
     function restrictCpsAndSpecimenTypes() {
       var parentName = $scope.container.storageLocation.name;
       Container.getByName(parentName).then(
         function(parentContainer) {
-          restrictCps(parentContainer);
-          restrictSpecimenTypes(parentContainer);
+          var usedFor = container.usedFor = parentContainer.usedFor;
+
+          if (usedFor == 'STORAGE') {
+            restrictCps(parentContainer);
+            restrictSpecimenTypes(parentContainer);
+          } else if (usedFor == 'DISTRIBUTION') {
+            restrictDps(parentContainer);
+          }
         }
       );
     };
 
     function loadAllCpsAndSpecimenTypes() {
-      loadAllCps();
-      loadAllSpecimenTypes();
+      if (container.usedFor == 'STORAGE') {
+        loadAllCps();
+        loadAllSpecimenTypes();
+      } else if (container.usedFor == 'DISTRIBUTION') {
+        loadAllDps();
+      }
     };
      
     function restrictCps(parentContainer) {
@@ -122,7 +156,7 @@ angular.module('os.administrative.container.addedit', ['os.administrative.models
     function loadAllCps(siteName) {
       siteName = !siteName ? $scope.container.siteName : siteName;
 
-      CollectionProtocol.query({repositoryName: siteName, maxResults: 1000}).then(
+      CollectionProtocol.query({repositoryName: siteName, maxResults: CollectionProtocol.MAX_CPS}).then(
         function(cps) {
           $scope.cps = cps.map(function(cp) { return cp.shortTitle; });
 
@@ -175,25 +209,46 @@ angular.module('os.administrative.container.addedit', ['os.administrative.models
       );
     };
 
-    function saveContainer() {
-      var container = angular.copy($scope.container);
-      container.$saveOrUpdate().then(
+    function restrictDps(parentContainer) {
+      var parentDps = parentContainer.calcAllowedDistributionProtocols;
+      if (parentDps.length > 0) {
+        $scope.dps = parentDps;
+      } else {
+        loadAllDps();
+      }
+
+      $scope.container.allowedDistributionProtocols = allowedDps;
+    };
+
+    function loadAllDps(query) {
+      DistributionProtocol.query({query: query, maxResults: DistributionProtocol.MAX_DPS}).then(
+        function(dps) {
+          $scope.dps = dps.map(function(dp) { return dp.shortTitle; });
+
+          // fix - pre-selected cps were getting cleared
+          $scope.container.allowedDistributionProtocols = allowedDps;
+        }
+      );
+    };
+
+    function saveContainer(toSave) {
+      toSave.$saveOrUpdate().then(
         function(result) {
           $state.go('container-detail.locations', {containerId: result.id});
         }
       );
     };
 
-    function createMultipleContainers() {
-      var container = $scope.container, loc = $scope.container.storageLocation;
+    function createMultipleContainers(toSave) {
+      var loc = toSave.storageLocation;
       if (loc.name) {
-        Container.getVacantPositions(loc.name, loc.positionY, loc.positionX, loc.position, container.numOfContainers).then(
+        Container.getVacantPositions(loc.name, loc.positionY, loc.positionX, loc.position, toSave.numOfContainers).then(
           function(positions) {
-            createMultipleContainers0(container, positions);
+            createMultipleContainers0(toSave, positions);
           }
         );
       } else {
-        createMultipleContainers0(container, []);
+        createMultipleContainers0(toSave, []);
       }
     }
 
@@ -212,8 +267,8 @@ angular.module('os.administrative.container.addedit', ['os.administrative.models
       $scope.ctx.containers = containers;
     }
 
-    function createHierarchy() {
-      Container.createHierarchy($scope.container).then(
+    function createHierarchy(toSave) {
+      Container.createHierarchy(toSave).then(
         function(resp) {
           if (resp.length == 1) {
             //
@@ -255,6 +310,7 @@ angular.module('os.administrative.container.addedit', ['os.administrative.models
       $scope.container.positionLabelingMode = containerType.positionLabelingMode;
       $scope.container.rowLabelingScheme = containerType.rowLabelingScheme;
       $scope.container.columnLabelingScheme = containerType.columnLabelingScheme;
+      $scope.container.positionAssignment = containerType.positionAssignment;
       $scope.container.temperature = containerType.temperature;
       $scope.container.storeSpecimensEnabled = containerType.storeSpecimenEnabled;
     };
@@ -264,12 +320,22 @@ angular.module('os.administrative.container.addedit', ['os.administrative.models
     $scope.onSelectContainerType = setContainerTypeProps;
 
     $scope.save = function() {
+      var formCtrl = $scope.ctx.deFormCtrl.ctrl;
+      if (formCtrl && !formCtrl.validate()) {
+        return;
+      }
+
+      var toSave = angular.copy($scope.container);
+      if (formCtrl) {
+        toSave.extensionDetail = formCtrl.getFormData();
+      }
+
       if ($scope.ctx.mode == 'single') {
-        saveContainer();
+        saveContainer(toSave);
       } else if ($scope.ctx.mode == 'multiple') {
-        createMultipleContainers();
+        createMultipleContainers(toSave);
       } else if ($scope.ctx.mode == 'hierarchy') {
-        createHierarchy();
+        createHierarchy(toSave);
       }
     }
 
@@ -282,6 +348,17 @@ angular.module('os.administrative.container.addedit', ['os.administrative.models
       if ($scope.ctx.mode != 'single') {
         container.$$dimensionless = false;
       }
+    }
+
+    $scope.onUsedForChange = function() {
+      if (container.usedFor == 'DISTRIBUTION') {
+        container.allowedCollectionProtocols = container.allowedSpecimenClasses = container.allowedSpecimenTypes = [];
+      } else {
+        container.allowedDistributionProtocols = [];
+      }
+
+      container.storageLocation = {};
+      loadAllCpsAndSpecimenTypes();
     }
 
     //
@@ -351,6 +428,8 @@ angular.module('os.administrative.container.addedit', ['os.administrative.models
     $scope.setRegular = function() {
       $scope.container.$$dimensionless = $scope.container.automated = false;
     }
+
+    $scope.searchTypes = loadContainerTypes;
 
     init();
   });

@@ -38,15 +38,13 @@
             <div class="form-group">
               <div os-file-upload ctrl="consentFormUploader.ctrl"></div>
             </div>
-            <div class="form-group clearfix">
-              <div class="col-xs-6">
-                <button type="button" class="btn btn-success" ng-click="uploadConsentForm()" translate="common.buttons.upload">
-                  Upload
-                </button>
-                <a class="btn os-btn-text-secondary" ng-click="cancel()" translate="common.buttons.cancel">
-                  Cancel
-                </a>
-              </div>
+            <div class="form-group">
+              <button type="button" class="btn btn-success" ng-click="uploadConsentForm()">
+                <span translate="common.buttons.upload">Upload</span>
+              </button>
+              <a class="btn os-btn-text-secondary" ng-click="cancel()">
+                <span translate="common.buttons.cancel">Cancel</span>
+              </a>
             </div>
           </form>
         </div>
@@ -125,25 +123,24 @@
         </div>
       </div>
 
-      <div class="list-group-item clearfix" 
-        ng-repeat="consentTierResponse in consent.consentTierResponses" ng-init="consentTierResponseIdx = $index">
+      <div class="list-group-item clearfix" ng-repeat="response in consent.responses" ng-init="responseIdx = $index">
         <div>
           <div class="os-consent-stmt">
-            <span title="{{consentTierResponse.statement}}">
-              {{consentTierResponse.statement}} ({{consentTierResponse.code}})
+            <span title="{{response.statement}}">
+              {{response.statement}} ({{response.code}})
             </span>
           </div>
           <div ng-if="!editMode">
-            <span>{{consentTierResponse.response | osNoValue:'common.none'| translate}}</span>
+            <span>{{response.response | osNoValue:'common.none'| translate}}</span>
           </div>
           <div class="os-consent-response" ng-if="editMode">
-            <label class="radio-inline" ng-repeat="response in consentResponses">
-              <input type="radio" name="consentTierResponse{{consentTierResponseIdx}}"
-                ng-model="consentTierResponse.response" ng-value="response">
-              <span>{{response}}</span>
+            <label class="radio-inline" ng-repeat="allowedResponse in allowedResponses">
+              <input type="radio" name="response{{responseIdx}}"
+                ng-model="response.response" ng-value="allowedResponse">
+              <span>{{allowedResponse}}</span>
             </label>
 
-            <button class="btn btn-default btn-xs" ng-click="clearResponseSelection(consentTierResponse)">
+            <button class="btn btn-default btn-xs" ng-click="clearResponseSelection(response)">
               <span class="fa fa-remove" title="{{'participant.consent.clear' | translate}}"></span>
             </button>
           </div>

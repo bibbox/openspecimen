@@ -1,10 +1,10 @@
 
 angular.module('os.biospecimen.participant.addedit', ['os.biospecimen.models', 'os.administrative.models'])
   .controller('ParticipantAddEditCtrl', function(
-    $scope, $state, $stateParams, $translate, $modal, $q,
-    cp, cpr, extensionCtxt, hasDict, cpDict, twoStepReg,
-    mrnAccessRestriction, addPatientOnLookupFail, lookupFieldsCfg,
-    lockedFields, firstCpEvent,
+    $scope, $state, $stateParams, $translate, $modal, $q, $timeout,
+    cp, cpr, extensionCtxt, hasDict, cpDict, twoStepReg, layout,
+    onValueChangeCb, mrnAccessRestriction, addPatientOnLookupFail,
+    lookupFieldsCfg, lockedFields, cpEvents,
     CpConfigSvc, CollectionProtocolRegistration, Participant,
     Visit, CollectSpecimensSvc, Site, PvManager, ExtensionsUtil, Alerts) {
 
@@ -19,8 +19,15 @@ angular.module('os.biospecimen.participant.addedit', ['os.biospecimen.models', '
       setBirthDate($scope.cpr);
 
       $scope.partCtx = {
-        firstCpEvent: firstCpEvent,
-        fieldOpts: {lockedFields: lockedFields},
+        cpSites: cp.cpSites.map(function(cpSite) { return cpSite.siteName; }),
+        cpEvents: cpEvents,
+        fieldOpts: {
+          viewCtx: $scope,
+          lockedFields: lockedFields,
+          layout: layout,
+          onValueChange: onValueChangeCb,
+          mdInput: false
+        },
         twoStep: lookupFieldsCfg.configured,
         edit: !!cpr.id,
         obj: {cpr: $scope.cpr, cp: cp},
@@ -42,6 +49,7 @@ angular.module('os.biospecimen.participant.addedit', ['os.biospecimen.models', '
         initDisableFieldOpts(lockedFields);
       }
 
+      $scope.op         = !!$scope.cpr.id ? 'Update' : 'Create';
       $scope.deFormCtrl = {};
       $scope.extnOpts = ExtensionsUtil.getExtnOpts(
         $scope.cpr.participant, extensionCtxt, $scope.disableFieldOpts.customFields);
@@ -50,7 +58,6 @@ angular.module('os.biospecimen.participant.addedit', ['os.biospecimen.models', '
         $scope.cpr.participant.addPmi($scope.cpr.participant.newPmi());
         loadPvs();
       }
-
     };
 
     function onMatchSelect(match) {
@@ -62,7 +69,7 @@ angular.module('os.biospecimen.participant.addedit', ['os.biospecimen.models', '
         fields: getStaticFields(lockedFields),
         customFields: getCustomFields(lockedFields)
       }
-      $scope.partCtx.fieldOpts = {lockedFields: lockedFields};
+      angular.extend($scope.partCtx.fieldOpts, {lockedFields: lockedFields});
     }
 
     function getStaticFields(fields) {
@@ -120,12 +127,11 @@ angular.module('os.biospecimen.participant.addedit', ['os.biospecimen.models', '
     }
 
     function loadPvs() {
-      $scope.op            = !!$scope.cpr.id ? 'Update' : 'Create';
       $scope.genders       = PvManager.getPvs('gender');
       $scope.vitalStatuses = PvManager.getPvs('vital-status');
     };
 
-    function registerParticipant(proceedToSpmnColl) {
+    function registerParticipant(event) {
       var formCtrl = $scope.deFormCtrl.ctrl;
       if (formCtrl && !formCtrl.validate()) {
         return;
@@ -133,6 +139,7 @@ angular.module('os.biospecimen.participant.addedit', ['os.biospecimen.models', '
 
       var cprToSave = angular.copy($scope.cpr);
       cprToSave.cpId = $scope.cpId;
+      cprToSave.site = cprToSave.site || '';
 
       if (formCtrl) {
         cprToSave.participant.extensionDetail = formCtrl.getFormData();
@@ -143,10 +150,12 @@ angular.module('os.biospecimen.participant.addedit', ['os.biospecimen.models', '
           if (savedCpr.activityStatus == 'Active') {
             var registeredCps = cpr.participant.registeredCps;
             angular.extend(cpr, savedCpr);
+            cpr.site = savedCpr.site;
+
             cpr.participant.registeredCps = registeredCps;
 
-            if (proceedToSpmnColl) {
-              gotoSpmnCollection(savedCpr);
+            if (event) {
+              gotoSpmnCollection(savedCpr, event);
             } else {
               $state.go('participant-detail.overview', {cprId: savedCpr.id});
             }
@@ -157,9 +166,9 @@ angular.module('os.biospecimen.participant.addedit', ['os.biospecimen.models', '
       );
     };
 
-    function gotoSpmnCollection(cpr) {
+    function gotoSpmnCollection(cpr, event) {
       var state = $state.get('participant-detail.overview');
-      var visit = new Visit({cpId: cp.id, cprId: cpr.id, eventId: firstCpEvent.id});
+      var visit = new Visit({cpId: cp.id, cprId: cpr.id, eventId: event.id});
       CollectSpecimensSvc.collectVisit({state: state, params: {cprId: cpr.id}}, cp, cpr.id, visit);
     }
 
@@ -233,7 +242,7 @@ angular.module('os.biospecimen.participant.addedit', ['os.biospecimen.models', '
       );
     }
 
-    function handleParticipantMatches(matches, proceedToSpmnColl) {
+    function handleParticipantMatches(matches, event) {
       $scope.partCtx.matches = matches;
       $scope.partCtx.matchAutoSelected = false;
       $scope.partCtx.allowIgnoreMatches = matches.every(
@@ -252,7 +261,7 @@ angular.module('os.biospecimen.participant.addedit', ['os.biospecimen.models', '
           }
 
           match.cpr = {participant: match.participant};
-          match.cps = match.participant.registeredCps.map(function(reg) { return reg.cpShortTitle; });
+          match.cps = (match.participant.registeredCps || []).map(function(reg) { return reg.cpShortTitle; });
         }
       );
 
@@ -263,7 +272,7 @@ angular.module('os.biospecimen.participant.addedit', ['os.biospecimen.models', '
           Alerts.error('participant.no_matching_participant');
         } else {
           if (!lookupFieldsCfg.configured) {
-            registerParticipant(proceedToSpmnColl);
+            registerParticipant(event);
           } else {
             $scope.partCtx.step = 'registerParticipant';
           }
@@ -273,6 +282,7 @@ angular.module('os.biospecimen.participant.addedit', ['os.biospecimen.models', '
         useSelectedMatch(matches[0]);
       } else {
         $scope.partCtx.step = 'chooseMatch';
+        $scope.partCtx.selectedMatch = null;
       }
     }
 
@@ -291,7 +301,7 @@ angular.module('os.biospecimen.participant.addedit', ['os.biospecimen.models', '
     function useSelectedMatch(match) {
       var matchedCprId = undefined;
       var participant = match.participant;
-      for (var i = 0; i < participant.registeredCps.length; ++i) {
+      for (var i = 0; i < (participant.registeredCps || []).length; ++i) {
         if (participant.registeredCps[i].cpId == cp.id) {
           matchedCprId = participant.registeredCps[i].cprId;
           break;
@@ -400,6 +410,13 @@ angular.module('os.biospecimen.participant.addedit', ['os.biospecimen.models', '
       }
     }
 
+    $scope.vitalStatusChanged = function() {
+      var p = $scope.cpr.participant;
+      if (p.vitalStatus != 'Dead' && !!p.deathDate) {
+        p.deathDate = null;
+      }
+    }
+
     $scope.pmiText = function(pmi) {
       return pmi.siteName + (pmi.mrn ? " (" + pmi.mrn + ")" : "");
     }
@@ -424,20 +441,24 @@ angular.module('os.biospecimen.participant.addedit', ['os.biospecimen.models', '
       }
     };
 
-    $scope.register = function(proceedToSpmnColl) {
+    $scope.register = function(event) {
       if ($scope.partCtx.edit) {
         cacheInputParticipant();
-        $scope.cpr.participant.getMatchingParticipants().then(handleParticipantMatches);
+        $scope.cpr.participant.getMatchingParticipants().then(
+          function(matches) {
+            handleParticipantMatches(matches, event)
+          }
+        );
       } else {
-        registerParticipant(proceedToSpmnColl);
+        registerParticipant(event);
       }
     };
 
-    $scope.lookup = function(proceedToSpmnColl) {
+    $scope.lookup = function(event) {
       cacheInputParticipant();
       $scope.cpr.participant.getMatchingParticipants().then(
         function(matches) {
-          handleParticipantMatches(matches, proceedToSpmnColl)
+          handleParticipantMatches(matches, event)
         }
       );
     }
@@ -470,8 +491,18 @@ angular.module('os.biospecimen.participant.addedit', ['os.biospecimen.models', '
           match.$$selected = false;
         }
       );
-      $scope.partCtx.obj.cpr = $scope.cpr = angular.copy(inputParticipant);
-      $scope.partCtx.step = 'registerParticipant';
+
+      if (!lookupFieldsCfg.configured || $scope.partCtx.edit) {
+        registerParticipant();
+      } else {
+        var cpr = $scope.partCtx.obj.cpr = $scope.cpr = angular.copy(inputParticipant);
+        if (cpr.participant && typeof cpr.participant.birthDate == 'string') {
+          var bd = cpr.participant.birthDate.split('-');
+          cpr.participant.birthDate = new Date(+bd[0], +bd[1] - 1, bd[2]);
+        }
+
+        $scope.partCtx.step = 'registerParticipant';
+      }
     }
 
     $scope.previous = function() {
@@ -490,6 +521,17 @@ angular.module('os.biospecimen.participant.addedit', ['os.biospecimen.models', '
       } else {
         $scope.back();
       }
+    }
+
+    $scope.toggleEventsMenu = function(open) {
+      if (!open) {
+        return;
+      }
+
+      $timeout(function() {
+        var el = $scope.partCtx.eventsDd[0];
+        el.scrollIntoView(true);
+      });
     }
 
     init();

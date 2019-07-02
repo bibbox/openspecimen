@@ -9,7 +9,8 @@ angular.module('os.administrative.container.locations', ['os.administrative.mode
         mapState: 'loading',
         input: {labels: '', noFreeLocs: false, vacateOccupants: false, useBarcode: false},
         entityInfo: {},
-        barcodingEnabled: barcodingEnabled
+        barcodingEnabled: barcodingEnabled,
+        selected: []
       };
 
       if (container.noOfRows > 0 && container.noOfColumns > 0) {
@@ -21,8 +22,7 @@ angular.module('os.administrative.container.locations', ['os.administrative.mode
       $scope.lctx.mapState = 'loading';
       container.getOccupiedPositions().then(
         function(occupancyMap) {
-          $scope.lctx.mapState = 'loaded';
-          $scope.lctx.pristineMap = $scope.lctx.occupancyMap = occupancyMap;
+          setMap(occupancyMap);
         },
 
         function() {
@@ -31,14 +31,23 @@ angular.module('os.administrative.container.locations', ['os.administrative.mode
       );
     }
 
-    function addSpecimens() {
-      var labels = Util.splitStr($scope.lctx.input.labels,/,|\t|\n/, false)
+    function setMap(occupancyMap) {
+      $scope.lctx.mapState = 'loaded';
+      $scope.lctx.pristineMap = $scope.lctx.occupancyMap = occupancyMap;
+      $scope.lctx.hasFreeSlots = (occupancyMap.length < container.noOfRows * container.noOfColumns);
+      $scope.lctx.hasBlockedSlots = occupancyMap.some(function(slot) { return slot.blocked; });
+      $scope.lctx.selected = [];
+      $scope.lctx.input.labels = undefined;
+    }
+
+    function addSpecimens(labels) {
       var filterOpts = {};
       if (!!$scope.lctx.input.useBarcode) {
         filterOpts.barcode = labels;
         labels = undefined;
       }
-      SpecimenUtil.getSpecimens(labels, filterOpts).then(
+
+      ContainerUtil.getSpecimens(labels, filterOpts).then(
         function(specimens) {
           if (!specimens) {
             return;
@@ -59,6 +68,20 @@ angular.module('os.administrative.container.locations', ['os.administrative.mode
           );
         }
       );
+    }
+
+    function getDupLabels(labels) {
+      var labelsMap = {}, result = [];
+      for (var i = 0; i < labels.length; ++i) {
+        var instance = labelsMap[labels[i]] || 0;
+        if (instance == 1) {
+          result.push(labels[i]);
+        }
+
+        labelsMap[labels[i]] = ++instance;
+      }
+
+      return result;
     }
 
     $scope.showInfo = function(entityType, entityId) {
@@ -121,8 +144,15 @@ angular.module('os.administrative.container.locations', ['os.administrative.mode
     }
 
     $scope.assignPositions = function() {
+      var labels = Util.splitStr($scope.lctx.input.labels, /,|\t|\n/, false);
+      var dups = getDupLabels(labels);
+      if (dups.length > 0) {
+        Alerts.error('container.dup_labels', {barcodes: $scope.lctx.input.useBarcode, dups: dups.join(', ')});
+        return;
+      }
+
       if ($scope.ctx.dimless) {
-        addSpecimens();
+        addSpecimens(labels);
         return;
       }
 
@@ -156,13 +186,13 @@ angular.module('os.administrative.container.locations', ['os.administrative.mode
         }
       );
 
-      var filterOpts = {};
+      var filterOpts = {exactMatch: true};
       if (!!$scope.lctx.input.useBarcode) {
         filterOpts.barcode = labels;
         labels = undefined;
       }
 
-      SpecimenUtil.getSpecimens(labels, filterOpts).then(
+      ContainerUtil.getSpecimens(labels, filterOpts).then(
         function(specimens) {
           if (!specimens) {
             return;
@@ -191,12 +221,82 @@ angular.module('os.administrative.container.locations', ['os.administrative.mode
           var assignOp = {vacateOccupant: $scope.lctx.input.vacateOccupants, positions: positions};
           container.assignPositions(assignOp).then(
             function(latestOccupancyMap) {
-              $scope.lctx.pristineMap = $scope.lctx.occupancyMap = latestOccupancyMap;
-              $scope.lctx.input.labels = undefined;
+              setMap(latestOccupancyMap);
             }
           );
         }
       );
+    }
+
+    $scope.toggleCellSelect = function(cell) {
+      var selected = $scope.lctx.selected;
+
+      if (cell.selected) {
+        if (!cell.id) { // unoccupied cell
+          selected.push(cell);
+        } else {
+          var positions = $scope.lctx.pristineMap;
+          for (var i = 0; i < positions.length; ++i) {
+            if (positions[i].id == cell.id) {
+              selected.push(positions[i]);
+              break;
+            }
+          }
+        }
+      } else {
+        for (var i = $scope.lctx.selected.length - 1; i >= 0; --i) {
+          if (cell.posOne == selected[i].posOne && cell.posTwo == selected[i].posTwo) {
+            selected.splice(i, 1);
+            break;
+          }
+        }
+      }
+    }
+
+    $scope.blockPositions = function() {
+      var selectedCells = $scope.lctx.selected;
+      var positions = [];
+      for (var i = 0; i < selectedCells.length; ++i) {
+        if (!!selectedCells[i].id) {
+          break;
+        }
+
+        positions.push({posOne: selectedCells[i].posOne, posTwo: selectedCells[i].posTwo});
+      }
+
+      if (positions.length != selectedCells.length) {
+        Alerts.error('container.empty_cells_can_be_blocked');
+        return;
+      }
+
+      container.blockPositions(positions).then(setMap);
+    }
+
+    $scope.blockAllPositions = function() {
+      container.blockPositions([]).then(setMap);
+    }
+
+    $scope.unblockPositions = function() {
+      var positions = [];
+      var selectedCells = $scope.lctx.selected;
+      for (var i = 0; i < selectedCells.length; ++i) {
+        if (!selectedCells[i].blocked) {
+          break;
+        }
+
+        positions.push({posOne: selectedCells[i].posOne, posTwo: selectedCells[i].posTwo});
+      }
+
+      if (positions.length != selectedCells.length) {
+        Alerts.error('container.blocked_cells_can_be_unblocked');
+        return;
+      }
+
+      container.unblockPositions(positions).then(setMap);
+    }
+
+    $scope.unblockAllPositions = function() {
+      container.unblockPositions([]).then(setMap);
     }
 
     init();

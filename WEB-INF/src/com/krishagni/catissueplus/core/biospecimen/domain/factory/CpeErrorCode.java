@@ -12,14 +12,20 @@ public enum CpeErrorCode implements ErrorCode {
 	LABEL_REQUIRED,
 	
 	INVALID_POINT,
-	
+
+	POINT_UNIT_REQUIRED,
+
+	INVALID_POINT_UNIT,
+
 	INVALID_CLINICAL_DIAGNOSIS,
 	
 	INVALID_CLINICAL_STATUS,	
 	
 	CP_REQUIRED,
 
-	IDS_OR_LABELS_REQUIRED;
+	IDS_OR_LABELS_REQUIRED,
+
+	CLOSED;
 
 	@Override
 	public String code() {

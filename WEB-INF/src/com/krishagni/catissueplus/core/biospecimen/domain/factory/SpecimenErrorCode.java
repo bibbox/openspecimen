@@ -4,6 +4,8 @@ package com.krishagni.catissueplus.core.biospecimen.domain.factory;
 import com.krishagni.catissueplus.core.common.errors.ErrorCode;
 
 public enum SpecimenErrorCode implements ErrorCode {
+	ACCESS_DENIED,
+	
 	NOT_FOUND,
 	
 	INVALID_SPECIMEN_CLASS,
@@ -23,8 +25,12 @@ public enum SpecimenErrorCode implements ErrorCode {
 	INVALID_LABEL,
 	
 	MANUAL_LABEL_NOT_ALLOWED,
+
+	MANUAL_BARCODE_NOT_ALLOWED,
 	
 	DUP_BARCODE,
+
+	DUP_BARCODE_IN_CP,
 	
 	INVALID_LINEAGE,
 	
@@ -43,6 +49,8 @@ public enum SpecimenErrorCode implements ErrorCode {
 	COLL_OR_MISSED_PARENT_REQ,
 	
 	COLL_OR_PENDING_PARENT_REQ,
+
+	COLL_OR_NC_PARENT_REQ,
 	
 	SPECIMEN_CLASS_REQUIRED,
 	
@@ -57,6 +65,8 @@ public enum SpecimenErrorCode implements ErrorCode {
 	LATERALITY_NOT_SAME_AS_PARENT,
 	
 	INVALID_PATHOLOGY_STATUS,
+
+	PATHOLOGY_NOT_SAME_AS_PARENT,
 	
 	COLL_DATE_REQUIRED,
 	
@@ -104,6 +114,8 @@ public enum SpecimenErrorCode implements ErrorCode {
 
 	UQ_LBL_CP_CHG_NA,
 
+	UQ_BC_CP_CHG_NA,
+
 	INVALID_DISPOSE_STATUS,
 
 	DISPOSAL_DT_LT_COLL_DT,
@@ -114,7 +126,13 @@ public enum SpecimenErrorCode implements ErrorCode {
 
 	PARENT_CONTAINER_REQ,
 
-	CONTAINER_TYPE_REQ;
+	CONTAINER_TYPE_REQ,
+
+	EXT_ID_NO_NAME_VALUE,
+
+	EXT_ID_DUP_NAME,
+
+	VISIT_CHG_NOT_ALLOWED;
 
 	public String code() {
 		return "SPECIMEN_" + this.name();

@@ -1,5 +1,5 @@
 angular.module('os.biospecimen.models.specimen', ['os.common.models', 'os.biospecimen.models.form'])
-  .factory('Specimen', function(osModel, $http, $parse, SpecimenRequirement, Form, Util) {
+  .factory('Specimen', function(osModel, $http, $parse, SpecimenRequirement, Form, Util, User) {
 
     function matches(name, regex) {
       return name && name.match(regex) != null;
@@ -29,6 +29,9 @@ angular.module('os.biospecimen.models.specimen', ['os.common.models', 'os.biospe
           );
         }
 
+        if (specimen.storageLocation) {
+          specimen.storageLocation = angular.extend({}, specimen.storageLocation);
+        }
         specimen.$$specimenCentricCp = isSpecimenCentric(specimen);
       }
     );
@@ -41,7 +44,7 @@ angular.module('os.biospecimen.models.specimen', ['os.common.models', 'os.biospe
       return Specimen.query({label: labels});
     };
     
-    Specimen.flatten = function(specimens, parent, depth, pooledSpecimen) {
+    Specimen.flatten = function(specimens, parent, depth, pooledSpecimen, opts) {
       var result = [];
       if (!specimens) {
         return result;
@@ -49,9 +52,17 @@ angular.module('os.biospecimen.models.specimen', ['os.common.models', 'os.biospe
 
       depth = depth || 0;
       angular.forEach(specimens, function(specimen) {
-        result.push(specimen);
-        specimen.depth = depth || 0;
+        var depthIncrStep = 1;
+        var hasChildren = (!!specimen.children && specimen.children.length > 0);
+        if (opts && opts.hideDerivatives && !specimen.reqId && specimen.lineage == 'Derived' && hasChildren &&
+          specimen.children.every(function(a) { return a.lineage == 'Aliquot'; })) {
+          depthIncrStep = 0;
+          specimen.$$invisibleN = true;
+        } else {
+          result.push(specimen);
+        }
 
+        specimen.depth = depth || 0;
         specimen.parent = specimen.parent || parent;
         specimen.pooledSpecimen = specimen.pooledSpecimen || pooledSpecimen;
 
@@ -59,14 +70,13 @@ angular.module('os.biospecimen.models.specimen', ['os.common.models', 'os.biospe
         if (depth == 0) {
           hasSpecimensPool = !!specimen.specimensPool && specimen.specimensPool.length > 0;
           if (hasSpecimensPool) {
-            result = result.concat(Specimen.flatten(specimen.specimensPool, specimen, depth + 1, specimen));
+            result = result.concat(Specimen.flatten(specimen.specimensPool, specimen, depth + 1, specimen, opts));
           }
         }
 
-        var hasChildren = (!!specimen.children && specimen.children.length > 0);
         specimen.hasChildren = hasSpecimensPool || hasChildren;
         if (hasChildren) {
-          result = result.concat(Specimen.flatten(specimen.children, specimen, depth + 1));
+          result = result.concat(Specimen.flatten(specimen.children, specimen, depth + depthIncrStep, undefined, opts));
         }
 
         if (specimen instanceof SpecimenRequirement) {
@@ -77,6 +87,14 @@ angular.module('os.biospecimen.models.specimen', ['os.common.models', 'os.biospe
         if (specimen.hasOnlyPendingChildren) {
           specimen.hasOnlyPendingChildren = hasOnlyPendingChildren(specimen.specimensPool);
         }
+
+        if (hasSpecimensPool) {
+          specimen.$$childrenHaveImg = hasImage(specimen.specimensPool);
+        }
+
+        if (!specimen.$$childrenHaveImg && hasChildren) {
+          specimen.$$childrenHaveImg = hasImage(specimen.children);
+        }
       });
 
       return result;
@@ -86,6 +104,12 @@ angular.module('os.biospecimen.models.specimen', ['os.common.models', 'os.biospe
       return $http.post(Specimen.url() + 'collect', specimens).then(Specimen.modelArrayRespTransform);
     };
 
+    //Update specimens in bulk with same detail
+    Specimen.bulkEdit = function(detail) {
+      return $http.put(Specimen.url() + "bulk-update", detail).then(Specimen.modelArrayRespTransform);
+    }
+
+    //Update specimens in bulk by providing detail for each
     Specimen.bulkUpdate = function(specimens) {
       return $http.put(Specimen.url(), specimens).then(Specimen.modelArrayRespTransform);
     };
@@ -118,8 +142,8 @@ angular.module('os.biospecimen.models.specimen', ['os.common.models', 'os.biospe
       );
     }
 
-    Specimen.bulkDelete = function(specimenIds) {
-      return $http.delete(Specimen.url(), {params: {id: specimenIds}}).then(
+    Specimen.bulkDelete = function(specimenIds, reason) {
+      return $http.delete(Specimen.url(), {params: {id: specimenIds, reason: reason}}).then(
         function(result) {
           return result.data;
         }
@@ -134,8 +158,8 @@ angular.module('os.biospecimen.models.specimen', ['os.common.models', 'os.biospe
       );
     }
 
-    Specimen.getByIds = function(ids) {
-      return Specimen.query({id: ids});
+    Specimen.getByIds = function(ids, includeExtensions) {
+      return Specimen.query({id: ids, includeExtensions: includeExtensions});
     }
 
     Specimen.prototype.getType = function() {
@@ -165,6 +189,14 @@ angular.module('os.biospecimen.models.specimen', ['os.common.models', 'os.biospe
 
       return curr;
     };
+
+    Specimen.prototype.getPrimarySpecimenId = function() {
+      return $http.get(Specimen.url() + this.$id() + '/primary-specimen-id').then(
+        function(resp) {
+          return resp.data.id;
+        }
+      );
+    }
 
     Specimen.prototype.getExtensionCtxt = function(params) {
       return Specimen.getExtensionCtxt(params);
@@ -229,10 +261,78 @@ angular.module('os.biospecimen.models.specimen', ['os.common.models', 'os.biospe
       return {index: result, rule: result != -1 ? allocRules[result] : undefined};
     }
 
+    Specimen.prototype.setCollectionEvent = function(formData) {
+      if (this.lineage != 'New') {
+        return;
+      }
+
+      var eventData = {
+        id: formData.id,
+        user: {id: formData.user},
+        time: formData.time,
+        comments: formData.comments,
+        procedure: formData.procedure,
+        container: formData.container
+      }
+
+      if (!this.collectionEvent) {
+        this.collectionEvent = {};
+      }
+
+      if (this.collectionEvent.user && this.collectionEvent.user.id == eventData.user.id) {
+        eventData.user = this.collectionEvent.user;
+      } else {
+        var that = this;
+        User.getById(eventData.user.id).then(
+          function(user) {
+            that.collectionEvent.user = user;
+          }
+        )
+      }
+
+      angular.extend(this.collectionEvent, eventData);
+    }
+
+    Specimen.prototype.setReceivedEvent = function(formData) {
+      if (this.lineage != 'New') {
+        return;
+      }
+
+      var eventData = {
+        id: formData.id,
+        user: {id: formData.user},
+        time: formData.time,
+        comments: formData.comments,
+        receivedQuality: formData.quality
+      }
+
+      if (!this.receivedEvent) {
+        this.receivedEvent = {};
+      }
+
+      if (this.receivedEvent.user && this.receivedEvent.user.id == eventData.user.id) {
+        eventData.user = this.receivedEvent.user;
+      } else {
+        var that = this;
+        User.getById(eventData.user.id).then(
+          function(user) {
+            that.receivedEvent.user = user;
+          }
+        )
+      }
+
+      angular.extend(this.receivedEvent, eventData);
+    }
+
     function toSpecimenAttrs(sr) {
       sr.reqId = sr.id;
       sr.reqLabel = sr.name;
       sr.poolSpecimen = !!sr.pooledSpecimenReqId;
+
+      if (sr.lineage == 'New' && !sr.poolSpecimen) {
+        sr.collectionEvent = {user: sr.collector, procedure: sr.collectionProcedure, container: sr.collectionContainer};
+        sr.receivedEvent   = {user: sr.receiver, receivedQuality: 'Acceptable'};
+      }
 
       var attrs = [
         'id', 'name', 'pooledSpecimenReqId',
@@ -268,15 +368,18 @@ angular.module('os.biospecimen.models.specimen', ['os.common.models', 'os.biospe
             }
           }
 
+          var formName = eventRecs.name;
           eventsList.push({
             id: record.recordId,
             formId: eventRecs.id,
             formCtxtId: record.fcId,
+            sysForm: record.sysForm,
             name: eventRecs.caption,
             updatedBy: record.user,
             updateTime: record.updateTime,
             user: user,
-            time: time
+            time: time,
+            isEditable: !record.sysForm || formName == 'SpecimenCollectionEvent' || formName == 'SpecimenReceivedEvent'
           });
         });
       });
@@ -294,8 +397,8 @@ angular.module('os.biospecimen.models.specimen', ['os.common.models', 'os.biospe
     function updateSpecimenStatus(specimen, statusSpec) {
       return $http.put(Specimen.url() + '/' + specimen.$id() + '/status', statusSpec).then(
         function(result) {
-          angular.extend(specimen, result.data);
-          return new Specimen(result);
+          specimen.activityStatus = result.data.activityStatus;
+          return specimen;
         }
       );
     }
@@ -308,6 +411,14 @@ angular.module('os.biospecimen.models.specimen', ['os.common.models', 'os.biospe
       return specimens.every(
         function(spmn) {
           return !spmn.status || spmn.status == 'Pending';
+        }
+      );
+    }
+
+    function hasImage(specimens) {
+      return (specimens || []).some(
+        function(spmn) {
+          return !!spmn.imageId || !!spmn.$$childrenHaveImg;
         }
       );
     }

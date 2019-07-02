@@ -9,8 +9,10 @@ import java.util.Calendar;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
@@ -24,6 +26,7 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.factory.InitializingBean;
 
+import com.krishagni.catissueplus.core.audit.services.impl.DeleteLogUtil;
 import com.krishagni.catissueplus.core.biospecimen.ConfigParams;
 import com.krishagni.catissueplus.core.biospecimen.domain.AnonymizeEvent;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
@@ -57,7 +60,6 @@ import com.krishagni.catissueplus.core.biospecimen.events.RegistrationQueryCrite
 import com.krishagni.catissueplus.core.biospecimen.events.SpecimenDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.VisitDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.VisitSpecimensQueryCriteria;
-import com.krishagni.catissueplus.core.biospecimen.events.VisitSummary;
 import com.krishagni.catissueplus.core.biospecimen.repository.CprListCriteria;
 import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
 import com.krishagni.catissueplus.core.biospecimen.repository.VisitsListCriteria;
@@ -80,6 +82,7 @@ import com.krishagni.catissueplus.core.common.service.impl.ConfigurationServiceI
 import com.krishagni.catissueplus.core.common.util.AuthUtil;
 import com.krishagni.catissueplus.core.common.util.Status;
 import com.krishagni.catissueplus.core.common.util.Utility;
+import com.krishagni.catissueplus.core.de.domain.DeObject;
 import com.krishagni.catissueplus.core.exporter.domain.ExportJob;
 import com.krishagni.catissueplus.core.exporter.services.ExportService;
 import com.krishagni.rbac.common.errors.RbacErrorCode;
@@ -274,8 +277,11 @@ public class CollectionProtocolRegistrationServiceImpl implements CollectionProt
 			CpEntityDeleteCriteria crit = req.getPayload();
 			CollectionProtocolRegistration cpr = getCpr(crit.getId(), null, crit.getCpShortTitle(), crit.getName());
 			raiseErrorIfSpecimenCentric(cpr);
+
 			AccessCtrlMgr.getInstance().ensureDeleteCprRights(cpr);
-			cpr.delete(!crit.isForceDelete());
+			cpr.setOpComments(crit.getReason());
+			cpr.delete(!crit.isForceDelete(), crit.booleanParam("checkOnlyCollectedSpmns"));
+			DeleteLogUtil.getInstance().log(cpr);
 			return ResponseEvent.response(CollectionProtocolRegistrationDetail.from(cpr, false));
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
@@ -437,11 +443,46 @@ public class CollectionProtocolRegistrationServiceImpl implements CollectionProt
 
 	@Override
 	@PlusTransactional
-	public ResponseEvent<List<VisitSummary>> getVisits(RequestEvent<VisitsListCriteria> req) {
+	public ResponseEvent<List<VisitDetail>> getVisits(RequestEvent<VisitsListCriteria> req) {
 		try {
+			VisitsListCriteria crit = req.getPayload();
 			CollectionProtocolRegistration cpr = getCpr(req.getPayload().cprId(), null, null);
-			AccessCtrlMgr.getInstance().ensureReadVisitRights(cpr, false);
-			return ResponseEvent.response(daoFactory.getVisitsDao().getVisits(req.getPayload()));
+			boolean hasPhiAccess = AccessCtrlMgr.getInstance().ensureReadVisitRights(cpr, true);
+
+			//
+			// Step 1: Fetch all created visit records along with their custom fields and stats
+			//
+			Collection<Visit> visits = cpr.getVisits();
+			DeObject.createExtensions(true, Visit.EXTN, cpr.getCollectionProtocol().getId(), visits);
+			Map<Long, VisitDetail> visitsMap = visits.stream()
+				.collect(Collectors.toMap(Visit::getId, v -> VisitDetail.from(v, false, !hasPhiAccess)));
+			if (crit.includeStat()) {
+				daoFactory.getVisitsDao().loadCreatedVisitStats(visitsMap);
+			}
+
+			//
+			// Step 2: Fetch anticipated visits and their details
+			//
+			Set<Long> occurredEvents = visits.stream()
+				.map(Visit::getCpEvent).filter(Objects::nonNull).map(CollectionProtocolEvent::getId)
+				.collect(Collectors.toSet());
+			Set<CollectionProtocolEvent> unoccurredEvents = cpr.getCollectionProtocol().getCollectionProtocolEvents()
+				.stream().filter(cpe -> !cpe.isClosed() && !occurredEvents.contains(cpe.getId()))
+				.collect(Collectors.toSet());
+			Map<Long, VisitDetail> anticipatedVisitsMap = unoccurredEvents.stream()
+				.collect(Collectors.toMap(CollectionProtocolEvent::getId, VisitDetail::from));
+			if (crit.includeStat()) {
+				daoFactory.getVisitsDao().loadAnticipatedVisitStats(anticipatedVisitsMap);
+			}
+
+			//
+			// Step 3: Merge, set anticipated visit dates, sort and return
+			//
+			List<VisitDetail> result = new ArrayList<>(visitsMap.values());
+			result.addAll(anticipatedVisitsMap.values());
+			VisitDetail.setAnticipatedVisitDates(cpr.getRegistrationDate(), result);
+			Collections.sort(result);
+			return ResponseEvent.response(result);
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
 		} catch (Exception e) {
@@ -473,11 +514,11 @@ public class CollectionProtocolRegistrationServiceImpl implements CollectionProt
 		
 		try {
 			CollectionProtocolRegistration cpr = getCpr(req.getPayload().getCprId(), null, null);
-			AccessCtrlMgr.getInstance().ensureReadSpecimenRights(cpr, false);
+			boolean phiAccess = AccessCtrlMgr.getInstance().ensureReadSpecimenRights(cpr, true);
 
 			List<SpecimenDetail> specimens = Collections.emptyList();			
-			if (crit.getVisitId() != null) {
-				specimens = getSpecimensByVisit(crit.getCprId(), crit.getVisitId());
+			if (crit.getVisitId() != null || crit.getEventId() == null) {
+				specimens = getSpecimensByVisit(cpr, crit.getVisitId(), !phiAccess);
 				checkDistributedSpecimens(specimens);
 			} else if (crit.getEventId() != null) {
 				specimens = getAnticipatedSpecimens(crit.getCprId(), crit.getEventId());
@@ -600,12 +641,16 @@ public class CollectionProtocolRegistrationServiceImpl implements CollectionProt
 			existing.update(cpr);
 			cpr = existing;
 		}
-		
+
 		cpr.setPpidIfEmpty();
 		daoFactory.getCprDao().saveOrUpdate(cpr);
 
 		if (existing == null && cpr.isSpecimenLabelPrePrintOnRegEnabled()) {
 			addVisits(cpr, cpes == null ? cpr.getCollectionProtocol().getOrderedCpeList() : cpes, collectionSite);
+		}
+
+		if (cpr.isDeleted()) {
+			DeleteLogUtil.getInstance().log(cpr);
 		}
 
 		return cpr;
@@ -620,7 +665,7 @@ public class CollectionProtocolRegistrationServiceImpl implements CollectionProt
 		if (update) {
 			Participant existing = getParticipant(input);
 			if (Status.isDisabledStatus(inputParticipant.getActivityStatus())) {
-				return deleteParticipant(existing, inputParticipant.isForceDelete());
+				return deleteParticipant(existing, inputParticipant.isForceDelete(), inputParticipant.getOpComments());
 			}
 
 			AccessCtrlMgr.getInstance().ensureUpdateParticipantRights(existing);
@@ -735,17 +780,18 @@ public class CollectionProtocolRegistrationServiceImpl implements CollectionProt
 				inputCpr.setActivityStatus(Status.ACTIVITY_STATUS_DISABLED.getStatus());
 			}
 		}
-		
-		srcParticipant.getCprs().clear();
-		if (srcParticipant.isActive()) {
-			srcParticipant.delete();
-		}
 
 		if (tgtParticipant.getId() == null) {
 			//
 			// participant might be sourced from external repository
 			//
 			daoFactory.getParticipantDao().saveOrUpdate(tgtParticipant);
+		}
+
+		srcParticipant.setOldCprIds();
+		srcParticipant.getCprs().clear();
+		if (srcParticipant.isActive()) {
+			srcParticipant.delete();
 		}
 
 		return tgtParticipant;
@@ -802,11 +848,15 @@ public class CollectionProtocolRegistrationServiceImpl implements CollectionProt
 	//
 	// Deletes all registrations of participant
 	//
-	private ParticipantRegistrationsList deleteParticipant(Participant participant, boolean forceDelete) {
+	private ParticipantRegistrationsList deleteParticipant(Participant participant, boolean forceDelete, String reason) {
 		List<CollectionProtocolRegistrationDetail> registrations = new ArrayList<>();
 		for (CollectionProtocolRegistration cpr : participant.getCprs()) {
 			AccessCtrlMgr.getInstance().ensureDeleteCprRights(cpr);
+
 			cpr.delete(!forceDelete);
+			cpr.setOpComments(reason);
+			DeleteLogUtil.getInstance().log(cpr);
+
 			registrations.add(CollectionProtocolRegistrationDetail.from(cpr, true));
 		}
 
@@ -887,16 +937,55 @@ public class CollectionProtocolRegistrationServiceImpl implements CollectionProt
 		}
 	}
 		
-	private List<SpecimenDetail> getSpecimensByVisit(Long cprId, Long visitId) {
-		Visit visit = daoFactory.getVisitsDao().getById(visitId);
-		if (visit == null) {
-			throw OpenSpecimenException.userError(VisitErrorCode.NOT_FOUND);
+	private List<SpecimenDetail> getSpecimensByVisit(CollectionProtocolRegistration cpr, Long visitId, boolean excludePhi) {
+		if (visitId != null) {
+			Visit visit = daoFactory.getVisitsDao().getById(visitId);
+			if (visit == null || !visit.getRegistration().equals(cpr)) {
+				throw OpenSpecimenException.userError(VisitErrorCode.NOT_FOUND, visitId);
+			}
+
+			return getSpecimensByVisit(visit, excludePhi);
+		} else {
+			return getSpecimensByCpr(cpr, excludePhi);
 		}
-		
+	}
+
+	private List<SpecimenDetail> getSpecimensByCpr(CollectionProtocolRegistration cpr, boolean excludePhi) {
+		Map<Long, CollectionProtocolEvent> eventsMap = cpr.getCollectionProtocol().getOrderedCpeList().stream()
+			.filter(cpe -> !cpe.isClosed())
+			.collect(Collectors.toMap(
+				CollectionProtocolEvent::getId,
+				Function.identity(),
+				(u, v) -> { throw new IllegalStateException(String.format("Duplicate key %s", u)); },
+				LinkedHashMap::new));
+
+		List<SpecimenDetail> specimens = new ArrayList<>();
+		for (Visit visit : cpr.getOrderedVisits()) {
+			if (visit.isPlanned()) {
+				eventsMap.remove(visit.getCpEvent().getId());
+			}
+
+			specimens.addAll(getSpecimensByVisit(visit, excludePhi));
+		}
+
+		for (CollectionProtocolEvent cpe : eventsMap.values()) {
+			specimens.addAll(getAnticipatedSpecimens(cpe));
+		}
+
+		return specimens;
+	}
+
+	private List<SpecimenDetail> getSpecimensByVisit(Visit visit, boolean excludePhi) {
 		Set<SpecimenRequirement> anticipatedSpecimens = visit.isUnplanned() ? Collections.EMPTY_SET : visit.getCpEvent().getTopLevelAnticipatedSpecimens();
 		Set<Specimen> specimens = visit.getTopLevelSpecimens();
 
-		return SpecimenDetail.getSpecimens(anticipatedSpecimens, specimens);
+		if (!specimens.isEmpty()) {
+			List<Specimen> allSpmns = specimens.stream().map(Specimen::getDescendants).flatMap(List::stream).collect(Collectors.toList());
+			Long cpId = allSpmns.iterator().next().getCpId();
+			DeObject.createExtensions(true, Specimen.EXTN, cpId, allSpmns);
+		}
+
+		return SpecimenDetail.getSpecimens(visit, anticipatedSpecimens, specimens, false, excludePhi, false);
 	}
 
 	private List<SpecimenDetail> getAnticipatedSpecimens(Long cprId, Long eventId) {
@@ -904,9 +993,13 @@ public class CollectionProtocolRegistrationServiceImpl implements CollectionProt
 		if (cpe == null) {
 			throw OpenSpecimenException.userError(CpeErrorCode.NOT_FOUND, eventId, 1);
 		}
-		
+
+		return getAnticipatedSpecimens(cpe);
+	}
+
+	private List<SpecimenDetail> getAnticipatedSpecimens(CollectionProtocolEvent cpe) {
 		Set<SpecimenRequirement> anticipatedSpecimens = cpe.getTopLevelAnticipatedSpecimens();
-		return SpecimenDetail.getSpecimens(anticipatedSpecimens, Collections.<Specimen>emptySet());		
+		return SpecimenDetail.getSpecimens(null, anticipatedSpecimens, Collections.emptySet(), false, true, false);
 	}
 	
 	private CollectionProtocolRegistration getCpr(Long cprId, Long cpId, String ppid) {
@@ -1015,8 +1108,32 @@ public class CollectionProtocolRegistrationServiceImpl implements CollectionProt
 			return;
 		}
 
+		Integer minOffset = null, maxOffset = null;
+		for (CollectionProtocolEvent cpe : cpes) {
+			if (cpe.isClosed()) {
+				continue;
+			}
+
+			Integer offset = Utility.getNoOfDays(cpe.getEventPoint(), cpe.getEventPointUnit());
+			if (offset == null) {
+				continue;
+			}
+
+			if (minOffset == null || offset < minOffset) {
+				minOffset = offset;
+			}
+
+			if (maxOffset == null || offset > maxOffset) {
+				maxOffset = offset;
+			}
+		}
+
 		boolean checkPermission = true;
 		for (CollectionProtocolEvent cpe : cpes) {
+			if (cpe.isClosed()) {
+				continue;
+			}
+
 			VisitDetail visitDetail = new VisitDetail();
 			visitDetail.setCprId(cpr.getId());
 			visitDetail.setEventId(cpe.getId());
@@ -1024,6 +1141,21 @@ public class CollectionProtocolRegistrationServiceImpl implements CollectionProt
 			visitDetail.setClinicalDiagnoses(Collections.singleton(cpe.getClinicalDiagnosis()));
 			visitDetail.setClinicalStatus(cpe.getClinicalStatus());
 			visitDetail.setStatus(Visit.VISIT_STATUS_PENDING);
+
+			int interval = 0;
+			if (minOffset != null) {
+				Integer offset = Utility.getNoOfDays(cpe.getEventPoint(), cpe.getEventPointUnit());
+				if (offset != null) {
+					interval = offset - minOffset;
+				} else {
+					interval = (maxOffset - minOffset) + 1;
+				}
+			}
+
+			Calendar cal = Calendar.getInstance();
+			cal.setTime(cpr.getRegistrationDate());
+			cal.add(Calendar.DATE, interval);
+			visitDetail.setVisitDate(cal.getTime());
 
 			cpr.addVisit(visitSvc.addVisit(visitDetail, checkPermission));
 			checkPermission = false;
@@ -1078,6 +1210,14 @@ public class CollectionProtocolRegistrationServiceImpl implements CollectionProt
 			throw OpenSpecimenException.userError(CpeErrorCode.NOT_FOUND, notFoundEvents, notFoundEvents.size());
 		}
 
+		String closedEvents = result.stream()
+			.filter(CollectionProtocolEvent::isClosed)
+			.map(CollectionProtocolEvent::getEventLabel)
+			.collect(Collectors.joining(", "));
+		if (!closedEvents.isEmpty()) {
+			throw OpenSpecimenException.userError(CpeErrorCode.CLOSED, closedEvents);
+		}
+
 		return result;
 	}
 
@@ -1088,16 +1228,20 @@ public class CollectionProtocolRegistrationServiceImpl implements CollectionProt
 	}
 
 	private Long getCpId(Map<String, String> params) {
+		Long cpId = null;
 		String cpIdStr = params.get("cpId");
 		if (StringUtils.isNotBlank(cpIdStr)) {
 			try {
-				return Long.parseLong(cpIdStr);
+				cpId = Long.parseLong(cpIdStr);
+				if (cpId == -1L) {
+					cpId = null;
+				}
 			} catch (Exception e) {
 				logger.error("Invalid CP ID: " + cpIdStr, e);
 			}
 		}
 
-		return null;
+		return cpId;
 	}
 
 	private abstract class AbstractCprsGenerator implements Function<ExportJob, List<? extends Object>> {
@@ -1105,7 +1249,7 @@ public class CollectionProtocolRegistrationServiceImpl implements CollectionProt
 
 		private CprListCriteria crit;
 
-		private int startAt;
+		private Long lastId;
 
 		private boolean paramsInited;
 
@@ -1116,10 +1260,13 @@ public class CollectionProtocolRegistrationServiceImpl implements CollectionProt
 				return Collections.emptyList();
 			}
 
-			List<CollectionProtocolRegistration> cprs = daoFactory.getCprDao().getCprs(crit.startAt(startAt));
-			startAt += cprs.size();
+			List<CollectionProtocolRegistration> cprs = daoFactory.getCprDao().getCprs(crit.lastId(lastId));
 			if (CollectionUtils.isNotEmpty(crit.ppids()) || cprs.size() < 100) {
 				endOfCprs = true;
+			}
+
+			if (!cprs.isEmpty()) {
+				lastId = cprs.get(cprs.size() - 1).getId();
 			}
 
 			return cprs;
@@ -1154,19 +1301,20 @@ public class CollectionProtocolRegistrationServiceImpl implements CollectionProt
 			AccessCtrlMgr.ParticipantReadAccess access = AccessCtrlMgr.getInstance().getParticipantReadAccess(cpId);
 			if (!access.admin && access.noAccessibleSites()) {
 				endOfCprs = true;
-				return;
-			}
-
-			crit = new CprListCriteria()
-				.cpId(cpId)
-				.ppids(Utility.csvToStringList(params.get("ppids")))
-				.siteCps(access.siteCps)
-				.useMrnSites(AccessCtrlMgr.getInstance().isAccessRestrictedBasedOnMrn());
-
-			if (CollectionUtils.isNotEmpty(crit.ppids())) {
-				crit.limitItems(false);
+			} else if (!AccessCtrlMgr.getInstance().hasCprEximRights(cpId)) {
+				endOfCprs = true;
 			} else {
-				crit.limitItems(true).maxResults(100);
+				crit = new CprListCriteria()
+					.cpId(cpId)
+					.ppids(Utility.csvToStringList(params.get("ppids")))
+					.siteCps(access.siteCps)
+					.useMrnSites(AccessCtrlMgr.getInstance().isAccessRestrictedBasedOnMrn());
+
+				if (CollectionUtils.isNotEmpty(crit.ppids())) {
+					crit.limitItems(false);
+				} else {
+					crit.limitItems(true).maxResults(100);
+				}
 			}
 
 			paramsInited = true;

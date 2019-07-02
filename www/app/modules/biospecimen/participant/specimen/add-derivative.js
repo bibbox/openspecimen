@@ -1,15 +1,31 @@
 
 angular.module('os.biospecimen.specimen.addderivative', [])
   .controller('AddDerivativeCtrl', function(
-    $scope, cp, specimen, cpr, visit, extensionCtxt, hasDict,
-    SpecimenUtil, Container, ExtensionsUtil, Alerts) {
+    $scope, $state, cp, specimen, cpr, visit, extensionCtxt, cpDict, derivedFields,
+    incrFreezeThawCycles, hasSde, hasDict, onValueChangeCb,
+    Specimen, SpecimensHolder, SpecimenUtil, Container, ExtensionsUtil, Alerts) {
 
     function init() {
-      $scope.parentSpecimen = specimen;
+      $scope.showForm = false;
       $scope.cpr = cpr;
       $scope.visit = visit;
-      $scope.derivative = SpecimenUtil.getNewDerivative($scope);
-      $scope.derivative.labelFmt = cpr.derivativeLabelFmt;
+
+      var ps = $scope.parentSpecimen = specimen;
+      delete ps.children;
+
+      var opts = {incrFreezeThawCycles: incrFreezeThawCycles};
+      var derivative = $scope.derivative = SpecimenUtil.getNewDerivative($scope, opts);
+      derivative.labelFmt = cpr.derivativeLabelFmt;
+      derivative.parent = new Specimen(ps);
+
+      if (hasSde) {
+        var groups = SpecimenUtil.sdeGroupSpecimens(cpDict, derivedFields || [], [derivative], {});
+        if (groups.length == 1 && !groups[0].noMatch) {
+          SpecimensHolder.setSpecimens([specimen]);
+          $state.go('specimen-bulk-create-derivatives', {}, {location: 'replace'});
+          return;
+        }
+      }
 
       var exObjs = [
         'specimen.lineage', 'specimen.parentLabel', 'specimen.events',
@@ -18,13 +34,16 @@ angular.module('os.biospecimen.specimen.addderivative', [])
 
       if (hasDict) {
         $scope.spmnCtx = {
-          obj: {specimen: $scope.derivative}, inObjs: ['specimen'], exObjs: exObjs
+          obj: {specimen: $scope.derivative},
+          inObjs: ['specimen'], exObjs: exObjs,
+          opts: {onValueChange: onValueChangeCb}
         }
       } else {
         $scope.extnOpts = ExtensionsUtil.getExtnOpts($scope.derivative, extensionCtxt);
       }
 
       $scope.deFormCtrl = {};
+      $scope.showForm = true;
     }
 
     $scope.toggleIncrParentFreezeThaw = function() {

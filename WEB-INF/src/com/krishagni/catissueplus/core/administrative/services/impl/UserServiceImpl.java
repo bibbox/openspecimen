@@ -28,6 +28,7 @@ import com.krishagni.catissueplus.core.administrative.domain.ForgotPasswordToken
 import com.krishagni.catissueplus.core.administrative.domain.Institute;
 import com.krishagni.catissueplus.core.administrative.domain.User;
 import com.krishagni.catissueplus.core.administrative.domain.UserEvent;
+import com.krishagni.catissueplus.core.administrative.domain.UserUiState;
 import com.krishagni.catissueplus.core.administrative.domain.factory.UserErrorCode;
 import com.krishagni.catissueplus.core.administrative.domain.factory.UserFactory;
 import com.krishagni.catissueplus.core.administrative.events.AnnouncementDetail;
@@ -141,13 +142,8 @@ public class UserServiceImpl implements UserService, ObjectAccessor, Initializin
 	public ResponseEvent<List<UserSummary>> getUsers(RequestEvent<UserListCriteria> req) {
 		UserListCriteria crit = req.getPayload();
 
-		if (StringUtils.isNotBlank(crit.type())) {
-			try {
-				User.Type.valueOf(crit.type());
-			} catch (IllegalArgumentException iae) {
-				return ResponseEvent.userError(UserErrorCode.INVALID_TYPE, crit.type());
-			}
-		}
+		validateTypes(crit.type());
+		validateTypes(crit.excludeTypes());
 
 		List<User> users = daoFactory.getUserDao().getUsers(addUserListCriteria(crit));
 		return ResponseEvent.response(UserSummary.from(users));
@@ -156,7 +152,12 @@ public class UserServiceImpl implements UserService, ObjectAccessor, Initializin
 	@Override
 	@PlusTransactional
 	public ResponseEvent<Long> getUsersCount(RequestEvent<UserListCriteria> req) {
-		return ResponseEvent.response(daoFactory.getUserDao().getUsersCount(addUserListCriteria(req.getPayload())));
+		UserListCriteria crit = req.getPayload();
+
+		validateTypes(crit.type());
+		validateTypes(crit.excludeTypes());
+
+		return ResponseEvent.response(daoFactory.getUserDao().getUsersCount(addUserListCriteria(crit)));
 	}
 
 	@Override
@@ -189,18 +190,23 @@ public class UserServiceImpl implements UserService, ObjectAccessor, Initializin
 		Map<String, String> props = domain.getAuthProvider().getProps();
 		String loginNameAttr = props.get("loginNameAttr");
 		String emailAttr     = props.get("emailAddressAttr");
-		
+
+		String key = null;
 		User user = null;
 		if (StringUtils.isNotBlank(loginNameAttr)) {
-			String loginName = getCredentialAttrValue(credential, loginNameAttr);
+			String loginName = key = getCredentialAttrValue(credential, loginNameAttr);
 			user = daoFactory.getUserDao().getUser(loginName, domain.getName());
 		} else if (StringUtils.isNotBlank(emailAttr)) {
-			String email = getCredentialAttrValue(credential, emailAttr);
+			String email = key = getCredentialAttrValue(credential, emailAttr);
 			user = daoFactory.getUserDao().getUserByEmailAddress(email);
 		}
 		
 		if (user == null) {
 			throw new UsernameNotFoundException(MessageUtil.getInstance().getMessage("user_not_found"));
+		} else if (user.isLocked()) {
+			throw OpenSpecimenException.userError(AuthErrorCode.USER_LOCKED, key);
+		} else if (!user.isActive()) {
+			throw OpenSpecimenException.userError(UserErrorCode.INACTIVE, key);
 		}
 		
 		return user;
@@ -250,7 +256,7 @@ public class UserServiceImpl implements UserService, ObjectAccessor, Initializin
 			if (isSignupReq) {
 				sendUserSignupEmail(user);
 				notifyUserSignup(user);
-			} else {
+			} else if (!user.isContact()) {
 				ForgotPasswordToken token = generateForgotPwdToken(user);
 				sendUserCreatedEmail(user, token);
 				notifyUserUpdated(user, "created");
@@ -307,6 +313,8 @@ public class UserServiceImpl implements UserService, ObjectAccessor, Initializin
 			} else if (isDeleted(currentStatus, newStatus)) {
 				user.delete();
 				notifyUserUpdated(user, "deleted");
+			} else if (isClosed(currentStatus, newStatus)) {
+				user.close();
 			}
 
 			return ResponseEvent.response(UserDetail.from(user));
@@ -443,22 +451,23 @@ public class UserServiceImpl implements UserService, ObjectAccessor, Initializin
 
 	@Override
 	@PlusTransactional
-	public ResponseEvent<Boolean> forgotPassword(RequestEvent<String> req) {
+	public ResponseEvent<Boolean> forgotPassword(RequestEvent<UserDetail> req) {
 		try {
 			boolean forgotPasswdAllowed = ConfigUtil.getInstance().getBoolSetting(AUTH_MOD, FORGOT_PASSWD, true);
 			if (!forgotPasswdAllowed) {
 				throw OpenSpecimenException.userError(UserErrorCode.FORGOT_PASSWD_DISABLED);
 			}
-
-			UserDao userDao = daoFactory.getUserDao();
-
-			User user = userDao.getUser(req.getPayload(), DEFAULT_AUTH_DOMAIN);
-			if (user == null || user.isPending() || user.isClosed()) {
-				return ResponseEvent.userError(UserErrorCode.NOT_FOUND_IN_OS_DOMAIN, req.getPayload());
+			
+			UserDetail detail = req.getPayload();
+			User user = getUser(detail.getId(), detail.getEmailAddress(), detail.getLoginName(), detail.getDomainName());
+			if (user.isPending() || user.isClosed() || !DEFAULT_AUTH_DOMAIN.equals(user.getAuthDomain().getName())) {
+				String key = StringUtils.isNotBlank(detail.getLoginName()) ? detail.getLoginName() : detail.getEmailAddress();
+				return ResponseEvent.userError(UserErrorCode.NOT_FOUND_IN_OS_DOMAIN, key);
 			} else if (user.isLocked()) {
-				return ResponseEvent.userError(AuthErrorCode.USER_LOCKED);
+				return ResponseEvent.userError(AuthErrorCode.USER_LOCKED, user.formattedName());
 			}
 
+			UserDao userDao = daoFactory.getUserDao();
 			ForgotPasswordToken oldToken = userDao.getFpTokenByUser(user.getId());
 			if (oldToken != null) {
 				userDao.deleteFpToken(oldToken);
@@ -506,8 +515,25 @@ public class UserServiceImpl implements UserService, ObjectAccessor, Initializin
 	@PlusTransactional
 	public ResponseEvent<List<SubjectRoleDetail>> getCurrentUserRoles() {
 		return rbacSvc.getSubjectRoles(new RequestEvent<>(AuthUtil.getCurrentUser().getId()));
-	}		
-	
+	}
+
+	@Override
+	@PlusTransactional
+	public ResponseEvent<UserUiState> getUiState() {
+		User user = AuthUtil.getCurrentUser();
+		return ResponseEvent.response(daoFactory.getUserDao().getState(user.getId()));
+	}
+
+	@Override
+	@PlusTransactional
+	public ResponseEvent<UserUiState> saveUiState(RequestEvent<Map<String, Object>> req) {
+		UserUiState uiState = new UserUiState();
+		uiState.setUserId(AuthUtil.getCurrentUser().getId());
+		uiState.setState(req.getPayload());
+		daoFactory.getUserDao().saveUiState(uiState);
+		return ResponseEvent.response(uiState);
+	}
+
 	@Override
 	@PlusTransactional
 	public ResponseEvent<InstituteDetail> getInstitute(RequestEvent<Long> req) {
@@ -548,6 +574,10 @@ public class UserServiceImpl implements UserService, ObjectAccessor, Initializin
 
 	@Override
 	public Map<String, Object> resolveUrl(String key, Object value) {
+		if (key.equals("id")) {
+			return Collections.singletonMap("userId", Long.parseLong(value.toString()));
+		}
+
 		throw new UnsupportedOperationException("Not implemented");
 	}
 
@@ -564,6 +594,24 @@ public class UserServiceImpl implements UserService, ObjectAccessor, Initializin
 	@Override
 	public void afterPropertiesSet() throws Exception {
 		exportSvc.registerObjectsGenerator("user", this::getUsersGenerator);
+	}
+
+	private void validateTypes(Collection<String> types) {
+		if (CollectionUtils.isEmpty(types)) {
+			return;
+		}
+
+		types.forEach(this::validateTypes);
+	}
+
+	private void validateTypes(String type) {
+		if (StringUtils.isNotBlank(type)) {
+			try {
+				User.Type.valueOf(type);
+			} catch (IllegalArgumentException iae) {
+				throw OpenSpecimenException.userError(UserErrorCode.INVALID_TYPE, type);
+			}
+		}
 	}
 
 	private UserListCriteria addUserListCriteria(UserListCriteria crit) {
@@ -609,6 +657,7 @@ public class UserServiceImpl implements UserService, ObjectAccessor, Initializin
 
 		boolean wasInstituteAdmin = existingUser.isInstituteAdmin();
 		String prevStatus = existingUser.getActivityStatus();
+		Institute prevInstitute = existingUser.getInstitute();
 		existingUser.update(user);
 
 		if (isActivated(prevStatus, user.getActivityStatus())) {
@@ -617,6 +666,14 @@ public class UserServiceImpl implements UserService, ObjectAccessor, Initializin
 			notifyUserUpdated(user, "locked");
 		} else if (isDeleted(prevStatus, user.getActivityStatus())) {
 			notifyUserUpdated(user, "deleted");
+		}
+
+		if (!existingUser.getInstitute().equals(prevInstitute)) {
+			//
+			// user institute got changed
+			// remove all roles that were assigned to user on sites of previous institute
+			//
+			removeUserRoles(existingUser);
 		}
 
 		if (!wasInstituteAdmin && existingUser.isInstituteAdmin()) {
@@ -629,6 +686,10 @@ public class UserServiceImpl implements UserService, ObjectAccessor, Initializin
 	}
 
 	private User getUser(Long id, String emailAddress) {
+		return getUser(id, emailAddress, null, null);
+	}
+
+	private User getUser(Long id, String emailAddress, String loginName, String domain) {
 		User user = null;
 		Object key = null;
 
@@ -638,6 +699,13 @@ public class UserServiceImpl implements UserService, ObjectAccessor, Initializin
 		} else if (StringUtils.isNotBlank(emailAddress)) {
 			user = daoFactory.getUserDao().getUserByEmailAddress(emailAddress);
 			key = emailAddress;
+		} else if (StringUtils.isNotBlank(loginName)) {
+			if (StringUtils.isBlank(domain)) {
+				domain = DEFAULT_AUTH_DOMAIN;
+			}
+
+			user = daoFactory.getUserDao().getUser(loginName, domain);
+			key = loginName;
 		}
 
 		if (key == null) {
@@ -655,6 +723,10 @@ public class UserServiceImpl implements UserService, ObjectAccessor, Initializin
 
 	private void removeDefaultSiteAdminRole(User user, String userOp) {
 		rbacSvc.removeSubjectRole(null, null, user, getDefaultSiteAdminRole(), getNotifReq(user, userOp, "REMOVE"));
+	}
+
+	private void removeUserRoles(User user) {
+		rbacSvc.removeInvalidRoles(user);
 	}
 
 	private SubjectRoleOpNotif getNotifReq(User user, String userOp, String roleOp) {
@@ -839,6 +911,7 @@ public class UserServiceImpl implements UserService, ObjectAccessor, Initializin
 	private boolean isStatusChangeAllowed(String newStatus) {
 		return newStatus.equals(Status.ACTIVITY_STATUS_ACTIVE.getStatus()) || 
 			newStatus.equals(Status.ACTIVITY_STATUS_LOCKED.getStatus()) ||
+			newStatus.equals(Status.ACTIVITY_STATUS_CLOSED.getStatus()) ||
 			newStatus.equals(Status.ACTIVITY_STATUS_DISABLED.getStatus());
 	}
 	
@@ -855,6 +928,11 @@ public class UserServiceImpl implements UserService, ObjectAccessor, Initializin
 	private boolean isDeleted(String currentStatus, String newStatus) {
 		return !currentStatus.equals(Status.ACTIVITY_STATUS_DISABLED.getStatus()) &&
 			newStatus.equals(Status.ACTIVITY_STATUS_DISABLED.getStatus());
+	}
+
+	private boolean isClosed(String currentStatus, String newStatus) {
+		return !currentStatus.equals(Status.ACTIVITY_STATUS_CLOSED.getStatus()) &&
+			newStatus.equals(Status.ACTIVITY_STATUS_CLOSED.getStatus());
 	}
 		
 	private Institute getCurrUserInstitute() {
@@ -926,6 +1004,11 @@ public class UserServiceImpl implements UserService, ObjectAccessor, Initializin
 
 	private void onAccountActivation(User user, String prevStatus) {
 		if (prevStatus.equals(Status.ACTIVITY_STATUS_PENDING.getStatus())) {
+			ForgotPasswordToken oldToken = daoFactory.getUserDao().getFpTokenByUser(user.getId());
+			if (oldToken != null) {
+				daoFactory.getUserDao().deleteFpToken(oldToken);
+			}
+
 			ForgotPasswordToken token = generateForgotPwdToken(user);
 			sendUserCreatedEmail(user, token);
 			notifyUserUpdated(user, "approved");
@@ -976,8 +1059,12 @@ public class UserServiceImpl implements UserService, ObjectAccessor, Initializin
 
 			private int startAt;
 
+			private boolean paramsInited;
+
 			@Override
 			public List<? extends Object> apply(ExportJob job) {
+				initParams();
+
 				if (endOfUsers) {
 					return Collections.emptyList();
 				}
@@ -990,6 +1077,15 @@ public class UserServiceImpl implements UserService, ObjectAccessor, Initializin
 				}
 
 				return UserDetail.from(users);
+			}
+
+			private void initParams() {
+				if (paramsInited) {
+					return;
+				}
+
+				endOfUsers = !AccessCtrlMgr.getInstance().hasUserEximRights();
+				paramsInited = true;
 			}
 		};
 	}

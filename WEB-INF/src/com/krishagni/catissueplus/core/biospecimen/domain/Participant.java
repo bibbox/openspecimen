@@ -7,6 +7,7 @@ import java.util.Date;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -27,9 +28,9 @@ import com.krishagni.catissueplus.core.de.services.impl.FormUtil;
 
 @Audited
 public class Participant extends BaseExtensionEntity {
-	private static final String DEF_SOURCE = "OpenSpecimen";
-
 	private static final String ENTITY_NAME = "participant";
+
+	public static final String DEF_SOURCE = "OpenSpecimen";
 
 	public static final String EXTN = "ParticipantExtension";
 
@@ -66,6 +67,10 @@ public class Participant extends BaseExtensionEntity {
 	private Set<CollectionProtocolRegistration> cprs = new HashSet<>();
 
 	private transient Long cpId = -1L;
+
+	private transient Set<Long> oldCprIds;
+
+	private transient Set<Long> newCprIds;
 
 	public String getSource() {
 		return StringUtils.isBlank(source) ? DEF_SOURCE : source;
@@ -207,7 +212,23 @@ public class Participant extends BaseExtensionEntity {
 	public void setCprs(Set<CollectionProtocolRegistration> cprs) {
 		this.cprs = cprs;
 	}
-	
+
+	public Set<Long> getOldCprIds() {
+		return oldCprIds;
+	}
+
+	public void setOldCprIds() {
+		oldCprIds = getCprs().stream().map(CollectionProtocolRegistration::getId).collect(Collectors.toSet());
+	}
+
+	public Set<Long> getNewCprIds() {
+		return newCprIds;
+	}
+
+	public void setNewCprIds(Set<Long> newCprIds) {
+		this.newCprIds = newCprIds;
+	}
+
 	public void update(Participant participant) {
 		setFirstName(participant.getFirstName());
 		setLastName(participant.getLastName());
@@ -235,7 +256,11 @@ public class Participant extends BaseExtensionEntity {
 	}
 
 	public boolean isActive() {
-		return Status.ACTIVITY_STATUS_ACTIVE.getStatus().equals(this.activityStatus);
+		return Status.ACTIVITY_STATUS_ACTIVE.getStatus().equals(getActivityStatus());
+	}
+
+	public boolean isDeleted() {
+		return Status.ACTIVITY_STATUS_DISABLED.getStatus().equals(getActivityStatus());
 	}
 
 	public void delete() {
@@ -321,14 +346,8 @@ public class Participant extends BaseExtensionEntity {
 				existing.setMedicalRecordNumber(pmi.getMedicalRecordNumber());
 			}
 		}
-		
-		Iterator<ParticipantMedicalIdentifier> iter = getPmis().iterator();
-		while (iter.hasNext()) {
-			ParticipantMedicalIdentifier existing = iter.next();			
-			if (getPmiBySite(participant.getPmis(), existing.getSite().getName()) == null) {
-				iter.remove();
-			}			
-		}		
+
+		getPmis().removeIf(pmi -> getPmiBySite(participant.getPmis(), pmi.getSite().getName()) == null);
 	}
 
 	private void disableMrns() {

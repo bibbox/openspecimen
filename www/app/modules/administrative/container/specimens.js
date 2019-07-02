@@ -3,17 +3,20 @@ angular.module('os.administrative.container')
     $scope, $state, $stateParams, container, currentUser, Util, CollectionProtocol,
     Container, SpecimensHolder, Alerts, CheckList, ListPagerOpts) {
 
+    var filterOpts, pagerOpts;
+
     function init() {
       $scope.ctx.showTree = !$stateParams.filters;
       $scope.ctx.viewState = 'container-detail.specimens';
 
-      var pagerOpts = new ListPagerOpts({listSizeGetter: getSpecimensCount});
+      pagerOpts = new ListPagerOpts({listSizeGetter: getSpecimensCount});
+      filterOpts = Util.filterOpts({maxResults: pagerOpts.recordsPerPage + 1});
 
       $scope.lctx = {
         specimens: [],
         cps: [],
         containers: [],
-        filterOpts: Util.filterOpts({maxResults: pagerOpts.recordsPerPage + 1}),
+        filterOpts: filterOpts,
         checkList: new CheckList([]),
         pagerOpts: pagerOpts
       };
@@ -25,9 +28,9 @@ angular.module('os.administrative.container')
     function loadSpecimens(filterOpts) {
       container.getSpecimens(filterOpts).then(
         function(specimens) {
+          $scope.lctx.pagerOpts.refreshOpts(specimens);
           $scope.lctx.specimens = specimens;
           $scope.lctx.checkList = new CheckList(specimens);
-          $scope.lctx.pagerOpts.refreshOpts(specimens);
         }
       );
     }
@@ -96,6 +99,10 @@ angular.module('os.administrative.container')
           }
         );
       }
+    }
+
+    $scope.pageSizeChanged = function() {
+      filterOpts.maxResults = pagerOpts.recordsPerPage + 1;
     }
 
     init();

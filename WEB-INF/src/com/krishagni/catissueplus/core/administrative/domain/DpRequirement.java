@@ -8,21 +8,26 @@ import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.hibernate.envers.Audited;
 
-import com.krishagni.catissueplus.core.biospecimen.domain.BaseEntity;
+import com.krishagni.catissueplus.core.biospecimen.domain.BaseExtensionEntity;
+import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
 import com.krishagni.catissueplus.core.common.CollectionUpdater;
 import com.krishagni.catissueplus.core.common.util.Status;
 
 @Audited
-public class DpRequirement extends BaseEntity {
+public class DpRequirement extends BaseExtensionEntity {
+	public static final String EXTN = "DpRequirementExtension";
+
 	private DistributionProtocol distributionProtocol;
 	
 	private String specimenType;
 	
 	private String anatomicSite;
 	
-	private Set<String> pathologyStatuses = new HashSet<String>();
+	private Set<String> pathologyStatuses = new HashSet<>();
 
 	private String clinicalDiagnosis;
+
+	private BigDecimal cost;
 	
 	private Long specimenCount;
 	
@@ -31,11 +36,11 @@ public class DpRequirement extends BaseEntity {
 	private String comments;
 	
 	private String activityStatus;
-	
+
 	public DistributionProtocol getDistributionProtocol() {
 		return distributionProtocol;
 	}
-	
+
 	public void setDistributionProtocol(DistributionProtocol distributionProtocol) {
 		this.distributionProtocol = distributionProtocol;
 	}
@@ -72,6 +77,14 @@ public class DpRequirement extends BaseEntity {
 		this.clinicalDiagnosis = clinicalDiagnosis;
 	}
 
+	public BigDecimal getCost() {
+		return cost;
+	}
+
+	public void setCost(BigDecimal cost) {
+		this.cost = cost;
+	}
+
 	public Long getSpecimenCount() {
 		return specimenCount;
 	}
@@ -103,17 +116,24 @@ public class DpRequirement extends BaseEntity {
 	public void setActivityStatus(String activityStatus) {
 		this.activityStatus = activityStatus;
 	}
-	
+
+	@Override
+	public String getEntityType() {
+		return EXTN;
+	}
+
 	public void update(DpRequirement dpr) {
 		setDistributionProtocol(dpr.getDistributionProtocol());
 		setSpecimenType(dpr.getSpecimenType());
 		setAnatomicSite(dpr.getAnatomicSite());
 		CollectionUpdater.update(getPathologyStatuses(), dpr.getPathologyStatuses());
 		setClinicalDiagnosis(dpr.getClinicalDiagnosis());
+		setCost(dpr.getCost());
 		setSpecimenCount(dpr.getSpecimenCount());
 		setQuantity(dpr.getQuantity());
 		setComments(dpr.getComments());
 		setActivityStatus(dpr.getActivityStatus());
+		setExtension(dpr.getExtension());
 	}
 	
 	public boolean equalsSpecimenGroup(DpRequirement dpr) {
@@ -131,6 +151,43 @@ public class DpRequirement extends BaseEntity {
 		setActivityStatus(Status.ACTIVITY_STATUS_DISABLED.getStatus());
 	}
 
+	public int getMatchPoints(Specimen specimen) {
+		int points = 0;
+		if (StringUtils.isNotBlank(getSpecimenType())) {
+			if (!getSpecimenType().equals(specimen.getSpecimenType())) {
+				return 0;
+			}
+
+			points += 40;
+		}
+
+		if (!getPathologyStatuses().isEmpty()) {
+			if (!getPathologyStatuses().contains(specimen.getPathologicalStatus())) {
+				return 0;
+			}
+
+			points += 30;
+		}
+
+		if (StringUtils.isNotBlank(getAnatomicSite())) {
+			if (!getAnatomicSite().equals(specimen.getTissueSite())) {
+				return 0;
+			}
+
+			points += 20;
+		}
+
+		if (StringUtils.isNotBlank(getClinicalDiagnosis())) {
+			if (!specimen.getVisit().getClinicalDiagnoses().contains(getClinicalDiagnosis())) {
+				return 0;
+			}
+
+			points += 10;
+		}
+
+		return points;
+	}
+
 	private boolean arePathologyStatusesEqual(Set<String> pathologyStatuses) {
 		boolean isEmptyOldPaths = CollectionUtils.isEmpty(getPathologyStatuses());
 		boolean isEmptyNewPaths = CollectionUtils.isEmpty(pathologyStatuses);
@@ -146,5 +203,4 @@ public class DpRequirement extends BaseEntity {
 		return CollectionUtils.isSubCollection(pathologyStatuses, getPathologyStatuses()) ||
 				CollectionUtils.isSubCollection(getPathologyStatuses(), pathologyStatuses);
 	}
-	
 }

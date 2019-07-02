@@ -18,6 +18,8 @@ public enum StorageContainerErrorCode implements ErrorCode {
 
 	INVALID_POSITION_LABELING_MODE,
 
+	INVALID_POSITION_ASSIGNMENT,
+
 	INVALID_DIMENSION_CAPACITY,
 	
 	INVALID_DIMENSION_LABELING_SCHEME,
@@ -49,10 +51,12 @@ public enum StorageContainerErrorCode implements ErrorCode {
 	INVALID_ENTITY_TYPE,
 	
 	OCCUPYING_ENTITY_ID_OR_NAME_REQUIRED,
+
+	INV_POS,
 	
-	INVALID_POSITIONS,
-	
-	INVALID_CPS, 
+	INVALID_CPS,
+
+	INVALID_DPS,
 	
 	TYPE_REQUIRED,
 
@@ -74,7 +78,19 @@ public enum StorageContainerErrorCode implements ErrorCode {
 
 	INV_CONT_SEL_STRATEGY,
 
-	INV_CONT_SEL_RULE;
+	INV_CONT_SEL_RULE,
+
+	SITE_CONT_VIOLATED,
+
+	DL_POS_BLK_NP,
+
+	POS_OCCUPIED,
+
+	INV_USAGE_MODE,
+
+	USAGE_DIFFER,
+
+	NONE_PRINTED;
 
 	@Override
 	public String code() {

@@ -1,7 +1,9 @@
 <div>
   <div os-page-header>
-    <div class="os-page-header-content">
-      <ul os-breadcrumbs>
+    <div class="os-page-header-content" ng-switch on="!!fieldsCtx.headers.participant.breadcrumb">
+      <os-html-template ng-switch-when="true" template="fieldsCtx.headers.participant.breadcrumb"></os-html-template>
+
+      <ul ng-switch-when="false" os-breadcrumbs>
         <li>
           <a ui-sref="cp-list-view({cpId: cp.id})">
             <span>{{cp.shortTitle}}</span>
@@ -11,6 +13,15 @@
       <h3 ng-switch on="!!cpr.id"> 
         <span ng-switch-when="true" translate="participant.edit_participant">Edit Participant</span>
         <span ng-switch-default translate="participant.register_participant">Register Participant</span>
+        <span ng-if="!!fieldsCtx.headers.participant.leftTitle">
+          <os-html-template template="fieldsCtx.headers.participant.leftTitle"></os-html-template>
+        </span>
+      </h3>
+    </div>
+
+    <div class="os-page-header-actions">
+      <h3 ng-if="!!fieldsCtx.headers.participant.rightTitle">
+        <os-html-template template="fieldsCtx.headers.participant.rightTitle"></os-html-template>
       </h3>
     </div>
   </div>
@@ -35,7 +46,7 @@
     <div ng-switch on="fieldsCtx.lookupFields && fieldsCtx.lookupFields.length > 0">
       <div ng-switch-when="true">
         <sde-form-fields base-fields="fieldsCtx.sysDict" fields="fieldsCtx.lookupFields"
-          obj="partCtx.obj" in-objs="partCtx.inObjs">
+          obj="partCtx.obj" in-objs="partCtx.inObjs" opts="partCtx.fieldOpts">
         </sde-form-fields>
       </div>
       <div ng-switch-default ng-switch on="partCtx.twoStep">
@@ -51,14 +62,30 @@
     <div class="os-divider"></div>
 
     <div class="form-group">
-      <div class="col-xs-offset-3 col-xs-6">
+      <div class="col-xs-6" ng-class="{'col-xs-offset-3': !partCtx.fieldOpts.verticalLayout}">
         <button class="btn btn-primary" os-form-submit="lookup()" ng-switch on="partCtx.twoStep">
           <span ng-switch-when="true" translate="participant.buttons.lookup">Lookup</span>
           <span ng-switch-default translate="participant.buttons.register">Register</span>
         </button>
-        <button class="btn btn-primary" os-form-submit="lookup(true)" ng-if="!partCtx.twoStep && !!partCtx.firstCpEvent">
+        <button class="btn btn-primary" os-form-submit="lookup(partCtx.cpEvents[0])"
+          ng-if="!partCtx.twoStep && partCtx.cpEvents.length == 1">
           <span translate="participant.buttons.register_n_collect">Register & Collect</span>
         </button>
+        <span dropdown ng-if="!partCtx.twoStep && partCtx.cpEvents.length > 1" on-toggle="toggleEventsMenu(open)">
+          <button class="btn btn-primary dropdown-toggle">
+            <span translate="participant.buttons.register_n_collect">Register & Collect</span>
+            <span class="fa fa-caret-down"></span>
+          </button>
+          <ul class="dropdown-menu os-dropdown" os-ui-element="partCtx.eventsDd">
+            <li ng-repeat="event in partCtx.cpEvents">
+              <a os-form-submit="lookup(event)">
+                <os-event-desc event-point="event.eventPoint" event-point-unit="event.eventPointUnit"
+                  event-label="event.eventLabel">
+                </os-event-desc>
+              </a>
+            </li>
+          </ul>
+        </span>
         <button class="btn os-btn-text" ng-click="back()">
           <span translate="common.buttons.discard">Discard</span>
         </button>
@@ -247,14 +274,30 @@
         <div class="os-divider"></div>
 
         <div class="form-group">
-          <div class="col-xs-offset-3 col-xs-6">
+          <div class="col-xs-6" ng-class="{'col-xs-offset-3': !partCtx.fieldOpts.verticalLayout}">
             <button class="btn btn-primary" os-form-submit="register()" ng-switch on="!!cpr.id">
               <span ng-switch-when="true" translate="participant.buttons.update_registration"> Update </span>
               <span ng-switch-default translate="participant.buttons.register"> Register </span>
             </button>
-            <button class="btn btn-primary" os-form-submit="register(true)" ng-if="!cpr.id && !!partCtx.firstCpEvent">
+            <button class="btn btn-primary" os-form-submit="register(partCtx.cpEvents[0])"
+              ng-if="!cpr.id && partCtx.cpEvents.length == 1">
               <span translate="participant.buttons.register_n_collect">Register & Collect</span>
             </button>
+            <span dropdown ng-if="!cpr.id && partCtx.cpEvents.length > 1" on-toggle="toggleEventsMenu(open)">
+              <button class="btn btn-primary dropdown-toggle">
+                <span translate="participant.buttons.register_n_collect">Register & Collect</span>
+                <span class="fa fa-caret-down"></span>
+              </button>
+              <ul class="dropdown-menu os-dropdown" os-ui-element="partCtx.eventsDd">
+                <li ng-repeat="event in partCtx.cpEvents">
+                  <a os-form-submit="register(event)">
+                    <os-event-desc event-point="event.eventPoint" event-point-unit="event.eventPointUnit"
+                      event-label="event.eventLabel">
+                    </os-event-desc>
+                  </a>
+                </li>
+              </ul>
+            </span>
             <button class="btn os-btn-text" ng-click="previous()">
               <span translate="common.buttons.back">Back</span>
             </button>
@@ -287,19 +330,41 @@
       </div>
     </div>
 
-    <div class="os-divider"></div>
+    <div class="form-group">
+      <label class="col-xs-3 control-label" translate="participant.reg_site">Registration Site</label>
+      <div class="col-xs-6">
+        <os-select name="regSite" ng-model="cpr.site" list="partCtx.cpSites"
+          placeholder="{{'participant.reg_site' | translate}}">
+        </os-select>
+        <div os-field-error field="pform.regSite"></div>
+      </div>
+    </div>
 
     <div class="form-group">
+      <label class="col-xs-3 control-label" translate="participant.external_id">External Subject ID</label>
+      <div class="col-xs-6">
+        <input type="text" name="externalSubjectId" ng-model="cpr.externalSubjectId" class="form-control"
+          placeholder="{{'participant.external_id' | translate}}">
+        <div os-field-error field="pform.externalSubjectId"></div>
+      </div>
+    </div>
+
+    <div class="os-divider"></div>
+
+    <div class="form-group os-multi-parts-control">
       <label class="col-xs-3 control-label" translate="participant.name">Name</label>
       <div class="col-xs-2">
+        <label class="part-label" translate="participant.first_name"></label>
         <input type="text" ng-model="cpr.participant.firstName" class="form-control" 
           placeholder="{{'participant.first_name' | translate}}"/>
       </div>
       <div class="col-xs-2">
+        <label class="part-label" translate="participant.last_name"></label>
         <input type="text" ng-model="cpr.participant.lastName" class="form-control"
           placeholder="{{'participant.last_name' | translate}}"/>
       </div>
       <div class="col-xs-2">
+        <label class="part-label" translate="participant.middle_name"></label>
         <input type="text" ng-model="cpr.participant.middleName" class="form-control"
           placeholder="{{'participant.middle_name' | translate}}"/>
       </div>
@@ -332,65 +397,50 @@
       </div>
     </div>
 
-    <div ng-if="showAdvDemographics">
-      <div class="form-group">
-        <label class="col-xs-3 control-label" translate="participant.gender">Gender</label>
-        <div class="col-xs-9">
-          <label class="radio-inline" ng-repeat="gender in genders">
-            <input type="radio" name="gender" ng-model="cpr.participant.gender" ng-value="gender"> {{gender}}
-          </label>
-        </div>
+    <div class="form-group">
+      <label class="col-xs-3 control-label" translate="participant.gender">Gender</label>
+      <div class="col-xs-9">
+        <label class="radio-inline" ng-repeat="gender in genders">
+          <input type="radio" name="gender" ng-model="cpr.participant.gender" ng-value="gender"> {{gender}}
+        </label>
       </div>
-
-      <div class="form-group">
-        <label class="col-xs-3 control-label" translate="participant.vital_status">Vital Status</label>
-        <div class="col-xs-9">
-          <label class="radio-inline" ng-repeat="vitalStatus in vitalStatuses">
-            <input type="radio" name="vitalStatus" ng-model="cpr.participant.vitalStatus" ng-value="vitalStatus">
-            <span>{{vitalStatus}}</span>
-          </label>
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label class="col-xs-3 control-label" translate="participant.death_date">Death Date</label>
-        <div class="col-xs-6">
-          <os-date-picker date="cpr.participant.deathDate"
-            ng-disabled="cpr.participant.vitalStatus != 'Dead'" 
-            placeholder="{{'participant.death_date' | translate}}">
-          </os-date-picker>
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label class="col-xs-3 control-label" translate="participant.ethnicity">Ethnicity</label>
-        <div class="col-xs-6">
-          <os-pvs name="ethnicity" multiple ng-model="cpr.participant.ethnicities" attribute="ethnicity"
-            placeholder="{{'participant.ethnicity' | translate}}">
-          </os-pvs>
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label class="col-xs-3 control-label" translate="participant.race">Race</label>
-        <div class="col-xs-6">
-          <os-pvs multiple ng-model="cpr.participant.races" attribute="race"
-            placeholder="{{'participant.select_race' | translate}}">
-          </os-pvs>
-        </div>
-      </div>
-    </div> <!-- End of Show Adv Demographics -->
+    </div>
 
     <div class="form-group">
-      <div class="col-xs-offset-3 col-xs-6">
-        <a ng-click="showAdvDemographics = !showAdvDemographics">
-          <span ng-if="!showAdvDemographics" translate="participant.more_demographics">
-            More Demographic Information
-          </span>
-          <span ng-if="showAdvDemographics" translate="participant.less_demographics">
-            Less Demographic Information
-          </span>
-        </a>
+      <label class="col-xs-3 control-label" translate="participant.vital_status">Vital Status</label>
+      <div class="col-xs-9">
+        <label class="radio-inline" ng-repeat="vitalStatus in vitalStatuses">
+          <input type="radio" name="vitalStatus" ng-model="cpr.participant.vitalStatus" ng-value="vitalStatus"
+            ng-change="vitalStatusChanged()">
+          <span>{{vitalStatus}}</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="col-xs-3 control-label" translate="participant.death_date">Death Date</label>
+      <div class="col-xs-6">
+        <os-date-picker date="cpr.participant.deathDate" ng-disabled="cpr.participant.vitalStatus != 'Dead'"
+          date-only = "true" placeholder="{{'participant.death_date' | translate}}">
+        </os-date-picker>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="col-xs-3 control-label" translate="participant.ethnicity">Ethnicity</label>
+      <div class="col-xs-6">
+        <os-pvs name="ethnicity" multiple ng-model="cpr.participant.ethnicities" attribute="ethnicity"
+          placeholder="{{'participant.ethnicity' | translate}}">
+        </os-pvs>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="col-xs-3 control-label" translate="participant.race">Race</label>
+      <div class="col-xs-6">
+        <os-pvs multiple ng-model="cpr.participant.races" attribute="race"
+          placeholder="{{'participant.select_race' | translate}}">
+        </os-pvs>
       </div>
     </div>
 

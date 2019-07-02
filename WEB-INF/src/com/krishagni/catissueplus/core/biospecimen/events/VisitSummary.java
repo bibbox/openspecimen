@@ -1,13 +1,21 @@
 
 package com.krishagni.catissueplus.core.biospecimen.events;
 
+import java.util.Calendar;
 import java.util.Date;
 
 import org.apache.commons.lang3.ObjectUtils;
+import org.codehaus.jackson.map.annotate.JsonSerialize;
 
+import com.krishagni.catissueplus.core.common.AttributeModifiedSupport;
+import com.krishagni.catissueplus.core.common.ListenAttributeChanges;
+import com.krishagni.catissueplus.core.common.domain.IntervalUnit;
 import com.krishagni.catissueplus.core.common.events.UserSummary;
+import com.krishagni.catissueplus.core.common.util.Utility;
 
-public class VisitSummary implements Comparable<VisitSummary> {
+@JsonSerialize(include= JsonSerialize.Inclusion.NON_NULL)
+@ListenAttributeChanges
+public class VisitSummary extends AttributeModifiedSupport implements Comparable<VisitSummary> {
 	private Long id;
 
 	private Long cpId;
@@ -19,6 +27,8 @@ public class VisitSummary implements Comparable<VisitSummary> {
 	private String eventLabel;
 	
 	private Integer eventPoint;
+
+	private IntervalUnit eventPointUnit;
 	
 	private String status;
 	
@@ -33,7 +43,7 @@ public class VisitSummary implements Comparable<VisitSummary> {
 	private int plannedPrimarySpmnsColl;
 	
 	private int uncollectedPrimarySpmns;
-	
+
 	private int unplannedPrimarySpmnsColl;
 
 	private int storedSpecimens;
@@ -94,6 +104,14 @@ public class VisitSummary implements Comparable<VisitSummary> {
 
 	public void setEventPoint(Integer eventPoint) {
 		this.eventPoint = eventPoint;
+	}
+
+	public IntervalUnit getEventPointUnit() {
+		return eventPointUnit;
+	}
+
+	public void setEventPointUnit(IntervalUnit eventPointUnit) {
+		this.eventPointUnit = eventPointUnit;
 	}
 
 	public String getStatus() {
@@ -208,9 +226,23 @@ public class VisitSummary implements Comparable<VisitSummary> {
 		this.missedBy = missedBy;
 	}
 
+	public void setAnticipatedVisitDate(Date baseline, Integer interval, IntervalUnit unit) {
+		if (eventPoint == null) {
+			return;
+		}
+
+		Calendar cal = Calendar.getInstance();
+		cal.setTime(baseline);
+		addInterval(cal, eventPoint, eventPointUnit);
+		addInterval(cal, -interval, unit);
+		setAnticipatedVisitDate(cal.getTime());
+	}
+
 	@Override
 	public int compareTo(VisitSummary other) {
-		int result = ObjectUtils.compare(this.eventPoint, other.eventPoint, true);
+		Integer thisEventPoint = Utility.getNoOfDays(eventPoint, eventPointUnit);
+		Integer otherEventPoint = Utility.getNoOfDays(other.eventPoint, other.eventPointUnit);
+		int result = ObjectUtils.compare(thisEventPoint, otherEventPoint, true);
 		if (result != 0) {
 			return result;
 		}
@@ -224,4 +256,25 @@ public class VisitSummary implements Comparable<VisitSummary> {
 		Date otherVisitDate = other.visitDate != null ? other.visitDate : other.anticipatedVisitDate;
 		return ObjectUtils.compare(thisVisitDate, otherVisitDate, true);
 	}
+
+	private void addInterval(Calendar cal, Integer interval, IntervalUnit intervalUnit) {
+		switch (intervalUnit) {
+			case DAYS:
+				cal.add(Calendar.DAY_OF_YEAR, interval);
+				break;
+
+			case WEEKS:
+				cal.add(Calendar.WEEK_OF_YEAR, interval);
+				break;
+
+			case MONTHS:
+				cal.add(Calendar.MONTH, interval);
+				break;
+
+			case YEARS:
+				cal.add(Calendar.YEAR, interval);
+				break;
+		}
+	}
+
 }

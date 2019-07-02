@@ -22,7 +22,7 @@ angular.module('os.administrative.user',
             createOpts: {resource: 'User', operations: ['Create']},
             updateOpts: {resource: 'User', operations: ['Update']},
             deleteOpts: {resource: 'User', operations: ['Delete']},
-            importOpts: {resource: 'User', operations: ['Bulk Import']}
+            importOpts: {resource: 'User', operations: ['Export Import']}
           }
         },
         parent: 'signed-in'
@@ -150,8 +150,11 @@ angular.module('os.administrative.user',
       })
   })
 
-  .run(function(UrlResolver) {
+  .run(function(UrlResolver, QuickSearchSvc) {
     UrlResolver.regUrlState('user-overview', 'user-detail.overview', 'userId');
     UrlResolver.regUrlState('user-roles', 'user-detail.roles', 'userId');
     UrlResolver.regUrlState('user-password-change', 'user-password', 'userId');
+
+    var opts = {caption: 'entities.user', state: 'user-detail.overview'};
+    QuickSearchSvc.register('user', opts);
   });

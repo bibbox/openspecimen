@@ -1,5 +1,5 @@
 angular.module('os.biospecimen.models.visit', ['os.common.models', 'os.biospecimen.models.form'])
-  .factory('Visit', function(osModel, $http, ApiUtil, CollectionProtocolEvent, Form) {
+  .factory('Visit', function(osModel, $http, ApiUrls, ApiUtil, CollectionProtocolEvent, Form) {
     var Visit = osModel('visits');
  
     function enrich(visits) {
@@ -12,6 +12,30 @@ angular.module('os.biospecimen.models.visit', ['os.common.models', 'os.biospecim
 
       return visits;
     };
+
+    function getAnticipatedDate(baseDate, offset, offsetUnit) {
+      var result = new Date(baseDate);
+
+      switch (offsetUnit) {
+        case 'DAYS':
+          result.setDate(result.getDate() + offset);
+          break;
+
+        case 'WEEKS':
+          result.setDate(result.getDate() + offset * 7);
+          break;
+
+        case 'MONTHS':
+          result.setMonth(result.getMonth() + offset);
+          break;
+
+        case 'YEARS':
+          result.setFullYear(result.getFullYear() + offset);
+          break;
+      }
+
+      return result.getTime();
+    }
 
     Visit.listFor = function(cprId, includeStats) {
       return Visit.query({cprId: cprId, includeStats: !!includeStats}).then(enrich);
@@ -40,9 +64,11 @@ angular.module('os.biospecimen.models.visit', ['os.common.models', 'os.biospecim
           }
 
           if (event.eventPoint != null) {
-            event.anticipatedVisitDate = (event.eventPoint - event.offset) * 24 * 60 * 60 * 1000 + regDate;
+            var ad = getAnticipatedDate(regDate, event.eventPoint, event.eventPointUnit);
+            event.anticipatedVisitDate = getAnticipatedDate(ad, -event.offset, event.offsetUnit);
           }
           delete event.offset;
+          delete event.offsetUnit;
 
           return new Visit(event);
         }
@@ -66,20 +92,33 @@ angular.module('os.biospecimen.models.visit', ['os.common.models', 'os.biospecim
     };
 
     Visit.completedVisits = function(visits) {
-      return visitFilter(visits, function(visit) { return visit.status == 'Complete'; });
+      return visitFilter(visits, function(v) { return v.status == 'Complete'; });
     };
 
     Visit.anticipatedVisits = function(visits) {
-      return visitFilter(visits, function(visit) { return !visit.status || visit.status == 'Pending'; });
+      return visitFilter(visits, function(v) { return !v.status || v.status == 'Pending'; });
     };
 
     Visit.missedVisits = function(visits) {
-      return visitFilter(visits, function(visit) { return visit.status == 'Missed Collection'; });
+      return visitFilter(visits, function(v) { return ['Not Collected', 'Missed Collection'].indexOf(v.status) != -1; });
     };
 
     Visit.collectVisitAndSpecimens = function(visitAndSpecimens) {
       return $http.post(Visit.url() + 'collect', visitAndSpecimens).then(ApiUtil.processResp);
     };
+
+    Visit.searchVisits = function(detail) {
+      return $http.post(Visit.url() + 'match', detail).then(ApiUtil.processResp);
+    }
+
+    Visit.getRouteIds = function(visitId) {
+      var params = {objectName: 'visit', key: 'id', value: visitId};
+      return $http.get(ApiUrls.getBaseUrl() + '/object-state-params', {params: params}).then(
+        function(result) {
+          return result.data;
+        }
+      );
+    }
 
     Visit.prototype.getType = function() {
       return 'visit';

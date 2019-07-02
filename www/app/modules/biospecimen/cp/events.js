@@ -1,9 +1,8 @@
 
 angular.module('os.biospecimen.cp.events', ['os.biospecimen.models'])
   .controller('CpEventsCtrl', function(
-     $scope, $state, $stateParams, $modal,
-     cp, events, 
-     CollectionProtocolEvent, PvManager) {
+     $scope, $state, $stateParams,
+     cp, events, Alerts, CollectionProtocolEvent, PvManager, Util) {
 
     var pvsLoaded = false;
 
@@ -16,32 +15,29 @@ angular.module('os.biospecimen.cp.events', ['os.biospecimen.models'])
          
       $scope.event = {};
       $scope.selected = {};
-    };
+    }
 
     function loadPvs() {
       if (pvsLoaded) {
         return;
       }
 
+      $scope.eventPointUnits     = PvManager.getPvs('interval-units');
       $scope.visitNamePrintModes = PvManager.getPvs('visit-name-print-modes');
       pvsLoaded = true;
-    };
+    }
 
-    function loadSpecimenRequirements(event) {
-      if ($scope.selected.id == event.id) {
-        return;
-      }
-
+    function loadSpecimenRequirements(event, reload) {
       $scope.selected = event;
-      $state.go('cp-detail.specimen-requirements', {eventId: event.id});
-    };
+      $state.go('cp-detail.specimen-requirements', {eventId: event.id}, {reload: reload});
+    }
 
     $scope.selectEvent = function(event) { 
       loadSpecimenRequirements(event);
     };
 
     $scope.showAddEvent = function() {
-      $scope.event = new CollectionProtocolEvent({collectionProtocol: cp.title});
+      $scope.event = new CollectionProtocolEvent({collectionProtocol: cp.title, eventPointUnit: 'DAYS'});
       $scope.mode = 'add';
       loadPvs();
     };
@@ -80,7 +76,7 @@ angular.module('os.biospecimen.cp.events', ['os.biospecimen.models'])
 
       ret.then(
         function(result) {
-          $scope.events.push(result);
+          events.push(result);
           $scope.event = {};
           $scope.mode = undefined;
           loadSpecimenRequirements(result);
@@ -91,9 +87,9 @@ angular.module('os.biospecimen.cp.events', ['os.biospecimen.models'])
     $scope.editEvent = function() {
       $scope.event.$saveOrUpdate().then(
         function(result) {
-          for (var i = 0; i < $scope.events.length; ++i) {
-            if ($scope.events[i].id == result.id) {
-              $scope.events[i] = result;
+          for (var i = 0; i < events.length; ++i) {
+            if (events[i].id == result.id) {
+              events[i] = result;
               break;
             }
           }
@@ -104,33 +100,40 @@ angular.module('os.biospecimen.cp.events', ['os.biospecimen.models'])
     };
 
     $scope.deleteEvent = function(evt) {
-      var modalInstance = $modal.open({
-        templateUrl: 'cp_event_delete.html',
-        controller: function($scope, $modalInstance) {
-          $scope.yes = function() {
-            $modalInstance.close(true);
-          }
-
-          $scope.no = function() {
-            $modalInstance.dismiss('cancel');
-          }
-        }
-      });
-
-      modalInstance.result.then(
-        function() {
+      Util.showConfirm({
+        templateUrl: 'modules/biospecimen/cp/event_delete.html',
+        event: evt,
+        ok: function() {
           evt.delete().then(
             function() {
-              var idx = $scope.events.indexOf(evt);
-              $scope.events.splice(idx, 1);
-              if ($scope.events.length > 0) {
-                $scope.selectEvent($scope.events[0]);           
+              var idx = events.indexOf(evt);
+              events.splice(idx, 1);
+              if (events.length > 0) {
+                $scope.selectEvent(events[0]);
               }
             }
           );
         }
-      );
-    }; 
+      });
+    }
+
+    $scope.closeEvent = function(evt) {
+      Util.showConfirm({
+        templateUrl: 'modules/biospecimen/cp/event_close.html',
+        event: evt,
+        ok: function() {
+          var toClose = angular.copy(evt);
+          toClose.activityStatus = 'Closed';
+
+          toClose.$saveOrUpdate().then(
+            function(closedEvt) {
+              angular.extend(evt, closedEvt);
+              loadSpecimenRequirements(evt, true);
+            }
+          );
+        }
+      });
+    }
 
     init();
   });

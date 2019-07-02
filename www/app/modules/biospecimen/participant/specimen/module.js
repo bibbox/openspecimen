@@ -8,10 +8,26 @@ angular.module('os.biospecimen.specimen',
     'os.biospecimen.specimen.close',
     'os.biospecimen.specimen.addaliquots',
     'os.biospecimen.specimen.addderivative',
-    'os.biospecimen.specimen.bulkaddevent',
-    'os.biospecimen.specimen.search'
+    'os.biospecimen.specimen.bulkaddevent'
   ])
   .config(function($stateProvider) {
+
+    function createDerived(cp, CpConfigSvc) {
+      if (!cp) {
+        return false;
+      }
+
+      return CpConfigSvc.getCommonCfg(cp.id || -1, 'addSpecimen').then(
+        function(cfg) {
+          return cfg && (cfg.aliquotDerivativesOnly == 'true' || cfg.aliquotDerivativesOnly == true)
+        }
+      );
+    }
+
+    function defBoolTrue(value) {
+      return (value === null || value === undefined || value === '' || value == true);
+    }
+
     $stateProvider
       .state('specimen', {
         url: '/specimens/:specimenId',
@@ -41,18 +57,38 @@ angular.module('os.biospecimen.specimen',
               visitId: $stateParams.visitId, 
               labelFmt: cpr.specimenLabelFmt
             });
+          },
+
+          showSpmnActivity: function(cp, CpConfigSvc) {
+            return CpConfigSvc.getCommonCfg(cp.id, 'showSpmnActivity').then(defBoolTrue);
+          },
+
+          incrFreezeThawCycles: function(cp, CpConfigSvc) {
+            return CpConfigSvc.getCommonCfg(cp.id, 'incrementFreezeThawCycles').then(defBoolTrue);
+          },
+
+          imagingEnabled: function(SettingUtil) {
+            return SettingUtil.getSetting('biospecimen', 'imaging').then(
+              function(setting) {
+                return setting.value == 'true' || setting.value == true;
+              }
+            );
           }
         },
-        controller: function($scope, specimen) {
+        controller: function($scope, participantSpmnsViewState, specimen, imagingEnabled) {
           $scope.specimen = $scope.object = specimen;
           $scope.entityType = 'Specimen';
           $scope.extnState = 'specimen-detail.extensions.';
+          $scope.imagingEnabled = imagingEnabled;
+
+          participantSpmnsViewState.selectSpecimen(specimen);
+          $scope.$on('$destroy', function() { participantSpmnsViewState.unselectSpecimen(); });
         },
         abstract: true,
         parent: 'visit-root'
       })
       .state('specimen-addedit', {
-        url: '/addedit-specimen',
+        url: '/addedit-specimen?reqName',
         templateProvider: function(PluginReg, $q) {
           var defaultTmpl = "modules/biospecimen/participant/specimen/addedit.html";
           return $q.when(PluginReg.getTmpls("specimen-addedit", "page-body", defaultTmpl)).then(
@@ -64,7 +100,26 @@ angular.module('os.biospecimen.specimen',
         resolve: {
           extensionCtxt: function(cp, specimen) {
             return specimen.getExtensionCtxt({cpId: cp.id});
-          }
+          },
+
+          spmnReq: function($stateParams, cp, CpConfigSvc) {
+            if (!$stateParams.reqName) {
+              return undefined;
+            }
+
+            return CpConfigSvc.getCommonCfg(cp.id, 'addSpecimen').then(
+              function(addSpmnCfg) {
+                var reqs = (addSpmnCfg && addSpmnCfg.requirements) || [];
+                return reqs.find(function(req) { return req.name == $stateParams.reqName; });
+              }
+            );
+          },
+
+          defSpmns: function(spmnReq) {
+            return (spmnReq && (spmnReq.specimens || [])) || [];
+          },
+
+          createDerived: createDerived
         },
         controller: 'AddEditSpecimenCtrl',
         parent: 'specimen-root'
@@ -91,24 +146,45 @@ angular.module('os.biospecimen.specimen',
       .state('specimen-detail.extensions', {
         url: '/extensions',
         template: '<div ui-view></div>',
-        controller: function($scope, specimen) {
+        controller: function($scope, specimen, forms, records, ExtensionsUtil) {
           $scope.extnOpts = {
             update: $scope.specimenResource.updateOpts,
             entity: specimen,
             isEntityActive: (specimen.activityStatus == 'Active')
           };
+
+          ExtensionsUtil.linkFormRecords(forms, records);
+        },
+        resolve: {
+          orderSpec: function(cp, CpConfigSvc) {
+            return CpConfigSvc.getWorkflowData(cp.id, 'forms', {}).then(
+              function(wf) {
+                return [{type: 'Specimen', forms: wf['Specimen'] || []}];
+              } 
+            );
+          },
+          forms: function(specimen, orderSpec, ExtensionsUtil) {
+            return specimen.getForms().then(
+              function(forms) {
+                return ExtensionsUtil.sortForms(forms, orderSpec);
+              } 
+            ) 
+          },
+          records: function(specimen) {
+            return specimen.getRecords();
+          } 
         },
         abstract: true,
         parent: 'specimen-detail'
       })
       .state('specimen-detail.extensions.list', {
-        url: '/list',
+        url: '/list?formCtxtId&formId&recordId',
         templateUrl: 'modules/biospecimen/extensions/list.html',
         controller: 'FormsListCtrl', 
         parent: 'specimen-detail.extensions'
       })
       .state('specimen-detail.extensions.addedit', {
-        url: '/addedit?formId&recordId&formCtxId',
+        url: '/addedit?formId&recordId&formCtxId&spe',
         templateUrl: 'modules/biospecimen/extensions/addedit.html',
         resolve: {
           formDef: function($stateParams, Form) {
@@ -117,17 +193,28 @@ angular.module('os.biospecimen.specimen',
           postSaveFilters: function() {
             return [
               function(specimen, formName, formData) {
-                if (formName == "SpecimenReceivedEvent") {
-                  specimen.createdOn = formData.time
-                } else if (formName == "SpecimenFrozenEvent" && formData.incrementFreezeThaw == 1) {
+                if (formName == 'SpecimenCollectionEvent') {
+                  specimen.setCollectionEvent(formData);
+                } else if (formName == 'SpecimenReceivedEvent') {
+                  specimen.setReceivedEvent(formData);
+                } else if (formName == "SpecimenFrozenEvent" && formData.appData.newFreezeThawEvent &&
+                  formData.incrementFreezeThaw == 1) {
                   ++specimen.freezeThawCycles;
-                } else if (formName == "SpecimenThawEvent" && formData.incrementFreezeThaw == 1) {
+                } else if (formName == "SpecimenThawEvent" && formData.appData.newFreezeThawEvent &&
+                  formData.incrementFreezeThaw == 1) {
                   ++specimen.freezeThawCycles;
                 }
 
                 return formData
               }
             ];
+          },
+          viewOpts: function($window, $stateParams, formDef, SpecimenEvent, LocationChangeListener) {
+            return {
+              goBackFn: ($stateParams.spe == 'true') ? LocationChangeListener.back : null,
+              showSaveNext: $stateParams.spe != 'true',
+              showActionBtns: !SpecimenEvent.isSysEvent(formDef.name)
+            };
           }
         },
         controller: 'FormRecordAddEditCtrl',
@@ -140,7 +227,12 @@ angular.module('os.biospecimen.specimen',
           $scope.entityType = 'SpecimenEvent';
           $scope.extnState = 'specimen-detail.events';
           $scope.events = specimen.getEvents();
-          $scope.eventForms = specimen.getForms({entityType: 'SpecimenEvent'});
+          $scope.eventForms = [];
+          specimen.getForms({entityType: 'SpecimenEvent'}).then(
+            function(eventForms) {
+              $scope.eventForms = eventForms;
+            }
+          );
 
           $scope.deleteEvent = function(event) {
             var record = {recordId: event.id, formId: event.formId, formCaption: event.name};
@@ -151,6 +243,19 @@ angular.module('os.biospecimen.specimen',
                 $scope.events.splice(idx, 1);
               }
             );
+          }
+        },
+        parent: 'specimen-detail'
+      })
+      .state('specimen-detail.event-overview', {
+        url: '/event-overview?formId&recordId',
+        templateUrl: 'modules/biospecimen/participant/specimen/event-overview.html',
+        controller: function($scope, event) {
+          $scope.event = event;
+        },
+        resolve: {
+          event: function($stateParams, Form) {
+            return new Form({formId: $stateParams.formId}).getRecord($stateParams.recordId, {includeMetadata: true});
           }
         },
         parent: 'specimen-detail'
@@ -168,6 +273,14 @@ angular.module('os.biospecimen.specimen',
         resolve: {
           extensionCtxt: function(cp, Specimen) {
             return Specimen.getExtensionCtxt({cpId: cp.id});
+          },
+
+          derivedFields: function(cp, hasSde, CpConfigSvc) {
+            if (!hasSde) {
+              return {};
+            }
+
+            return CpConfigSvc.getCommonCfg(cp.id || -1, 'derivedSpecimens');
           }
         },
         controller: 'AddDerivativeCtrl',
@@ -186,6 +299,16 @@ angular.module('os.biospecimen.specimen',
         resolve: {
           extensionCtxt: function(cp, Specimen) {
             return Specimen.getExtensionCtxt({cpId: cp.id});
+          },
+
+          createDerived: createDerived,
+
+          aliquotFields: function(cp, hasSde, CpConfigSvc) {
+            if (!hasSde) {
+              return {};
+            }
+
+            return CpConfigSvc.getCommonCfg(cp.id || -1, 'aliquotsCollection');
           }
         },
         controller: 'AddAliquotsCtrl',
@@ -215,6 +338,19 @@ angular.module('os.biospecimen.specimen',
             }
           },
 
+          cpr: function(parentSpmns, CollectionProtocolRegistration) {
+            if (parentSpmns.length == 0) {
+              return {};
+            }
+
+            var cprId = parentSpmns[0].cprId;
+            if (parentSpmns.every(function(spmn) { return spmn.cprId == cprId })) {
+              return CollectionProtocolRegistration.getById(cprId);
+            } else {
+              return {};
+            }
+          },
+
           containerAllocRules: function(cp, CpConfigSvc) {
             if (!cp.containerSelectionStrategy) {
               return [];
@@ -225,6 +361,52 @@ angular.module('os.biospecimen.specimen',
                 return (data && data.rules && data.rules.length > 0) ? data.rules : [];
               }
             );
+          },
+
+          aliquotQtyReq: function(SettingUtil) {
+            return SettingUtil.getSetting('biospecimen', 'mandatory_aliquot_qty').then(
+              function(resp) {
+                return resp.value == 'true' || resp.value == true || resp.value == 1 || resp.value == '1';
+              }
+            );
+          },
+
+          sysAliquotFmt: function(SettingUtil) {
+            return SettingUtil.getSetting('biospecimen', 'aliquot_label_format').then(
+              function(resp) {
+                return resp.value;
+              }
+            );
+          },
+
+          createDerived: createDerived,
+
+          hasSde: function($injector) {
+            return $injector.has('sdeFieldsSvc');
+          },
+
+          cpDict: function(cp, hasSde, CpConfigSvc) {
+            return !hasSde ? [] : CpConfigSvc.getDictionary(cp.id || -1, []);
+          },
+
+          aliquotFields: function(cp, hasSde, CpConfigSvc) {
+            if (!hasSde) {
+              return {};
+            }
+
+            return CpConfigSvc.getCommonCfg(cp.id || -1, 'aliquotsCollection');
+          },
+
+          spmnHeaders: function(cp, CpConfigSvc) {
+            if (!cp.id) {
+              return {};
+            }
+
+            return CpConfigSvc.getCommonCfg(cp.id, 'specimenHeader');
+          },
+
+          incrFreezeThawCycles: function(cp, CpConfigSvc) {
+            return CpConfigSvc.getCommonCfg(cp.id, 'incrementFreezeThawCycles').then(defBoolTrue);
           }
         },
         parent: 'signed-in'
@@ -238,14 +420,79 @@ angular.module('os.biospecimen.specimen',
             var specimens = SpecimensHolder.getSpecimens();
             SpecimensHolder.setSpecimens([]);
             return specimens || [];
+          },
+
+          cp: function(parentSpmns, CollectionProtocol) {
+            if (parentSpmns.length == 0) {
+              return {};
+            }
+
+            var cpId = parentSpmns[0].cpId;
+            if (parentSpmns.every(function(spmn) { return spmn.cpId == cpId })) {
+              return CollectionProtocol.getById(cpId);
+            } else {
+              return {};
+            }
+          },
+
+          cpr: function(parentSpmns, CollectionProtocolRegistration) {
+            if (parentSpmns.length == 0) {
+              return {};
+            }
+
+            var cprId = parentSpmns[0].cprId;
+            if (parentSpmns.every(function(spmn) { return spmn.cprId == cprId })) {
+              return CollectionProtocolRegistration.getById(cprId);
+            } else {
+              return {};
+            }
+          },
+
+          hasSde: function($injector) {
+            return $injector.has('sdeFieldsSvc');
+          },
+
+          cpDict: function(cp, hasSde, CpConfigSvc) {
+            return !hasSde ? [] : CpConfigSvc.getDictionary(cp.id || -1, []);
+          },
+
+          derivedFields: function(cp, hasSde, CpConfigSvc) {
+            if (!hasSde) {
+              return {};
+            }
+
+            return CpConfigSvc.getCommonCfg(cp.id || -1, 'derivedSpecimens');
+          },
+
+          spmnHeaders: function(cp, CpConfigSvc) {
+            if (!cp.id) {
+              return {};
+            }
+
+            return CpConfigSvc.getCommonCfg(cp.id, 'specimenHeader');
+          },
+
+          incrFreezeThawCycles: function(cp, CpConfigSvc) {
+            return CpConfigSvc.getCommonCfg(cp.id, 'incrementFreezeThawCycles').then(defBoolTrue);
           }
         },
+        parent: 'signed-in'
+      })
+      .state('specimen-bulk-edit', {
+        url: '/bulk-edit-specimens',
+        templateUrl: "modules/biospecimen/participant/specimen/bulk-edit.html",
+        controller: 'BulkEditSpecimensCtrl',
         parent: 'signed-in'
       })
       .state('bulk-add-event', {
         url: '/bulk-add-event',
         templateUrl: 'modules/biospecimen/participant/specimen/bulk-add-event.html',
         controller: 'BulkAddEventCtrl',
+        resolve: {
+          events: function(SpecimenEvent) {
+            return SpecimenEvent.getEvents();
+          }
+        },
         parent: 'signed-in'
       })
       .state('specimen-search', {
@@ -271,13 +518,7 @@ angular.module('os.biospecimen.specimen',
       });
   })
 
-  .run(function(QuickSearchSvc, SpecimenSearchSvc) {
-    var opts = {
-      template: 'modules/biospecimen/participant/specimen/quick-search.html',
-      caption: 'entities.specimen',
-      order: 3,
-      search: SpecimenSearchSvc.search
-    }
-
+  .run(function(QuickSearchSvc) {
+    var opts = {caption: 'entities.specimen', state: 'specimen-detail.overview'}
     QuickSearchSvc.register('specimen', opts);
   });

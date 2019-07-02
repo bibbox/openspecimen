@@ -23,10 +23,12 @@ public class StorageContainerSummary extends AttributeModifiedSupport {
 	private String name;
 
 	private String barcode;
-	
+
 	private Long typeId;
 	
 	private String typeName;
+
+	private String usedFor;
 
 	private String activityStatus;
 
@@ -41,6 +43,8 @@ public class StorageContainerSummary extends AttributeModifiedSupport {
 	private Integer noOfRows;
 
 	private String positionLabelingMode;
+
+	private String positionAssignment;
 
 	private String columnLabelingScheme;
 
@@ -100,6 +104,14 @@ public class StorageContainerSummary extends AttributeModifiedSupport {
 		this.typeName = typeName;
 	}
 
+	public String getUsedFor() {
+		return usedFor;
+	}
+
+	public void setUsedFor(String usedFor) {
+		this.usedFor = usedFor;
+	}
+
 	public String getActivityStatus() {
 		return activityStatus;
 	}
@@ -154,6 +166,14 @@ public class StorageContainerSummary extends AttributeModifiedSupport {
 
 	public void setPositionLabelingMode(String positionLabelingMode) {
 		this.positionLabelingMode = positionLabelingMode;
+	}
+
+	public String getPositionAssignment() {
+		return positionAssignment;
+	}
+
+	public void setPositionAssignment(String positionAssignment) {
+		this.positionAssignment = positionAssignment;
 	}
 
 	public String getColumnLabelingScheme() {
@@ -238,7 +258,8 @@ public class StorageContainerSummary extends AttributeModifiedSupport {
 	protected static void transform(StorageContainer container, StorageContainerSummary result) {
 		result.setId(container.getId());
 		result.setName(container.getName());
-		result.setBarcode(container.getBarcode());		
+		result.setBarcode(container.getBarcode());
+		result.setUsedFor(container.getUsedFor().name());
 		result.setActivityStatus(container.getActivityStatus());
 		result.setCreatedBy(UserSummary.from(container.getCreatedBy()));
 		
@@ -249,6 +270,7 @@ public class StorageContainerSummary extends AttributeModifiedSupport {
 		result.setNoOfRows(container.getNoOfRows());
 		result.setCapacity(container.getCapacity());
 		result.setPositionLabelingMode(container.getPositionLabelingMode().name());
+		result.setPositionAssignment(container.getPositionAssignment().name());
 		result.setColumnLabelingScheme(container.getColumnLabelingScheme());
 		result.setRowLabelingScheme(container.getRowLabelingScheme());
 		result.setFreePositions(container.freePositionsCount());
@@ -273,7 +295,7 @@ public class StorageContainerSummary extends AttributeModifiedSupport {
 		StorageContainerSummary result = new StorageContainerSummary();
 		transform(container, result);
 		if (includeChildren) {
-			result.setChildContainers(from(container.getChildContainers(), includeChildren));
+			result.setChildContainers(from(container.getChildContainers(), true));
 		}
 		return result;
 	}

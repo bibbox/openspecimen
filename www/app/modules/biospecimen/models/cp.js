@@ -1,6 +1,6 @@
 
 angular.module('os.biospecimen.models.cp', ['os.common.models'])
-  .factory('CollectionProtocol', function(osModel, $http, $q, Form) {
+  .factory('CollectionProtocol', function(osModel, $http, $q, DistributionProtocol, Form) {
     var CollectionProtocol =
       osModel(
         'collection-protocols',
@@ -14,8 +14,18 @@ angular.module('os.biospecimen.models.cp', ['os.common.models'])
           cp.consentModel.prototype.getType = function() {
             return 'consent';
           }
+
+          if (!!cp.distributionProtocols) {
+            cp.distributionProtocols = cp.distributionProtocols.map(
+              function(dp) {
+                return new DistributionProtocol(dp);
+              }
+            );
+          }
         }
       );
+
+    CollectionProtocol.MAX_CPS = 2000;
 
     CollectionProtocol.list = function(opts) {
       var defOpts = {detailedList: true};
@@ -28,7 +38,7 @@ angular.module('os.biospecimen.models.cp', ['os.common.models'])
         resource: 'ParticipantPhi',
         op: 'Create',
         title: searchTitle,
-        maxResults: !maxResults ? 1000 : maxResults
+        maxResults: !maxResults ? CollectionProtocol.MAX_CPS : maxResults
       };
 
       return $http.get(CollectionProtocol.url() + 'byop', {params: params}).then(
@@ -58,16 +68,17 @@ angular.module('os.biospecimen.models.cp', ['os.common.models'])
       )
     }
 
-    CollectionProtocol.saveWorkflows = function(cpId, workflows) {
-      return $http.put(CollectionProtocol.url() + cpId  + '/workflows', workflows).then(
+    CollectionProtocol.saveWorkflows = function(cpId, workflows, patch) {
+      var httpFn = patch ? $http.patch : $http.put;
+      return httpFn(CollectionProtocol.url() + cpId  + '/workflows', workflows).then(
         function(result) {
           return result.data;
         }
       )
     }
 
-    CollectionProtocol.bulkDelete = function(cpIds) {
-      return $http.delete(CollectionProtocol.url(), {params: {id: cpIds, forceDelete: true}}).then(
+    CollectionProtocol.bulkDelete = function(cpIds, reason) {
+      return $http.delete(CollectionProtocol.url(), {params: {id: cpIds, forceDelete: true, reason: reason}}).then(
         function(result) {
           return result.data;
         }
@@ -120,35 +131,6 @@ angular.module('os.biospecimen.models.cp', ['os.common.models'])
         return [];
       }
       return this.cpSites.map(function(cpSite) { return cpSite.siteName; });
-    }
-
-    CollectionProtocol.prototype.getCatalogQuery = function() {
-      return $http.get(CollectionProtocol.url() + this.$id() + '/catalog-query').then(
-        function(resp) {
-          return resp.data;
-        }
-      );
-    }
-
-    CollectionProtocol.prototype.getCatalogSetting = function() {
-      return $http.get(CollectionProtocol.url() + this.$id() + '/catalog-settings').then(
-        function(resp) {
-          return resp.data;
-        }
-      );
-    }
-
-    CollectionProtocol.prototype.saveCatalogSetting = function(setting) {
-      var payload = angular.extend({cp: {id: this.$id()}}, setting);
-      return $http.put(CollectionProtocol.url() + this.$id() + '/catalog-settings', payload).then(
-        function(resp) {
-          return resp.data;
-        }
-      );
-    }
-
-    CollectionProtocol.prototype.deleteCatalogSetting = function() {
-      return $http.delete(CollectionProtocol.url() + this.$id() + '/catalog-settings');
     }
 
     CollectionProtocol.prototype.getReportSettings = function() {

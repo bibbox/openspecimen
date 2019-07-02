@@ -18,6 +18,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Configurable;
 import org.springframework.beans.factory.annotation.Qualifier;
 
+import com.krishagni.catissueplus.core.administrative.domain.Site;
 import com.krishagni.catissueplus.core.administrative.domain.User;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.ParticipantErrorCode;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
@@ -36,11 +37,15 @@ public class CollectionProtocolRegistration extends BaseEntity {
 
 	private Date registrationDate;
 
+	private String externalSubjectId;
+
+	private Site site;
+
 	private Participant participant;
 
 	private CollectionProtocol collectionProtocol;
 
-	private Collection<Visit> visits = new HashSet<Visit>();
+	private Collection<Visit> visits = new HashSet<>();
 
 	private String activityStatus;
 
@@ -52,9 +57,11 @@ public class CollectionProtocolRegistration extends BaseEntity {
 	
 	private String signedConsentDocumentName;
 
-	private Set<ConsentTierResponse> consentResponses = new HashSet<ConsentTierResponse>();
+	private Set<ConsentTierResponse> consentResponses = new HashSet<>();
 
 	private String barcode;
+
+	private Integer extensionRev;
 	
 	@Autowired
 	@Qualifier("ppidGenerator")
@@ -82,6 +89,22 @@ public class CollectionProtocolRegistration extends BaseEntity {
 		this.registrationDate = registrationDate;
 	}
 
+	public String getExternalSubjectId() {
+		return externalSubjectId;
+	}
+
+	public void setExternalSubjectId(String externalSubjectId) {
+		this.externalSubjectId = externalSubjectId;
+	}
+
+	public Site getSite() {
+		return site;
+	}
+
+	public void setSite(Site site) {
+		this.site = site;
+	}
+
 	public Participant getParticipant() {
 		return participant;
 	}
@@ -102,6 +125,18 @@ public class CollectionProtocolRegistration extends BaseEntity {
 		return getCollectionProtocol().getShortTitle();
 	}
 
+	public Integer getExtensionRev() {
+		if (participant != null && participant.getExtensionRev() != null) {
+			return (extensionRev == null ? 0 : extensionRev) + participant.getExtensionRev();
+		} else {
+			return extensionRev;
+		}
+	}
+
+	public void setExtensionRev(Integer extensionRev) {
+		this.extensionRev = extensionRev;
+	}
+
 	@NotAudited
 	public Collection<Visit> getVisits() {
 		return visits;
@@ -117,7 +152,17 @@ public class CollectionProtocolRegistration extends BaseEntity {
 		}
 
 		return getVisits().stream()
-			.sorted((v1, v2) -> v1.getVisitDate().compareTo(v2.getVisitDate()))
+			.sorted((v1, v2) -> {
+				if (v1.getVisitDate() != null && v2.getVisitDate() != null) {
+					return v1.getVisitDate().compareTo(v2.getVisitDate());
+				} else if (v1.getVisitDate() != null) {
+					return -1;
+				} else if (v2.getVisitDate() != null) {
+					return 1;
+				} else {
+					return v1.getId().compareTo(v2.getId());
+				}
+			})
 			.collect(Collectors.toList());
 	}
 
@@ -202,8 +247,12 @@ public class CollectionProtocolRegistration extends BaseEntity {
 		this.forceDelete = forceDelete;
 	}
 
+	public boolean isDeleted() {
+		return Status.ACTIVITY_STATUS_DISABLED.getStatus().equals(getActivityStatus());
+	}
+
 	public boolean isActive() {
-		return Status.ACTIVITY_STATUS_ACTIVE.getStatus().equals(this.getActivityStatus());
+		return Status.ACTIVITY_STATUS_ACTIVE.getStatus().equals(getActivityStatus());
 	}
 
 	public void setActive() {
@@ -213,7 +262,7 @@ public class CollectionProtocolRegistration extends BaseEntity {
 	public List<DependentEntityDetail> getDependentEntities() {
 		return DependentEntityDetail.singletonList(Visit.getEntityName(), getActiveVisits()); 
 	}
-	
+
 	public void updateActivityStatus(String activityStatus) {
 		if (this.activityStatus != null && this.activityStatus.equals(activityStatus)) {
 			return;
@@ -225,12 +274,16 @@ public class CollectionProtocolRegistration extends BaseEntity {
 	}
 	
 	public void delete() {
-		delete(!isForceDelete());
+		delete(!isForceDelete(), false);
 	}
 
 	public void delete(boolean checkDependency) {
+		delete(checkDependency, false);
+	}
+
+	public void delete(boolean checkDependency, boolean checkOnlyCollectedSpmns) {
 		if (checkDependency) {
-			ensureNoActiveChildObjects();
+			ensureNoActiveChildObjects(checkOnlyCollectedSpmns);
 		}
 		
 		for (Visit visit : getVisits()) {
@@ -256,6 +309,8 @@ public class CollectionProtocolRegistration extends BaseEntity {
 
 	public void update(CollectionProtocolRegistration cpr) {
 		setForceDelete(cpr.isForceDelete());
+		setOpComments(cpr.getOpComments());
+
 		updateActivityStatus(cpr.getActivityStatus());
 		if (!isActive()) {
 			return;
@@ -274,6 +329,8 @@ public class CollectionProtocolRegistration extends BaseEntity {
 		}
 
 		setBarcode(cpr.getBarcode());
+		setExternalSubjectId(cpr.getExternalSubjectId());
+		setSite(cpr.getSite());
 	}
 	
 	public void updateConsents(ConsentResponses consentResponses) {
@@ -327,11 +384,13 @@ public class CollectionProtocolRegistration extends BaseEntity {
 		getConsentResponses().removeAll(existingResps.values());
 	}
 
-	private void ensureNoActiveChildObjects() {
+	private void ensureNoActiveChildObjects(boolean checkOnlyCollectedSpmns) {
 		for (Visit visit : getVisits()) {
-			if (visit.isActive() && visit.isCompleted()) {
+			if (checkOnlyCollectedSpmns && visit.hasCollectedSpecimens()) {
 				throw OpenSpecimenException.userError(ParticipantErrorCode.REF_ENTITY_FOUND);
-			}			
+			} else if (!checkOnlyCollectedSpmns && visit.isActive() && visit.isCompleted()) {
+				throw OpenSpecimenException.userError(ParticipantErrorCode.REF_ENTITY_FOUND);
+			}
 		}
 	}	
 	

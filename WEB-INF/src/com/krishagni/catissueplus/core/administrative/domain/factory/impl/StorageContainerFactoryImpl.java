@@ -14,6 +14,7 @@ import org.apache.commons.lang3.BooleanUtils;
 
 import com.krishagni.catissueplus.core.administrative.domain.AutoFreezerProvider;
 import com.krishagni.catissueplus.core.administrative.domain.ContainerType;
+import com.krishagni.catissueplus.core.administrative.domain.DistributionProtocol;
 import com.krishagni.catissueplus.core.administrative.domain.Site;
 import com.krishagni.catissueplus.core.administrative.domain.StorageContainer;
 import com.krishagni.catissueplus.core.administrative.domain.StorageContainerPosition;
@@ -30,11 +31,13 @@ import com.krishagni.catissueplus.core.administrative.events.StorageLocationSumm
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.SpecimenErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
+import com.krishagni.catissueplus.core.common.Pair;
 import com.krishagni.catissueplus.core.common.errors.ActivityStatusErrorCode;
 import com.krishagni.catissueplus.core.common.errors.ErrorType;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.util.AuthUtil;
 import com.krishagni.catissueplus.core.common.util.Status;
+import com.krishagni.catissueplus.core.de.domain.DeObject;
 
 public class StorageContainerFactoryImpl implements StorageContainerFactory {
 	private DaoFactory daoFactory;
@@ -65,10 +68,12 @@ public class StorageContainerFactoryImpl implements StorageContainerFactory {
 
 		setName(detail, existing, container, ose);
 		setBarcode(detail, existing, container, ose);
+		setUsageMode(detail, existing, container, ose);
 		setType(detail, existing, container, ose);
 		setTemperature(detail, existing, container, ose);
 		setCapacity(detail, existing, container, ose);
 		setPositionLabelingMode(detail, existing, container, ose);
+		setPositionAssignment(detail, existing, container, ose);
 		setLabelingSchemes(detail, existing, container, ose);
 		setSiteAndParentContainer(detail, existing, container, ose);
 		setPosition(detail, existing, container, ose);
@@ -79,11 +84,17 @@ public class StorageContainerFactoryImpl implements StorageContainerFactory {
 		setAutomated(detail, existing, container, ose);
 		setAutoFreezerProvider(detail, existing, container, ose);
 		setCellDisplayProp(detail, existing, container, ose);
-		setAllowedSpecimenClasses(detail, existing, container, ose);
-		setAllowedSpecimenTypes(detail, existing, container, ose);
-		setAllowedCps(detail, existing, container, ose);
+		setExtension(detail, existing, container, ose);
+
+		if (!container.isDistributionContainer()) {
+			setAllowedSpecimenClasses(detail, existing, container, ose);
+			setAllowedSpecimenTypes(detail, existing, container, ose);
+			setAllowedCps(detail, existing, container, ose);
+		} else {
+			setAllowedDps(detail, existing, container, ose);
+		}
+
 		setComputedRestrictions(container);
-		
 		ose.checkAndThrow();
 		return container;
 	}
@@ -93,12 +104,14 @@ public class StorageContainerFactoryImpl implements StorageContainerFactory {
 		ContainerType type = getType(input.getTypeId(), input.getTypeName());
 		StorageContainerDetail detail = getStorageContainerDetail(type);
 		detail.setName(name);
+		detail.setUsedFor(input.getUsedFor());
 		detail.setSiteName(input.getSiteName());
 		detail.setStorageLocation(input.getStorageLocation());
 		detail.setCellDisplayProp(input.getCellDisplayProp());
 		detail.setAllowedSpecimenClasses(input.getAllowedSpecimenClasses());
 		detail.setAllowedSpecimenTypes(input.getAllowedSpecimenTypes());
 		detail.setAllowedCollectionProtocols(input.getAllowedCollectionProtocols());
+		detail.setAllowedDistributionProtocols(input.getAllowedDistributionProtocols());
 		
 		if (input.getNoOfColumns() != null && input.getNoOfColumns() > 0) {
 			detail.setNoOfColumns(input.getNoOfColumns());
@@ -123,6 +136,10 @@ public class StorageContainerFactoryImpl implements StorageContainerFactory {
 		if (input.getStoreSpecimensEnabled() != null) {
 			detail.setStoreSpecimensEnabled(input.getStoreSpecimensEnabled());
 		}
+
+		if (input.getExtensionDetail() != null) {
+			detail.setExtensionDetail(input.getExtensionDetail());
+		}
 		
 		StorageContainer container = createStorageContainer(detail);
 		container.setType(type);
@@ -133,6 +150,7 @@ public class StorageContainerFactoryImpl implements StorageContainerFactory {
 	public StorageContainer createStorageContainer(String name, ContainerType type, StorageContainer parentContainer) {
 		StorageContainerDetail detail = getStorageContainerDetail(type);
 		detail.setName(name);
+		detail.setUsedFor(parentContainer.getUsedFor().name());
 		detail.setSiteName(parentContainer.getSite().getName());
 
 		StorageContainer container = createStorageContainer(detail);
@@ -173,6 +191,27 @@ public class StorageContainerFactoryImpl implements StorageContainerFactory {
 			setBarcode(detail, container, ose);
 		} else {
 			container.setBarcode(existing.getBarcode());
+		}
+	}
+
+	private void setUsageMode(StorageContainerDetail detail, StorageContainer container, OpenSpecimenException ose) {
+		if (StringUtils.isBlank(detail.getUsedFor())) {
+			container.setUsedFor(StorageContainer.UsageMode.STORAGE);
+			return;
+		}
+
+		try {
+			container.setUsedFor(StorageContainer.UsageMode.valueOf(detail.getUsedFor()));
+		} catch (Exception e) {
+			ose.addError(StorageContainerErrorCode.INV_USAGE_MODE, detail.getUsedFor());
+		}
+	}
+
+	private void setUsageMode(StorageContainerDetail detail, StorageContainer existing, StorageContainer container, OpenSpecimenException ose) {
+		if (existing == null) {
+			setUsageMode(detail, container, ose);
+		} else {
+			container.setUsedFor(existing.getUsedFor());
 		}
 	}
 	
@@ -244,6 +283,13 @@ public class StorageContainerFactoryImpl implements StorageContainerFactory {
 		} else {
 			container.setCapacity(existing.getCapacity());
 		}
+
+		if (rowDimLess && colDimLess) {
+			//
+			// container type is not applicable for dimensionless containers
+			//
+			container.setType(null);
+		}
 	}
 	
 	private void setNoOfColumns(StorageContainerDetail detail, StorageContainer container, OpenSpecimenException ose) {
@@ -296,8 +342,10 @@ public class StorageContainerFactoryImpl implements StorageContainerFactory {
 
 	private void setPositionLabelingMode(StorageContainerDetail detail, StorageContainer container, OpenSpecimenException ose) {
 		try {
-			if (StringUtils.isNotBlank(detail.getPositionLabelingMode())) {
-				container.setPositionLabelingMode(StorageContainer.PositionLabelingMode.valueOf(detail.getPositionLabelingMode()));
+			String mode = detail.getPositionLabelingMode();
+			if (StringUtils.isNotBlank(mode)) {
+				mode = mode.toUpperCase();
+				container.setPositionLabelingMode(StorageContainer.PositionLabelingMode.valueOf(mode));
 			} else if (container.getType() != null) {
 				container.setPositionLabelingMode(container.getType().getPositionLabelingMode());
 			}
@@ -320,6 +368,33 @@ public class StorageContainerFactoryImpl implements StorageContainerFactory {
 			setPositionLabelingMode(detail, container, ose);
 		} else {
 			container.setPositionLabelingMode(existing.getPositionLabelingMode());
+		}
+	}
+
+	private void setPositionAssignment(StorageContainerDetail detail, StorageContainer container, OpenSpecimenException ose) {
+		try {
+			String assignment = detail.getPositionAssignment();
+			if (StringUtils.isNotBlank(assignment)) {
+				assignment = assignment.toUpperCase();
+				container.setPositionAssignment(StorageContainer.PositionAssignment.valueOf(assignment));
+			} else if (container.getType() != null) {
+				container.setPositionAssignment(container.getType().getPositionAssignment());
+			}
+		} catch (Exception e) {
+			ose.addError(StorageContainerErrorCode.INVALID_POSITION_ASSIGNMENT, detail.getPositionAssignment());
+		}
+	}
+
+	private void setPositionAssignment(StorageContainerDetail detail, StorageContainer existing, StorageContainer container, OpenSpecimenException ose) {
+		if (container.isDimensionless()) {
+			container.setPositionAssignment(StorageContainer.PositionAssignment.HZ_TOP_DOWN_LEFT_RIGHT);
+			return;
+		}
+
+		if (detail.isAttrModified("positionAssignment") || existing == null) {
+			setPositionAssignment(detail, container, ose);
+		} else {
+			container.setPositionAssignment(existing.getPositionAssignment());
 		}
 	}
 
@@ -386,6 +461,14 @@ public class StorageContainerFactoryImpl implements StorageContainerFactory {
 		} else if (parentContainer != null && !parentContainer.getSite().equals(site)) {
 			ose.addError(StorageContainerErrorCode.INVALID_SITE_AND_PARENT_CONT);
 		}
+
+		if (container.isSiteContainer()) {
+			if (!container.isDimensionless() || parentContainer != null) {
+				ose.addError(StorageContainerErrorCode.SITE_CONT_VIOLATED);
+			} else {
+				container.addOnSaveProc(() -> container.getSite().setContainer(container));
+			}
+		}
 	}
 	
 	private void setSiteAndParentContainer(StorageContainerDetail detail, StorageContainer existing, StorageContainer container, OpenSpecimenException ose) {
@@ -434,6 +517,10 @@ public class StorageContainerFactoryImpl implements StorageContainerFactory {
 				ose.addError(StorageContainerErrorCode.PARENT_CONT_NOT_FOUND, key);
 			}
 		} else {
+			if (container.getUsedFor() != parentContainer.getUsedFor()) {
+				ose.addError(StorageContainerErrorCode.USAGE_DIFFER, parentContainer.getUsedFor(), container.getUsedFor());
+			}
+
 			container.setParentContainer(parentContainer);
 		}
 
@@ -466,6 +553,19 @@ public class StorageContainerFactoryImpl implements StorageContainerFactory {
 			container.setCellDisplayProp(existing.getCellDisplayProp());
 		}
 	}
+
+	private void setExtension(StorageContainerDetail detail, StorageContainer container, OpenSpecimenException ose) {
+		DeObject extension = DeObject.createExtension(detail.getExtensionDetail(), container);
+		container.setExtension(extension);
+	}
+
+	private void setExtension(StorageContainerDetail detail, StorageContainer existing, StorageContainer container, OpenSpecimenException ose) {
+		if (detail.isAttrModified("extensionDetail") || existing == null) {
+			setExtension(detail, container, ose);
+		} else {
+			container.setExtension(existing.getExtension());
+		}
+	}
 	
 	private void setPosition(StorageContainerDetail detail, StorageContainer container, OpenSpecimenException ose) {
 		StorageContainer parentContainer = container.getParentContainer();
@@ -476,8 +576,9 @@ public class StorageContainerFactoryImpl implements StorageContainerFactory {
 
 		String posOne = location.getPositionX(), posTwo = location.getPositionY();
 		if (!parentContainer.isDimensionless() && parentContainer.usesLinearLabelingMode() && location.getPosition() != null && location.getPosition() != 0) {
-			posTwo = String.valueOf((location.getPosition() - 1) / parentContainer.getNoOfColumns() + 1);
-			posOne = String.valueOf((location.getPosition() - 1) % parentContainer.getNoOfColumns() + 1);
+			Pair<Integer, Integer> coord = parentContainer.getPositionAssigner().fromPosition(parentContainer, location.getPosition());
+			posTwo = coord.first().toString();
+			posOne = coord.second().toString();
 		}
 
 		StorageContainerPosition position = null;
@@ -527,11 +628,14 @@ public class StorageContainerFactoryImpl implements StorageContainerFactory {
 	}
 	
 	private void setCreatedBy(StorageContainerDetail detail, StorageContainer existing, StorageContainer container, OpenSpecimenException ose) {
-		if (detail.isAttrModified("createdBy") || existing == null) {
-			setCreatedBy(detail, container, ose);
-		} else {
-			container.setCreatedBy(existing.getCreatedBy());
+		if (container.getId() != null) {
+			return;
 		}
+
+		//
+		// OPSMN-4458: Created by is set only when a new container is being created which has no ID
+		//
+		setCreatedBy(detail, container, ose);
 	}
 	
 	private void setActivityStatus(StorageContainerDetail detail, StorageContainer container, OpenSpecimenException ose) {
@@ -666,7 +770,7 @@ public class StorageContainerFactoryImpl implements StorageContainerFactory {
 	private void setAllowedCps(StorageContainerDetail detail, StorageContainer container, OpenSpecimenException ose) {
 		Set<String> allowedCps = detail.getAllowedCollectionProtocols();
 		
-		List<CollectionProtocol> cps = new ArrayList<CollectionProtocol>();		
+		List<CollectionProtocol> cps = new ArrayList<>();
 		if (CollectionUtils.isNotEmpty(allowedCps) && container.getSite() != null) {
 			cps = daoFactory.getCollectionProtocolDao().getCpsByShortTitle(allowedCps, container.getSite().getName());
 			if (cps.size() != allowedCps.size()) {
@@ -685,11 +789,38 @@ public class StorageContainerFactoryImpl implements StorageContainerFactory {
 			container.setAllowedCps(existing.getAllowedCps());
 		}		
 	}
+
+	private void setAllowedDps(StorageContainerDetail detail, StorageContainer container, OpenSpecimenException ose) {
+		Set<String> allowedDps = detail.getAllowedDistributionProtocols();
+
+		List<DistributionProtocol> dps = new ArrayList<>();
+		if (CollectionUtils.isNotEmpty(allowedDps)) {
+			dps = daoFactory.getDistributionProtocolDao().getDistributionProtocols(allowedDps);
+			if (dps.size() != allowedDps.size()) {
+				ose.addError(StorageContainerErrorCode.INVALID_DPS);
+				return;
+			}
+		}
+
+		container.setAllowedDps(new HashSet<>(dps));
+	}
+
+	private void setAllowedDps(StorageContainerDetail detail, StorageContainer existing, StorageContainer container, OpenSpecimenException ose) {
+		if (detail.isAttrModified("allowedDistributionProtocols") || existing == null) {
+			setAllowedDps(detail, container, ose);
+		} else {
+			container.setAllowedDps(existing.getAllowedDps());
+		}
+	}
 	
 	private void setComputedRestrictions(StorageContainer container) {
-		container.setCompAllowedSpecimenClasses(container.computeAllowedSpecimenClasses());
-		container.setCompAllowedSpecimenTypes(container.computeAllowedSpecimenTypes());
-		container.setCompAllowedCps(container.computeAllowedCps());
+		if (container.isDistributionContainer()) {
+			container.setCompAllowedDps(container.computeAllowedDps());
+		} else {
+			container.setCompAllowedSpecimenClasses(container.computeAllowedSpecimenClasses());
+			container.setCompAllowedSpecimenTypes(container.computeAllowedSpecimenTypes());
+			container.setCompAllowedCps(container.computeAllowedCps());
+		}
 	}
 	
 	private ContainerType getType(Long id, String name) {
@@ -721,6 +852,7 @@ public class StorageContainerFactoryImpl implements StorageContainerFactory {
 		detail.setPositionLabelingMode(type.getPositionLabelingMode().name());
 		detail.setColumnLabelingScheme(type.getColumnLabelingScheme());
 		detail.setRowLabelingScheme(type.getRowLabelingScheme());
+		detail.setPositionAssignment(type.getPositionAssignment().name());
 		detail.setTemperature(type.getTemperature());
 		detail.setStoreSpecimensEnabled(type.isStoreSpecimenEnabled());
 		return detail;

@@ -1,4 +1,4 @@
-<div ng-if="showFormCtxts" class="os-form-association">
+<div ng-if="showFormCtxts" class="os-form-association os-no-label-form">
   <div class="os-modal-header">
     <h4>{{form.caption}}</h4>
   </div>
@@ -31,8 +31,8 @@
               </div>
               <div class="col col-xs-1">
                 <button class="btn btn-default btn-xs" ng-click="confirmRemoveCtx(ctxt, $index)" 
-                  ng-if="!ctxt.sysForm">
-                  <i class="fa fa-trash-o"></i>
+                  ng-if="!ctxt.sysForm && ctxt.level.allowEdits !== false">
+                  <span class="fa fa-trash-o"></span>
                 </button>
               </div>
             </div>

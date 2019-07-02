@@ -41,6 +41,8 @@ public class ConfigParams {
 
 	public static final String UNIQUE_SPMN_LABEL_PER_CP  = "unique_spmn_label_per_cp";
 
+	public static final String UNIQUE_SPMN_BARCODE_PER_CP = "unique_spmn_barcode_per_cp";
+
 	public static final String CP_SOP_DOCS_DIR           = "cp_sop_doc_dir";
 
 	public static final String CP_SOP_DOC                = "cp_sop_doc";
@@ -62,6 +64,14 @@ public class ConfigParams {
 	public static final String STAGED_PART_CLEANUP_INT   = "staged_part_cleanup_int";
 
 	public static final String ENABLE_SPMN_BARCODING     = "enable_spmn_barcoding";
+
+	public static final String SPMN_BARCODE_FORMAT       = "specimen_barcode_format";
+
+	public static final String ALIQUOT_LABEL_FORMAT      = "aliquot_label_format";
+
+	public static final String VISITS_LOOKUP_FLOW        = "visits_lookup_flow";
+
+	public static final String ALIQUOT_QTY_REQ           = "mandatory_aliquot_qty";
 
 	public static String getConsentsDirPath() {
 		String path = ConfigUtil.getInstance().getStrSetting(MODULE, CONSENTS_DIR, null);

@@ -1,8 +1,7 @@
 
 angular.module('os.query.globaldata', ['os.query.models', 'os.biospecimen.models'])
   .factory('QueryGlobalData', function(
-    $translate, $q, $http,
-    ApiUrls, CollectionProtocol, Form, SavedQuery, QueryFolder, QueryUtil, Util) {
+    $q, $http, ApiUrls, CollectionProtocol, Form, SavedQuery, QueryFolder, QueryUtil, Util, Alerts) {
 
     var QueryGlobalData = function() {
       this.cpsQ = undefined;
@@ -20,15 +19,11 @@ angular.module('os.query.globaldata', ['os.query.models', 'os.biospecimen.models
       
       if (!this.cpsQ) {
         var that = this;
-        this.cpsQ = CollectionProtocol.list({detailedList: false, maxResults: 1000}).then(
+        this.cpsQ = CollectionProtocol.list({detailedList: false, maxResults: CollectionProtocol.MAX_CPS}).then(
           function(result) {
-            return $translate('common.none').then(
-              function(none) {
-                result.unshift({id: -1, shortTitle: none, title: none});
-                that.cpList = result;
-                return that.cpList;
-              }
-            );
+            result.unshift({id: -1, shortTitle: 'None', title: 'None'});
+            that.cpList = result;
+            return that.cpList;
           }
         );
       }
@@ -148,11 +143,14 @@ angular.module('os.query.globaldata', ['os.query.models', 'os.biospecimen.models
         exprNodes: [],
         filterId: 0,
         selectedFields: selectList,
+        havingClause: savedQuery.havingClause,
         reporting: savedQuery.reporting || {type: 'none', params: {}},
         selectedCp: {id: savedQuery.cpId},
         isValid: true,
         drivingForm: 'Participant',
-        wideRowMode: savedQuery.wideRowMode || 'DEEP'
+        wideRowMode: savedQuery.wideRowMode || 'DEEP',
+        outputColumnExprs: savedQuery.outputColumnExprs,
+        dependentQueries: savedQuery.dependentQueries || []
       };
 
       var that = this;
@@ -192,6 +190,27 @@ angular.module('os.query.globaldata', ['os.query.models', 'os.biospecimen.models
       );
     };
 
+    QueryGlobalData.prototype.setupFilters = function(cp, savedQuery, queryCtx) {
+      queryCtx = queryCtx || {selectedCp: cp};
+
+      var that = this;
+      var promise = this.loadCpForms(cp).then(
+        function(forms) {
+          var promises = recreateUiFilters(that, queryCtx, savedQuery.filters);
+          recreateUiExprNodes(queryCtx, savedQuery.queryExpression);
+          promises = promises.concat(loadFormFieldsNeededForFilters(queryCtx.filters));
+          return $q.all(promises);
+        }
+      );
+
+      return promise.then(
+        function() {
+          fleshOutFilterFields(queryCtx);
+          return queryCtx;
+        }
+      )
+    }
+
     function createQueryCtx(queryGlobal, savedQuery, cpId) {
       var queryCtx = queryGlobal.newQueryCtx(savedQuery);
       return queryGlobal.getCps().then(
@@ -202,27 +221,16 @@ angular.module('os.query.globaldata', ['os.query.models', 'os.biospecimen.models
 
           var selectedCp = queryCtx.selectedCp = getCp(cps, savedQuery.cpId || -1);
           if (!selectedCp) {
-            return undefined;
+            queryGlobal.clearQueryCtx();
+            Alerts.error("queries.invalid_cp", {cpId: savedQuery.cpId});
+            throw "Invalid CP: " + savedQuery.cpId;
           }
-         
-          var promise = queryGlobal.loadCpForms(selectedCp).then(
-            function(forms) {
-              recreateUiFilters(queryCtx, savedQuery.filters);
-              recreateUiExprNodes(queryCtx, savedQuery.queryExpression);
-              return $q.all(loadFormFieldsNeededForFilters(queryCtx.filters));
-            }
-          );
 
-          return promise.then(
-            function() {
-              fleshOutFilterFields(queryCtx);
-              return queryCtx;
-            }
-          )
+          return queryGlobal.setupFilters(selectedCp, savedQuery, queryCtx);
         }
       );
     }
-        
+
     function getCp(cps, cpId) {
       for (var i = 0; i < cps.length; ++i) {
         if (cps[i].id == cpId) {
@@ -233,37 +241,37 @@ angular.module('os.query.globaldata', ['os.query.models', 'os.biospecimen.models
       return null;
     }
 
-    function recreateUiFilters(queryCtx, filters) {
+    function recreateUiFilters(queryGlobal, queryCtx, filters) {
       var uiFilters = queryCtx.filters = []; 
       var filtersMap = queryCtx.filtersMap = {};
       var filterId = 0;
 
+      var sqPromises = [];
       angular.forEach(filters, function(filter) {
-        var uiFilter = QueryUtil.getUiFilter(queryCtx.selectedCp, filter);
+        var uiFilter = QueryUtil.getUiFilter(queryGlobal, queryCtx.selectedCp, filter);
+        if (!uiFilter.expr && (!uiFilter.form || !uiFilter.fieldName)) {
+          Alerts.error('queries.invalid_form_or_field', filter);
+        }
+
         uiFilters.push(uiFilter);
         filtersMap[uiFilter.id] = uiFilter;
 
         if (filterId < uiFilter.id) {
           filterId = uiFilter.id;
         }
-      });
 
-      queryCtx.filterId = filterId;
-    }
-
-    function recreateUiExprNodes(queryCtx, queryExpressions) {
-      var exprNodes = queryCtx.exprNodes = [];
-      angular.forEach(queryExpressions, function(expr) {
-        if (expr.nodeType == 'FILTER') {
-          exprNodes.push({type: 'filter', value: expr.value});
-        } else if (expr.nodeType == 'OPERATOR') {
-          exprNodes.push({type: 'op', value: QueryUtil.getOpByModel(expr.value).name});
-        } else if (expr.nodeType == 'PARENTHESIS') {
-          exprNodes.push({type: 'paren', value: expr.value == 'LEFT' ? '(' : ')'});
+        if (uiFilter.sqCtxQ) {
+          sqPromises.push(uiFilter.sqCtxQ);
         }
       });
 
-      return exprNodes;
+      queryCtx.filterId = filterId;
+      return sqPromises;
+    }
+
+    function recreateUiExprNodes(queryCtx, queryExpression) {
+      queryCtx.exprNodes = QueryUtil.getUiExprNodes(queryExpression);
+      return queryCtx.exprNodes;
     }
 
     function loadFormFieldsNeededForFilters(filters) {
@@ -275,6 +283,10 @@ angular.module('os.query.globaldata', ['os.query.models', 'os.biospecimen.models
         }
 
         var form = filter.form;
+        if (!form) {
+          return;
+        }
+
         if (!loadedForms[form.name]) {
           promises.push(form.getFields());
           loadedForms[form.name] = true;
@@ -287,7 +299,7 @@ angular.module('os.query.globaldata', ['os.query.models', 'os.biospecimen.models
     function fleshOutFilterFields(queryCtx) {
       for (var i = 0; i < queryCtx.filters.length; ++i) {
         var filter = queryCtx.filters[i];
-        if (filter.expr) {
+        if (filter.expr || !filter.form) {
           continue;
         }
                   

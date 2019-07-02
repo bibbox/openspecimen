@@ -3,8 +3,6 @@ package com.krishagni.catissueplus.core.importer.events;
 import java.util.HashMap;
 import java.util.Map;
 
-import com.krishagni.catissueplus.core.importer.services.ImportListener;
-
 public class ImportDetail {
 	private String objectType;
 	
@@ -16,10 +14,10 @@ public class ImportDetail {
 
 	private String timeFormat;
 
+	private String fieldSeparator;
+
 	private String inputFileId;
 
-	private ImportListener listener;
-	
 	private Map<String, String> objectParams = new HashMap<>();
 
 	private boolean atomic;
@@ -64,6 +62,14 @@ public class ImportDetail {
 		this.timeFormat = timeFormat;
 	}
 
+	public String getFieldSeparator() {
+		return fieldSeparator;
+	}
+
+	public void setFieldSeparator(String fieldSeparator) {
+		this.fieldSeparator = fieldSeparator;
+	}
+
 	public String getInputFileId() {
 		return inputFileId;
 	}
@@ -78,14 +84,6 @@ public class ImportDetail {
 
 	public void setObjectParams(Map<String, String> objectParams) {
 		this.objectParams = objectParams;
-	}
-
-	public ImportListener getListener() {
-		return listener;
-	}
-
-	public void setListener(ImportListener listener) {
-		this.listener = listener;
 	}
 
 	public boolean isAtomic() {

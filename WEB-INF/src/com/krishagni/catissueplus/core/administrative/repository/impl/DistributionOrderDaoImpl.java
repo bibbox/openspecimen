@@ -5,26 +5,33 @@ import java.util.Calendar;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang.StringUtils;
 import org.hibernate.Criteria;
+import org.hibernate.criterion.DetachedCriteria;
+import org.hibernate.criterion.Disjunction;
 import org.hibernate.criterion.MatchMode;
 import org.hibernate.criterion.Order;
 import org.hibernate.criterion.ProjectionList;
 import org.hibernate.criterion.Projections;
 import org.hibernate.criterion.Restrictions;
+import org.hibernate.criterion.Subqueries;
 import org.hibernate.sql.JoinType;
 
 import com.krishagni.catissueplus.core.administrative.domain.DistributionOrder;
 import com.krishagni.catissueplus.core.administrative.domain.DistributionOrderItem;
+import com.krishagni.catissueplus.core.administrative.domain.Site;
 import com.krishagni.catissueplus.core.administrative.events.DistributionOrderItemListCriteria;
 import com.krishagni.catissueplus.core.administrative.events.DistributionOrderListCriteria;
 import com.krishagni.catissueplus.core.administrative.events.DistributionOrderSummary;
 import com.krishagni.catissueplus.core.administrative.events.DistributionProtocolDetail;
 import com.krishagni.catissueplus.core.administrative.repository.DistributionOrderDao;
+import com.krishagni.catissueplus.core.common.access.SiteCpPair;
 import com.krishagni.catissueplus.core.common.events.UserSummary;
 import com.krishagni.catissueplus.core.common.repository.AbstractDao;
 
@@ -34,15 +41,15 @@ public class DistributionOrderDaoImpl extends AbstractDao<DistributionOrder> imp
 	@Override
 	public List<DistributionOrderSummary> getOrders(DistributionOrderListCriteria listCrit) {
 		Criteria query = getOrderListQuery(listCrit)
-				.setFirstResult(listCrit.startAt())
-				.setMaxResults(listCrit.maxResults())
-				.addOrder(Order.desc("id"));
+			.setFirstResult(listCrit.startAt())
+			.setMaxResults(listCrit.maxResults())
+			.addOrder(Order.desc("id"));
 
-		addProjections(query, CollectionUtils.isNotEmpty(listCrit.siteIds()));
+		addProjections(query, CollectionUtils.isNotEmpty(listCrit.sites()));
 		List<Object[]> rows = query.list();
 		
-		List<DistributionOrderSummary> result = new ArrayList<DistributionOrderSummary>();
-		Map<Long, DistributionOrderSummary> doMap = new HashMap<Long, DistributionOrderSummary>();
+		List<DistributionOrderSummary> result = new ArrayList<>();
+		Map<Long, DistributionOrderSummary> doMap = new HashMap<>();
 		
 		for (Object[] row : rows) {
 			DistributionOrderSummary order = getDoSummary(row);
@@ -53,16 +60,8 @@ public class DistributionOrderDaoImpl extends AbstractDao<DistributionOrder> imp
 			}
 		}
 		
-		if (listCrit.includeStat() && !doMap.isEmpty()) {
-			rows = getSessionFactory().getCurrentSession()
-				.getNamedQuery(GET_SPEC_CNT_BY_ORDER)
-				.setParameterList("orderIds", doMap.keySet())
-				.list();
-			
-			for (Object[] row : rows) {
-				DistributionOrderSummary order = doMap.get((Long)row[0]);
-				order.setSpecimenCnt((Long)row[1]);
-			}
+		if (listCrit.includeStat()) {
+			loadOrderItemsCount(doMap);
 		}
 		
 		return result;
@@ -84,6 +83,7 @@ public class DistributionOrderDaoImpl extends AbstractDao<DistributionOrder> imp
 	}
 
 	@Override
+	@SuppressWarnings("unchecked")
 	public List<DistributionOrder> getOrders(List<String> names) {
 		return getSessionFactory().getCurrentSession()
 				.getNamedQuery(GET_ORDERS_BY_NAME)
@@ -92,6 +92,17 @@ public class DistributionOrderDaoImpl extends AbstractDao<DistributionOrder> imp
 	}
 
 	@Override
+	@SuppressWarnings("unchecked")
+	public List<DistributionOrder> getUnpickedOrders(Date distSince, int startAt, int maxOrders) {
+		return getCurrentSession().getNamedQuery(GET_UNPICKED_ORDERS)
+			.setDate("distEarlierThan", distSince)
+			.setFirstResult(startAt)
+			.setMaxResults(maxOrders)
+			.list();
+	}
+
+	@Override
+	@SuppressWarnings("unchecked")
 	public List<DistributionOrderItem> getDistributedOrderItems(List<Long> specimenIds) {
 		return getSessionFactory().getCurrentSession()
 				.getNamedQuery(GET_DISTRIBUTED_ITEMS_BY_SPMN_IDS)
@@ -112,10 +123,22 @@ public class DistributionOrderDaoImpl extends AbstractDao<DistributionOrder> imp
 	@Override
 	@SuppressWarnings("unchecked")
 	public List<DistributionOrderItem> getOrderItems(DistributionOrderItemListCriteria crit) {
-		return getCurrentSession().createCriteria(DistributionOrderItem.class, "orderItem")
+		Criteria query = getCurrentSession().createCriteria(DistributionOrderItem.class, "orderItem")
 			.createAlias("orderItem.order", "order")
-			.add(Restrictions.eq("order.id", crit.orderId()))
-			.setFirstResult(crit.startAt())
+			.add(Restrictions.eq("order.id", crit.orderId()));
+
+		if (crit.storedInContainers()) {
+			query.createAlias("orderItem.specimen", "specimen")
+				.createAlias("specimen.position", "spmnPos")
+				.add(Restrictions.isNotNull("spmnPos.id"))
+				.add(Restrictions.eq("orderItem.status", DistributionOrderItem.Status.DISTRIBUTED_AND_CLOSED));
+		}
+
+		if (CollectionUtils.isNotEmpty(crit.ids())) {
+			query.add(Restrictions.in("orderItem.id", crit.ids()));
+		}
+
+		return query.setFirstResult(crit.startAt())
 			.setMaxResults(crit.maxResults())
 			.addOrder(Order.asc("orderItem.id"))
 			.list();
@@ -128,38 +151,75 @@ public class DistributionOrderDaoImpl extends AbstractDao<DistributionOrder> imp
 
 	@SuppressWarnings("unchecked")
 	private Criteria getOrderListQuery(DistributionOrderListCriteria crit) {
-		Criteria query = sessionFactory.getCurrentSession()
-				.createCriteria(DistributionOrder.class)
-				.createAlias("distributionProtocol", "dp")
-				.createAlias("requester", "user")
-				.createAlias("site", "site", JoinType.LEFT_OUTER_JOIN);
-		
-		//
-		// Restrict by distributing sites
-		//
-		if (CollectionUtils.isNotEmpty(crit.siteIds())) {
-			query.createAlias("dp.distributingSites", "distSites")
-				.createAlias("distSites.site", "distSite", JoinType.LEFT_OUTER_JOIN)
-				.createAlias("distSites.institute", "distInst")
-				.createAlias("distInst.sites", "instSite")
-				.add(Restrictions.or(
-						Restrictions.and(Restrictions.isNull("distSites.site"), Restrictions.in("instSite.id", crit.siteIds())),
-						Restrictions.and(Restrictions.isNotNull("distSites.site"),Restrictions.in("distSite.id", crit.siteIds()))
-				));
-		}
+		Criteria query = getCurrentSession().createCriteria(DistributionOrder.class)
+			.createAlias("distributionProtocol", "dp")
+			.createAlias("requester", "user")
+			.createAlias("site", "site", JoinType.LEFT_OUTER_JOIN);
 		
 		//
 		// Add search restrictions
 		//
 		MatchMode matchMode = crit.exactMatch() ? MatchMode.EXACT : MatchMode.ANYWHERE;
+		applyIdsFilter(query, "id", crit.ids());
+		addSitesRestriction(query, crit);
 		addNameRestriction(query, crit, matchMode);
 		addDpRestriction(query, crit, matchMode);
 		addRequestorRestriction(query, crit, matchMode);
+		addRequestRestriction(query, crit);
 		addExecutionDtRestriction(query, crit);
 		addReceivingSiteRestriction(query, crit, matchMode);
 		addReceivingInstRestriction(query, crit, matchMode);
-		
 		return query;
+	}
+
+	//
+	// Restrict by accessible distributing sites
+	//
+	private void addSitesRestriction(Criteria query, DistributionOrderListCriteria crit) {
+		if (CollectionUtils.isEmpty(crit.sites())) {
+			return;
+		}
+
+		Set<Long> instituteIds = new HashSet<>();
+		Set<Long> siteIds      = new HashSet<>();
+		for (SiteCpPair site : crit.sites()) {
+			if (site.getSiteId() != null) {
+				siteIds.add(site.getSiteId());
+			} else if (site.getInstituteId() != null) {
+				instituteIds.add(site.getInstituteId());
+			}
+		}
+
+		query.createAlias("dp.distributingSites", "distSites")
+			.createAlias("distSites.site", "distSite", JoinType.LEFT_OUTER_JOIN)
+			.createAlias("distSites.institute", "distInst")
+			.createAlias("distInst.sites", "instSite");
+
+		Disjunction instituteConds = Restrictions.disjunction();
+		if (!siteIds.isEmpty()) {
+			instituteConds.add(Restrictions.in("instSite.id", siteIds));
+		}
+
+		if (!instituteIds.isEmpty()) {
+			instituteConds.add(Restrictions.in("distInst.id", instituteIds));
+		}
+
+		Disjunction siteConds = Restrictions.disjunction();
+		if (!siteIds.isEmpty()) {
+			siteConds.add(Restrictions.in("distSite.id", siteIds));
+		}
+
+		if (!instituteIds.isEmpty()) {
+			DetachedCriteria instituteSites = DetachedCriteria.forClass(Site.class)
+				.add(Restrictions.in("institute.id", instituteIds))
+				.setProjection(Projections.property("id"));
+			siteConds.add(Subqueries.propertyIn("distSite.id", instituteSites));
+		}
+
+		query.add(Restrictions.or(
+			Restrictions.and(Restrictions.isNull("distSites.site"), instituteConds),
+			Restrictions.and(Restrictions.isNotNull("distSites.site"), siteConds)
+		));
 	}
 	
 	private void addNameRestriction(Criteria query, DistributionOrderListCriteria crit, MatchMode mode) {
@@ -188,6 +248,15 @@ public class DistributionOrderDaoImpl extends AbstractDao<DistributionOrder> imp
 					.add(Restrictions.ilike("user.lastName", crit.requestor(), mode))
 			);
 		}	
+	}
+
+	private void addRequestRestriction(Criteria query, DistributionOrderListCriteria crit) {
+		if (crit.requestId() == null) {
+			return;
+		}
+
+		query.createAlias("request", "request")
+			.add(Restrictions.eq("request.id", crit.requestId()));
 	}
 
 	private void addExecutionDtRestriction(Criteria query, DistributionOrderListCriteria crit) {
@@ -278,12 +347,36 @@ public class DistributionOrderDaoImpl extends AbstractDao<DistributionOrder> imp
 		
 		return result;
 	}
+
+	private void loadOrderItemsCount(Map<Long, DistributionOrderSummary> doMap) {
+		loadOrderItemsCount(doMap, GET_ORDER_ITEMS_COUNT);
+		loadOrderItemsCount(doMap, GET_ORDER_LIST_ITEMS_COUNT);
+	}
+
+	private void loadOrderItemsCount(Map<Long, DistributionOrderSummary> doMap, String query) {
+		if (doMap.isEmpty()) {
+			return;
+		}
+
+		List<Object[]> rows = getCurrentSession().getNamedQuery(query)
+			.setParameterList("orderIds", doMap.keySet())
+			.list();
+
+		for (Object[] row : rows) {
+			DistributionOrderSummary order = doMap.remove((Long)row[0]);
+			order.setSpecimenCnt((Long)row[1]);
+		}
+	}
 	
 	public static final String FQN  = DistributionOrder.class.getName();
 	
 	private static final String GET_ORDERS_BY_NAME = FQN + ".getOrdersByName";
 
+	private static final String GET_UNPICKED_ORDERS = FQN + ".getUnpickedSpecimenOrders";
+
 	private static final String GET_DISTRIBUTED_ITEMS_BY_SPMN_IDS = FQN + ".getDistributedItemsBySpmnIds";
 	
-	private static final String GET_SPEC_CNT_BY_ORDER = FQN + ".getSpecimenCountByOrder";
+	private static final String GET_ORDER_ITEMS_COUNT = FQN + ".getOrderItemsCount";
+
+	private static final String GET_ORDER_LIST_ITEMS_COUNT = FQN + ".getListItemsCount";
 }

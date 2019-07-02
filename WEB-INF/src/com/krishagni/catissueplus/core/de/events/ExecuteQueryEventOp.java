@@ -21,6 +21,10 @@ public class ExecuteQueryEventOp  {
 
 	private boolean outputIsoDateTime;
 
+	private boolean outputColumnExprs;
+
+	private boolean synchronous;
+
 	public Long getCpId() {
 		return cpId;
 	}
@@ -83,5 +87,21 @@ public class ExecuteQueryEventOp  {
 
 	public void setOutputIsoDateTime(boolean outputIsoDateTime) {
 		this.outputIsoDateTime = outputIsoDateTime;
+	}
+
+	public boolean isOutputColumnExprs() {
+		return outputColumnExprs;
+	}
+
+	public void setOutputColumnExprs(boolean outputColumnExprs) {
+		this.outputColumnExprs = outputColumnExprs;
+	}
+
+	public boolean isSynchronous() {
+		return synchronous;
+	}
+
+	public void setSynchronous(boolean synchronous) {
+		this.synchronous = synchronous;
 	}
 }

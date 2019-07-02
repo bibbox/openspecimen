@@ -3,16 +3,34 @@ function osRequired($timeout) {
     require: '^form',
     restrict: 'A',
     link: function(scope, element, attrs, ctrl) {
-      var setDirty = function() {
-        ctrl[attrs.name] && ctrl[attrs.name].$setDirty(true);
+      if (!ctrl._osFormEl) {
+        var formEl = ctrl._osFormEl = element.closest('.os-no-label-form');
+        if (formEl.length == 0) {
+          formEl = ctrl._osFormEl = element.closest("*[os-no-label-form]");
+        }
+
+        ctrl._noLabelForm = (formEl.length > 0);
       }
 
-      if (element.hasClass('os-select-container') || element.children().first().is('ui-select')) {
-        $timeout(function() {
-          element.find('.ui-select-focusser, .ui-select-search').bind('blur', setDirty);
-        })
+      var setDirty = function() { ctrl[attrs.name] && ctrl[attrs.name].$setDirty(true); }
+      var noHint = (attrs.noHint == true) || (attrs.noHint == 'true');
+
+      if (element.hasClass('os-select-container')) {
+        $timeout(
+          function() {
+            element.find('.ui-select-focusser, .ui-select-search').bind('blur', setDirty);
+
+            if (!ctrl._noLabelForm && !noHint) {
+              element.find('.ui-select-placeholder').addClass('os-italic').text('mandatory');
+              element.find('.ui-select-match, .ui-select-search').addClass('os-italic').attr('placeholder', 'mandatory');
+            }
+          }
+        );
       } else {
         element.bind('blur', setDirty);
+        if (!ctrl._noLabelForm && !noHint) {
+          $timeout(function() { element.addClass('os-italic').attr('placeholder', 'mandatory'); });
+        }
       }
     }
   };
@@ -49,7 +67,19 @@ angular.module('os.common.form', [])
         };
 
         this.isValidForm = function() {
-          return !this._form.$invalid;
+          if (this._form.$invalid) {
+            return false;
+          }
+
+          if (this._form.osExtnCtrls) {
+            for (var i = 0; i < this._form.osExtnCtrls.length; ++i) {
+              if (!this._form.osExtnCtrls[i].validate()) {
+                return false;
+              }
+            }
+          }
+
+          return true;
         };
 
         this.isInteracted = function(field) {
@@ -75,6 +105,8 @@ angular.module('os.common.form', [])
       },
 
       link: function(scope, element, attrs, controller) {
+        controller.formEl = element;
+
         scope.$watch(attrs.osFormValidator, function(form) {
           controller.setForm(form);
         });
@@ -107,8 +139,8 @@ angular.module('os.common.form', [])
     };
   })
 
-  .directive('osFormSubmit', function($document, Alerts, LocationChangeListener) {
-    function onSubmit(scope, ctrl, attrs) {
+  .directive('osFormSubmit', function($document, $timeout, httpRespInterceptor, Alerts, LocationChangeListener) {
+    function onSubmit(scope, ctrl, element, attrs) {
       var form = ctrl.getForm();
       if (form.$pending) {
         var pendingWatch = scope.$watch(
@@ -119,7 +151,7 @@ angular.module('os.common.form', [])
           function(pending) {
             if (!pending) {
               pendingWatch();
-              onSubmit(scope, ctrl, attrs);
+              onSubmit(scope, ctrl, element, attrs);
             }
           }
         );
@@ -129,7 +161,18 @@ angular.module('os.common.form', [])
           if (attrs.localForm) {
             LocationChangeListener.allowChange();
           }
+
           scope.$eval(attrs.osFormSubmit);
+          $timeout(
+            function() {
+              ctrl.formEl.addClass('os-form-submitting');
+              httpRespInterceptor.addListener(
+                function() {
+                  ctrl.formEl.removeClass('os-form-submitting');
+                }
+              );
+            }
+          );
         } else {
           Alerts.error("common.form_validation_error");
         }
@@ -152,12 +195,12 @@ angular.module('os.common.form', [])
             var eventName = "mouseup.formsubmit." + cnt;
             $document.on(eventName, function() {
               $document.unbind(eventName);
-              onSubmit(scope, ctrl, attrs);
+              onSubmit(scope, ctrl, element, attrs);
             });
           })
         } else {
           element.bind('click', function() {
-            onSubmit(scope, ctrl, attrs);
+            onSubmit(scope, ctrl, element, attrs);
           });
         }
       }

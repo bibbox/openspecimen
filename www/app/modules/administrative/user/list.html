@@ -31,11 +31,15 @@
   </div>
     
   <div class="container">
+    <div class="alert alert-info os-lean-box" ng-show="ctx.checkList.count > 0">
+      <span> {{'common.items_selected_info' | translate: ctx.checkList}} </span>
+    </div>
+
     <table class="os-table os-table-hover">
       <thead class="os-table-head">
         <tr class="row">
-          <th show-if-allowed="userResource.updateOpts" class="col">
-            <div class="os-select-specimen-cb os-click-esc">
+          <th class="col os-click-esc" show-if-allowed="userResource.updateOpts">
+            <div class="os-select-specimen-cb">
               <os-checkbox ng-change="ctx.checkList.toggleSelectAll()" ng-model="ctx.checkList.allSelected">
               </os-checkbox>
             </div>
@@ -62,14 +66,14 @@
       </thead>
       <tbody class="os-table-body">
         <tr class="row" ng-repeat="user in users" os-row-click="showUserOverview(user)">
-          <td show-if-allowed="userResource.updateOpts" class="col">
-            <div class="os-select-specimen-cb os-click-esc">
+          <td class="col os-click-esc" show-if-allowed="userResource.updateOpts">
+            <div class="os-select-specimen-cb">
               <os-checkbox ng-change="ctx.checkList.toggleSelectItem($index)"
                 ng-model="ctx.checkList.items[$index].selected">
               </os-checkbox>
             </div>
           </td>
-          <td class="col">
+          <td class="col os-click-esc">
             <a ui-sref="user-detail.overview({userId: user.id})">
               <span>{{user | osUserDisplayName}}</span>
             </a>
@@ -78,7 +82,8 @@
             <span>{{user.emailAddress}}</span>
           </td>
           <td class="col">
-            <span>{{user.loginName}}</span>
+            <span ng-show="user.type != 'CONTACT'">{{user.loginName}}</span>
+            <span ng-show="user.type == 'CONTACT'">{{'' | osNoValue}}</span>
           </td>
           <td class="col">
             <span>{{user.instituteName | osNoValue}}</span>
@@ -87,12 +92,8 @@
             <span>{{user.primarySite | osNoValue}}</span>
           </td>
           <td class="col" ng-switch on="!!user.creationDate">
-            <span ng-switch-when="true">
-              {{user.creationDate | date: global.dateFmt}}
-            </span>
-            <span ng-switch-when="false" translate="common.na">
-              Not Available
-            </span>
+            <span ng-switch-when="true"> {{user.creationDate | date: global.dateFmt}} </span>
+            <span ng-switch-when="false"> {{'' | osNoValue}} </span>
           </td>
         </tr>
       </tbody>
@@ -115,7 +116,7 @@
         <span translate="common.buttons.import">Import</span>
         <span class="fa fa-caret-down"></span>
       </button>
-      <ul class="dropdown-menu dropdown-menu-right">
+      <ul class="dropdown-menu">
         <li>
           <a ui-sref="user-import({objectType: 'user'})">
             <span class="fa fa-user"></span>
@@ -137,7 +138,7 @@
       </ul>
     </div>
 
-    <os-export show-if-admin="institute" class="default" detail="ctx.exportDetail"></os-export>
+    <os-export show-if-allowed="userResource.importOpts" class="default" detail="ctx.exportDetail"></os-export>
 
     <os-plugin-hooks view-name="'user-list'" sec-name="'page-header'"></os-plugin-hooks>
 
@@ -147,7 +148,7 @@
         <span class="fa fa-caret-down"></span>
       </button>
 
-      <ul class="dropdown-menu dropdown-menu-right">
+      <ul class="dropdown-menu">
         <li show-if-admin>
           <a title="{{'user.announcement.tooltip' | translate}}"
              ng-click="broadcastAnnouncement()">
@@ -166,27 +167,37 @@
 
 <script type="text/ng-template" id="modules/administrative/user/bulk-user-ops.html">
   <div>
-    <button class="default" title="{{'user.tooltip.edit_users' | translate}}" ng-click="editUsers()">
+    <button class="default" ng-click="editUsers()">
       <span class="fa fa-pencil"></span>
       <span translate="common.buttons.edit">Edit</span>
     </button>
 
-    <button class="default" title="{{'user.tooltip.delete_users' | translate}}" ng-click="deleteUsers()">
+    <button class="default" ng-click="archiveUsers()">
+      <span class="fa fa-archive"></span>
+      <span translate="common.buttons.archive">Archive</span>
+    </button>
+
+    <button class="default" ng-click="reactivateUsers()">
+      <span class="fa fa-check"></span>
+      <span translate="common.buttons.reactivate">Reactivate</span>
+    </button>
+
+    <button class="default" ng-click="deleteUsers()">
       <span class="fa fa-trash"></span>
       <span translate="common.buttons.delete">Delete</span>
     </button>
 
-    <button class="default" title="{{'user.tooltip.lock_users' | translate}}" ng-click="lockUsers()">
+    <button class="default" ng-click="lockUsers()">
       <span class="fa fa-lock"></span>
       <span translate="user.lock_users">Lock</span>
     </button>
 
-    <button class="default" title="{{'user.tooltip.unlock_users' | translate}}" ng-click="unlockUsers()">
+    <button class="default" ng-click="unlockUsers()">
       <span class="fa fa-unlock"></span>
       <span translate="user.unlock_users">Unlock</span>
     </button>
 
-    <button class="default" title="{{'user.tooltip.approve_users' | translate}}" ng-click="approveUsers()">
+    <button class="default" ng-click="approveUsers()">
       <span class="fa fa-check"></span>
       <span translate="user.approve_users">Approve</span>
     </button>

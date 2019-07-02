@@ -1,48 +1,65 @@
 
 package com.krishagni.catissueplus.core.biospecimen.repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
 import com.krishagni.catissueplus.core.biospecimen.domain.Visit;
+import com.krishagni.catissueplus.core.common.Pair;
+import com.krishagni.catissueplus.core.common.access.SiteCpPair;
 import com.krishagni.catissueplus.core.common.repository.Dao;
 
 public interface SpecimenDao extends Dao<Specimen> {
-	public List<Specimen> getSpecimens(SpecimenListCriteria crit);
+	List<Specimen> getSpecimens(SpecimenListCriteria crit);
 
-	public List<Long> getSpecimenIds(SpecimenListCriteria crit);
+	Integer getSpecimensCount(SpecimenListCriteria crit);
+
+	List<Long> getSpecimenIds(SpecimenListCriteria crit);
 	
-	public Specimen getByLabel(String label);
+	Specimen getByLabel(String label);
 
-	public Specimen getByLabelAndCp(String cpShortTitle, String label);
+	Specimen getByLabelAndCp(String cpShortTitle, String label);
 
-	public Specimen getByBarcode(String barcode);
+	Specimen getByBarcode(String barcode);
+
+	Specimen getByBarcodeAndCp(String cpShortTitle, String barcode);
+
+	Long getPrimarySpecimen(Long specimenId);
 	
-	public List<Specimen> getSpecimensByIds(List<Long> specimenIds);
+	List<Specimen> getSpecimensByIds(List<Long> specimenIds);
+
+	List<Specimen> getByLabels(Collection<Pair<String, String>> cpLabels); // [{cpShortTitle, label}]
+
+	List<Specimen> getByBarcodes(Collection<Pair<String, String>> cpBarcodes); // [{cpShortTitle, barcode}]
 	
-	public List<Specimen> getSpecimensByVisitId(Long visitId);
+	List<Specimen> getSpecimensByVisitId(Long visitId);
 	
-	public List<Specimen> getSpecimensByVisitName(String visitName);
+	List<Specimen> getSpecimensByVisitName(String visitName);
 	
-	public Specimen getSpecimenByVisitAndSr(Long visitId, Long srId);
+	Specimen getSpecimenByVisitAndSr(Long visitId, Long srId);
 
-	public Specimen getParentSpecimenByVisitAndSr(Long visitId, Long srId);
+	List<Specimen> getByVisitAndSrCode(Long visitId, Collection<String> reqCodes);
 
-	public Map<String, Object> getCprAndVisitIds(String key, Object value);
+	Specimen getParentSpecimenByVisitAndSr(Long visitId, Long srId);
+
+	Map<String, Object> getCprAndVisitIds(String key, Object value);
 	
-	public Map<Long, Set<Long>> getSpecimenSites(Set<Long> specimenIds);
+	Map<Long, Set<SiteCpPair>> getSpecimenSites(Set<Long> specimenIds);
 
-	public Map<Long, String> getDistributionStatus(List<Long> specimenIds);
+	Map<Long, String> getDistributionStatus(List<Long> specimenIds);
 
-	public String getDistributionStatus(Long specimenId);
+	String getDistributionStatus(Long specimenId);
 
-	public List<Visit> getSpecimenVisits(SpecimenListCriteria crit);
+	List<Visit> getSpecimenVisits(SpecimenListCriteria crit);
 
-	public boolean areDuplicateLabelsPresent();
+	boolean areDuplicateLabelsPresent();
 
-	public Map<Long, Long> getSpecimenStorageSite(Set<Long> specimenIds);
+	boolean areDuplicateBarcodesPresent();
+
+	Map<Long, Long> getSpecimenStorageSite(Set<Long> specimenIds);
 
 	List<String> getNonCompliantSpecimens(SpecimenListCriteria crit);
 }

@@ -6,13 +6,12 @@ import java.util.Objects;
 import org.hibernate.envers.Audited;
 import org.springframework.beans.BeanUtils;
 
+import com.krishagni.catissueplus.core.biospecimen.domain.BaseEntity;
 import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
 import com.krishagni.catissueplus.core.common.util.MessageUtil;
 
 @Audited
-public class StorageContainerPosition implements Comparable<StorageContainerPosition> {
-	private Long id;
-	
+public class StorageContainerPosition extends BaseEntity implements Comparable<StorageContainerPosition> {
 	private Integer posOneOrdinal;
 	
 	private Integer posTwoOrdinal;
@@ -31,13 +30,9 @@ public class StorageContainerPosition implements Comparable<StorageContainerPosi
 
 	private Date reservationTime;
 
-	public Long getId() {
-		return id;
-	}
+	private Boolean blocked;
 
-	public void setId(Long id) {
-		this.id = id;
-	}
+	private transient boolean supressAccessChecks;
 
 	public Integer getPosOneOrdinal() {
 		return posOneOrdinal;
@@ -76,7 +71,7 @@ public class StorageContainerPosition implements Comparable<StorageContainerPosi
 			return null;
 		}
 
-		return (getPosTwoOrdinal() - 1) * getContainer().getNoOfColumns() + getPosOneOrdinal();
+		return getContainer().getPositionAssigner().toPosition(getContainer(), getPosTwoOrdinal(), getPosOneOrdinal());
 	}
 
 	public StorageContainer getContainer() {
@@ -117,6 +112,37 @@ public class StorageContainerPosition implements Comparable<StorageContainerPosi
 
 	public void setReservationTime(Date reservationTime) {
 		this.reservationTime = reservationTime;
+	}
+
+	public Boolean getBlocked() {
+		return blocked;
+	}
+
+	public void setBlocked(Boolean blocked) {
+		this.blocked = blocked;
+	}
+
+	public Boolean isBlocked() {
+		return blocked != null && blocked;
+	}
+
+	public boolean isSupressAccessChecks() {
+		return supressAccessChecks;
+	}
+
+	public void setSupressAccessChecks(boolean supressAccessChecks) {
+		this.supressAccessChecks = supressAccessChecks;
+	}
+
+	@Override
+	public BaseEntity getRoot() {
+		if (getOccupyingSpecimen() != null) {
+			return getOccupyingSpecimen();
+		} else if (getOccupyingContainer() != null) {
+			return getOccupyingContainer();
+		} else {
+			return null;
+		}
 	}
 
 	public void update(StorageContainerPosition other) {
@@ -177,11 +203,11 @@ public class StorageContainerPosition implements Comparable<StorageContainerPosi
 
 		switch (getContainer().getPositionLabelingMode()) {
 			case LINEAR:
-				result.append("(").append(getPosition()).append(")");
+				result.append(" (").append(getPosition()).append(")");
 				break;
 
 			case TWO_D:
-				result.append("(").append(getPosTwo()).append(" x ").append(getPosOne()).append(")");
+				result.append(" (").append(getPosTwo()).append(" x ").append(getPosOne()).append(")");
 				break;
 		}
 

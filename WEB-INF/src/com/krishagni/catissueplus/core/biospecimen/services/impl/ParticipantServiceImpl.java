@@ -73,8 +73,9 @@ public class ParticipantServiceImpl implements ParticipantService, ObjectAccesso
 		if (participant == null) {
 			return ResponseEvent.userError(ParticipantErrorCode.NOT_FOUND);
 		}
-		
-		return ResponseEvent.response(ParticipantDetail.from(participant, false));
+
+		boolean phiAccess = AccessCtrlMgr.getInstance().ensureReadParticipantRights(participant);
+		return ResponseEvent.response(ParticipantDetail.from(participant, !phiAccess));
 	}
 
 	@Override
@@ -212,8 +213,8 @@ public class ParticipantServiceImpl implements ParticipantService, ObjectAccesso
 		ose.checkAndThrow();
 		
 		existing.update(newParticipant);
-		daoFactory.getParticipantDao().saveOrUpdate(existing);
 		existing.addOrUpdateExtension();
+		daoFactory.getParticipantDao().saveOrUpdate(existing);
 	}
 
 	@Override

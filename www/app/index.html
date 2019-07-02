@@ -2,9 +2,11 @@
 <html>
   <head>
     <meta charset="utf-8">
-    <title>OpenSpecimen</title>
     <meta name="description" content="">
     <meta name="viewport" content="width=device-width, height=device-height">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+    <title>OpenSpecimen</title>
     <!-- Place favicon.ico and apple-touch-icon.png in the root directory -->
     <!-- build:css(.) styles/vendor.css -->
     <!-- bower:css -->
@@ -59,6 +61,7 @@
     <link rel="stylesheet" href="styles/de-table.css">
     <link rel="stylesheet" href="styles/notif.css">
     <link rel="stylesheet" href="styles/audit.css">
+    <link rel="stylesheet" href="styles/new-stuff.css">
     <!-- endbuild -->
   </head>
   <body> <!-- ng-app="openspecimen" -->
@@ -107,12 +110,14 @@
     <!-- endbuild -->
 
     <!-- build:js({.tmp,app}) scripts/scripts.js -->
+    <script src="polyfills.js"></script>
     <script src="init.js"></script>
     <script src="app.js"></script>
     <script src="modules/user/module.js"></script>
     <script src="modules/common/module.js"></script>
 
     <script src="modules/common/alert.js"></script>
+    <script src="modules/common/comments.js"></script>
     <script src="modules/common/form.js"></script>
     <script src="modules/common/location-change-listener.js"></script>
     <script src="modules/common/pv-manager.js"></script>
@@ -147,7 +152,6 @@
     <script src="modules/common/pivot-table.js"></script>
     <script src="modules/common/delete/ctrl.js"></script>
     <script src="modules/common/delete/util.js"></script>
-    <script src="modules/common/delete/close.js"></script>
     <script src="modules/common/datepicker.js"></script>
     <script src="modules/common/enable-tab.js"></script>
     <script src="modules/common/tab-order.js"></script>
@@ -184,7 +188,12 @@
     <script src="modules/common/clear-filters.js"></script>
     <script src="modules/common/items-holder.js"></script>
     <script src="modules/common/tooltip.js"></script>
-    <script src="modules/common/manual-search.js"></script>
+    <script src="modules/common/html-template.js"></script>
+    <script src="modules/common/name-value-filter.js"></script>
+    <script src="modules/common/bytes.js"></script>
+    <script src="modules/common/home.js"></script>
+    <script src="modules/common/ui-element.js"></script>
+    <script src="modules/common/upload-attachments.js"></script>
 
     <!-- Search module -->
     <script src="modules/common/search/module.js"></script>
@@ -229,10 +238,12 @@
     <script src="modules/administrative/models/site.js"></script>
     <script src="modules/administrative/models/dp.js"></script>
     <script src="modules/administrative/models/order.js"></script>
+    <script src="modules/administrative/models/distribution-label-printer.js"></script>
     <script src="modules/administrative/models/dpr.js"></script>
     <script src="modules/administrative/models/shipment.js"></script>
     <script src="modules/administrative/models/container.js"></script>
     <script src="modules/administrative/models/container-type.js"></script>
+    <script src="modules/administrative/models/container-label-printer.js"></script>
     <script src="modules/administrative/models/setting.js"></script>
     <script src="modules/administrative/models/auth-domain.js"></script>
     <script src="modules/administrative/models/job.js"></script>
@@ -246,6 +257,7 @@
     <script src="modules/user/authorization.js"></script>
     <script src="modules/user/rights.js"></script>
     <script src="modules/user/welcome.js"></script>
+    <script src="modules/user/new-stuff.js"></script>
     <script src="modules/administrative/user/list.js"></script>
     <script src="modules/administrative/user/addedit.js"></script>
     <script src="modules/administrative/user/password.js"></script>
@@ -261,6 +273,7 @@
     <script src="modules/administrative/institute/list.js"></script>
     <script src="modules/administrative/institute/addedit.js"></script>
     <script src="modules/administrative/institute/detail.js"></script>
+    <script src="modules/administrative/institute/dropdown.js"></script>
 
     <!-- Site Module -->
     <script src="modules/administrative/site/dropdown.js"></script>
@@ -276,6 +289,7 @@
     <script src="modules/administrative/dp/detail.js"></script>
     <script src="modules/administrative/dp/history.js"></script>
     <script src="modules/administrative/dp/consents.js"></script>
+    <script src="modules/administrative/dp/reserved-specimens.js"></script>
 
     <!-- Distribution Order Requirement Module -->
     <script src="modules/administrative/dp/requirement/module.js"></script>
@@ -296,6 +310,9 @@
     <script src="modules/administrative/shipment/addedit.js"></script>
     <script src="modules/administrative/shipment/detail.js"></script>
     <script src="modules/administrative/shipment/receive.js"></script>
+    <script src="modules/administrative/shipment/containers.js"></script>
+    <script src="modules/administrative/shipment/specimens.js"></script>
+    <script src="modules/administrative/shipment/util.js"></script>
 
     <!-- Container Module -->
     <script src="modules/administrative/container/module.js"></script>
@@ -385,10 +402,11 @@
     <script src="modules/biospecimen/cp/config.js"></script>
     <script src="modules/biospecimen/cp/settings.js"></script>
     <script src="modules/biospecimen/cp/label-settings.js"></script>
-    <script src="modules/biospecimen/cp/catalog-settings.js"></script>
+    <script src="modules/biospecimen/cp/form-settings.js"></script>
     <script src="modules/biospecimen/cp/container-settings.js"></script>
     <script src="modules/biospecimen/cp/report-settings.js"></script>
     <script src="modules/biospecimen/cp/dp-settings.js"></script>
+    <script src="modules/biospecimen/cp/import-workflows.js"></script>
 
     <!-- Participant module -->
     <script src="modules/biospecimen/participant/module.js"></script>
@@ -400,20 +418,20 @@
     <script src="modules/biospecimen/participant/detail.js"></script>
     <script src="modules/biospecimen/participant/overview.js"></script>
     <script src="modules/biospecimen/participant/visits.js"></script>
+    <script src="modules/biospecimen/participant/reg-specimens.js"></script>
     <script src="modules/biospecimen/participant/specimen-tree.js"></script>
     <script src="modules/biospecimen/participant/collect-specimens.js"></script>
     <script src="modules/biospecimen/participant/consents.js"></script>
-    <script src="modules/biospecimen/participant/search-service.js"></script>
     <script src="modules/biospecimen/participant/import-util.js"></script>
     <script src="modules/biospecimen/participant/export-util.js"></script>
     <script src="modules/biospecimen/participant/specimens-list.js"></script>
+    <script src="modules/biospecimen/participant/specimens-tree-panel.js"></script>
 
     <!-- Visit detail module -->
     <script src="modules/biospecimen/participant/visit/module.js"></script>
     <script src="modules/biospecimen/participant/visit/addedit.js"></script>
     <script src="modules/biospecimen/participant/visit/spr.js"></script>
     <script src="modules/biospecimen/participant/visit/detail.js"></script>
-    <script src="modules/biospecimen/participant/visit/search-service.js"></script>
 
     <!-- Specimen detail module -->
     <script src="modules/biospecimen/participant/specimen/module.js"></script>
@@ -427,8 +445,8 @@
     <script src="modules/biospecimen/participant/specimen/bulk-create-aliquots.js"></script>
     <script src="modules/biospecimen/participant/specimen/bulk-create-derivatives.js"></script>
     <script src="modules/biospecimen/participant/specimen/bulk-add-event.js"></script>
-    <script src="modules/biospecimen/participant/specimen/search-service.js"></script>
     <script src="modules/biospecimen/participant/specimen/bulk-transfer-specimens.js"></script>
+    <script src="modules/biospecimen/participant/specimen/bulk-edit.js"></script>
     <script src="modules/biospecimen/participant/specimen/add-specimens.js"></script>
     <script src="modules/biospecimen/participant/specimen/specimen-ops.js"></script>
 
@@ -459,6 +477,7 @@
     <script src="modules/biospecimen/common/specimen-type.js"></script>
     <script src="modules/biospecimen/common/specimen-desc.js"></script>
     <script src="modules/biospecimen/common/event-desc.js"></script>
+    <script src="modules/biospecimen/common/sticky-top.js"></script>
 
     <!-- Query -->
     <script src="modules/query/module.js"></script>

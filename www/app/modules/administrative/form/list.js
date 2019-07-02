@@ -5,11 +5,11 @@ angular.module('os.administrative.form.list', ['os.administrative.models'])
     CollectionProtocol, Util, DeleteUtil, Alerts, ListPagerOpts, CheckList) {
 
     var cpListQ = undefined;
-    var pagerOpts;
+    var pagerOpts, filterOpts;
 
     function init() {
       pagerOpts = $scope.pagerOpts = new ListPagerOpts({listSizeGetter: getFormsCount});
-      $scope.formFilterOpts = Util.filterOpts({maxResults: pagerOpts.recordsPerPage + 1, excludeSysForms: true});
+      filterOpts = $scope.formFilterOpts = Util.filterOpts({maxResults: pagerOpts.recordsPerPage + 1, excludeSysForms: true});
       $scope.formsList = [];
       $scope.ctx = {};
       loadForms($scope.formFilterOpts);
@@ -18,9 +18,9 @@ angular.module('os.administrative.form.list', ['os.administrative.models'])
 
     function loadForms(filterOpts) {
       Form.query(filterOpts).then(function(result) {
+        pagerOpts.refreshOpts(result);
         $scope.formsList = result;
         $scope.ctx.checkList = new CheckList(result);
-        pagerOpts.refreshOpts(result);
       })
     }
 
@@ -30,7 +30,7 @@ angular.module('os.administrative.form.list', ['os.administrative.models'])
 
     function getCpList() {
       if (!cpListQ) {
-        cpListQ = CollectionProtocol.list({detailedList: false, maxResults: 1000});
+        cpListQ = CollectionProtocol.list({detailedList: false, maxResults: CollectionProtocol.MAX_CPS});
       }
 
       return cpListQ;
@@ -132,6 +132,10 @@ angular.module('os.administrative.form.list', ['os.administrative.models'])
       }
 
       DeleteUtil.bulkDelete({bulkDelete: Form.bulkDelete}, getFormIds(forms), opts);
+    }
+
+    $scope.pageSizeChanged = function() {
+      filterOpts.maxResults = pagerOpts.recordsPerPage + 1;
     }
 
     init();

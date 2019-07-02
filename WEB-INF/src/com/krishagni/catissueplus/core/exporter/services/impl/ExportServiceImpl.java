@@ -12,6 +12,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -92,6 +93,8 @@ public class ExportServiceImpl implements ExportService {
 			// Timed out waiting for the export job to finish.
 			// An email with export status will be sent to user.
 			//
+		} catch (OpenSpecimenException ose) {
+			throw ose;
 		} catch (Exception e) {
 			throw OpenSpecimenException.serverError(e);
 		}
@@ -108,7 +111,7 @@ public class ExportServiceImpl implements ExportService {
 			return ResponseEvent.userError(ExportErrorCode.JOB_NOT_FOUND, jobId);
 		}
 
-		if (!AuthUtil.isAdmin() && !job.getCreatedBy().equals(AuthUtil.getCurrentUser())) {
+		if (!job.isOutputAccessibleBy(AuthUtil.getCurrentUser())) {
 			return ResponseEvent.userError(RbacErrorCode.ACCESS_DENIED);
 		}
 
@@ -120,12 +123,22 @@ public class ExportServiceImpl implements ExportService {
 		genFactories.put(type, genFactory);
 	}
 
-	@PlusTransactional
 	private Pair<ExportJob, Future<Integer>> exportObjects(ExportDetail detail) {
-		if (!AuthUtil.isAdmin() && !AuthUtil.isInstituteAdmin()) {
-			throw OpenSpecimenException.userError(RbacErrorCode.INST_ADMIN_RIGHTS_REQ, AuthUtil.getCurrentUserInstitute().getName());
+		ExportJob job = createJob(detail);
+		ExportTask task = new ExportTask(job);
+
+		Future<Integer> result;
+		if (detail.isSynchronous()) {
+			result = CompletableFuture.completedFuture(task.call());
+		} else {
+			result = taskExecutor.submit(task);
 		}
 
+		return Pair.make(job, result);
+	}
+
+	@PlusTransactional
+	private ExportJob createJob(ExportDetail detail) {
 		ObjectSchema schema = schemaFactory.getSchema(detail.getObjectType(), detail.getParams());
 		if (schema == null) {
 			throw OpenSpecimenException.userError(ExportErrorCode.INVALID_OBJECT_TYPE, detail.getObjectType());
@@ -143,10 +156,9 @@ public class ExportServiceImpl implements ExportService {
 		job.setParams(detail.getParams());
 		job.setSchema(schema);
 		job.setRecordIds(detail.getRecordIds());
+		job.setDisableNotifs(detail.isDisableNotifs());
 		exportJobDao.saveOrUpdate(job.markInProgress(), true);
-
-		Future<Integer> result = taskExecutor.submit(new ExportTask(job));
-		return Pair.make(job, result);
+		return job;
 	}
 
 	private class ExportTask implements Callable<Integer> {
@@ -189,6 +201,8 @@ public class ExportServiceImpl implements ExportService {
 
 			try {
 				AuthUtil.setCurrentUser(job.getCreatedBy());
+				ExporterContextHolder.getInstance().newContext();
+
 				generateRawRecordsFile();
 				generateOutputFile();
 				generateOutputZip(job);
@@ -199,6 +213,7 @@ public class ExportServiceImpl implements ExportService {
 				logger.error("Error exporting records", e);
 				return -1;
 			} finally {
+				ExporterContextHolder.getInstance().clearContext();
 				AuthUtil.clearCurrentUser();
 				cleanupFiles(job);
 				sendJobStatusNotification(job);
@@ -354,67 +369,28 @@ public class ExportServiceImpl implements ExportService {
 
 		private List<String> getHeaderRow(String namePrefix, String captionPrefix, ObjectSchema.Record record) {
 			List<String> row = new ArrayList<>();
-
-			for (ObjectSchema.Field field : record.getFields()) {
-				if (field.getAttribute().equals(ID_ATTR)) {
-					continue;
-				}
-
-				String caption = captionPrefix + field.getCaption();
-				if (field.isMultiple()) {
-					int count = getFieldCount(namePrefix + field.getAttribute());
-					for (int i = 1; i <= count; ++i) {
-						row.add(caption + "#" + i);
-					}
-				} else {
-					row.add(caption);
-				}
-			}
-
-			for (ObjectSchema.Record subRecord : record.getSubRecords()) {
-				String srName = namePrefix + subRecord.getAttribute();
-				String srCaption = captionPrefix;
-				if (StringUtils.isNotBlank(subRecord.getCaption())) {
-					srCaption += subRecord.getCaption() + "#";
-				}
-
-				if (subRecord.isMultiple()) {
-					int count = getFieldCount(srName);
-					for (int i = 1; i <= count; ++i) {
-						row.addAll(getHeaderRow(srName + ".", srCaption + i + "#", subRecord));
-					}
-				} else {
-					row.addAll(getHeaderRow(srName + ".", srCaption, subRecord));
-				}
+			for (Object recField : record.getOrderedFields()) {
+				row.addAll(getHeaderNames(namePrefix, captionPrefix, recField));
 			}
 
 			return row;
 		}
 
-		private List<String> getDataRow(String namePrefix, String captionPrefix, ObjectSchema.Record record, Map<String, String> valueMap) {
-			List<String> result = new ArrayList<>();
-
-			for (ObjectSchema.Field field : record.getFields()) {
-				if (field.getAttribute().equals(ID_ATTR)) {
-					//
-					// hack to exclude ID field from the exported file.
-					//
-					continue;
-				}
-
+		private List<String> getHeaderNames(String namePrefix, String captionPrefix, Object recField) {
+			List<String> names = new ArrayList<>();
+			if (recField instanceof ObjectSchema.Field) {
+				ObjectSchema.Field field = (ObjectSchema.Field) recField;
 				String caption = captionPrefix + field.getCaption();
 				if (field.isMultiple()) {
-					Integer count = getFieldCount(namePrefix + field.getAttribute());
+					int count = getFieldCount(namePrefix + field.getAttribute());
 					for (int i = 1; i <= count; ++i) {
-						String key = caption + "#" + i;
-						result.add(valueMap.get(key));
+						names.add(caption + "#" + i);
 					}
 				} else {
-					result.add(valueMap.get(caption));
+					names.add(caption);
 				}
-			}
-
-			for (ObjectSchema.Record subRecord : record.getSubRecords()) {
+			} else if (recField instanceof ObjectSchema.Record) {
+				ObjectSchema.Record subRecord = (ObjectSchema.Record) recField;
 				String srName = namePrefix + subRecord.getAttribute();
 				String srCaption = captionPrefix;
 				if (StringUtils.isNotBlank(subRecord.getCaption())) {
@@ -424,14 +400,58 @@ public class ExportServiceImpl implements ExportService {
 				if (subRecord.isMultiple()) {
 					int count = getFieldCount(srName);
 					for (int i = 1; i <= count; ++i) {
-						result.addAll(getDataRow(srName + ".", srCaption + i + "#", subRecord, valueMap));
+						names.addAll(getHeaderRow(srName + ".", srCaption + i + "#", subRecord));
 					}
 				} else {
-					result.addAll(getDataRow(srName + ".", srCaption, subRecord, valueMap));
+					names.addAll(getHeaderRow(srName + ".", srCaption, subRecord));
 				}
 			}
 
-			return result;
+			return names;
+		}
+
+		private List<String> getDataRow(String namePrefix, String captionPrefix, ObjectSchema.Record record, Map<String, String> valueMap) {
+			List<String> row = new ArrayList<>();
+			for (Object recField : record.getOrderedFields()) {
+				row.addAll(getColumnValues(namePrefix, captionPrefix, recField, valueMap));
+			}
+
+			return row;
+		}
+
+		private List<String> getColumnValues(String namePrefix, String captionPrefix, Object recField, Map<String, String> valueMap) {
+			List<String> values = new ArrayList<>();
+			if (recField instanceof ObjectSchema.Field) {
+				ObjectSchema.Field field = (ObjectSchema.Field) recField;
+				String caption = captionPrefix + field.getCaption();
+				if (field.isMultiple()) {
+					int count = getFieldCount(namePrefix + field.getAttribute());
+					for (int i = 1; i <= count; ++i) {
+						String key = caption + "#" + i;
+						values.add(valueMap.get(key));
+					}
+				} else {
+					values.add(valueMap.get(caption));
+				}
+			} else if (recField instanceof ObjectSchema.Record) {
+				ObjectSchema.Record subRecord = (ObjectSchema.Record) recField;
+				String srName = namePrefix + subRecord.getAttribute();
+				String srCaption = captionPrefix;
+				if (StringUtils.isNotBlank(subRecord.getCaption())) {
+					srCaption += subRecord.getCaption() + "#";
+				}
+
+				if (subRecord.isMultiple()) {
+					int count = getFieldCount(srName);
+					for (int i = 1; i <= count; ++i) {
+						values.addAll(getDataRow(srName + ".", srCaption + i + "#", subRecord, valueMap));
+					}
+				} else {
+					values.addAll(getDataRow(srName + ".", srCaption, subRecord, valueMap));
+				}
+			}
+
+			return values;
 		}
 
 		private void updateFieldCount(String field, int count) {
@@ -620,6 +640,10 @@ public class ExportServiceImpl implements ExportService {
 	}
 
 	private void sendJobStatusNotification(ExportJob job) {
+		if (job.isDisableNotifs()) {
+			return;
+		}
+
 		String entityName = getEntityName(job);
 
 		String [] subjParams = {job.getId().toString(), entityName};
@@ -629,6 +653,7 @@ public class ExportServiceImpl implements ExportService {
 		props.put("entityName", entityName);
 		props.put("status", getMsg("export_statuses_" + job.getStatus().name().toLowerCase()));
 		props.put("$subject", subjParams);
+		props.put("timeTaken", TimeUnit.MILLISECONDS.toMinutes(job.getEndTime().getTime() - job.getCreationTime().getTime()));
 
 		String[] rcpts = {job.getCreatedBy().getEmailAddress()};
 		EmailUtil.getInstance().sendEmail(JOB_STATUS_EMAIL_TMPL, rcpts, null, props);

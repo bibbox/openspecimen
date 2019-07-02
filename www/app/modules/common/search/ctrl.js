@@ -1,49 +1,68 @@
 
 angular.module('os.common.search.ctrl', [])
-  .controller('QuickSearchCtrl', function($scope, $document, $timeout, QuickSearchSvc) {
+  .controller('QuickSearchCtrl', function($scope, $state, $timeout, $window, SettingUtil, QuickSearchSvc) {
+
+    var ctx, closeHandler;
 
     function init() {
-      $scope.quickSearch = {};
-
-      $scope.ctx = {
-        entities: QuickSearchSvc.getEntities(),
-        tmpl: ''
-      };
-
-      $scope.searchData = {};
+      ctx = $scope.ctx = {searching: false, matches: []};
     }
 
-    $scope.initSearch = function(event) {
-      $scope.quickSearch.show = !$scope.quickSearch.show;
-      $scope.searchData = {};
+    function searchManual(searchTerm) {
+      SettingUtil.getSetting('training', 'manual_search_link').then(
+        function(setting) {
+          $window.open(setting.value + searchTerm);
+        }
+      );
+    }
 
-      // target.parent.parent gives main search div
-      $scope.ele = angular.element(event.target.parentElement.parentElement);
-      $scope.ele.bind('click', function(e) {
-        e.stopPropagation();
-      });
 
-      $document.bind('click', function(e) {
-        if(!$scope.quickSearch.show) {
-          $document.unbind('click');
+    $scope.search = function(keyword, selectCtrl) {
+      if (!keyword) {
+        ctx.matches = undefined;
+        ctx.selectedMatch = undefined;
+
+        if (!closeHandler) {
+          ctx.selectCtrl = selectCtrl;
+          closeHandler = ctx.selectCtrl.close;
+          ctx.selectCtrl.close = function(s) {
+            $timeout(function() {
+              ctx.searching = false;
+              return closeHandler(s);
+            });
+          };
         }
 
-        $timeout(function() {
-          $scope.quickSearch.show = false;
-        });
+        return;
+      }
 
-      });
+      QuickSearchSvc.search(keyword).then(
+        function(result) {
+          ctx.matches = result;
+        }
+      );
     }
 
-    $scope.onEntitySelect = function() {
-      $scope.ctx.tmpl = QuickSearchSvc.getTemplate($scope.ctx.selectedEntity);
+    $scope.onMatchSelect = function() {
+      var match = ctx.selectedMatch;
+      if (match.id == 0) {
+        searchManual(match.key);
+        return;
+      }
+
+      var state = QuickSearchSvc.getState(match.entity);
+      var stateParams = {stateName: state, objectName: match.entity, key: 'id', value: match.entityId};
+      $state.go('object-state-params-resolver', stateParams);
+
+      ctx.selectedMatch = undefined;
+      ctx.matches = [];
+      ctx.searching = false;
     }
 
-    $scope.search = function() {
-      QuickSearchSvc.search($scope.ctx.selectedEntity, $scope.searchData);
-      $scope.quickSearch.show = !$scope.quickSearch.show;
+    $scope.activateSearch = function() {
+      ctx.searching = true;
+      $timeout( function() { ctx.selectCtrl.activate(); });
     }
 
     init();
-  })
-
+  });

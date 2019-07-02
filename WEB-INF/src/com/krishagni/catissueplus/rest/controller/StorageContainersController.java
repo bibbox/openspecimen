@@ -25,10 +25,12 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.ResponseStatus;
 
-import com.krishagni.catissueplus.core.administrative.events.AssignPositionsOp;
+import com.krishagni.catissueplus.core.administrative.domain.StorageContainer;
+import com.krishagni.catissueplus.core.administrative.events.ContainerDefragDetail;
 import com.krishagni.catissueplus.core.administrative.events.ContainerHierarchyDetail;
 import com.krishagni.catissueplus.core.administrative.events.ContainerQueryCriteria;
 import com.krishagni.catissueplus.core.administrative.events.ContainerReplicationDetail;
+import com.krishagni.catissueplus.core.administrative.events.PositionsDetail;
 import com.krishagni.catissueplus.core.administrative.events.ReservePositionsOp;
 import com.krishagni.catissueplus.core.administrative.events.StorageContainerDetail;
 import com.krishagni.catissueplus.core.administrative.events.StorageContainerPositionDetail;
@@ -39,6 +41,7 @@ import com.krishagni.catissueplus.core.administrative.events.VacantPositionsOp;
 import com.krishagni.catissueplus.core.administrative.repository.StorageContainerListCriteria;
 import com.krishagni.catissueplus.core.administrative.services.ContainerSelectionStrategyFactory;
 import com.krishagni.catissueplus.core.administrative.services.StorageContainerService;
+import com.krishagni.catissueplus.core.biospecimen.events.FileDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.SpecimenInfo;
 import com.krishagni.catissueplus.core.biospecimen.repository.SpecimenListCriteria;
 import com.krishagni.catissueplus.core.common.events.BulkDeleteEntityOp;
@@ -47,7 +50,9 @@ import com.krishagni.catissueplus.core.common.events.ExportedFileDetail;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
 import com.krishagni.catissueplus.core.common.events.ResponseEvent;
 import com.krishagni.catissueplus.core.common.util.MessageUtil;
+import com.krishagni.catissueplus.core.common.util.Utility;
 import com.krishagni.catissueplus.core.de.events.QueryDataExportResult;
+import com.krishagni.catissueplus.core.de.services.FormService;
 
 import edu.common.dynamicextensions.nutility.IoUtil;
 
@@ -63,6 +68,9 @@ public class StorageContainersController {
 
 	@Autowired
 	private ContainerSelectionStrategyFactory containerSelectionStrategyFactory;
+
+	@Autowired
+	private FormService formSvc;
 	
 	@RequestMapping(method = RequestMethod.GET)
 	@ResponseStatus(HttpStatus.OK)
@@ -107,8 +115,14 @@ public class StorageContainersController {
 		@RequestParam(value = "cpShortTitle", required = false)
 		String[] cpShortTitles,
 
+		@RequestParam(value = "dpShortTitle", required = false)
+		String[] dpShortTitles,
+
 		@RequestParam(value = "storeSpecimensEnabled", required = false)
 		Boolean storeSpecimensEnabled,
+
+		@RequestParam(value = "usageMode", required =  false, defaultValue = "")
+		String usageMode,
 			
 		@RequestParam(value = "hierarchical", required = false, defaultValue = "false")
 		boolean hierarchical,
@@ -130,14 +144,15 @@ public class StorageContainersController {
 			.specimenType(specimenType)
 			.cpIds(cpIds)
 			.cpShortTitles(cpShortTitles)
+			.dpShortTitles(dpShortTitles)
 			.storeSpecimensEnabled(storeSpecimensEnabled)
+			.usageMode(usageMode)
 			.hierarchical(hierarchical)
 			.includeStat(includeStats);
 					
 		RequestEvent<StorageContainerListCriteria> req = new RequestEvent<>(crit);
 		ResponseEvent<List<StorageContainerSummary>> resp = storageContainerSvc.getStorageContainers(req);
 		resp.throwErrorIfUnsuccessful();
-		
 		return resp.getPayload();
 	}
 
@@ -178,9 +193,15 @@ public class StorageContainersController {
 		@RequestParam(value = "cpShortTitle", required = false)
 		String[] cpShortTitles,
 
+		@RequestParam(value = "dpShortTitle", required = false)
+		String[] dpShortTitles,
+
 		@RequestParam(value = "storeSpecimensEnabled", required = false)
 		Boolean storeSpecimensEnabled,
-			
+
+		@RequestParam(value = "usageMode", required =  false, defaultValue = "")
+		String usageMode,
+
 		@RequestParam(value = "hierarchical", required = false, defaultValue = "false")
 		boolean hierarchical) {
 		
@@ -196,13 +217,14 @@ public class StorageContainersController {
 			.specimenType(specimenType)
 			.cpIds(cpIds)
 			.cpShortTitles(cpShortTitles)
+			.dpShortTitles(dpShortTitles)
 			.storeSpecimensEnabled(storeSpecimensEnabled)
+			.usageMode(usageMode)
 			.hierarchical(hierarchical);
 
 		RequestEvent<StorageContainerListCriteria> req = new RequestEvent<>(crit);
 		ResponseEvent<Long> resp = storageContainerSvc.getStorageContainersCount(req);
 		resp.throwErrorIfUnsuccessful();
-
 		return Collections.singletonMap("count", resp.getPayload());
 	}
 
@@ -213,13 +235,13 @@ public class StorageContainersController {
 		@PathVariable("id")
 		Long containerId,
 			
-		@RequestParam(value = "cpId", required = true)
+		@RequestParam(value = "cpId")
 		Long cpId,
 			
-		@RequestParam(value = "specimenType", required = true)
+		@RequestParam(value = "specimenType")
 		String specimenType,
 			
-		@RequestParam(value = "specimenClass", required = true)
+		@RequestParam(value = "specimenClass")
 		String specimenClass) {
 		
 		TenantDetail detail = new TenantDetail();
@@ -228,7 +250,7 @@ public class StorageContainersController {
 		detail.setSpecimenClass(specimenClass);
 		detail.setSpecimenType(specimenType);
 		
-		RequestEvent<TenantDetail> req = new RequestEvent<TenantDetail>(detail);
+		RequestEvent<TenantDetail> req = new RequestEvent<>(detail);
 		ResponseEvent<Boolean> resp = storageContainerSvc.isAllowed(req);
 		resp.throwErrorIfUnsuccessful();
 		return resp.getPayload();
@@ -315,7 +337,7 @@ public class StorageContainersController {
 	@RequestMapping(method = RequestMethod.GET, value="{id}/occupied-positions")
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody
-	public List<StorageContainerPositionDetail> getStorageContainerOccupiedPositions(@PathVariable("id") Long containerId) {
+	public List<StorageContainerPositionDetail> getContainerOccupiedPositions(@PathVariable("id") Long containerId) {
 		RequestEvent<Long> req = new RequestEvent<Long>(containerId);
 		ResponseEvent<List<StorageContainerPositionDetail>> resp = storageContainerSvc.getOccupiedPositions(req);
 		resp.throwErrorIfUnsuccessful();
@@ -451,11 +473,11 @@ public class StorageContainersController {
 		Long containerId,
 			
 		@RequestBody
-		AssignPositionsOp detail) {
+		PositionsDetail detail) {
 		
 		detail.setContainerId(containerId);
 		
-		RequestEvent<AssignPositionsOp> req = new RequestEvent<AssignPositionsOp>(detail);
+		RequestEvent<PositionsDetail> req = new RequestEvent<>(detail);
 		ResponseEvent<List<StorageContainerPositionDetail>> resp = storageContainerSvc.assignPositions(req);
 		resp.throwErrorIfUnsuccessful();
 		
@@ -506,7 +528,7 @@ public class StorageContainersController {
 
 		return resp.getPayload();
 	}
-	
+
 	@RequestMapping(method = RequestMethod.POST, value="/{id}/replica")
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody
@@ -524,7 +546,7 @@ public class StorageContainersController {
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody
 	public List<StorageContainerSummary> createContainerHierarchy(@RequestBody ContainerHierarchyDetail detail) {
-		RequestEvent<ContainerHierarchyDetail> req = new RequestEvent<ContainerHierarchyDetail>(detail);
+		RequestEvent<ContainerHierarchyDetail> req = new RequestEvent<>(detail);
 		ResponseEvent<List<StorageContainerSummary>> resp = storageContainerSvc.createContainerHierarchy(req);
 		resp.throwErrorIfUnsuccessful();
 		
@@ -537,6 +559,49 @@ public class StorageContainersController {
 	public List<StorageContainerSummary> createMultipleContainers(@RequestBody List<StorageContainerDetail> containers) {
 		RequestEvent<List<StorageContainerDetail>> req = new RequestEvent<>(containers);
 		ResponseEvent<List<StorageContainerSummary>> resp = storageContainerSvc.createMultipleContainers(req);
+		resp.throwErrorIfUnsuccessful();
+		return resp.getPayload();
+	}
+
+	//
+	// Block slots in container
+	//
+	@RequestMapping(method = RequestMethod.PUT, value = "/{id}/block-positions")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public List<StorageContainerPositionDetail> blockPositions(
+		@PathVariable("id")
+		Long id,
+
+		@RequestBody
+		List<StorageContainerPositionDetail> positions) {
+
+		PositionsDetail detail = new PositionsDetail();
+		detail.setContainerId(id);
+		detail.setPositions(positions);
+
+		RequestEvent<PositionsDetail> req = new RequestEvent<>(detail);
+		ResponseEvent<List<StorageContainerPositionDetail>> resp = storageContainerSvc.blockPositions(req);
+		resp.throwErrorIfUnsuccessful();
+		return resp.getPayload();
+	}
+
+	@RequestMapping(method = RequestMethod.PUT, value = "/{id}/unblock-positions")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public List<StorageContainerPositionDetail> unblockPositions(
+		@PathVariable("id")
+		Long id,
+
+		@RequestBody
+		List<StorageContainerPositionDetail> positions) {
+
+		PositionsDetail detail = new PositionsDetail();
+		detail.setContainerId(id);
+		detail.setPositions(positions);
+
+		RequestEvent<PositionsDetail> req = new RequestEvent<>(detail);
+		ResponseEvent<List<StorageContainerPositionDetail>> resp = storageContainerSvc.unblockPositions(req);
 		resp.throwErrorIfUnsuccessful();
 		return resp.getPayload();
 	}
@@ -576,6 +641,31 @@ public class StorageContainersController {
 				return strategy;
 			})
 			.collect(Collectors.toList());
+	}
+
+	@RequestMapping(method = RequestMethod.POST, value = "/{id}/defragment")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public ContainerDefragDetail defragment(@PathVariable("id") Long id, @RequestBody ContainerDefragDetail detail) {
+		if (detail == null) {
+			detail = new ContainerDefragDetail();
+		}
+
+		detail.setId(id);
+		ResponseEvent<ContainerDefragDetail> resp = storageContainerSvc.defragment(new RequestEvent<>(detail));
+		resp.throwErrorIfUnsuccessful();
+		return resp.getPayload();
+	}
+
+	@RequestMapping(method = RequestMethod.GET, value="/defragment-report")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public void downloadDefragReport(@RequestParam(value = "fileId") String fileId, HttpServletResponse httpResp) {
+		ResponseEvent<FileDetail> resp = storageContainerSvc.getDefragReport(new RequestEvent<>(fileId));
+		resp.throwErrorIfUnsuccessful();
+
+		FileDetail file = resp.getPayload();
+		Utility.sendToClient(httpResp, file.getFilename(), file.getContentType(), file.getFileOut());
 	}
 
 	//
@@ -691,8 +781,15 @@ public class StorageContainersController {
 		return resp.getPayload();
 	}
 
+	@RequestMapping(method = RequestMethod.GET, value="/extension-form")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public Map<String, Object> getForm() {
+		return formSvc.getExtensionInfo(-1L, StorageContainer.EXTN);
+	}
+
 	private StorageContainerDetail getContainer(ContainerQueryCriteria crit) {
-		RequestEvent<ContainerQueryCriteria> req = new RequestEvent<ContainerQueryCriteria>(crit);
+		RequestEvent<ContainerQueryCriteria> req = new RequestEvent<>(crit);
 		ResponseEvent<StorageContainerDetail> resp = storageContainerSvc.getStorageContainer(req);
 		resp.throwErrorIfUnsuccessful();
 		

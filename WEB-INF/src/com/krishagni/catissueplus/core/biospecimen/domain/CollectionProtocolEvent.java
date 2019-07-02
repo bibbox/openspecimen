@@ -7,28 +7,33 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.ObjectUtils;
 import org.hibernate.envers.Audited;
 import org.hibernate.envers.NotAudited;
 import org.springframework.beans.BeanUtils;
 
 import com.krishagni.catissueplus.core.administrative.domain.Site;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol.VisitNamePrintMode;
+import com.krishagni.catissueplus.core.biospecimen.domain.factory.CpeErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.SrErrorCode;
+import com.krishagni.catissueplus.core.common.domain.IntervalUnit;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.util.Status;
 import com.krishagni.catissueplus.core.common.util.Utility;
 
 @Audited
-public class CollectionProtocolEvent implements Comparable<CollectionProtocolEvent> {
+public class CollectionProtocolEvent extends BaseEntity implements Comparable<CollectionProtocolEvent> {
+
 	private static final String ENTITY_NAME = "collection_protocol_event";
 	
-	private Long id;
-
 	private String eventLabel;
 
-	private Double eventPoint;
+	private Integer eventPoint;
+
+	private IntervalUnit eventPointUnit;
 
 	private CollectionProtocol collectionProtocol;
 	
@@ -52,18 +57,12 @@ public class CollectionProtocolEvent implements Comparable<CollectionProtocolEve
 
 	private transient int offset = 0;
 
+	private transient IntervalUnit offsetUnit = IntervalUnit.DAYS;
+
 	public static String getEntityName() {
 		return ENTITY_NAME;
 	}
 	
-	public Long getId() {
-		return id;
-	}
-
-	public void setId(Long id) {
-		this.id = id;
-	}
-
 	public String getEventLabel() {
 		return eventLabel;
 	}
@@ -72,12 +71,20 @@ public class CollectionProtocolEvent implements Comparable<CollectionProtocolEve
 		this.eventLabel = eventLabel;
 	}
 
-	public Double getEventPoint() {
+	public Integer getEventPoint() {
 		return eventPoint;
 	}
 
-	public void setEventPoint(Double eventPoint) {
+	public void setEventPoint(Integer eventPoint) {
 		this.eventPoint = eventPoint;
+	}
+
+	public IntervalUnit getEventPointUnit() {
+		return eventPointUnit;
+	}
+
+	public void setEventPointUnit(IntervalUnit eventPointUnit) {
+		this.eventPointUnit = eventPointUnit;
 	}
 
 	@NotAudited
@@ -153,6 +160,10 @@ public class CollectionProtocolEvent implements Comparable<CollectionProtocolEve
 		this.activityStatus = activityStatus;
 	}
 
+	public boolean isClosed() {
+		return Status.isClosedStatus(getActivityStatus());
+	}
+
 	@NotAudited
 	public Set<SpecimenRequirement> getSpecimenRequirements() {
 		return specimenRequirements;
@@ -163,7 +174,7 @@ public class CollectionProtocolEvent implements Comparable<CollectionProtocolEve
 	}
 	
 	public Set<SpecimenRequirement> getTopLevelAnticipatedSpecimens() {
-		Set<SpecimenRequirement> anticipated = new LinkedHashSet<SpecimenRequirement>();
+		Set<SpecimenRequirement> anticipated = new LinkedHashSet<>();
 		if (getSpecimenRequirements() == null) {
 			return anticipated;
 		}
@@ -175,6 +186,10 @@ public class CollectionProtocolEvent implements Comparable<CollectionProtocolEve
 		}
 		
 		return anticipated;
+	}
+
+	public List<SpecimenRequirement> getOrderedTopLevelAnticipatedSpecimens() {
+		return getTopLevelAnticipatedSpecimens().stream().sorted().collect(Collectors.toList());
 	}
 
 	@NotAudited
@@ -194,9 +209,22 @@ public class CollectionProtocolEvent implements Comparable<CollectionProtocolEve
 		this.offset = offset;
 	}
 
+	public IntervalUnit getOffsetUnit() {
+		return offsetUnit;
+	}
+
+	public void setOffsetUnit(IntervalUnit offsetUnit) {
+		this.offsetUnit = offsetUnit;
+	}
+
 	// updates all but specimen requirements
-	public void update(CollectionProtocolEvent other) { 
+	public void update(CollectionProtocolEvent other) {
+		if (isClosed()) {
+			throw OpenSpecimenException.userError(CpeErrorCode.CLOSED, getEventLabel());
+		}
+
 		setEventPoint(other.getEventPoint());
+		setEventPointUnit(other.getEventPointUnit());
 		setEventLabel(other.getEventLabel());
 		setCollectionProtocol(other.getCollectionProtocol());
 		setCode(other.getCode());
@@ -205,10 +233,18 @@ public class CollectionProtocolEvent implements Comparable<CollectionProtocolEve
 		setClinicalStatus(other.getClinicalStatus());
 		setVisitNamePrintMode(other.getVisitNamePrintMode());
 		setVisitNamePrintCopies(other.getVisitNamePrintCopies());
+
 		setActivityStatus(other.getActivityStatus());
+		if (isClosed()) {
+			getTopLevelAnticipatedSpecimens().forEach(SpecimenRequirement::close);
+		}
 	}
 	
 	public void addSpecimenRequirement(SpecimenRequirement sr) {
+		if (isClosed()) {
+			throw OpenSpecimenException.userError(CpeErrorCode.CLOSED, getEventLabel());
+		}
+
 		ensureUniqueSrCode(sr);
 		getSpecimenRequirements().add(sr);
 		sr.setCollectionProtocolEvent(this);
@@ -227,7 +263,7 @@ public class CollectionProtocolEvent implements Comparable<CollectionProtocolEve
 	}
 	
 	public void copySpecimenRequirementsTo(CollectionProtocolEvent cpe) {
-		List<SpecimenRequirement> topLevelSrs = new ArrayList<SpecimenRequirement>(getTopLevelAnticipatedSpecimens());
+		List<SpecimenRequirement> topLevelSrs = new ArrayList<>(getTopLevelAnticipatedSpecimens());
 		Collections.sort(topLevelSrs);
 
 		int order = 1;
@@ -287,16 +323,16 @@ public class CollectionProtocolEvent implements Comparable<CollectionProtocolEve
 
 	@Override
 	public int compareTo(CollectionProtocolEvent other) {
-		Double thisEventPoint = getEventPoint() == null ? 0d : getEventPoint();
-		Double otherEventPoint = other.getEventPoint() == null ? 0d : other.getEventPoint();
-
-		if (thisEventPoint.equals(otherEventPoint)) {
-			return getId().compareTo(other.getId());
-		} else {
-			return thisEventPoint.compareTo(otherEventPoint);
+		Integer thisEventPoint  = Utility.getNoOfDays(getEventPoint(), getEventPointUnit());
+		Integer otherEventPoint = Utility.getNoOfDays(other.getEventPoint(), other.getEventPointUnit());
+		int result = ObjectUtils.compare(thisEventPoint, otherEventPoint, true);
+		if (result == 0) {
+			result = ObjectUtils.compare(getId(), other.getId());
 		}
+
+		return result;
 	}
-	
+
 	private static final String[] EXCLUDE_COPY_PROPS = {
 			"id",
 			"code",

@@ -32,7 +32,6 @@
         <column>ACTIVITY_STATUS</column>
         <options>
           <option><value>Active</value></option>
-          <option><value>Disabled</value></option>
           <option><value>Closed</value></option>
         </options>
       </dropDown>
@@ -46,26 +45,13 @@
       </textField>
     </row>
     <row>
-      <subForm>
+      <siteField>
         <name>site</name>
         <udn>site</udn>
         <caption>#getMessage("visit_site")</caption>
-        <table>CATISSUE_SITE</table>
-        <foreignKey>IDENTIFIER</foreignKey>
-        <parentKey>SITE_ID</parentKey>
-        <row>
-          <dropDown>
-            <name>name</name>
-            <udn>name</udn>
-            <caption>#getMessage("visit_site")</caption>
-            <column>NAME</column>
-            <options>
-              <sql>select name from CATISSUE_SITE where activity_status != 'Disabled'</sql>
-            </options>
-            <recordUrl>#/object-state-params-resolver?stateName=site-detail.overview&amp;objectName=site&amp;key=name&amp;value={{$value}}</recordUrl>
-          </dropDown>
-        </row>
-      </subForm>
+        <column>SITE_ID</column>
+        <recordUrl>#/object-state-params-resolver?stateName=site-detail.overview&amp;objectName=site&amp;key=name&amp;value={{$value}}</recordUrl>
+      </siteField>
     </row>
     <row>
       <subForm>
@@ -83,6 +69,28 @@
             <column>COLLECTION_POINT_LABEL</column>
           </textField>
         </row>
+        <row>
+          <numberField>
+            <name>eventPoint</name>
+            <udn>eventPoint</udn>
+            <caption>#getMessage("visit_cpe_event_point")</caption>
+            <column>STUDY_CALENDAR_EVENT_POINT</column>
+          </numberField>
+        </row>
+        <row>
+          <dropDown>
+            <name>eventPointUnit</name>
+            <udn>eventPointUnit</udn>
+            <caption>#getMessage("visit_cpe_event_point_unit")</caption>
+            <column>EVENT_POINT_UNIT</column>
+            <options>
+              <option><value>DAYS</value></option>
+              <option><value>MONTHS</value></option>
+              <option><value>WEEKS</value></option>
+              <option><value>YEARS</value></option>
+            </options>
+          </dropDown>
+        </row>
       </subForm>
     </row>
     <row>
@@ -94,7 +102,7 @@
         <options>
           <option><value>Pending</value></option>
           <option><value>Complete</value></option>
-          <option><value>Incomplete</value></option>
+          <option><value>Not Collected</value></option>
           <option><value>Missed Collection</value></option>
         </options>
       </dropDown>
@@ -111,42 +119,12 @@
       </dropDown>
     </row>
     <row>
-      <subForm>
+      <userField>
         <name>missedBy</name>
         <udn>missedBy</udn>
         <caption>#getMessage("visit_missed_by")</caption>
-        <table>USER_VIEW</table>
-        <foreignKey>IDENTIFIER</foreignKey>
-        <parentKey>MISSED_BY</parentKey>
-        <row>
-          <userField>
-            <name>missedByName</name>
-            <udn>missedByName</udn>
-            <caption>#getMessage("visit_missed_by")</caption>
-            <column>IDENTIFIER</column>
-          </userField>
-        </row>
-        <row>
-          <siteField>
-            <name>primarySite</name>
-            <udn>primarySite</udn>
-            <caption>#getMessage("visit_missed_by_primary_site")</caption>
-            <column>PRIMARY_SITE_ID</column>
-            <recordUrl>#/object-state-params-resolver?stateName=site-detail.overview&amp;objectName=site&amp;key=name&amp;value={{$value}}</recordUrl>
-          </siteField>
-        </row>
-        <row>
-          <dropDown>
-            <name>institute</name>
-            <udn>institute</udn>
-            <caption>#getMessage("visit_missed_by_institute")</caption>
-            <column>INSTITUTE_NAME</column>
-            <options>
-              <sql>select distinct INSTITUTE_NAME from USER_VIEW</sql>
-            </options>
-          </dropDown>  
-        </row>
-      </subForm>
+        <column>MISSED_BY</column>
+      </userField>
     </row>
     <row>
       <listBox>
@@ -220,6 +198,38 @@
       </textField>
     </row>
     <row>
+      <datePicker>
+        <name>creationTime</name>
+        <udn>creationTime</udn>
+        <caption>#getMessage("common_creation_time")</caption>
+        <column>CREATION_TIME</column>
+      </datePicker>
+    </row>
+    <row>
+      <userField>
+        <name>creator</name>
+        <udn>creator</udn>
+        <caption>#getMessage("common_creator")</caption>
+        <column>CREATOR</column>
+      </userField>
+    </row>
+    <row>
+      <datePicker>
+        <name>updateTime</name>
+        <udn>updateTime</udn>
+        <caption>#getMessage("common_update_time")</caption>
+        <column>UPDATE_TIME</column>
+      </datePicker>
+    </row>
+    <row>
+      <userField>
+        <name>updater</name>
+        <udn>updater</udn>
+        <caption>#getMessage("common_updater")</caption>
+        <column>UPDATER</column>
+      </userField>
+    </row>
+    <row>
       <subForm>
         <name>specimens</name>
         <udn>specimens</udn>
@@ -254,7 +264,7 @@
             <name>specimenShipments</name>
             <udn>specimenShipments</udn>
             <caption>#getMessage("specimen_shipment_items")</caption>
-            <table>OS_SHIPMENT_ITEMS</table>
+            <table>OS_SHIPMENT_SPECIMENS</table>
             <foreignKey>SPECIMEN_ID</foreignKey>
             <parentKey>IDENTIFIER</parentKey>
            

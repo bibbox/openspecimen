@@ -2,9 +2,14 @@ package com.krishagni.catissueplus.core.biospecimen.events;
 
 import java.math.BigDecimal;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import org.apache.commons.collections.CollectionUtils;
+
+import com.krishagni.catissueplus.core.common.events.NameValuePair;
+import com.krishagni.catissueplus.core.common.events.UserSummary;
 import com.krishagni.catissueplus.core.de.events.ExtensionDetail;
 
 public class MasterSpecimenDetail {
@@ -13,6 +18,10 @@ public class MasterSpecimenDetail {
 	private String ppid;
 	
 	private Date registrationDate;
+
+	private String regSite;
+
+	private String externalSubjectId;
 	
 	private String firstName;
 
@@ -34,7 +43,7 @@ public class MasterSpecimenDetail {
 
 	private String sexGenotype;
 
-	private String ethnicity;
+	private Set<String> ethnicities;
 
 	private String uid;
 
@@ -65,6 +74,8 @@ public class MasterSpecimenDetail {
 	private String label;
 
 	private String barcode;
+
+	private String imageId;
 	
 	private String specimenClass;
 	
@@ -85,6 +96,8 @@ public class MasterSpecimenDetail {
 	private BigDecimal concentration;
 	
 	private Date createdOn;
+
+	private UserSummary createdBy;
 	
 	private String comments;
 	
@@ -109,7 +122,9 @@ public class MasterSpecimenDetail {
 	private String receivedQuality;
 	
 	private String receiver;
-	
+
+	private List<NameValuePair> externalIds;
+
 	private ExtensionDetail extensionDetail;
 
 	public String getCpShortTitle() {
@@ -140,6 +155,22 @@ public class MasterSpecimenDetail {
 
 	public void setRegistrationDate(Date registrationDate) {
 		this.registrationDate = registrationDate;
+	}
+
+	public String getRegSite() {
+		return regSite;
+	}
+
+	public void setRegSite(String regSite) {
+		this.regSite = regSite;
+	}
+
+	public String getExternalSubjectId() {
+		return externalSubjectId;
+	}
+
+	public void setExternalSubjectId(String externalSubjectId) {
+		this.externalSubjectId = externalSubjectId;
 	}
 
 	public String getFirstName() {
@@ -223,11 +254,23 @@ public class MasterSpecimenDetail {
 	}
 
 	public String getEthnicity() {
-		return ethnicity;
+		return CollectionUtils.isNotEmpty(ethnicities) ? ethnicities.iterator().next() : null;
 	}
 
 	public void setEthnicity(String ethnicity) {
-		this.ethnicity = ethnicity;
+		if (ethnicities == null) {
+			ethnicities = new HashSet<>();
+		}
+
+		ethnicities.add(ethnicity);
+	}
+
+	public Set<String> getEthnicities() {
+		return ethnicities;
+	}
+
+	public void setEthnicities(Set<String> ethnicities) {
+		this.ethnicities = ethnicities;
 	}
 
 	public String getUid() {
@@ -354,6 +397,14 @@ public class MasterSpecimenDetail {
 		this.barcode = barcode;
 	}
 
+	public String getImageId() {
+		return imageId;
+	}
+
+	public void setImageId(String imageId) {
+		this.imageId = imageId;
+	}
+
 	public String getSpecimenClass() {
 		return specimenClass;
 	}
@@ -432,6 +483,14 @@ public class MasterSpecimenDetail {
 
 	public void setCreatedOn(Date createdOn) {
 		this.createdOn = createdOn;
+	}
+
+	public UserSummary getCreatedBy() {
+		return createdBy;
+	}
+
+	public void setCreatedBy(UserSummary createdBy) {
+		this.createdBy = createdBy;
 	}
 
 	public String getComments() {
@@ -528,6 +587,14 @@ public class MasterSpecimenDetail {
 
 	public void setReceiver(String receiver) {
 		this.receiver = receiver;
+	}
+
+	public List<NameValuePair> getExternalIds() {
+		return externalIds;
+	}
+
+	public void setExternalIds(List<NameValuePair> externalIds) {
+		this.externalIds = externalIds;
 	}
 
 	public ExtensionDetail getExtensionDetail() {

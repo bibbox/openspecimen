@@ -1,14 +1,19 @@
 
 angular.module('os.administrative.job.list', ['os.administrative.models'])
-  .controller('JobListCtrl', function($scope, $modal, ScheduledJob, Alerts, ListPagerOpts) {
+  .controller('JobListCtrl', function(
+    $scope, $modal, $translate, $state,
+    Util, ScheduledJob, DeleteUtil, Alerts, ListPagerOpts) {
 
-    var pagerOpts;
+    var pagerOpts, filterOpts;
 
     function init() {
       $scope.jobs = [];
       pagerOpts = $scope.pagerOpts = new ListPagerOpts({listSizeGetter: getJobsCount});
-      $scope.filterOpts = {query: undefined, maxResults: pagerOpts.recordsPerPage + 1};
-      loadJobs($scope.filterOpts);
+      filterOpts = $scope.filterOpts = {query: undefined, maxResults: pagerOpts.recordsPerPage + 1};
+
+      loadTypes();
+      loadJobs(filterOpts);
+      Util.filter($scope, 'filterOpts', loadJobs);
     }
 
     function loadJobs(filterOpts) {
@@ -32,7 +37,24 @@ angular.module('os.administrative.job.list', ['os.administrative.models'])
     function getJobsCount() {
       return ScheduledJob.getCount($scope.filterOpts);
     }
+
+    function loadTypes() {
+      $scope.types = [];
+      $translate('jobs.types.INTERNAL').then(
+        function() {
+          $scope.types = ['INTERNAL', 'EXTERNAL', 'QUERY'].map(
+            function(type) {
+              return {type: type, caption: $translate.instant('jobs.types.' + type)}
+            }
+          );
+        }
+      );
+    }
     
+    $scope.showJobEdit = function(job) {
+      $state.go('job-addedit', {jobId: job.id});
+    }
+
     $scope.executeJob = function(job) {
       if (!job.rtArgsProvided) {
         runJob(job);
@@ -62,12 +84,19 @@ angular.module('os.administrative.job.list', ['os.administrative.models'])
 
 
     $scope.deleteJob = function(job) {
-      job.$remove().then(
-        function() {
-          var idx = $scope.jobs.indexOf(job);
-          $scope.jobs.splice(idx, 1);
+      DeleteUtil.confirmDelete({
+        templateUrl: 'modules/administrative/job/confirm-delete.html',
+        deleteWithoutCheck: true,
+        entity: job,
+        delete: function() {
+          job.$remove().then(
+            function() {
+              var idx = $scope.jobs.indexOf(job);
+              $scope.jobs.splice(idx, 1);
+            }
+          );
         }
-      );
+      });
     }
 
     init();

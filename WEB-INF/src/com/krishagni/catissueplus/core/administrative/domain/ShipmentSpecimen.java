@@ -1,0 +1,103 @@
+package com.krishagni.catissueplus.core.administrative.domain;
+
+import org.hibernate.envers.Audited;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Configurable;
+
+import com.krishagni.catissueplus.core.administrative.domain.factory.StorageContainerErrorCode;
+import com.krishagni.catissueplus.core.biospecimen.domain.BaseEntity;
+import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
+import com.krishagni.catissueplus.core.biospecimen.domain.SpecimenShipmentReceivedEvent;
+import com.krishagni.catissueplus.core.biospecimen.domain.SpecimenShipmentShippedEvent;
+import com.krishagni.catissueplus.core.biospecimen.services.SpecimenService;
+import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
+
+@Configurable
+@Audited
+public class ShipmentSpecimen extends BaseEntity {
+	private Shipment shipment;
+	
+	private Specimen specimen;
+
+	private ShipmentContainer shipmentContainer;
+	
+	private String receivedQuality;
+
+	@Autowired
+	private SpecimenService spmnSvc;
+
+	public Shipment getShipment() {
+		return shipment;
+	}
+
+	public void setShipment(Shipment shipment) {
+		this.shipment = shipment;
+	}
+
+	public Specimen getSpecimen() {
+		return specimen;
+	}
+
+	public void setSpecimen(Specimen specimen) {
+		this.specimen = specimen;
+	}
+
+	public ShipmentContainer getShipmentContainer() {
+		return shipmentContainer;
+	}
+
+	public void setShipmentContainer(ShipmentContainer shipmentContainer) {
+		this.shipmentContainer = shipmentContainer;
+	}
+
+	public String getReceivedQuality() {
+		return receivedQuality;
+	}
+
+	public void setReceivedQuality(String receivedQuality) {
+		this.receivedQuality = receivedQuality;
+	}
+
+	public void ship() {
+		Shipment shipment = getShipment();
+		if (shipment.isSpecimenShipment()) {
+			StorageContainerPosition position = new StorageContainerPosition();
+			position.setContainer(shipment.getReceivingSite().getContainer());
+			position.setOccupyingSpecimen(getSpecimen());
+			position.setSupressAccessChecks(true);
+			getSpecimen().updatePosition(position, null, shipment.getShippedDate(), "Shipment: " + shipment.getName());
+		}
+
+		shipment.addOnSaveProc(() -> addShippedEvent(this));
+	}
+	
+	public void receive(ShipmentSpecimen other) {
+		setReceivedQuality(other.getReceivedQuality());
+		updateSpecimen(other);
+		SpecimenShipmentReceivedEvent.createForShipmentItem(this).saveRecordEntry();
+	}
+
+	public void receive(String receivedQuality) {
+		setReceivedQuality(receivedQuality);
+		SpecimenShipmentReceivedEvent.createForShipmentItem(this).saveRecordEntry();
+	}
+
+	public static ShipmentSpecimen createShipmentSpecimen(Shipment shipment, Specimen specimen) {
+		ShipmentSpecimen shipmentSpmn = new ShipmentSpecimen();
+		shipmentSpmn.setShipment(shipment);
+		shipmentSpmn.setSpecimen(specimen);
+		return shipmentSpmn;
+	}
+
+	private void addShippedEvent(ShipmentSpecimen item) {
+		SpecimenShipmentShippedEvent.createForShipmentSpecimen(item).saveRecordEntry();
+	}
+
+	private void updateSpecimen(ShipmentSpecimen other) {
+		if (!getShipment().isSpecimenShipment()) {
+			return;
+		}
+
+		spmnSvc.updateSpecimen(getSpecimen(), other.getSpecimen());
+	}
+}

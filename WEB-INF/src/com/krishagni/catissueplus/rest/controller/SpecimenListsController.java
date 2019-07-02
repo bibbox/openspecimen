@@ -5,7 +5,6 @@ import java.util.List;
 import java.util.Map;
 
 import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
 
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,11 +27,10 @@ import com.krishagni.catissueplus.core.biospecimen.repository.SpecimenListCriter
 import com.krishagni.catissueplus.core.biospecimen.repository.SpecimenListsCriteria;
 import com.krishagni.catissueplus.core.biospecimen.services.SpecimenListService;
 import com.krishagni.catissueplus.core.common.events.EntityQueryCriteria;
-import com.krishagni.catissueplus.core.common.events.ExportedFileDetail;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
 import com.krishagni.catissueplus.core.common.events.ResponseEvent;
 import com.krishagni.catissueplus.core.common.events.UserSummary;
-import com.krishagni.catissueplus.core.common.util.Utility;
+import com.krishagni.catissueplus.core.de.events.QueryDataExportResult;
 
 @Controller
 @RequestMapping("/specimen-lists")
@@ -65,10 +63,7 @@ public class SpecimenListsController {
 			.includeStat(includeStats)
 			.startAt(startAt < 0 ? 0 : startAt)
 			.maxResults(maxResults <=0 ? 100 : maxResults);
-
-		ResponseEvent<List<SpecimenListSummary>> resp = specimenListSvc.getSpecimenLists(getRequest(crit));
-		resp.throwErrorIfUnsuccessful();
-		return resp.getPayload();
+		return response(specimenListSvc.getSpecimenLists(request(crit)));
 	}
 	
 	@RequestMapping(method = RequestMethod.GET, value = "/count")
@@ -76,28 +71,21 @@ public class SpecimenListsController {
 	@ResponseBody
 	public Map<String, Long> getSpecimenListsCount(@RequestParam(value = "name", required = false) String name) {
 		SpecimenListsCriteria crit = new SpecimenListsCriteria().query(name);
-		ResponseEvent<Long> resp = specimenListSvc.getSpecimenListsCount(getRequest(crit));
-		resp.throwErrorIfUnsuccessful();
-		return Collections.singletonMap("count", resp.getPayload());
+		return Collections.singletonMap("count", response(specimenListSvc.getSpecimenListsCount(request(crit))));
 	}
 	
 	@RequestMapping(method = RequestMethod.GET, value="/{listId}")
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody
 	public SpecimenListDetail getSpecimenList(@PathVariable("listId") Long listId) {
-		EntityQueryCriteria crit = new EntityQueryCriteria(listId);
-		ResponseEvent<SpecimenListDetail> resp = specimenListSvc.getSpecimenList(getRequest(crit));
-		resp.throwErrorIfUnsuccessful();
-		return resp.getPayload();
+		return response(specimenListSvc.getSpecimenList(request(new EntityQueryCriteria(listId))));
 	}
 		
 	@RequestMapping(method = RequestMethod.POST)
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody
 	public SpecimenListDetail createSpecimenList(@RequestBody SpecimenListDetail details) {
-		ResponseEvent<SpecimenListDetail> resp = specimenListSvc.createSpecimenList(getRequest(details));
-		resp.throwErrorIfUnsuccessful();
-		return resp.getPayload();
+		return response(specimenListSvc.createSpecimenList(request(details)));
 	}
 
 	@RequestMapping(method = RequestMethod.PUT, value="/{listId}")
@@ -105,10 +93,7 @@ public class SpecimenListsController {
 	@ResponseBody
 	public SpecimenListDetail updateSpecimenList(@PathVariable Long listId, @RequestBody SpecimenListDetail details) {
 		details.setId(listId);
-
-		ResponseEvent<SpecimenListDetail> resp = specimenListSvc.updateSpecimenList(getRequest(details));
-		resp.throwErrorIfUnsuccessful();
-		return resp.getPayload();
+		return response(specimenListSvc.updateSpecimenList(request(details)));
 	}
 
 	@RequestMapping(method = RequestMethod.PATCH, value="/{listId}")
@@ -116,18 +101,14 @@ public class SpecimenListsController {
 	@ResponseBody
 	public SpecimenListDetail patchSpecimenList(@PathVariable Long listId, @RequestBody SpecimenListDetail details) {
 		details.setId(listId);
-		ResponseEvent<SpecimenListDetail> resp = specimenListSvc.patchSpecimenList(getRequest(details));
-		resp.throwErrorIfUnsuccessful();
-		return resp.getPayload();
+		return response(specimenListSvc.patchSpecimenList(request(details)));
 	}
 
 	@RequestMapping(method = RequestMethod.DELETE, value="/{listId}")
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody
 	public SpecimenListDetail deleteSpecimenList(@PathVariable Long listId) {
-		ResponseEvent<SpecimenListDetail> resp = specimenListSvc.deleteSpecimenList(getRequest(listId));
-		resp.throwErrorIfUnsuccessful();
-		return resp.getPayload();
+		return response(specimenListSvc.deleteSpecimenList(request(listId)));
 	}
 
 	@RequestMapping(method = RequestMethod.GET, value="/{listId}/specimens")
@@ -189,10 +170,56 @@ public class SpecimenListsController {
 			.noQty(noQty)
 			.includeStat(includeListCount)
 			.limitItems(true);
+		return response(specimenListSvc.getListSpecimens(request(criteria)));
+	}
 
-		ResponseEvent<List<SpecimenInfo>> resp = specimenListSvc.getListSpecimens(getRequest(criteria));
-		resp.throwErrorIfUnsuccessful();
-		return resp.getPayload();
+	@RequestMapping(method = RequestMethod.GET, value="/{listId}/specimens-count")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public Map<String, Integer> getListSpecimensCount(
+		@PathVariable("listId")
+		Long listId,
+
+		@RequestParam(value = "label", required = false)
+		String label,
+
+		@RequestParam(value = "cpId", required = false)
+		Long cpId,
+
+		@RequestParam(value = "ppid", required = false)
+		String ppid,
+
+		@RequestParam(value = "lineage", required = false)
+		String lineage,
+
+		@RequestParam(value = "type", required = false)
+		String type,
+
+		@RequestParam(value = "anatomicSite", required = false)
+		String anatomicSite,
+
+		@RequestParam(value = "container", required = false)
+		String container,
+
+		@RequestParam(value = "available", required = false, defaultValue = "false")
+		boolean available,
+
+		@RequestParam(value = "noQty", required = false, defaultValue = "false")
+		boolean noQty) {
+
+		SpecimenListCriteria criteria = new SpecimenListCriteria()
+			.specimenListId(listId)
+			.labels(StringUtils.isNotBlank(label) ? Collections.singletonList(label) : null)
+			.cpId(cpId)
+			.ppid(ppid)
+			.lineages(StringUtils.isNotBlank(lineage) ? new String[] {lineage} : null)
+			.type(type)
+			.anatomicSite(anatomicSite)
+			.container(container)
+			.exactMatch(false)
+			.available(available)
+			.noQty(noQty);
+		return Collections.singletonMap("count", response(specimenListSvc.getListSpecimensCount(request(criteria))));
 	}
 
 	@RequestMapping(method = RequestMethod.GET, value="/{listId}/specimens-sorted-by-rel")
@@ -200,9 +227,7 @@ public class SpecimenListsController {
 	@ResponseBody
 	public List<SpecimenInfo> getListSpecimens(@PathVariable("listId") Long listId) {
 		RequestEvent<EntityQueryCriteria> req = new RequestEvent<>(new EntityQueryCriteria(listId));
-		ResponseEvent<List<SpecimenInfo>> resp = specimenListSvc.getListSpecimensSortedByRel(req);
-		resp.throwErrorIfUnsuccessful();
-		return resp.getPayload();
+		return response(specimenListSvc.getListSpecimensSortedByRel(req));
 	}
 
 	@RequestMapping(method = RequestMethod.PUT, value="/{listId}/specimens")
@@ -223,18 +248,15 @@ public class SpecimenListsController {
 		opDetail.setSpecimens(specimenIds);
 		opDetail.setOp(UpdateListSpecimensOp.Operation.valueOf(operation));
 
-		ResponseEvent<Integer> resp = specimenListSvc.updateListSpecimens(getRequest(opDetail));
-		resp.throwErrorIfUnsuccessful();
-		return Collections.singletonMap("count", resp.getPayload());
+		return Collections.singletonMap("count", response(specimenListSvc.updateListSpecimens(request(opDetail))));
 	}
 
 	@RequestMapping(method = RequestMethod.POST, value="/{listId}/add-child-specimens")
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody
 	public Map<String, String> addChildSpecimens(@PathVariable("listId") Long listId) {
-		ResponseEvent<Boolean> resp = specimenListSvc.addChildSpecimens(getRequest(listId));
-		resp.throwErrorIfUnsuccessful();
-		return Collections.singletonMap("status", resp.getPayload().toString());
+		Boolean status = response(specimenListSvc.addChildSpecimens(request(listId)));
+		return Collections.singletonMap("status", status.toString());
 	}
 	
 	@RequestMapping(method = RequestMethod.PUT, value="/{listId}/users")
@@ -255,28 +277,29 @@ public class SpecimenListsController {
 		opDetail.setOp(com.krishagni.catissueplus.core.biospecimen.events.ShareSpecimenListOp.Operation.valueOf(operation));
 		opDetail.setUserIds(userIds);
 		
-		ResponseEvent<List<UserSummary>> resp = specimenListSvc.shareSpecimenList(getRequest(opDetail));
-		resp.throwErrorIfUnsuccessful();
-		return resp.getPayload();
+		return response(specimenListSvc.shareSpecimenList(request(opDetail)));
 	}
 
-	@RequestMapping(method = RequestMethod.GET, value="{id}/csv-file")
+	@RequestMapping(method = RequestMethod.GET, value="{id}/report")
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody
-	public void exportList(@PathVariable("id") Long listId, HttpServletResponse httpResp) {
-		EntityQueryCriteria crit = new EntityQueryCriteria(listId);
-		ResponseEvent<ExportedFileDetail> resp = specimenListSvc.exportSpecimenList(getRequest(crit));
-		resp.throwErrorIfUnsuccessful();
+	public QueryDataExportResult exportList(
+		@PathVariable("id")
+		Long listId,
 
-		ExportedFileDetail fileDetail = resp.getPayload();
-		try {
-			Utility.sendToClient(httpResp, fileDetail.getName() + ".csv", "application/csv", fileDetail.getFile());
-		} finally {
-			fileDetail.getFile().delete();
-		}
+		@RequestParam(value = "specimenId", required = false)
+		List<Long> specimenIds) {
+
+		SpecimenListCriteria crit = new SpecimenListCriteria().specimenListId(listId).ids(specimenIds);
+		return response(specimenListSvc.exportSpecimenList(request(crit)));
 	}
 		
-	private <T> RequestEvent<T> getRequest(T payload) {
-		return new RequestEvent<T>(payload);
+	private <T> RequestEvent<T> request(T payload) {
+		return new RequestEvent<>(payload);
+	}
+
+	private <T> T response(ResponseEvent<T> resp) {
+		resp.throwErrorIfUnsuccessful();
+		return resp.getPayload();
 	}
  }

@@ -6,11 +6,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import org.codehaus.jackson.annotate.JsonIgnore;
-
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.krishagni.catissueplus.core.administrative.domain.DistributionOrder;
 import com.krishagni.catissueplus.core.biospecimen.events.SpecimenListSummary;
 import com.krishagni.catissueplus.core.common.events.UserSummary;
+import com.krishagni.catissueplus.core.de.events.ExtensionDetail;
 
 public class DistributionOrderDetail extends DistributionOrderSummary implements Mergeable<String, DistributionOrderDetail>, Serializable {
 	private UserSummary distributor;
@@ -22,12 +23,16 @@ public class DistributionOrderDetail extends DistributionOrderSummary implements
 	private SpecimenRequestSummary request;
 
 	private SpecimenListSummary specimenList;
+
+	private Boolean allReservedSpmns;
 	
 	private List<DistributionOrderItemDetail> orderItems = new ArrayList<>();
 	
 	private String activityStatus;
 
 	private Map<String, Object> extraAttrs;
+
+	private ExtensionDetail extensionDetail;
 
 	//
 	// For BO template
@@ -40,6 +45,8 @@ public class DistributionOrderDetail extends DistributionOrderSummary implements
 	private boolean async;
 
 	private boolean completed = true;
+
+	private boolean copyItemsFromExistingOrder;
 
 	public UserSummary getDistributor() {
 		return distributor;
@@ -81,6 +88,14 @@ public class DistributionOrderDetail extends DistributionOrderSummary implements
 		this.specimenList = specimenList;
 	}
 
+	public Boolean getAllReservedSpmns() {
+		return allReservedSpmns;
+	}
+
+	public void setAllReservedSpmns(Boolean allReservedSpmns) {
+		this.allReservedSpmns = allReservedSpmns;
+	}
+
 	public List<DistributionOrderItemDetail> getOrderItems() {
 		return orderItems;
 	}
@@ -103,6 +118,14 @@ public class DistributionOrderDetail extends DistributionOrderSummary implements
 
 	public void setExtraAttrs(Map<String, Object> extraAttrs) {
 		this.extraAttrs = extraAttrs;
+	}
+
+	public ExtensionDetail getExtensionDetail() {
+		return extensionDetail;
+	}
+
+	public void setExtensionDetail(ExtensionDetail extensionDetail) {
+		this.extensionDetail = extensionDetail;
 	}
 
 	public DistributionOrderItemDetail getOrderItem() {
@@ -129,6 +152,15 @@ public class DistributionOrderDetail extends DistributionOrderSummary implements
 		this.completed = completed;
 	}
 
+	public boolean isCopyItemsFromExistingOrder() {
+		return copyItemsFromExistingOrder;
+	}
+
+	@JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+	public void setCopyItemsFromExistingOrder(boolean copyItemsFromExistingOrder) {
+		this.copyItemsFromExistingOrder = copyItemsFromExistingOrder;
+	}
+
 	public static DistributionOrderDetail from(DistributionOrder order) {
 		return from(order, false);
 	}
@@ -148,9 +180,12 @@ public class DistributionOrderDetail extends DistributionOrderSummary implements
 		if (order.getSpecimenList() != null) {
 			detail.setSpecimenList(SpecimenListSummary.fromSpecimenList(order.getSpecimenList()));
 		}
-		
+
+		detail.setAllReservedSpmns(order.getAllReservedSpecimens());
 		detail.setTrackingUrl(order.getTrackingUrl());
 		detail.setComments(order.getComments());
+		detail.setExtensionDetail(ExtensionDetail.from(order.getExtension()));
+
 		if (includeOrderItems) {
 			detail.setOrderItems(DistributionOrderItemDetail.from(order.getOrderItems()));
 		}

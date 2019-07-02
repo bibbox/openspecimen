@@ -1,7 +1,9 @@
 <div> 
   <div os-page-header>
-    <div class="os-page-header-content">
-      <ul os-breadcrumbs>
+    <div class="os-page-header-content" ng-switch on="!!fieldsCtx.headers.visit.breadcrumb">
+      <os-html-template ng-switch-when="true" template="fieldsCtx.headers.visit.breadcrumb"></os-html-template>
+
+      <ul ng-switch-when="false" os-breadcrumbs>
         <li> 
           <a ui-sref="cp-list-view({cpId: cpr.cpId})">
             <span>{{cpr.cpShortTitle}}</span>
@@ -20,7 +22,22 @@
       </ul>
 
       <h3>
-        <os-event-desc event-point="visit.eventPoint" event-label="visit.eventLabel"></os-event-desc>
+        <div ng-switch on="!!fieldsCtx.headers.visit.leftTitle">
+          <div ng-switch-when="true">
+            <os-html-template template="fieldsCtx.headers.visit.leftTitle"></os-html-template>
+          </div>
+          <div ng-switch-when="false">
+            <os-event-desc event-point="visit.eventPoint" event-point-unit="visit.eventPointUnit"
+              event-label="visit.eventLabel">
+            </os-event-desc>
+          </div>
+        </div>
+      </h3>
+    </div>
+
+    <div class="os-page-header-actions">
+      <h3 ng-if="!!fieldsCtx.headers.visit.rightTitle">
+        <os-html-template template="fieldsCtx.headers.visit.rightTitle"></os-html-template>
       </h3>
     </div>
   </div>
@@ -33,7 +50,8 @@
           <span class="os-title" translate="visits.menu.overview">Overview</span>
         </a>
       </li>
-      <li show-if-allowed="sprResource.readOpts" ui-sref-active="active" ng-if="sprUploadAllowed">
+      <li show-if-allowed="sprResource.readOpts" ng-if="sprUploadAllowed" ui-sref-active="active"
+        ng-class="{'highlight': !!visit.sprName}">
         <a ui-sref=".spr">
           <span class="fa fa-file-text-o"></span>
           <span class="os-title" translate="visits.menu.spr_report">Surgical Pathology Report</span>
@@ -45,9 +63,22 @@
           <span class="os-title" translate="visits.menu.extensions">Forms</span>
         </a>
       </li>
+      <li ng-click="toggleTree()">
+        <a>
+          <span class="fa fa-sitemap"></span>
+          <span class="os-title" translate="participant.menu.specimen_tree">Specimen Tree</span>
+        </a>
+      </li>
     </ul>
   </div>
 
-  <div class="os-side-menu-page-content" ui-view></div>
+  <div class="os-side-menu-page-content os-no-right-padding clearfix">
+    <div ng-if="rootCtx.showTree" class="os-col-25 os-full-height-container os-no-padding">
+      <div class="os-full-height-container" ng-include src="'modules/biospecimen/participant/specimens-drawer.html'"></div>
+    </div>
+    <div class="os-specimen-tree-pane" ng-class="{'os-col-75': !!rootCtx.showTree}">
+      <div ui-view></div>
+    </div>
+  </div>
 </div>
 

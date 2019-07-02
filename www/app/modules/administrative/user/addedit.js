@@ -1,10 +1,13 @@
 angular.module('os.administrative.user.addedit', ['os.administrative.models'])
-  .controller('UserAddEditCtrl', function($scope, $rootScope, $state, $stateParams,
-    user, users, User, Institute, AuthDomain) {
+  .controller('UserAddEditCtrl', function(
+    $scope, $rootScope, $state, $stateParams, user, users,
+    User, Institute, AuthDomain, Util) {
 
-    var instituteSites = {};
- 
+    var instituteSites = {}, prevInstitute;
+
     function init() {
+      prevInstitute = user.instituteName;
+
       $scope.user = user;
       $scope.signedUp = false;
       loadPvs();
@@ -20,21 +23,10 @@ angular.module('os.administrative.user.addedit', ['os.administrative.models'])
           }
         }
       );
-
-      Institute.query().then(
-        function(institutes) {
-          $scope.institutes = institutes.map(function(institute) { return institute.name });
-
-          if (!$scope.user.id && $scope.institutes.length == 1) {
-            $scope.user.instituteName = $scope.institutes[0];
-            loadSites($scope.user.instituteName);
-          }
-        }
-      );
     }
 
     function loadSites(instituteName, siteName) {
-      if (!instituteName) {
+      if (!instituteName || instituteName.length == 0) {
         $scope.sites = [];
         return;
       }
@@ -55,6 +47,24 @@ angular.module('os.administrative.user.addedit', ['os.administrative.models'])
       );
     }
 
+    function saveUser() {
+      var user = angular.copy($scope.user);
+      user.$saveOrUpdate().then(
+        function(savedUser) {
+          $state.go('user-detail.overview', {userId: savedUser.id});
+        }
+      );
+    }
+
+    function bulkUpdate() {
+      var userIds = users.map(function(user) { return user.id; });
+      User.bulkUpdate({detail: $scope.user, ids: userIds}).then(
+        function(savedUsers) {
+          $state.go('user-list');
+        }
+      );
+    }
+
     $scope.onInstituteSelect = function(instituteName) {
       $scope.user.primarySite = undefined;
       loadSites(instituteName);
@@ -68,13 +78,25 @@ angular.module('os.administrative.user.addedit', ['os.administrative.models'])
       loadSites($scope.user.instituteName, siteName);
     }
 
+    $scope.onContactTypeSelect = function() {
+      $scope.user.manageForms = false;
+      $scope.user.domainName = undefined;
+      $scope.user.loginName = undefined;
+    }
+
     $scope.createUser = function() {
-      var user = angular.copy($scope.user);
-      user.$saveOrUpdate().then(
-        function(savedUser) {
-          $state.go('user-detail.overview', {userId: savedUser.id});
-        }
-      );
+      if (!$scope.user.id || $scope.user.instituteName == prevInstitute) {
+        saveUser();
+        return;
+      }
+
+      Util.showConfirm({
+        isWarning: true,
+        title: 'user.confirm_institute_update_title',
+        confirmMsg: 'user.confirm_institute_update_q',
+        input: {count: 1, users: [$scope.user]},
+        ok: saveUser
+      });
     };
 
     $scope.signup = function() {
@@ -89,12 +111,19 @@ angular.module('os.administrative.user.addedit', ['os.administrative.models'])
     };
 
     $scope.bulkUpdate = function() {
-      var userIds = users.map(function(user) { return user.id; });
-      User.bulkUpdate({detail: $scope.user, ids: userIds}).then(
-        function(savedUsers) {
-          $state.go('user-list');
-        }
-      )
+      var instituteChange = users.some(function(u) { return u.instituteName != $scope.user.instituteName; });
+      if (!instituteChange) {
+        bulkUpdate();
+        return;
+      }
+
+      Util.showConfirm({
+        isWarning: true,
+        title: 'user.confirm_institute_update_title',
+        confirmMsg: 'user.confirm_institute_update_q',
+        input: {count: users.length, users: users},
+        ok: bulkUpdate
+      });
     }
      
     init();

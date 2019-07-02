@@ -2,7 +2,7 @@
 angular.module('os.biospecimen.cp.specimens', ['os.biospecimen.models'])
   .controller('CpSpecimensCtrl', function(
     $scope, $state, $stateParams, $timeout, $modal,
-    cp, events, specimenRequirements,
+    cp, events, specimenRequirements, aliquotQtyReq,
     Specimen, SpecimenRequirement, PvManager, Alerts, Util) {
 
     if (!$stateParams.eventId && !!events && events.length > 0) {
@@ -15,8 +15,10 @@ angular.module('os.biospecimen.cp.specimens', ['os.biospecimen.models'])
       $scope.events = events;
       $scope.eventId = $stateParams.eventId;
       $scope.selectEvent({id: $stateParams.eventId});
+      $scope.selectedEvent = events.find(function(evt) { return evt.id == $stateParams.eventId; });
 
       $scope.specimenRequirements = Specimen.flatten(specimenRequirements);
+      $scope.aliquotQtyReq = aliquotQtyReq;
 
       $scope.view = 'list_sr';
       $scope.sr = {};
@@ -25,21 +27,39 @@ angular.module('os.biospecimen.cp.specimens', ['os.biospecimen.models'])
       $scope.errorCode = '';
     }
 
+    function sortReqs(reqs) {
+      reqs.sort(
+        function(r1, r2) {
+          if (r1.sortOrder != null && r2.sortOrder != null) {
+            return r1.sortOrder - r2.sortOrder;
+          } else if (r1.sortOrder != null) {
+            return -1;
+          } else if (r2.sortOrder != null) {
+            return 1;
+          } else {
+            return r1.id - r2.id;
+          }
+        }
+      );
+
+      return reqs;
+    }
+
     function addToSrList(sr) {
       specimenRequirements.push(sr);
-      $scope.specimenRequirements = Specimen.flatten(specimenRequirements);
+      $scope.specimenRequirements = Specimen.flatten(sortReqs(specimenRequirements));
     }
 
     function updateSrList(sr) {
       var result = findSr(specimenRequirements, sr.id);
       angular.extend(result.sr, sr);
-      $scope.specimenRequirements = Specimen.flatten(specimenRequirements);
+      $scope.specimenRequirements = Specimen.flatten(sortReqs(specimenRequirements));
     }
 
     function deleteFromSrList(sr) {
       var result = findSr(specimenRequirements, sr.id);
       result.list.splice(result.idx, 1);
-      $scope.specimenRequirements = Specimen.flatten(specimenRequirements);
+      $scope.specimenRequirements = Specimen.flatten(sortReqs(specimenRequirements));
     }
 
     function findSr(srList, srId) {
@@ -117,6 +137,17 @@ angular.module('os.biospecimen.cp.specimens', ['os.biospecimen.models'])
       return sr;
     }
 
+    function cloneSr(sr) {
+      var delAttrs = [
+        'depth', 'hasChildren', 'children', 'isOpened', 'parent',
+        'pooledSpecimen', 'specimensPool'
+      ];
+
+      var result = angular.copy(sr);
+      angular.forEach(delAttrs, function(attr) { delete result[attr]; });
+      return result;
+    }
+
     $scope.openSpecimenNode = function(sr) {
       sr.isOpened = true;
     };
@@ -154,18 +185,9 @@ angular.module('os.biospecimen.cp.specimens', ['os.biospecimen.models'])
     }
 
     $scope.showEditSr = function(sr) {
-      var delAttrs = [
-        'depth', 'hasChildren', 'children', 'isOpened', 'parent',
-        'pooledSpecimen', 'specimensPool'
-      ];
-        
       $scope.specimensCount = 0;
-      $scope.sr = angular.copy(sr);
+      $scope.sr = cloneSr(sr);
       $scope.sr.$$storedInRepo = (sr.storageType != 'Virtual');
-
-      angular.forEach(delAttrs, function(attr) {
-        delete $scope.sr[attr];
-      });
 
       if (sr.isAliquot()) {
         $scope.view = 'addedit_aliquot';
@@ -253,11 +275,7 @@ angular.module('os.biospecimen.cp.specimens', ['os.biospecimen.models'])
         return;
       }
 
-      $scope.childReq = {
-        $$storedInRepo: true,
-        storageType: 'Manual'
-      }
-
+      $scope.childReq = { $$storedInRepo: true, storageType: 'Manual' };
       $scope.parentSr = sr;
       $scope.view = 'addedit_aliquot';
       loadPvs();
@@ -275,7 +293,7 @@ angular.module('os.biospecimen.cp.specimens', ['os.biospecimen.models'])
         }
       } else if (!!spec.qtyPerAliquot) {
         spec.noOfAliquots = Math.floor(availableQty / spec.qtyPerAliquot);
-      } else if (!!spec.noOfAliquots) {
+      } else if (!!spec.noOfAliquots && availableQty != null && availableQty != undefined) {
         spec.qtyPerAliquot = Math.round(availableQty / spec.noOfAliquots * 10000) / 10000;
       }
 
@@ -347,7 +365,7 @@ angular.module('os.biospecimen.cp.specimens', ['os.biospecimen.models'])
       );
     };
         
-    $scope.copyRequirement = function(sr) {
+    $scope.copySr = function(sr) {
       var aliquotReq = {noOfAliquots: 1, qtyPerAliquot: sr.initialQty};
       if (sr.isAliquot() && !sr.parent.hasSufficientQty(aliquotReq)) {
         Alerts.error('srs.errors.insufficient_qty');
@@ -368,30 +386,34 @@ angular.module('os.biospecimen.cp.specimens', ['os.biospecimen.models'])
       );
     };
 
-    $scope.deleteRequirement = function(sr) {
-      var modalInstance = $modal.open({
-        templateUrl: 'delete_sr.html',
-        controller: function($scope, $modalInstance) {
-          $scope.yes = function() {
-            $modalInstance.close(true);
-          }
-
-          $scope.no = function() {
-            $modalInstance.dismiss('cancel');
-          }
-        }
-      });
-
-      modalInstance.result.then(
-        function() {
+    $scope.deleteSr = function(sr) {
+      Util.showConfirm({
+        templateUrl: 'modules/biospecimen/cp/delete_sr.html',
+        ok: function() {
           sr.delete().then(
             function() {
               deleteFromSrList(sr);
             }
           );
         }
-      );
-    }; 
+      });
+    }
+
+    $scope.closeSr = function(sr) {
+      Util.showConfirm({
+        templateUrl: 'modules/biospecimen/cp/close_sr.html',
+        ok: function() {
+          var toClose = cloneSr(sr);
+          toClose.activityStatus = 'Closed';
+
+          removeUiProps(toClose).$saveOrUpdate().then(
+            function(result) {
+              updateSrList(result);
+            }
+          );
+        }
+      });
+    }
 
     init();
   });
