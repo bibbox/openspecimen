@@ -2,20 +2,21 @@
 package com.krishagni.catissueplus.core.biospecimen.domain.factory.impl;
 
 import static com.krishagni.catissueplus.core.common.PvAttributes.*;
-import static com.krishagni.catissueplus.core.common.service.PvValidator.areValid;
-import static com.krishagni.catissueplus.core.common.service.PvValidator.isValid;
 
 import java.util.Calendar;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 
+import com.krishagni.catissueplus.core.administrative.domain.PermissibleValue;
 import com.krishagni.catissueplus.core.administrative.domain.Site;
 import com.krishagni.catissueplus.core.administrative.domain.User;
 import com.krishagni.catissueplus.core.administrative.domain.factory.SiteErrorCode;
+import com.krishagni.catissueplus.core.biospecimen.ConfigParams;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolEvent;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolRegistration;
 import com.krishagni.catissueplus.core.biospecimen.domain.ParticipantMedicalIdentifier;
@@ -29,6 +30,7 @@ import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
 import com.krishagni.catissueplus.core.common.errors.ActivityStatusErrorCode;
 import com.krishagni.catissueplus.core.common.errors.ErrorType;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
+import com.krishagni.catissueplus.core.common.util.ConfigUtil;
 import com.krishagni.catissueplus.core.common.util.Status;
 import com.krishagni.catissueplus.core.de.domain.DeObject;
 
@@ -36,22 +38,10 @@ public class VisitFactoryImpl implements VisitFactory {
 
 	private DaoFactory daoFactory;
 	
-	private String defaultNameTmpl;
-	
-	private String unplannedNameTmpl;
-
 	public void setDaoFactory(DaoFactory daoFactory) {
 		this.daoFactory = daoFactory;
 	}
 	
-	public void setDefaultNameTmpl(String defNameTmpl) {
-		this.defaultNameTmpl = defNameTmpl;
-	}
-
-	public void setUnplannedNameTmpl(String unplannedNameTmpl) {
-		this.unplannedNameTmpl = unplannedNameTmpl;
-	}
-
 	@Override
 	public Visit createVisit(VisitDetail visitDetail) {
 		Visit visit = new Visit();
@@ -77,7 +67,7 @@ public class VisitFactoryImpl implements VisitFactory {
 		setCohort(visitDetail, visit, ose);
 		visit.setComments(visitDetail.getComments());
 		visit.setSurgicalPathologyNumber(visitDetail.getSurgicalPathologyNumber());
-		visit.setDefNameTmpl(visit.isUnplanned() ? unplannedNameTmpl : defaultNameTmpl);
+		visit.setDefNameTmpl(visit.isUnplanned() ? getUnplannedNameTmpl() : getDefaultNameTmpl());
 		setVisitExtension(visitDetail, visit, ose);
 		
 		ose.checkAndThrow();
@@ -114,7 +104,7 @@ public class VisitFactoryImpl implements VisitFactory {
 		setMissedVisitReason(detail, existing, visit, ose);
 		setMissedBy(detail, existing, visit, ose);
 		setCohort(detail, existing, visit, ose);
-		visit.setDefNameTmpl(visit.isUnplanned() ? unplannedNameTmpl : defaultNameTmpl);
+		visit.setDefNameTmpl(visit.isUnplanned() ? getUnplannedNameTmpl() : getDefaultNameTmpl());
 		setVisitExtension(detail, existing, visit, ose);
 
 		ose.checkAndThrow();
@@ -260,16 +250,17 @@ public class VisitFactoryImpl implements VisitFactory {
 
 	private void setClinicalDiagnosis(VisitDetail visitDetail, Visit visit, OpenSpecimenException ose) {
 		Set<String> clinicalDiagnoses = visitDetail.getClinicalDiagnoses();
-		if (clinicalDiagnoses == null) {
+		if (clinicalDiagnoses == null || CollectionUtils.isEmpty(clinicalDiagnoses)) {
 			return;
 		}
 
-		if (!areValid(CLINICAL_DIAG, clinicalDiagnoses)) {
+		List<PermissibleValue> cdPvs = daoFactory.getPermissibleValueDao().getPvs(CLINICAL_DIAG, clinicalDiagnoses);
+		if (cdPvs.size() != clinicalDiagnoses.size()) {
 			ose.addError(VisitErrorCode.INVALID_CLINICAL_DIAGNOSIS);
 			return;
 		}
-		
-		visit.setClinicalDiagnoses(clinicalDiagnoses);
+
+		visit.setClinicalDiagnoses(new HashSet<>(cdPvs));
 	}
 	
 	private void setClinicalDiagnosis(VisitDetail detail, Visit existing, Visit visit, OpenSpecimenException ose) {
@@ -282,12 +273,17 @@ public class VisitFactoryImpl implements VisitFactory {
 	
 	private void setClinicalStatus(VisitDetail visitDetail, Visit visit, OpenSpecimenException ose) {
 		String clinicalStatus = visitDetail.getClinicalStatus();
-		if (!isValid(CLINICAL_STATUS, clinicalStatus)) {
-			ose.addError(VisitErrorCode.INVALID_CLINICAL_STATUS);
-			return;			
+		if (StringUtils.isBlank(clinicalStatus)) {
+			return;
 		}
-		
-		visit.setClinicalStatus(clinicalStatus);
+
+		PermissibleValue statusPv = daoFactory.getPermissibleValueDao().getPv(CLINICAL_STATUS, clinicalStatus);
+		if (statusPv == null) {
+			ose.addError(VisitErrorCode.INVALID_CLINICAL_STATUS);
+			return;
+		}
+
+		visit.setClinicalStatus(statusPv);
 	}
 	
 	private void setClinicalStatus(VisitDetail detail, Visit existing, Visit visit, OpenSpecimenException ose) {
@@ -346,12 +342,18 @@ public class VisitFactoryImpl implements VisitFactory {
 		}
 
 		String missedReason = detail.getMissedReason();
-		if (!isValid(MISSED_VISIT_REASON, missedReason)) {
+		if (StringUtils.isBlank(missedReason)) {
+			visit.setMissedReason(null);
+			return;
+		}
+
+		PermissibleValue mrPv = daoFactory.getPermissibleValueDao().getPv(MISSED_VISIT_REASON, missedReason);
+		if (mrPv == null) {
 			ose.addError(VisitErrorCode.INVALID_MISSED_REASON);
 			return;
 		}
-		
-		visit.setMissedReason(missedReason);
+
+		visit.setMissedReason(mrPv);
 	}
 	
 	private void setMissedVisitReason(VisitDetail detail, Visit existing, Visit visit, OpenSpecimenException ose) {
@@ -439,12 +441,17 @@ public class VisitFactoryImpl implements VisitFactory {
 	
 	private void setCohort(VisitDetail visitDetail, Visit visit, OpenSpecimenException ose) {
 		String cohort = visitDetail.getCohort();
-		if (!isValid(COHORT, cohort)) {
+		if (StringUtils.isBlank(cohort)) {
+			return;
+		}
+
+		PermissibleValue cohortPv = daoFactory.getPermissibleValueDao().getPv(COHORT, cohort);
+		if (cohortPv == null) {
 			ose.addError(VisitErrorCode.INVALID_COHORT, cohort);
 			return;
 		}
-		
-		visit.setCohort(cohort);
+
+		visit.setCohort(cohortPv);
 	}
 	
 	private void setCohort(VisitDetail detail, Visit existing, Visit visit, OpenSpecimenException ose) {
@@ -454,8 +461,30 @@ public class VisitFactoryImpl implements VisitFactory {
 			visit.setCohort(existing.getCohort());
 		}
 	}
-	
+
+	private String getDefaultNameTmpl() {
+		String defVisitFmt = ConfigUtil.getInstance().getStrSetting(ConfigParams.MODULE, ConfigParams.VISIT_NAME_FMT);
+		if (StringUtils.isBlank(defVisitFmt)) {
+			throw new OpenSpecimenException(ErrorType.USER_ERROR, VisitErrorCode.NAME_FMT_NOT_SPECIFIED);
+		}
+
+		return defVisitFmt;
+	}
+
+	private String getUnplannedNameTmpl() {
+		String defVisitFmt = ConfigUtil.getInstance().getStrSetting(ConfigParams.MODULE, ConfigParams.UNPLANNED_VISIT_NAME_FMT);
+		if (StringUtils.isBlank(defVisitFmt)) {
+			throw new OpenSpecimenException(ErrorType.USER_ERROR, VisitErrorCode.NAME_FMT_NOT_SPECIFIED);
+		}
+
+		return defVisitFmt;
+	}
+
 	private void setVisitExtension(VisitDetail visitDetail, Visit visit, OpenSpecimenException ose) {
+		if (visit.getRegistration() == null) {
+			return;
+		}
+
 		DeObject extension = DeObject.createExtension(visitDetail.getExtensionDetail(), visit);
 		visit.setExtension(extension);
 	}

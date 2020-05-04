@@ -131,7 +131,7 @@ angular.module('os.biospecimen.specimen')
       return Specimen.save(specimensToSave).then(
         function(result) {
           if (closeParent) {
-            scope.parentSpecimen.children.push(result[0].children[0]);
+            scope.parentSpecimen.children = result[0].children;
             scope.parentSpecimen.activityStatus = 'Closed';
           } else {
             scope.parentSpecimen.children.push(result[0]);
@@ -227,28 +227,13 @@ angular.module('os.biospecimen.specimen')
     function getSpecimens(labels, filterOpts, errorOpts) {
       filterOpts = filterOpts || {};
       filterOpts.label = labels;
+      filterOpts.maxResults = 1000;
 
-      if (getUrlLength(filterOpts) >= URL_LEN_LIMIT) {
-        Alerts.error("specimens.too_many_specimens");
-        return deferred(undefined);
-      }
-
-      return Specimen.query(filterOpts).then(
+      return Specimen.search(filterOpts).then(
         function(specimens) {
           return resolveSpecimens(labels, filterOpts.barcode, specimens, errorOpts);
         }
       );
-    }
-
-    function getUrlLength(filterOpts) {
-      var url = Specimen.url();
-      if (url.indexOf('http') != 0) {
-        var viewUrl = $location.absUrl();
-        url = viewUrl.substr(0, viewUrl.indexOf('#')) + url;
-      }
-
-      url += jQuery.param(filterOpts);
-      return url.length;
     }
 
     function deferred(resp) {

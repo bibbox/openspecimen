@@ -5,11 +5,17 @@ angular.module('os.biospecimen.cp.import', ['os.biospecimen.models'])
     $scope.cpImportUrl = $sce.trustAsResourceUrl(CollectionProtocol.url() + 'definition');
     
 
-    $scope.importCp = function() {
+    $scope.importCp = function(event) {
+      event.preventDefault();
       $scope.cpImporter.submit().then(
         function(importedCp) {
           $state.go('cp-detail.overview', {cpId: importedCp.id});
         }
       );
+    }
+
+    $scope.cancel = function(event) {
+      event.preventDefault();
+      $scope.back();
     }
   });

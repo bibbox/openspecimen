@@ -9,10 +9,12 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -28,6 +30,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 
 import com.krishagni.catissueplus.core.administrative.domain.DistributionOrderItem;
 import com.krishagni.catissueplus.core.administrative.domain.DistributionProtocol;
+import com.krishagni.catissueplus.core.administrative.domain.PermissibleValue;
 import com.krishagni.catissueplus.core.administrative.domain.SpecimenReservedEvent;
 import com.krishagni.catissueplus.core.administrative.domain.StorageContainer;
 import com.krishagni.catissueplus.core.administrative.domain.StorageContainerPosition;
@@ -74,19 +77,19 @@ public class Specimen extends BaseExtensionEntity {
 	
 	private static final String ENTITY_NAME = "specimen";
 
-	private String tissueSite;
+	private PermissibleValue tissueSite;
 
-	private String tissueSide;
+	private PermissibleValue tissueSide;
 
-	private String pathologicalStatus;
+	private PermissibleValue pathologicalStatus;
 
 	private String lineage;
 
 	private BigDecimal initialQuantity;
 
-	private String specimenClass;
+	private PermissibleValue specimenClass;
 
-	private String specimenType;
+	private PermissibleValue specimenType;
 
 	private BigDecimal concentration;
 
@@ -106,7 +109,7 @@ public class Specimen extends BaseExtensionEntity {
 
 	private String collectionStatus;
 	
-	private Set<String> biohazards = new HashSet<>();
+	private Set<PermissibleValue> biohazards = new HashSet<>();
 
 	private Integer freezeThawCycles;
 
@@ -206,8 +209,6 @@ public class Specimen extends BaseExtensionEntity {
 	//
 	// Records the derivatives or aliquots created from this specimen in current action/transaction
 	//
-	private transient SpecimenChildrenEvent derivativeEvent;
-
 	private transient SpecimenChildrenEvent aliquotEvent;
 
 	//
@@ -218,15 +219,16 @@ public class Specimen extends BaseExtensionEntity {
 	public static String getEntityName() {
 		return ENTITY_NAME;
 	}
-	
-	public String getTissueSite() {
+
+	@Audited(targetAuditMode = RelationTargetAuditMode.NOT_AUDITED)
+	public PermissibleValue getTissueSite() {
 		return tissueSite;
 	}
 
-	public void setTissueSite(String tissueSite) {
-		if (StringUtils.isNotBlank(this.tissueSite) && !this.tissueSite.equals(tissueSite)) {
+	public void setTissueSite(PermissibleValue tissueSite) {
+		if (!Objects.equals(this.tissueSite, tissueSite)) {
 			getChildCollection().stream()
-				.filter(child -> child.isAliquot() || this.tissueSite.equals(child.getTissueSite()))
+				.filter(child -> child.isAliquot() || Objects.equals(this.tissueSite, child.getTissueSite()))
 				.forEach(child -> child.setTissueSite(tissueSite));
 			
 			getSpecimensPool().forEach(poolSpmn -> poolSpmn.setTissueSite(tissueSite));
@@ -235,14 +237,15 @@ public class Specimen extends BaseExtensionEntity {
 		this.tissueSite = tissueSite;
 	}
 
-	public String getTissueSide() {
+	@Audited(targetAuditMode = RelationTargetAuditMode.NOT_AUDITED)
+	public PermissibleValue getTissueSide() {
 		return tissueSide;
 	}
 
-	public void setTissueSide(String tissueSide) {
-		if (StringUtils.isNotBlank(this.tissueSide) && !this.tissueSide.equals(tissueSide)) {
+	public void setTissueSide(PermissibleValue tissueSide) {
+		if (!Objects.equals(this.tissueSide, tissueSide)) {
 			getChildCollection().stream()
-				.filter(child -> child.isAliquot() || this.tissueSide.equals(child.getTissueSide()))
+				.filter(child -> child.isAliquot() || Objects.equals(this.tissueSide, child.getTissueSide()))
 				.forEach(child -> child.setTissueSide(tissueSide));
 			
 			getSpecimensPool().forEach(poolSpmn -> poolSpmn.setTissueSide(tissueSide));
@@ -251,12 +254,13 @@ public class Specimen extends BaseExtensionEntity {
 		this.tissueSide = tissueSide;
 	}
 
-	public String getPathologicalStatus() {
+	@Audited(targetAuditMode = RelationTargetAuditMode.NOT_AUDITED)
+	public PermissibleValue getPathologicalStatus() {
 		return pathologicalStatus;
 	}
 
-	public void setPathologicalStatus(String pathologicalStatus) {
-		if (StringUtils.isNotBlank(this.pathologicalStatus) && !this.pathologicalStatus.equals(pathologicalStatus)) {
+	public void setPathologicalStatus(PermissibleValue pathologicalStatus) {
+		if (!Objects.equals(this.pathologicalStatus, pathologicalStatus)) {
 			for (Specimen child : getChildCollection()) {
 				if (child.isAliquot()) {
 					child.setPathologicalStatus(pathologicalStatus);
@@ -287,12 +291,13 @@ public class Specimen extends BaseExtensionEntity {
 		this.initialQuantity = initialQuantity;
 	}
 
-	public String getSpecimenClass() {
+	@Audited(targetAuditMode = RelationTargetAuditMode.NOT_AUDITED)
+	public PermissibleValue getSpecimenClass() {
 		return specimenClass;
 	}
 
-	public void setSpecimenClass(String specimenClass) {
-		if (StringUtils.isNotBlank(this.specimenClass) && !this.specimenClass.equals(specimenClass)) {
+	public void setSpecimenClass(PermissibleValue specimenClass) {
+		if (!Objects.equals(this.specimenClass, specimenClass)) {
 			for (Specimen child : getChildCollection()) {
 				if (child.isAliquot()) {
 					child.setSpecimenClass(specimenClass);
@@ -307,12 +312,13 @@ public class Specimen extends BaseExtensionEntity {
 		this.specimenClass = specimenClass;
 	}
 
-	public String getSpecimenType() {
+	@Audited(targetAuditMode = RelationTargetAuditMode.NOT_AUDITED)
+	public PermissibleValue getSpecimenType() {
 		return specimenType;
 	}
 
-	public void setSpecimenType(String specimenType) {
-		if (StringUtils.isNotBlank(this.specimenType) && !this.specimenType.equals(specimenType)) {
+	public void setSpecimenType(PermissibleValue specimenType) {
+		if (!Objects.equals(this.specimenType, specimenType)) {
 			for (Specimen child : getChildCollection()) {
 				if (child.isAliquot()) {
 					child.setSpecimenType(specimenType);
@@ -333,7 +339,7 @@ public class Specimen extends BaseExtensionEntity {
 
 	public void setConcentration(BigDecimal concentration) {
 		if (concentrationInit) {
-			if (this.concentration == concentration) {
+			if (Objects.equals(this.concentration, concentration)) {
 				return;
 			}
 
@@ -422,15 +428,16 @@ public class Specimen extends BaseExtensionEntity {
 		this.collectionStatus = collectionStatus;
 	}
 
-	public Set<String> getBiohazards() {
+	@Audited(targetAuditMode = RelationTargetAuditMode.NOT_AUDITED)
+	public Set<PermissibleValue> getBiohazards() {
 		return biohazards;
 	}
 
-	public void setBiohazards(Set<String> biohazards) {
+	public void setBiohazards(Set<PermissibleValue> biohazards) {
 		this.biohazards = biohazards;
 	}
 	
-	public void updateBiohazards(Set<String> biohazards) {
+	public void updateBiohazards(Set<PermissibleValue> biohazards) {
 		getBiohazards().addAll(biohazards);
 		getBiohazards().retainAll(biohazards);
 		
@@ -475,6 +482,10 @@ public class Specimen extends BaseExtensionEntity {
 
 	public void setSpecimenRequirement(SpecimenRequirement specimenRequirement) {
 		this.specimenRequirement = specimenRequirement;
+	}
+
+	public Long getReqId() {
+		return specimenRequirement.getId();
 	}
 
 	public StorageContainerPosition getPosition() {
@@ -915,7 +926,7 @@ public class Specimen extends BaseExtensionEntity {
 
 
 		List<Specimen> pendingSpecimens = createPendingSpecimens(getSpecimenRequirement(), this);
-		preCreatedSpmnsMap = pendingSpecimens.stream().collect(Collectors.toMap(s -> s.getSpecimenRequirement().getId(), s -> s));
+		preCreatedSpmnsMap = pendingSpecimens.stream().collect(Collectors.toMap(Specimen::getReqId, s -> s));
 
 		List<PrintItem<Specimen>> printItems = pendingSpecimens.stream()
 			.filter(spmn -> spmn.getParentSpecimen().equals(this))
@@ -944,11 +955,11 @@ public class Specimen extends BaseExtensionEntity {
 			result.add(PrintItem.make(this, printCopies));
 		}
 
-		for (Specimen poolSpmn : getSpecimensPool()) {
+		for (Specimen poolSpmn : sort(getSpecimensPool())) {
 			result.addAll(poolSpmn.getPrePrintItems());
 		}
 
-		for (Specimen childSpmn : getChildCollection()) {
+		for (Specimen childSpmn : sort(getChildCollection())) {
 			result.addAll(childSpmn.getPrePrintItems());
 		}
 
@@ -1131,7 +1142,6 @@ public class Specimen extends BaseExtensionEntity {
 				throw OpenSpecimenException.userError(SpecimenErrorCode.COLL_OR_MISSED_PARENT_REQ);
 			} else {
 				updateHierarchyStatus(collectionStatus);
-				createMissedChildSpecimens();
 			}
 		} else if (isNotCollected(collectionStatus)) {
 			if (!getVisit().isCompleted() && !getVisit().isNotCollected()) {
@@ -1140,7 +1150,6 @@ public class Specimen extends BaseExtensionEntity {
 				throw OpenSpecimenException.userError(SpecimenErrorCode.COLL_OR_NC_PARENT_REQ);
 			} else {
 				updateHierarchyStatus(collectionStatus);
-				createNotCollectedSpecimens();
 			}
 		} else if (isPending(collectionStatus)) {
 			if (!getVisit().isCompleted() && !getVisit().isPending()) {
@@ -1201,7 +1210,7 @@ public class Specimen extends BaseExtensionEntity {
 		//
 		// close specimen if explicitly closed or no quantity available
 		//
-		if (NumUtil.isZero(getAvailableQuantity()) || item.isDistributedAndClosed()) {
+		if (item.isDistributedAndClosed()) {
 			String dpShortTitle = item.getOrder().getDistributionProtocol().getShortTitle();
 			close(item.getOrder().getDistributor(), item.getOrder().getExecutionDate(), "Distributed to " + dpShortTitle);
 		}
@@ -1239,13 +1248,12 @@ public class Specimen extends BaseExtensionEntity {
 			for (Specimen childSpecimen : getChildCollection()) {
 				childSpecimen.updateCreatedOn(createdOn);
 			}
-
-			return;
 		}
 
-		if (createdOn.after(Calendar.getInstance().getTime())) {
-			throw OpenSpecimenException.userError(SpecimenErrorCode.CREATED_ON_GT_CURRENT);
-		}
+		// OPSMN-4871: No checks on created on date.
+		// if (createdOn.after(Calendar.getInstance().getTime())) {
+		//	throw OpenSpecimenException.userError(SpecimenErrorCode.CREATED_ON_GT_CURRENT);
+		// }
 
 		// The below code is commented for now, so that there will not be any issue for the legacy data.
 		// In legacy data created on was simple date field, but its been changed to timestamp in v20.
@@ -1345,10 +1353,6 @@ public class Specimen extends BaseExtensionEntity {
 
 		if (specimen.isAliquot()) {
 			specimen.decAliquotedQtyFromParent();
-		}
-
-		if (getCreatedOn() != null && specimen.getCreatedOn() != null && specimen.getCreatedOn().before(getCreatedOn())) {
-			throw OpenSpecimenException.userError(SpecimenErrorCode.CHILD_CREATED_ON_LT_PARENT);
 		}
 
 		specimen.occupyPosition();
@@ -1523,12 +1527,41 @@ public class Specimen extends BaseExtensionEntity {
 		return getPosition() != null && getPosition().getContainer().isDistributionContainer();
 	}
 
+	public void updateHierarchyStatus() {
+		updateHierarchyStatus(getCollectionStatus());
+	}
+
+	public void updateHierarchyStatus(String collectionStatus) {
+		updateHierarchyStatus0(collectionStatus);
+
+		List<Specimen> createdSpmns = null;
+		if (isMissed(collectionStatus)) {
+			createdSpmns = createMissedChildSpecimens();
+		} else if (isNotCollected(collectionStatus)) {
+			createdSpmns = createNotCollectedSpecimens();
+		}
+
+		if (CollectionUtils.isEmpty(createdSpmns)) {
+			return;
+		}
+
+		if (preCreatedSpmnsMap == null) {
+			preCreatedSpmnsMap = new HashMap<>();
+		}
+
+		preCreatedSpmnsMap.putAll(createdSpmns.stream().collect(Collectors.toMap(Specimen::getReqId, s -> s)));
+	}
+
 	//
 	// HSEARCH-1350: https://hibernate.atlassian.net/browse/HSEARCH-1350
 	//
 	public void initCollections() {
 		getBiohazards().size();
 		getExternalIds().size();
+	}
+
+	public static String getDesc(PermissibleValue specimenClass, PermissibleValue type) {
+		return getDesc(specimenClass.getValue(), type.getValue());
 	}
 
 	public static String getDesc(String specimenClass, String type) {
@@ -1666,7 +1699,11 @@ public class Specimen extends BaseExtensionEntity {
 			throw OpenSpecimenException.userError(SpecimenErrorCode.EDIT_NOT_ALLOWED, getLabel());
 		}
 
-		SpecimenChildrenEvent currentEvent = childSpmn.isAliquot() ? aliquotEvent : derivativeEvent;
+		SpecimenChildrenEvent currentEvent = null;
+		if (childSpmn.isAliquot()) {
+			currentEvent = aliquotEvent;
+		}
+
 		if (currentEvent == null) {
 			currentEvent = new SpecimenChildrenEvent();
 			currentEvent.setSpecimen(this);
@@ -1680,8 +1717,6 @@ public class Specimen extends BaseExtensionEntity {
 
 		if (childSpmn.isAliquot()) {
 			aliquotEvent = currentEvent;
-		} else if (childSpmn.isDerivative()) {
-			derivativeEvent = currentEvent;
 		}
 	}
 
@@ -1753,7 +1788,7 @@ public class Specimen extends BaseExtensionEntity {
 		thisEvent.update(otherEvent);
 	}
 	
-	private void updateHierarchyStatus(String status) {
+	private void updateHierarchyStatus0(String status) {
 		setCollectionStatus(status);
 
 		if (getId() != null && !isCollected(status)) {
@@ -1771,7 +1806,7 @@ public class Specimen extends BaseExtensionEntity {
 			deleteEvents();
 		}
 
-		getChildCollection().forEach(child -> child.updateHierarchyStatus(status));
+		getChildCollection().forEach(child -> child.updateHierarchyStatus0(status));
 	}
 
 	public void checkPoolStatusConstraints() {
@@ -1807,24 +1842,25 @@ public class Specimen extends BaseExtensionEntity {
 		}
 	}
 
-	private void createMissedChildSpecimens() {
-		createChildSpecimens(Specimen.MISSED_COLLECTION);
+	private List<Specimen> createMissedChildSpecimens() {
+		return createChildSpecimens(Specimen.MISSED_COLLECTION);
 	}
 
-	private void createNotCollectedSpecimens() {
-		createChildSpecimens(Specimen.NOT_COLLECTED);
+	private List<Specimen> createNotCollectedSpecimens() {
+		return createChildSpecimens(Specimen.NOT_COLLECTED);
 	}
 
-	private void createChildSpecimens(String status) {
+	private List<Specimen> createChildSpecimens(String status) {
 		if (getSpecimenRequirement() == null) {
-			return;
+			return Collections.emptyList();
 		}
 
-		Set<SpecimenRequirement> anticipated = new HashSet<>(getSpecimenRequirement().getChildSpecimenRequirements());
+		List<Specimen> result = new ArrayList<>();
+		Set<SpecimenRequirement> anticipated = new LinkedHashSet<>(getSpecimenRequirement().getOrderedChildRequirements());
 		for (Specimen childSpmn : getChildCollection()) {
 			if (childSpmn.getSpecimenRequirement() != null) {
 				anticipated.remove(childSpmn.getSpecimenRequirement());
-				childSpmn.createChildSpecimens(status);
+				result.addAll(childSpmn.createChildSpecimens(status));
 			}
 		}
 
@@ -1835,8 +1871,11 @@ public class Specimen extends BaseExtensionEntity {
 			specimen.setCollectionStatus(status);
 			getChildCollection().add(specimen);
 
-			specimen.createChildSpecimens(status);
+			result.add(specimen);
+			result.addAll(specimen.createChildSpecimens(status));
 		}
+
+		return result;
 	}
 
 	private void autoCollectParentSpecimens(Specimen childSpmn) {

@@ -8,12 +8,16 @@
       <table class="os-table os-table-fixed os-table-tree bulk-edit os-border os-table-muted-hdr">
         <thead class="os-table-head">
           <tr class="row">
-            <th class="col os-col-30" translate="specimens.description">Description</th>
-            <th class="col os-col-15">
+            <th class="col" ng-class="{'os-col-30': storeSpmnsAllowed, 'os-col-35': !storeSpmnsAllowed}">
+              <span translate="specimens.description">Description</span>
+            </th>
+            <th class="col" ng-class="{'os-col-15': storeSpmnsAllowed, 'os-col-25': !storeSpmnsAllowed}">
               <span>{{(barcodingEnabled ? 'specimens.barcode' : 'specimens.label') | translate}}</span>
             </th>
-            <th class="col os-col-10" translate="specimens.qty">Quantity</th>
-            <th class="col os-col-25">
+            <th class="col" ng-class="{'os-col-10': storeSpmnsAllowed, 'os-col-15': !storeSpmnsAllowed}">
+              <span translate="specimens.qty">Quantity</span>
+            </th>
+            <th class="col os-col-25" ng-if="storeSpmnsAllowed">
               <div class="os-col-60 os-no-left-padding">
                 <span translate="specimens.container">Container</span>
                 <span class="os-more-options">
@@ -29,7 +33,7 @@
                         </a>
                       </li>
                       <li ng-if="autoPosAllocate">
-                        <a ng-click="selectPositionsManually()">
+                        <a ng-click="selectPositionsManually(0)">
                           <span translate="specimens.manual_selection">Manual selection</span>
                         </a>
                       </li>
@@ -39,8 +43,13 @@
                         </a>
                       </li>
                       <li>
-                        <a ng-click="selectPositionsManually(true)">
+                        <a ng-click="selectPositionsManually(1)">
                           <span translate="specimens.clear_positions">Clear positions</span>
+                        </a>
+                      </li>
+                      <li>
+                        <a ng-click="selectPositionsManually(2)">
+                          <span translate="specimens.clear_positions_incl_boxes">Clear positions</span>
                         </a>
                       </li>
                     </ul>
@@ -51,7 +60,9 @@
                 <span translate="specimens.position">Position</span>
               </div>
             </th>
-            <th class="col os-col-10">Status</th>
+            <th class="col" ng-class="{'os-col-10': storeSpmnsAllowed, 'os-col-15': !storeSpmnsAllowed}">
+              <span>Status</span>
+            </th>
             <th class="col os-col-5">
               <div class="pull-left">
                 <span class="fa fa-print"></span>
@@ -66,7 +77,7 @@
         <tbody class="os-table-body" os-storage-positions>
           <tr class="row" ng-class="{'os-pool-specimen': !!specimen.pooledSpecimen}"
             ng-repeat="specimen in specimens | openedTreeNodes" ng-form="sform" ng-if="specimen.showInTree">
-            <td class="col os-col-30">
+            <td class="col" ng-class="{'os-col-30': storeSpmnsAllowed, 'os-col-35': !storeSpmnsAllowed}">
               <div ng-style="{'padding-left': (specimen.hasChildren ? specimen.depth * 20 : specimen.depth * 20 + 16) + 'px'}">
                 <a ng-if="specimen.hasChildren && specimen.isOpened"
                   class="fa fa-chevron-circle-down"
@@ -89,16 +100,16 @@
                     <span class="fa fa-remove"></span>
                   </button>
                 </span>
-                <span ng-if="specimen.aliquotGrp.length > 1">
+                <span ng-if="specimen.aliquotGrp.length > 0">
                   <div class="btn-group">
                     <button class="btn btn-xs btn-default" ng-if="specimen.expanded"
                       ng-click="collapseAliquotsGroup(specimen)">
-                      <span class="fa fa-minus"></span>
+                      <span ng-show="specimen.aliquotGrp.length > 1" class="fa fa-minus"></span>
                       <span>({{specimen.aliquotGrp.length}})</span>
                     </button>
                     <button class="btn btn-xs btn-default" ng-if="!specimen.expanded"
                       ng-click="expandAliquotsGroup(specimen)">
-                      <span class="fa fa-plus"></span>
+                      <span ng-show="specimen.aliquotGrp.length > 1" class="fa fa-plus"></span>
                       <span>({{specimen.aliquotGrp.length}})</span>
                     </button>
                     <button class="btn btn-xs btn-default" ng-disabled="specimen.expanded"
@@ -111,7 +122,8 @@
                 </span>
               </div>
             </td>
-            <td class="col os-col-15" ng-switch="barcodingEnabled">
+            <td class="col" ng-class="{'os-col-15': storeSpmnsAllowed, 'os-col-25': !storeSpmnsAllowed}"
+              ng-switch="barcodingEnabled">
               <div ng-switch-when="true" ng-switch="spmnBarcodesAutoGen">
                 <div ng-switch-when="true">
                   <span translate="specimens.auto">Auto</span>
@@ -143,14 +155,16 @@
                       <textarea os-md-input rows="1" name="label"
                         ng-model="specimen.aliquotLabels" edit-when="!specimen.pLabel"
                         ng-focus="getLabels(specimen, $event)"
-                        ng-blur="assignLabels(specimen, specimen.aliquotLabels)" required>
+                        ng-blur="assignLabels(specimen, specimen.aliquotLabels)"
+                        ng-required="specimen.$$collectedOrPending">
                       </textarea>
                     </span>
 
                     <span ng-switch-default>
                       <input type="text" os-md-input edit-when="!specimen.pLabel"
                         name="label" ng-model="specimen.label"
-                        ng-required="!specimen.labelFmt || cp.manualSpecLabelEnabled"
+                        ng-required="(specimen.status == 'Collected' || specimen.status == 'Pending') &&
+                          (!specimen.labelFmt || cp.manualSpecLabelEnabled)"
                         ng-model-options="{updateOn: 'blur', allowInvalid: 'true'}" os-unique-specimen-label>
                     </span>
                   </span>
@@ -158,7 +172,7 @@
                 </div>
               </div>
             </td>
-            <td class="col os-col-10">
+            <td class="col" ng-class="{'os-col-10': storeSpmnsAllowed, 'os-col-15': !storeSpmnsAllowed}">
               <div ng-switch on="specimen.existingStatus == 'Collected'">
                 <span ng-switch-when="true">
                   <os-spmn-measure-val value="specimen.availableQty" specimen="specimen"></os-spmn-measure-val>
@@ -172,7 +186,8 @@
               </div>
               <div os-field-error field="sform.qty"></div>
             </td>
-            <td class="col os-col-25" ng-style="!autoPosAllocate && {'overflow': 'visible'}" ng-switch on="autoPosAllocate">
+            <td class="col os-col-25" ng-if="storeSpmnsAllowed"
+              ng-style="!autoPosAllocate && {'overflow': 'visible'}" ng-switch on="autoPosAllocate">
               <span ng-switch-when="true">
                 <os-disp-storage-position position="specimen.storageLocation"></os-disp-storage-position>
               </span>
@@ -182,7 +197,8 @@
                 </os-storage-position>
               </span>
             </td>
-            <td class="col os-col-10" style="overflow: visible;">
+            <td class="col" ng-class="{'os-col-10': storeSpmnsAllowed, 'os-col-15': !storeSpmnsAllowed}"
+              style="overflow: visible;">
               <os-select os-md-input edit-when="specimen.existingStatus != 'Collected'" list="specimenStatuses" 
                 ng-model="specimen.status" on-select="statusChanged(specimen)" required>
               </os-select>
@@ -211,7 +227,7 @@
           <button type="submit" class="btn btn-primary" os-form-submit="saveSpecimens()" mousedown-click="true"> 
             <span translate="common.buttons.submit"> Submit </span>
           </button>
-          <button class="btn os-btn-text" ng-click="back()">
+          <button class="btn os-btn-text" ng-click="cancel()">
             <span translate="common.buttons.cancel"> Cancel </span>
           </button>
         </div>
@@ -302,6 +318,11 @@
             <timepicker class="os-time-no-wheels" os-md-input ng-model="collDetail.receiveDate" show-meridian="false">
             </timepicker>
           </div>
+          <div class="col-xs-3 input" style="padding-left: 15px;">
+            <os-pvs os-md-input ng-model="collDetail.receiveQuality" attribute="receive_quality"
+              placeholder="{{'specimens.recv_event.received_quality' | translate}}">
+            </os-pvs>
+          </div>
         </div>
       </div>
     </div>
@@ -311,7 +332,7 @@
 <script type="text/ng-template" id="aliquot-count.html">
   <div>
     <div class="form-group">
-      <input type="text" os-md-input  ng-model="specimen.newAliquotsCnt"
+      <input type="text" os-md-input  ng-model="specimen.newAliquotsCnt" ng-pattern="/^[1-9][0-9]*$/"
         placeholder="{{'specimens.new_aliquot_count' | translate}}">
     </div>
     <div>

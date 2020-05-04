@@ -82,90 +82,56 @@
     </row>
 
     <row>
-      <dropDown>
+      <pvField>
         <name>class</name>
         <udn>class</udn>
         <caption>#getMessage("specimen_class")</caption>
-        <column>SPECIMEN_CLASS</column>
-        <options>
-          <sql>
-            select
-              value
-            from
-              catissue_permissible_value
-            where
-              public_id = 'specimen_type' and
-              parent_identifier is null
-            order by value
-          </sql>
-        </options>
-      </dropDown>
+        <column>SPECIMEN_CLASS_ID</column>
+        <attribute>specimen_type</attribute>
+        <rootValue>true</rootValue>
+      </pvField>
     </row>
 
     <row>
-      <dropDown>
+      <pvField>
         <name>type</name>
         <udn>type</udn>
         <caption>#getMessage("specimen_type")</caption>
-        <column>SPECIMEN_TYPE</column>
-        <options>
-          <sql>
-            select
-              distinct value
-            from
-              catissue_permissible_value
-            where
-              public_id = 'specimen_type' and
-              parent_identifier is not null
-            order by value
-          </sql>
-        </options>
-      </dropDown>
+        <column>SPECIMEN_TYPE_ID</column>
+        <attribute>specimen_type</attribute>
+        <leafValue>true</leafValue>
+      </pvField>
     </row>
 
     <row>
-      <dropDown>
+      <pvField>
         <name>tissueSite</name>
         <udn>tissueSite</udn>
         <caption>#getMessage("specimen_anatomic_site")</caption>
-        <column>TISSUE_SITE</column>
-        <options>
-          <sql>
-            select 
-              pv.value 
-            from 
-              catissue_permissible_value pv 
-            where 
-              pv.public_id = 'anatomic_site'
-            order by
-              value
-          </sql>
-        </options>
-      </dropDown>
+        <column>ANATOMIC_SITE_ID</column>
+        <attribute>anatomic_site</attribute>
+        <leafValue>true</leafValue>
+      </pvField>
     </row>
 
     <row>
-      <dropDown>
+      <pvField>
         <name>tissueSide</name>
         <udn>tissueSide</udn>
         <caption>#getMessage("specimen_laterality")</caption>
-        <column>TISSUE_SIDE</column>
-        <options>
-          <sql>select value from catissue_permissible_value where public_id = 'laterality' order by value</sql>
-        </options>
-      </dropDown>
+        <column>LATERALITY_ID</column>
+        <attribute>laterality</attribute>
+      </pvField>
     </row>
 
     <row>
-      <dropDown>
+      <pvField>
         <name>pathologicalStatus</name>
         <udn>pathologicalStatus</udn>
         <caption>#getMessage("specimen_pathological_status")</caption>
-        <column>PATHOLOGICAL_STATUS</column>
-        <options>
-          <sql>select value from catissue_permissible_value where public_id = 'pathology_status' order by value</sql>
-        </options>
-      </dropDown>
+        <column>PATHOLOGICAL_STATUS_ID</column>
+        <attribute>pathology_status</attribute>
+      </pvField>
     </row>
 
     <row>
@@ -174,6 +140,7 @@
         <udn>createdOn</udn>
         <caption>#getMessage("specimen_created_on")</caption>
         <column>CREATED_ON</column>
+        <format>MM-dd-yyyy HH:mm</format>
       </datePicker>
     </row>
 
@@ -227,19 +194,16 @@
     </row>
 
     <row>
-      <listBox>
+      <pvField>
         <name>biohazards</name>
         <udn>biohazards</udn>
         <caption>#getMessage("specimen_biohazard")</caption>
-        <multiSelect>true</multiSelect>
-        <table>OS_SPECIMEN_BIOHAZARDS</table>
-        <column>BIOHAZARD</column>
-        <foreignKey>SPECIMEN_ID</foreignKey>
-        <parentKey>IDENTIFIER</parentKey>
-        <options>
-          <sql>select value from catissue_permissible_value where public_id = 'specimen_biohazard' order by value</sql>
-        </options>
-      </listBox>
+        <multiple>true</multiple>
+        <collectionTable>OS_SPECIMEN_BIOHAZARDS</collectionTable>
+        <collectionKey>SPECIMEN_ID</collectionKey>
+        <column>BIOHAZARD_ID</column>
+        <attribute>specimen_biohazard</attribute>
+      </pvField>
     </row>
 
     <row>
@@ -422,6 +386,7 @@
         <udn>creationTime</udn>
         <caption>#getMessage("common_creation_time")</caption>
         <column>CREATION_TIME</column>
+        <format>MM-dd-yyyy HH:mm</format>
       </datePicker>
     </row>
 
@@ -440,6 +405,7 @@
         <udn>updateTime</udn>
         <caption>#getMessage("common_update_time")</caption>
         <column>UPDATE_TIME</column>
+        <format>MM-dd-yyyy HH:mm</format>
       </datePicker>
     </row>
 
@@ -517,6 +483,7 @@
             <udn>collTime</udn>
             <caption>#getMessage("specimen_collection_date")</caption>
             <column>COLL_TIME</column>
+            <format>MM-dd-yyyy HH:mm</format>
           </datePicker>
           <dropDown>
             <name>recvQuality</name>
@@ -538,6 +505,7 @@
             <udn>recvTime</udn>
             <caption>#getMessage("specimen_received_date")</caption>
             <column>RECV_TIME</column>
+            <format>MM-dd-yyyy HH:mm</format>
           </datePicker>
         </row>
       </subForm>
@@ -953,7 +921,7 @@
             <udn>executionDate</udn>
             <caption>#getMessage("specimen_order_execution_date")</caption>
             <column>EXECUTION_DATE</column>
-            <format>MM-dd-yyyy</format>
+            <format>MM-dd-yyyy HH:mm</format>
           </datePicker>
         </row>
 
@@ -1001,7 +969,7 @@
             <name>customFields</name>
             <udn>customFields</udn>
             <caption>#getMessage("specimen_order_extensions")</caption>
-            <table>OS_ORDERS_CUSTOM_FIELDS_VIEW</table>
+            <table>OS_ORDER_CUST_FIELDS</table>
             <foreignKey>ORDER_ID</foreignKey>
             <parentKey>ORDER_ID</parentKey>
             <customFieldsInfo>false:OrderExtension:-1</customFieldsInfo>
@@ -1107,7 +1075,7 @@
             <udn>shippedDate</udn>
             <caption>#getMessage("specimen_shipment_shipped_date")</caption>
             <column>SHIPPED_DATE</column>
-            <format>MM-dd-yyyy</format>
+            <format>MM-dd-yyyy HH:mm</format>
           </datePicker>
         </row>
 
@@ -1145,7 +1113,7 @@
             <udn>receivedDate</udn>
             <caption>#getMessage("specimen_shipment_received_date")</caption>
             <column>RECEIVED_DATE</column>
-            <format>MM-dd-yyyy</format>
+            <format>MM-dd-yyyy HH:mm</format>
           </datePicker>
         </row>
 
@@ -1159,15 +1127,13 @@
         </row>
 
         <row>
-          <dropDown>
+          <pvField>
             <name>receivedQuality</name>
             <udn>receivedQuality</udn>
             <caption>#getMessage("specimen_shipment_recv_quality")</caption>
-            <column>RECEIVED_QUALITY</column>
-            <options>
-              <sql>select value from catissue_permissible_value where public_id = 'shipment_item_received_quality' order by value</sql>
-            </options>
-          </dropDown>
+            <column>RECEIVED_QUALITY_ID</column>
+            <attribute>shipment_item_received_quality</attribute>
+          </pvField>
         </row>
 
         <row>
@@ -1241,7 +1207,7 @@
         <name>extensions</name>
         <udn>extensions</udn>
         <caption>#getMessage("specimen_extensions")</caption>
-        <table>SPECIMEN_EXTN_RECORDS_VIEW</table>
+        <table>OS_SPMN_EXTN_RECS</table>
         <foreignKey>SPECIMEN_ID</foreignKey>
         <parentKey>IDENTIFIER</parentKey>
         <pathLink>true</pathLink>
@@ -1277,8 +1243,8 @@
         <name>customFields</name>
         <udn>customFields</udn>
         <caption>#getMessage("specimen_field_extensions")</caption>
-        <table>OS_SPEC_CUST_FIELD_EXTNS_VIEW</table>
-        <foreignKey>SPEC_ID</foreignKey>
+        <table>OS_SPMN_CUST_FIELDS</table>
+        <foreignKey>SPECIMEN_ID</foreignKey>
         <parentKey>IDENTIFIER</parentKey>
         <pathLink>true</pathLink>
         <extnFkCol>RECORD_ID</extnFkCol>

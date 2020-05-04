@@ -43,6 +43,10 @@ angular.module('os.biospecimen.models.specimen', ['os.common.models', 'os.biospe
     Specimen.listByLabels = function(labels) {
       return Specimen.query({label: labels});
     };
+
+    Specimen.search = function(criteria) {
+      return $http.post(Specimen.url() + 'search', criteria).then(Specimen.modelArrayRespTransform);
+    };
     
     Specimen.flatten = function(specimens, parent, depth, pooledSpecimen, opts) {
       var result = [];
@@ -65,6 +69,9 @@ angular.module('os.biospecimen.models.specimen', ['os.common.models', 'os.biospe
         specimen.depth = depth || 0;
         specimen.parent = specimen.parent || parent;
         specimen.pooledSpecimen = specimen.pooledSpecimen || pooledSpecimen;
+        if (specimen.parent && (specimen.parent.status == 'Missed Collection' || specimen.parent.status == 'Not Collected')) {
+          specimen.status = specimen.parent.status;
+        }
 
         var hasSpecimensPool = false;
         if (depth == 0) {
@@ -388,7 +395,8 @@ angular.module('os.biospecimen.models.specimen', ['os.common.models', 'os.biospe
         function(e1, e2) { 
           var t1 = e1.time || 0;
           var t2 = e2.time || 0;
-          return t2 - t1;
+          var diff = t2 - t1;
+          return diff != 0 ? diff : (e2.id - e1.id);
         }
       );
       return eventsList;

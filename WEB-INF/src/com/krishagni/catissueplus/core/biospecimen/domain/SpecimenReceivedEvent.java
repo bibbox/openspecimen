@@ -7,22 +7,26 @@ import java.util.List;
 import java.util.Map;
 
 import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.lang3.StringUtils;
 
+import com.krishagni.catissueplus.core.administrative.domain.PermissibleValue;
+import com.krishagni.catissueplus.core.biospecimen.services.impl.CpWorkflowTxnCache;
+import com.krishagni.catissueplus.core.common.PvAttributes;
 import com.krishagni.catissueplus.core.common.util.AuthUtil;
 
 public class SpecimenReceivedEvent extends SpecimenEvent {
-	private String quality;
+	private PermissibleValue quality;
 
 	public SpecimenReceivedEvent(Specimen specimen) {
 		super(specimen);
 	}
 	
-	public String getQuality() {
+	public PermissibleValue getQuality() {
 		loadRecordIfNotLoaded();
 		return quality;
 	}
 
-	public void setQuality(String quality) {
+	public void setQuality(PermissibleValue quality) {
 		loadRecordIfNotLoaded();
 		this.quality = quality;
 	}
@@ -34,12 +38,15 @@ public class SpecimenReceivedEvent extends SpecimenEvent {
 	
 	@Override
 	public Map<String, Object> getEventAttrs() {		
-		return Collections.<String, Object>singletonMap("quality", quality);
+		return Collections.singletonMap("quality", quality != null ? quality.getId().toString() : null);
 	}
 
 	@Override
 	public void setEventAttrs(Map<String, Object> attrValues) {
-		this.quality = (String)attrValues.get("quality");
+		String qualityIdStr = (String) attrValues.get("quality");
+		if (StringUtils.isNotBlank(qualityIdStr)) {
+			this.quality = daoFactory.getPermissibleValueDao().getById(Long.parseLong(qualityIdStr));
+		}
 	}
 	
 	@Override
@@ -64,8 +71,18 @@ public class SpecimenReceivedEvent extends SpecimenEvent {
 	
 	public static SpecimenReceivedEvent createFromSr(Specimen specimen) {
 		SpecimenReceivedEvent event = new SpecimenReceivedEvent(specimen);
-		event.setQuality(Specimen.ACCEPTABLE);
-		
+
+		String defRecvQuality = null;
+		if (specimen.getCollectionProtocol() != null) {
+			defRecvQuality = CpWorkflowTxnCache.getInstance()
+				.getValue(specimen.getCpId(), "specimenCollection", "defReceiveQuality");
+		}
+
+		if (StringUtils.isBlank(defRecvQuality)) {
+			defRecvQuality = Specimen.ACCEPTABLE;
+		}
+
+		event.setQuality(event.daoFactory.getPermissibleValueDao().getPv(PvAttributes.RECV_QUALITY, defRecvQuality));
 		SpecimenRequirement sr = specimen.getSpecimenRequirement();
 		if (sr != null) {
 			event.setUser(sr.getReceiver());

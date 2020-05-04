@@ -4,6 +4,7 @@ import com.krishagni.catissueplus.core.administrative.events.StorageContainerDet
 import com.krishagni.catissueplus.core.administrative.services.StorageContainerService;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
 import com.krishagni.catissueplus.core.common.events.ResponseEvent;
+import com.krishagni.catissueplus.core.de.services.impl.ExtensionsUtil;
 import com.krishagni.catissueplus.core.importer.events.ImportObjectDetail;
 import com.krishagni.catissueplus.core.importer.services.ObjectImporter;
 
@@ -19,11 +20,14 @@ public class StorageContainerImporter implements ObjectImporter<StorageContainer
 	public ResponseEvent<StorageContainerDetail> importObject(RequestEvent<ImportObjectDetail<StorageContainerDetail>> req) {
 		try {
 			ImportObjectDetail<StorageContainerDetail> detail = req.getPayload();
-			RequestEvent<StorageContainerDetail> containerReq = new RequestEvent<StorageContainerDetail>(detail.getObject());
+			StorageContainerDetail container = detail.getObject();
+			ExtensionsUtil.initFileFields(detail.getUploadedFilesDir(), container.getExtensionDetail());
+
 			if (detail.isCreate()) {
-				return containerSvc.createStorageContainer(containerReq);
+				container.setId(null);
+				return containerSvc.createStorageContainer(RequestEvent.wrap(container));
 			} else {
-				return containerSvc.patchStorageContainer(containerReq);
+				return containerSvc.patchStorageContainer(RequestEvent.wrap(container));
 			}			
 		} catch (Exception e) {
 			return ResponseEvent.serverError(e);

@@ -208,6 +208,10 @@ public class CollectionProtocol extends BaseExtensionEntity {
 		this.activityStatus = activityStatus;
 	}
 
+	public boolean isDeleted() {
+		return Status.isDisabledStatus(getActivityStatus());
+	}
+
 	public User getPrincipalInvestigator() {
 		return principalInvestigator;
 	}
@@ -690,6 +694,10 @@ public class CollectionProtocol extends BaseExtensionEntity {
 	
 	public void copyEventsTo(CollectionProtocol cp) {
 		for (CollectionProtocolEvent cpe : getOrderedCpeList()) {
+			if (cpe.isClosed()) {
+				continue;
+			}
+
 			cp.addCpe(cpe.deepCopy());
 		}
 	}

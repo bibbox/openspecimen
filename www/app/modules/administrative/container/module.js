@@ -77,7 +77,7 @@ angular.module('os.administrative.container',
               breadcrumbs: [{state: 'container-list', title: 'container.list'}],
               objectType: 'storageContainer',
               title: 'container.bulk_import',
-              onSuccess: {state: 'container-list'}
+              onSuccess: {state: 'container-import-jobs'}
             };
           }
         },
@@ -186,6 +186,23 @@ angular.module('os.administrative.container',
         url: '/specimens?filters',
         templateUrl: 'modules/administrative/container/specimens.html',
         controller: 'ContainerSpecimensCtrl',
+        parent: 'container-detail'
+      })
+      .state('container-detail.events', {
+        url: '/events',
+        templateUrl: 'modules/administrative/container/events.html',
+        controller: 'ContainerEventsCtrl',
+        resolve: {
+          events: function(container) {
+            return container.getTransferEvents();
+          }
+        },
+        parent: 'container-detail'
+      })
+      .state('container-detail.maintenance', {
+        url: '/maintenance',
+        templateUrl: 'modules/administrative/container/maintenance.html',
+        controller: 'ContainerMaintenanceCtrl',
         parent: 'container-detail'
       });
   })

@@ -5,23 +5,80 @@ angular.module('os.administrative.form.list', ['os.administrative.models'])
     CollectionProtocol, Util, DeleteUtil, Alerts, ListPagerOpts, CheckList) {
 
     var cpListQ = undefined;
-    var pagerOpts, filterOpts;
+    var pagerOpts, filterOpts, ctx;
 
     function init() {
       pagerOpts = $scope.pagerOpts = new ListPagerOpts({listSizeGetter: getFormsCount});
-      filterOpts = $scope.formFilterOpts = Util.filterOpts({maxResults: pagerOpts.recordsPerPage + 1, excludeSysForms: true});
+      filterOpts = $scope.formFilterOpts = Util.filterOpts({
+        maxResults: pagerOpts.recordsPerPage + 1,
+        excludeSysForms: true,
+        includeStats: true
+      });
+
       $scope.formsList = [];
-      $scope.ctx = {};
+      ctx = $scope.ctx = {
+        excludeAttrs: ['excludeSysForms'],
+        emptyState: {
+          empty: true,
+          loading: true,
+          emptyMessage: 'form.empty_list',
+          loadingMessage: 'form.loading_list'
+        }
+      };
+
       loadForms($scope.formFilterOpts);
+      loadPvs();
       Util.filter($scope, 'formFilterOpts', loadForms, ['maxResults', 'excludeSysForms']);
     }
 
     function loadForms(filterOpts) {
+      ctx.emptyState.loading = true;
       Form.query(filterOpts).then(function(result) {
+        ctx.emptyState.loading = false;
+        ctx.emptyState.empty = result.length <= 0;
         pagerOpts.refreshOpts(result);
         $scope.formsList = result;
         $scope.ctx.checkList = new CheckList(result);
       })
+    }
+
+    function loadPvs() {
+      loadEntities();
+      loadCps();
+    }
+
+    function loadEntities() {
+      FormEntityReg.getEntities().then(
+        function(entities) {
+          ctx.entities = entities.sort(
+            function(e1, e2) {
+              return e1.caption < e2.caption ? -1 : (e1.caption > e2.caption  ? 1 : 0);
+            }
+          );
+        }
+      );
+    }
+
+    function loadCps(searchTerm) {
+      if (ctx.defaultCps && ctx.defaultCps.length <= 100) {
+        ctx.cps = ctx.defaultCps;
+        return;
+      }
+
+      $translate('form.all_cps').then(
+        function(caption) {
+          CollectionProtocol.query({query: searchTerm}).then(
+            function(cps) {
+              cps.unshift({id: -1, shortTitle: caption});
+              if (!searchTerm) {
+                ctx.defaultCps = cps;
+              }
+
+              ctx.cps = cps;
+            }
+          );
+        }
+      );
     }
 
     function reloadForms() {
@@ -53,6 +110,14 @@ angular.module('os.administrative.form.list', ['os.administrative.models'])
       return forms.map(function(form) { return form.formId; });
     }
 
+    $scope.searchCps = loadCps;
+
+    $scope.onCpSelect = function() {
+      filterOpts.cpId = filterOpts.cpId || [];
+      filterOpts.cpId.push(ctx.cpId);
+      ctx.cpId = undefined;
+    }
+
     $scope.openForm = function(form) {
       $state.go('form-addedit', {formId: form.formId});
     }
@@ -63,7 +128,6 @@ angular.module('os.administrative.form.list', ['os.administrative.models'])
           var formCtxtsModal = $modal.open({
             templateUrl: 'modules/administrative/form/association.html',
             controller: 'FormCtxtsCtrl',
-
             resolve: {
               args: function() {
                 return {

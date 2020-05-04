@@ -9,10 +9,11 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.StringReader;
 import java.io.StringWriter;
+import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.time.LocalDate;
-import java.time.Period;
 import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Calendar;
@@ -25,7 +26,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
+import java.util.TimeZone;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.zip.GZIPOutputStream;
@@ -193,6 +195,10 @@ public class Utility {
 		return stringListToCsv(elements.toArray(new String[0]), quotechar, fieldSeparator);
 	}
 
+	public static String stringListToCsv(Collection<String> elements, boolean quotechar, char fieldSeparator, String lineEnding) {
+		return stringListToCsv(elements.toArray(new String[0]), quotechar, fieldSeparator, lineEnding);
+	}
+
 	public static String stringListToCsv(String[] elements) {
 		return stringListToCsv(elements, true);
 	}
@@ -202,13 +208,17 @@ public class Utility {
 	}
 
 	public static String stringListToCsv(String[] elements, boolean quotechar, char fieldSeparator) {
+		return stringListToCsv(elements, quotechar, fieldSeparator, null);
+	}
+
+	public static String stringListToCsv(String[] elements, boolean quotechar, char fieldSeparator, String lineEnding) {
 		StringWriter writer = new StringWriter();
 		CsvWriter csvWriter = null;
 		try {
 			if (quotechar) {
-				csvWriter = CsvFileWriter.createCsvFileWriter(writer, fieldSeparator, CSVWriter.DEFAULT_QUOTE_CHARACTER);
+				csvWriter = CsvFileWriter.createCsvFileWriter(writer, fieldSeparator, CSVWriter.DEFAULT_QUOTE_CHARACTER, lineEnding);
 			} else {
-				csvWriter = CsvFileWriter.createCsvFileWriter(writer, fieldSeparator, CSVWriter.NO_QUOTE_CHARACTER);
+				csvWriter = CsvFileWriter.createCsvFileWriter(writer, fieldSeparator, CSVWriter.NO_QUOTE_CHARACTER, lineEnding);
 			}
 			csvWriter.writeNext(elements);
 			csvWriter.flush();
@@ -242,6 +252,39 @@ public class Utility {
 			IOUtils.closeQuietly(strWriter);
 			IOUtils.closeQuietly(csvWriter);
 		}
+	}
+
+	public static String getQuotedString(String input) {
+		return getQuotedString(input, '"');
+	}
+
+	public static String getQuotedString(String input, char quoteChar) {
+		return getQuotedString(input, quoteChar, quoteChar);
+	}
+
+	public static String getQuotedString(String input, char quoteChar, char escapeChar) {
+		if (input == null || input.isEmpty()) {
+			return input;
+		}
+
+		StringBuilder result = new StringBuilder();
+		result.append(quoteChar);
+
+		if (input.indexOf(quoteChar) == -1 && input.indexOf(escapeChar) == -1) {
+			result.append(input);
+		} else {
+			for (int i = 0; i < input.length(); ++i) {
+				char nextChar = input.charAt(i);
+				if (escapeChar != 0 && (nextChar == quoteChar || nextChar == escapeChar)) {
+					result.append(escapeChar).append(nextChar);
+				} else {
+					result.append(nextChar);
+				}
+			}
+		}
+
+		result.append(quoteChar);
+		return result.toString();
 	}
 
 	public static long getTimezoneOffset() {
@@ -336,11 +379,63 @@ public class Utility {
 	}
 
 	public static String getDateString(Date date) {
-		return new SimpleDateFormat(ConfigUtil.getInstance().getDateFmt()).format(date);
+		return getDateString(date, false);
+	}
+
+	public static String getDateString(Date date, boolean dateOnly) {
+		SimpleDateFormat sdf = new SimpleDateFormat(ConfigUtil.getInstance().getDateFmt());
+		if (dateOnly) {
+			return sdf.format(date);
+		}
+
+		TimeZone timeZone = AuthUtil.getUserTimeZone();
+		if (timeZone != null) {
+			sdf.setTimeZone(timeZone);
+		}
+
+		return sdf.format(date);
+	}
+
+	public static Date parseDateString(String dateStr) {
+		try {
+			SimpleDateFormat sdf = new SimpleDateFormat(ConfigUtil.getInstance().getDateFmt());
+			TimeZone timeZone = AuthUtil.getUserTimeZone();
+			if (timeZone != null) {
+				sdf.setTimeZone(timeZone);
+			}
+
+			return sdf.parse(dateStr);
+		} catch (ParseException pe) {
+			throw OpenSpecimenException.serverError(pe);
+		}
 	}
 
 	public static String getDateTimeString(Date date) {
-		return new SimpleDateFormat(ConfigUtil.getInstance().getDateTimeFmt()).format(date);
+		SimpleDateFormat sdf = new SimpleDateFormat(ConfigUtil.getInstance().getDateTimeFmt());
+		TimeZone timeZone = AuthUtil.getUserTimeZone();
+		if (timeZone != null) {
+			sdf.setTimeZone(timeZone);
+		}
+
+		return sdf.format(date);
+	}
+
+	public static Date parseDateTimeString(String dateTimeStr) {
+		try {
+			SimpleDateFormat sdf = new SimpleDateFormat(ConfigUtil.getInstance().getDateTimeFmt());
+			TimeZone timeZone = AuthUtil.getUserTimeZone();
+			if (timeZone != null) {
+				sdf.setTimeZone(timeZone);
+			}
+
+			return sdf.parse(dateTimeStr);
+		} catch (ParseException pe) {
+			throw OpenSpecimenException.serverError(pe);
+		}
+	}
+
+	public static String format(Date date, String format) {
+		return date != null ? new SimpleDateFormat(format).format(date) : null;
 	}
 
 	public static Integer getYear(Date date) {
@@ -404,18 +499,34 @@ public class Utility {
 		return yearsBetween(birthDate, null);
 	}
 
-	public static Integer yearsBetween(Date from, Date to) {
-		if (from == null) {
-			return null;
-		}
+	public static Integer yearsBetween(Date start, Date end) {
+		return getPeriodBetween(ChronoUnit.YEARS, start, end);
+	}
 
-		LocalDate startDt = LocalDate.from(from.toInstant().atZone(ZoneId.systemDefault()));
-		LocalDate endDt = LocalDate.now();
-		if (to != null) {
-			endDt = LocalDate.from(to.toInstant().atZone(ZoneId.systemDefault()));
-		}
+	public static Integer monthsBetween(Date start, Date end) {
+		return getPeriodBetween(ChronoUnit.MONTHS, start, end);
+	}
 
-		return Period.between(startDt, endDt).getYears();
+	public static Integer daysBetween(Date start, Date end) {
+		return getPeriodBetween(ChronoUnit.DAYS, start, end);
+	}
+
+	public static int cmp(Date d1, Date d2) {
+		return cmp(d1, d2, false);
+	}
+
+	public static int cmp(Date d1, Date d2, boolean onlyDate) {
+		if (d1 == d2) {
+			return 0;
+		} else if (d1 == null) {
+			return -1;
+		} else if (d2 == null) {
+			return 1;
+		} else if (onlyDate) {
+			return chopTime(d1).compareTo(chopTime(d2));
+		} else {
+			return d1.compareTo(d2);
+		}
 	}
 
 	public static boolean isEmpty(Map<?, ?> map) {
@@ -754,10 +865,6 @@ public class Utility {
 		return false;
 	}
 
-	public static long daysBetween(Date start, Date end) {
-		return TimeUnit.DAYS.convert(end.getTime() - start.getTime(), TimeUnit.MILLISECONDS);
-	}
-
 	public static boolean isValidDateFormat(String format) {
 		boolean isValid = true;
 		try {
@@ -798,5 +905,23 @@ public class Utility {
 
 	public static <T> Stream<T> stream(Collection<T> coll) {
 		return Optional.ofNullable(coll).map(Collection::stream).orElse(Stream.empty());
+	}
+
+	public static <T> String join(Collection<T> coll, Function<T, String> mapper, String delimiter) {
+		return Utility.nullSafeStream(coll).map(mapper).collect(Collectors.joining(delimiter));
+	}
+
+	private static Integer getPeriodBetween(ChronoUnit unit, Date from, Date to) {
+		if (from == null) {
+			return null;
+		}
+
+		LocalDate startDt = LocalDate.from(from.toInstant().atZone(ZoneId.systemDefault()));
+		LocalDate endDt = LocalDate.now();
+		if (to != null) {
+			endDt = LocalDate.from(to.toInstant().atZone(ZoneId.systemDefault()));
+		}
+
+		return Math.toIntExact(unit.between(startDt, endDt));
 	}
 }

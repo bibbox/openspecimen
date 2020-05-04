@@ -1,12 +1,16 @@
 
 package com.krishagni.catissueplus.core.administrative.domain;
 
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import com.krishagni.catissueplus.core.biospecimen.domain.BaseEntity;
+import com.krishagni.catissueplus.core.common.util.Utility;
 
 public class PermissibleValue extends BaseEntity {
 	private String value;
@@ -22,6 +26,8 @@ public class PermissibleValue extends BaseEntity {
 	private Set<PermissibleValue> children = new HashSet<>();
 	
 	private Map<String, String> props = new HashMap<>();
+
+	private String activityStatus;
 
 	public String getValue() {
 		return value;
@@ -83,16 +89,37 @@ public class PermissibleValue extends BaseEntity {
 		this.props = props;
 	}
 
+	public String getActivityStatus() {
+		return activityStatus;
+	}
+
+	public void setActivityStatus(String activityStatus) {
+		this.activityStatus = activityStatus;
+	}
+
 	public void update(PermissibleValue other) {
 		setConceptCode(other.getConceptCode());
 		setAttribute(other.getAttribute());
 		setParent(other.getParent());
 		setValue(other.getValue());
 		setSortOrder(other.getSortOrder());
-		setProps(other);
+		setActivityStatus(other.getActivityStatus());
+		updateProps(other);
+	}
+
+	public static String getValue(PermissibleValue pv) {
+		return pv != null ? pv.getValue() : null;
+	}
+
+	public static Set<String> toValueSet(Collection<PermissibleValue> pvs) {
+		return Utility.nullSafeStream(pvs).map(pv -> getValue(pv)).collect(Collectors.toSet());
+	}
+
+	public static List<String> toValueList(Collection<PermissibleValue> pvs) {
+		return Utility.nullSafeStream(pvs).map(pv -> getValue(pv)).collect(Collectors.toList());
 	}
 	
-	private void setProps(PermissibleValue other) {
+	private void updateProps(PermissibleValue other) {
 		getProps().keySet().retainAll(other.getProps().keySet());
 		getProps().putAll(other.getProps());
 	}

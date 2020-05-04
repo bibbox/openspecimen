@@ -47,6 +47,7 @@ import com.krishagni.catissueplus.core.biospecimen.repository.impl.BiospecimenDa
 import com.krishagni.catissueplus.core.common.access.SiteCpPair;
 import com.krishagni.catissueplus.core.common.repository.AbstractDao;
 import com.krishagni.catissueplus.core.common.util.Status;
+import com.krishagni.catissueplus.core.common.util.Utility;
 
 public class StorageContainerDaoImpl extends AbstractDao<StorageContainer> implements StorageContainerDao {
 
@@ -115,29 +116,29 @@ public class StorageContainerDaoImpl extends AbstractDao<StorageContainer> imple
 			query.createAlias("d.compAllowedSpecimenClasses", "spmnClass", JoinType.LEFT_OUTER_JOIN);
 			restriction.add(
 				Restrictions.conjunction()
-					.add(Restrictions.isNotNull("spmnClass.elements"))
-					.add(Restrictions.not(Restrictions.in("spmnClass.elements", crit.specimenClasses())))
+					.add(Restrictions.isNotNull("spmnClass.id"))
+					.add(Restrictions.not(Restrictions.in("spmnClass.id", getPvIds(crit.specimenClasses()))))
 			);
 		}
 
 		query.createAlias("d.compAllowedSpecimenTypes", "spmnType", JoinType.LEFT_OUTER_JOIN);
 		Junction notInTypes = Restrictions.conjunction();
 		if (isNotEmpty(crit.specimenTypes())) {
-			notInTypes.add(Restrictions.not(Restrictions.in("spmnType.elements", crit.specimenTypes())));
+			notInTypes.add(Restrictions.not(Restrictions.in("spmnType.id", getPvIds(crit.specimenTypes()))));
 		}
 
 		if (isNotEmpty(crit.specimenClasses())) {
 			DetachedCriteria typesCrit = DetachedCriteria.forClass(PermissibleValue.class, "pv")
 				.createAlias("pv.parent", "ppv")
 				.add(Restrictions.eq("pv.attribute", "specimen_type"))
-				.add(Restrictions.in("ppv.value", crit.specimenClasses()))
-				.setProjection(Property.forName("pv.value"));
-			notInTypes.add(Subqueries.propertyNotIn("spmnType.elements", typesCrit));
+				.add(Restrictions.in("ppv.id", getPvIds(crit.specimenClasses())))
+				.setProjection(Property.forName("pv.id"));
+			notInTypes.add(Subqueries.propertyNotIn("spmnType.id", typesCrit));
 		}
 
 		restriction.add(
 			Restrictions.conjunction()
-				.add(Restrictions.isNotNull("spmnType.elements"))
+				.add(Restrictions.isNotNull("spmnType.id"))
 				.add(notInTypes)
 		);
 
@@ -546,6 +547,8 @@ public class StorageContainerDaoImpl extends AbstractDao<StorageContainer> imple
 				int rowNo = (Integer)row[idx++];
 				int colNo = (Integer)row[idx++];
 				location.setPosition((rowNo - 1) * 10000 + colNo);
+				location.setPositionY((String)row[idx++]);
+				location.setPositionX((String)row[idx++]);
 			}
 
 			container.setStorageLocation(location);
@@ -622,11 +625,13 @@ public class StorageContainerDaoImpl extends AbstractDao<StorageContainer> imple
 		}
 
 		if (StringUtils.isNotBlank(crit.type())) {
-			query.add(Restrictions.eq("specimen.specimenType", crit.type()));
+			query.createAlias("specimen.specimenType", "typePv")
+				.add(Restrictions.eq("typePv.value", crit.type()));
 		}
 
 		if (StringUtils.isNotBlank(crit.anatomicSite())) {
-			query.add(Restrictions.eq("specimen.tissueSite", crit.anatomicSite()));
+			query.createAlias("specimen.tissueSite", "anatomicPv")
+				.add(Restrictions.eq("anatomicPv.value", crit.anatomicSite()));
 		}
 
 		String startAlias = "visit";
@@ -655,6 +660,10 @@ public class StorageContainerDaoImpl extends AbstractDao<StorageContainer> imple
 
 		BiospecimenDaoHelper.getInstance().addSiteCpsCond(query, crit.siteCps(), crit.useMrnSites(), startAlias);
 		return detachedCriteria;
+	}
+
+	private List<Long> getPvIds(Collection<PermissibleValue> pvs) {
+		return Utility.nullSafeStream(pvs).map(PermissibleValue::getId).collect(Collectors.toList());
 	}
 
 	private class ListQueryBuilder {
@@ -833,17 +842,14 @@ public class StorageContainerDaoImpl extends AbstractDao<StorageContainer> imple
 			
 			addAnd();
 			if (crit.hierarchical()) {
-				where.append("(:specimenClass in elements(dc.compAllowedSpecimenClasses)")
-				.append(" or ")
-				.append(":specimenType in elements(dc.compAllowedSpecimenTypes)")
-				.append(")");				
+				from.append(" left join dc.compAllowedSpecimenClasses spmnClass")
+					.append(" left join dc.compAllowedSpecimenTypes spmnType");
 			} else {
-				where.append("(:specimenClass in elements(c.compAllowedSpecimenClasses)")
-				.append(" or ")
-				.append(":specimenType in elements(c.compAllowedSpecimenTypes)")
-				.append(")");				
+				from.append(" left join c.compAllowedSpecimenClasses spmnClass")
+					.append(" left join c.compAllowedSpecimenTypes spmnType");
 			}
-			
+
+			where.append("(spmnClass.value = :specimenClass or spmnType.value = :specimenType)");
 			params.put("specimenClass", specimenClass);
 			params.put("specimenType", specimenType);
 		}

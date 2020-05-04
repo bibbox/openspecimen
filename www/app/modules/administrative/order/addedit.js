@@ -42,7 +42,8 @@ angular.module('os.administrative.order.addedit', ['os.administrative.models', '
         allItemStatus: false,
         noQtySpmnsPresent: false,
         spmnsFromExternalList: (!!order.specimenList && !!order.specimenList.id) || order.allReservedSpmns,
-        limit: maxSpmnsLimit
+        limit: maxSpmnsLimit,
+        order: order
       };
 
       if (!$scope.input.spmnsFromExternalList) {
@@ -493,21 +494,22 @@ angular.module('os.administrative.order.addedit', ['os.administrative.models', '
       var countFn, spmnsFn;
       if (order.specimenList && order.specimenList.id) {
         countFn = function() { return order.specimenList.getSpecimensCount({available: true}) };
-        spmnsFn = function() { return order.specimenList.getSpecimens({available: true}) };
+        spmnsFn = function(maxResults) { return order.specimenList.getSpecimens({available: true, maxResults: maxResults}) };
       } else if (order.allReservedSpmns) {
         countFn = function() { return order.distributionProtocol.getReservedSpecimensCount() };
-        spmnsFn = function() { return order.distributionProtocol.getReservedSpecimens() };
+        spmnsFn = function(maxResults) { return order.distributionProtocol.getReservedSpecimens({maxResults: maxResults}) };
       }
 
       if (countFn && spmnsFn) {
         countFn().then(
           function(spmnsCount) {
+            $scope.input.spmnsCount = spmnsCount;
             if (spmnsCount > maxSpmnsLimit) {
               $scope.input.moreSpmnsThanLimit = true;
               return;
             }
 
-            spmnsFn().then(
+            spmnsFn(spmnsCount + 1).then(
               function(spmns) {
                 order.orderItems = getOrderItems(spmns);
                 loadCustomFields(order.orderItems);
@@ -547,10 +549,7 @@ angular.module('os.administrative.order.addedit', ['os.administrative.models', '
       var allStatus = $scope.input.allItemStatus ? 'DISTRIBUTED_AND_CLOSED' : 'DISTRIBUTED';
       angular.forEach($scope.order.orderItems,
         function(item) {
-          if ((item.quantity == null || item.quantity == undefined ||
-              item.specimen.availableQty == null || item.specimen.availableQty == undefined ||
-              item.quantity != item.specimen.availableQty) &&
-              (!item.holdingLocation || !item.holdingLocation.name)) {
+          if (!item.holdingLocation || !item.holdingLocation.name) {
             item.status = allStatus;
           }
         }
@@ -605,7 +604,7 @@ angular.module('os.administrative.order.addedit', ['os.administrative.models', '
       Util.showItemsValidationResult(getValidationMsgKeys(ctrl.useBarcode()), result);
     }
 
-    $scope.applyFirstLocationToAll = function() {
+    $scope.copyFirstLocationToAll = function() {
       var orderItems = $scope.order.orderItems;
       if (!orderItems || orderItems.length <= 1) {
         return;
@@ -620,6 +619,28 @@ angular.module('os.administrative.order.addedit', ['os.administrative.models', '
         orderItems[i].holdingLocation = angular.extend({}, location);
         if (orderItems[i].holdingLocation.name) {
           orderItems[i].status = 'DISTRIBUTED_AND_CLOSED';
+        }
+      }
+
+      setHeaderStatus();
+    }
+
+    $scope.copyFirstQtyToAll = function() {
+      var orderItems = $scope.order.orderItems;
+      if (!orderItems || orderItems.length <= 1) {
+        return;
+      }
+
+      var qty = orderItems[0].quantity;
+      for (var i = 0; i < orderItems.length; ++i) {
+        var item = orderItems[i];
+        item.quantity = qty;
+
+        var selected = !spmnRequest ? true : item.specimen.selected;
+        if ((!item.specimen.availableQty || item.quantity >= item.specimen.availableQty) && selected) {
+          item.status = 'DISTRIBUTED_AND_CLOSED';
+        } else {
+          item.status = 'DISTRIBUTED';
         }
       }
 

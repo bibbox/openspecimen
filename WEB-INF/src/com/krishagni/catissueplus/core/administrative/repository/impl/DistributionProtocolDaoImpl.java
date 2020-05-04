@@ -52,9 +52,9 @@ public class DistributionProtocolDaoImpl extends AbstractDao<DistributionProtoco
 
 	@Override
 	public Long getDistributionProtocolsCount(DpListCriteria criteria) {
-		Number count = (Number) getDpListQuery(criteria)
-				.setProjection(Projections.rowCount())
-				.uniqueResult();
+		Number count = (Number) getDpIdsQuery(criteria).getExecutableCriteria(getCurrentSession())
+			.setProjection(Projections.rowCount())
+			.uniqueResult();
 		return count.longValue();
 	}
 
@@ -133,7 +133,7 @@ public class DistributionProtocolDaoImpl extends AbstractDao<DistributionProtoco
 		addOrderStatProjections(query, listCrit);
 		
 		List<Object []> rows = query.list();
-		List<DistributionOrderStat> result = new ArrayList<DistributionOrderStat>();
+		List<DistributionOrderStat> result = new ArrayList<>();
 		for (Object[] row : rows) {
 			DistributionOrderStat detail = getDOStats(row, listCrit);
 			result.add(detail);
@@ -160,6 +160,11 @@ public class DistributionProtocolDaoImpl extends AbstractDao<DistributionProtoco
 	@Override
 	public void saveReservedEvents(Collection<SpecimenReservedEvent> events) {
 		events.forEach(event -> getCurrentSession().saveOrUpdate(event));
+	}
+
+	@Override
+	public void unlinkCustomForm(Long formId) {
+		getCurrentSession().getNamedQuery(UNLINK_CUSTOM_FORM).setParameter("formId", formId).executeUpdate();
 	}
 
 	private Criteria getDpListQuery(DpListCriteria crit) {
@@ -203,6 +208,7 @@ public class DistributionProtocolDaoImpl extends AbstractDao<DistributionProtoco
 		addPiCondition(query, crit);
 		addIrbIdCondition(query, crit);
 		addInstCondition(query, crit);
+		addRecvSiteCondition(query, crit);
 		addDistSitesCondition(query, crit);
 		addExpiredDpsCondition(query, crit);
 		addActivityStatusCondition(query, crit);
@@ -233,6 +239,15 @@ public class DistributionProtocolDaoImpl extends AbstractDao<DistributionProtoco
 
 		query.createAlias("institute", "institute")
 			.add(Restrictions.eq("institute.name", crit.receivingInstitute().trim()));
+	}
+
+	private void addRecvSiteCondition(Criteria query, DpListCriteria crit) {
+		if (StringUtils.isBlank(crit.receivingSite())) {
+			return;
+		}
+
+		query.createAlias("defReceivingSite", "recvSite")
+			.add(Restrictions.eq("recvSite.name", crit.receivingSite().trim()));
 	}
 	
 	private void addDistSitesCondition(Criteria query, DpListCriteria crit) {
@@ -277,14 +292,15 @@ public class DistributionProtocolDaoImpl extends AbstractDao<DistributionProtoco
 		
 		for (String attr : crit.groupByAttrs()) {
 			String prop = props.get(attr);
-			projs.add(Projections.groupProperty(prop));
+			query.createAlias(prop, attr + "pv");
+			projs.add(Projections.groupProperty(attr + "pv.value"));
 		}
 		
 		query.setProjection(projs);
 	}
 	
 	private Map<String, String> getProps() {
-		Map<String, String> props = new HashMap<String, String>();
+		Map<String, String> props = new HashMap<>();
 		props.put("specimenType", "specimen.specimenType");
 		props.put("anatomicSite", "specimen.tissueSite");
 		props.put("pathologyStatus", "specimen.pathologicalStatus");
@@ -366,4 +382,6 @@ public class DistributionProtocolDaoImpl extends AbstractDao<DistributionProtoco
 	private static final String GET_SPMN_COUNT_BY_DPS = FQN + ".getSpmnCountByDps";
 
 	private static final String GET_NON_CONSENTING_SPMNS = FQN + ".getNonConsentingSpecimens";
+
+	private static final String UNLINK_CUSTOM_FORM = FQN + ".unlinkCustomForm";
 }

@@ -69,12 +69,14 @@ angular.module('os.query.models.savedquery', ['os.common.models'])
         selectList: qc.selectedFields,
         filters: getCuratedFilters(qc.filters),
         queryExpression: getCuratedExprNodes(qc.exprNodes),
-        cpId: qc.selectedCp.id,
+        cpId: !qc.selectedCp.$$cpGroup ? (qc.selectedCp.id || -1) : undefined,
+        cpGroupId: qc.selectedCp.$$cpGroup ? qc.selectedCp.id : undefined,
         drivingForm: qc.drivingForm,
         havingClause: qc.havingClause,
         reporting: qc.reporting,
         wideRowMode: qc.wideRowMode,
-        outputColumnExprs: qc.outputColumnExprs
+        outputColumnExprs: qc.outputColumnExprs,
+        caseSensitive: qc.caseSensitive
       })
     }
 

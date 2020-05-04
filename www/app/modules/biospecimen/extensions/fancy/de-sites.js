@@ -9,7 +9,6 @@ openspecimen.ui.fancy.Sites = edu.common.de.LookupSvc.extend({
   },
 
   searchRequest: function(searchTerm) {
-    alert(searchTerm);
     return {name: searchTerm, sortBy: 'name'};
   },
 
@@ -34,7 +33,10 @@ openspecimen.ui.fancy.Sites = edu.common.de.LookupSvc.extend({
 
   getHeaders: function() {
     var $http = angular.element(document).injector().get('$http');
-    return {'X-OS-API-TOKEN': $http.defaults.headers.common['X-OS-API-TOKEN']};
+    return {
+      'X-OS-API-TOKEN': $http.defaults.headers.common['X-OS-API-TOKEN'],
+      'X-OS-FDE-TOKEN': $http.defaults.headers.common['X-OS-FDE-TOKEN']
+    };
   }
 });
 

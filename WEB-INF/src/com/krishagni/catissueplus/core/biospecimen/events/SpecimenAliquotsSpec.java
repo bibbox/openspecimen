@@ -2,7 +2,9 @@ package com.krishagni.catissueplus.core.biospecimen.events;
 
 import java.math.BigDecimal;
 import java.util.Date;
+import java.util.List;
 
+import com.krishagni.catissueplus.core.administrative.events.StorageLocationSummary;
 import com.krishagni.catissueplus.core.common.events.UserSummary;
 import com.krishagni.catissueplus.core.de.events.ExtensionDetail;
 
@@ -10,6 +12,8 @@ public class SpecimenAliquotsSpec {
 	private Long parentId;
 	
 	private String parentLabel;
+
+	private String derivedReqCode;
 
 	private String cpShortTitle;
 	
@@ -43,6 +47,8 @@ public class SpecimenAliquotsSpec {
 
 	private int position;
 
+	private List<StorageLocationSummary> locations;
+
 	private Integer freezeThawCycles;
 
 	private Integer incrParentFreezeThaw;
@@ -54,6 +60,8 @@ public class SpecimenAliquotsSpec {
 	private Boolean printLabel;
 
 	private ExtensionDetail extensionDetail;
+
+	private boolean linkToReqs;
 
 	public Long getParentId() {
 		return parentId;
@@ -69,6 +77,14 @@ public class SpecimenAliquotsSpec {
 
 	public void setParentLabel(String parentLabel) {
 		this.parentLabel = parentLabel;
+	}
+
+	public String getDerivedReqCode() {
+		return derivedReqCode;
+	}
+
+	public void setDerivedReqCode(String derivedReqCode) {
+		this.derivedReqCode = derivedReqCode;
 	}
 
 	public String getCpShortTitle() {
@@ -199,6 +215,14 @@ public class SpecimenAliquotsSpec {
 		this.position = position;
 	}
 
+	public List<StorageLocationSummary> getLocations() {
+		return locations;
+	}
+
+	public void setLocations(List<StorageLocationSummary> locations) {
+		this.locations = locations;
+	}
+
 	public Integer getFreezeThawCycles() {
 		return freezeThawCycles;
 	}
@@ -254,5 +278,12 @@ public class SpecimenAliquotsSpec {
 	public void setExtensionDetail(ExtensionDetail extensionDetail) {
 		this.extensionDetail = extensionDetail;
 	}
-	
+
+	public boolean isLinkToReqs() {
+		return linkToReqs;
+	}
+
+	public void setLinkToReqs(boolean linkToReqs) {
+		this.linkToReqs = linkToReqs;
+	}
 }

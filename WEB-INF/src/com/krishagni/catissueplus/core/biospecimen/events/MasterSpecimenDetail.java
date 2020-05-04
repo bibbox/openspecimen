@@ -29,6 +29,8 @@ public class MasterSpecimenDetail {
 	
 	private String middleName;
 
+	private String emailAddress;
+
 	private Date birthDate;
 
 	private Date deathDate;
@@ -94,12 +96,16 @@ public class MasterSpecimenDetail {
 	private BigDecimal initialQty;
 	
 	private BigDecimal concentration;
+
+	private Integer freezeThawCycles;
 	
 	private Date createdOn;
 
 	private UserSummary createdBy;
 	
 	private String comments;
+
+	private String collectionStatus;
 	
 	private String container;
 	
@@ -195,6 +201,14 @@ public class MasterSpecimenDetail {
 
 	public void setMiddleName(String middleName) {
 		this.middleName = middleName;
+	}
+
+	public String getEmailAddress() {
+		return emailAddress;
+	}
+
+	public void setEmailAddress(String emailAddress) {
+		this.emailAddress = emailAddress;
 	}
 
 	public Date getBirthDate() {
@@ -477,6 +491,14 @@ public class MasterSpecimenDetail {
 		this.concentration = concentration;
 	}
 
+	public Integer getFreezeThawCycles() {
+		return freezeThawCycles;
+	}
+
+	public void setFreezeThawCycles(Integer freezeThawCycles) {
+		this.freezeThawCycles = freezeThawCycles;
+	}
+
 	public Date getCreatedOn() {
 		return createdOn;
 	}
@@ -499,6 +521,14 @@ public class MasterSpecimenDetail {
 
 	public void setComments(String comments) {
 		this.comments = comments;
+	}
+
+	public String getCollectionStatus() {
+		return collectionStatus;
+	}
+
+	public void setCollectionStatus(String collectionStatus) {
+		this.collectionStatus = collectionStatus;
 	}
 
 	public String getContainer() {

@@ -72,7 +72,7 @@ angular.module('os.biospecimen.models.form', ['os.common.models'])
     };
 
     Form.listQueryForms = function() {
-      return Form.listForms('query');
+      return Form.listForms('Query');
     };
 
     Form.listFor = function(url, objectId, params) {
@@ -155,12 +155,14 @@ angular.module('os.biospecimen.models.form', ['os.common.models'])
     }
 
     Form.prototype.getFields = function() {
-      var cpId = -1;
+      var cpId = -1, cpGroupId = undefined;
       if (!!this.cp) {
         cpId = this.cp.id;
+      } else if (!!this.cpGroup) {
+        cpGroupId = this.cpGroup.id
       }
 
-      var params = {cpId: cpId, extendedFields: true};
+      var params = {cpId: cpId, cpGroupId: cpGroupId, extendedFields: true};
       var d = $q.defer();
       var that = this;
       if (this.fields) {
@@ -168,13 +170,18 @@ angular.module('os.biospecimen.models.form', ['os.common.models'])
       } else {
         $http.get(Form.url() + this.$id() + '/fields', {params: params}).then(
           function(resp) {
-            that.fields = resp.data;
+            that.fields = resp.data.filter(
+              function(field) {
+                return field.name.indexOf('__') != 0;
+              }
+            );
+
             that.staticFields = flattenStaticFields("", that.fields);
             that.extnForms = getExtnForms("", that.fields);
             that.extnFields = flattenExtnFields(that.extnForms);
 
             d.resolve(that.fields);
-            return resp.data;
+            return that.fields;
           }
         );
       }
@@ -196,6 +203,22 @@ angular.module('os.biospecimen.models.form', ['os.common.models'])
       }
  
       return undefined;
+    }
+
+    Form.createDataEntryToken = function(formCtxtId, objectId) {
+      return $http.post(Form.url() + 'data-entry-tokens', {formCtxtId: formCtxtId, objectId: objectId}).then(
+        function(resp) {
+          return resp.data;
+        }
+      );
+    }
+
+    Form.getDataEntryToken = function(token) {
+      return $http.get(Form.url() + 'data-entry-tokens/' + token).then(
+        function(resp) {
+          return resp.data;
+        }
+      );
     }
 
     function createRecordsList(formsRecords) {

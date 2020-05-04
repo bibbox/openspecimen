@@ -4,22 +4,30 @@ angular.module('os.administrative.form.formctxts', ['os.administrative.models'])
     var reload = false;
 
     function init() {
-      $scope.showFormCtxts = true;
+      $scope.view = 'show_contexts';
       $scope.extnEntities = entities.filter(function(e) { return e.allowEdits !== false; });
       $scope.form = args.form;
       $scope.cpList = cpList;
 
+      var cpLevels = [
+        'Participant', 'ParticipantExtension', 'SpecimenCollectionGroup', 'VisitExtension',
+        'Specimen', 'SpecimenExtension', 'SpecimenEvent'
+      ]
+
       var formCtxts = $scope.cpFormCtxts = args.formCtxts;
       angular.forEach(formCtxts,
-        function(formCtx) {
-          if (!formCtx.collectionProtocol.id || formCtx.collectionProtocol.id == -1) {
-            formCtx.collectionProtocol.shortTitle = $translate.instant('form.all');
+        function(fc) {
+          var cpLevel = cpLevels.indexOf(fc.level) != -1;
+          if (cpLevel && (!fc.collectionProtocol.id || fc.collectionProtocol.id == -1)) {
+            fc.collectionProtocol.shortTitle = $translate.instant('form.all');
+          } else if (!cpLevel) {
+            fc.collectionProtocol.shortTitle = $translate.instant('form.na');
           }
 
           for (var i = 0; i < entities.length; i++) {
             var entity = entities[i];
-            if (entity.name == formCtx.level) {
-              formCtx.level = entity;
+            if (entity.name == fc.level) {
+              fc.level = entity;
               break;
             }
           }
@@ -78,7 +86,7 @@ angular.module('os.administrative.form.formctxts', ['os.administrative.models'])
     }
 
     $scope.confirmRemoveCtx = function(formCtx, $index) {
-      $scope.showFormCtxts = false;
+      $scope.view = 'confirm_remove';
       $scope.removeCtxData = {ctx: formCtx, idx: $index};
     };
 
@@ -90,7 +98,7 @@ angular.module('os.administrative.form.formctxts', ['os.administrative.models'])
       formContext.$remove().then(
         function() {
           $scope.cpFormCtxts.splice($scope.removeCtxData.idx, 1);
-          $scope.showFormCtxts = true;
+          $scope.view = 'show_contexts';
           Alerts.success("form.association_deleted", $scope.removeCtxData.ctx);
           $scope.removeCtxData = {};
           reload = true;
@@ -99,10 +107,35 @@ angular.module('os.administrative.form.formctxts', ['os.administrative.models'])
     };
 
     $scope.cancelRemoveCtx = function() {
-      $scope.showFormCtxts = true;
+      $scope.view = 'show_contexts';
       $scope.removeCtxData = {};
     };
 
+    $scope.showEditCtx = function(formCtx, $index) {
+      $scope.view = 'edit_context';
+      $scope.editCtxData = {ctx: angular.copy(formCtx), idx: $index};
+    }
+
+    $scope.editCtx = function() {
+      var fc = $scope.form.newFormContext({
+        form: $scope.form,
+        cpIds: [$scope.editCtxData.ctx.collectionProtocol.id || -1],
+        entity: $scope.editCtxData.ctx.level.name,
+        isMultiRecord: $scope.editCtxData.ctx.multiRecord
+      });
+
+      fc.$saveOrUpdate().then(
+        function(data) {
+          $scope.cpFormCtxts[$scope.editCtxData.idx].multiRecord =  data[0].multiRecord;
+          $scope.cancelEditCtx();
+        }
+      );
+    }
+
+    $scope.cancelEditCtx = function() {
+      $scope.view = 'show_contexts';
+      $scope.editCtxData = {};
+    }
 
     $scope.cancel = function() {
       $modalInstance.close(reload);

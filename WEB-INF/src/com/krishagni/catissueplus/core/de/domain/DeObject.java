@@ -14,6 +14,8 @@ import java.util.stream.Collectors;
 
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Configurable;
@@ -45,6 +47,8 @@ import krishagni.catissueplus.beans.FormRecordEntryBean.Status;
 
 @Configurable
 public abstract class DeObject {
+	private static final Log logger = LogFactory.getLog(DeObject.class);
+
 	private static FormInfoCache formInfoCache = new FormInfoCache();
 
 	@Autowired
@@ -110,6 +114,10 @@ public abstract class DeObject {
 		return form != null ? form.getCaption() : null;
 	}
 
+	public Long getFormContextId() {
+		return getFormContext();
+	}
+
 	public boolean saveOrUpdate() {
 		try {
 			Container form = getForm();
@@ -150,7 +158,7 @@ public abstract class DeObject {
 			return;
 		}
 
-		re.setActivityStatus(Status.CLOSED);
+		re.delete();
 		daoFactory.getFormDao().saveOrUpdateRecordEntry(re);
 	}
 	
@@ -194,13 +202,18 @@ public abstract class DeObject {
 	}
 
 	protected void loadRecordIfNotLoaded() {
-		Long recordId = getId();
-		if (recordLoaded || recordId == null) {
-			return;
-		}
+		try {
+			Long recordId = getId();
+			if (recordLoaded || recordId == null) {
+				return;
+			}
 
-		FormData formData = formDataMgr.getFormData(getForm(), recordId);
-		loadRecord(formData);
+			FormData formData = formDataMgr.getFormData(getForm(), recordId);
+			loadRecord(formData);
+		} catch (Exception e) {
+			logger.error("Error loading the form fields", e);
+			throw e;
+		}
 	}
 
 	protected void loadRecord(FormData formData) {
@@ -343,7 +356,7 @@ public abstract class DeObject {
 			valueMap.put(attrDetail.getName(), attrDetail.getValue());
 		}
 
-		FormData formData = FormData.getFormData(extension.getForm(), valueMap);
+		FormData formData = FormData.getFormData(extension.getForm(), valueMap, detail.isUseUdn(), null);
 		List<Attr> attrs = extension.getAttrs(formData);
 		for (Attr attr : attrs) {
 			existingAttrs.remove(attr.getName());

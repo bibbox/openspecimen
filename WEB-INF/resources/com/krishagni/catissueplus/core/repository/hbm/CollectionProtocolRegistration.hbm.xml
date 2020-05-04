@@ -57,6 +57,11 @@
       <filter name="activeEntity"/>
     </set>
 
+    <set name="pdeNotifs" table="OS_PDE_NOTIFS" inverse="true">
+      <key column="CPR_ID"/>
+      <one-to-many class="com.krishagni.catissueplus.core.biospecimen.domain.PdeNotif"/>
+    </set>
+
     <filter name="activeEntity"/>
 
     <query name="getCprByCpIdAndPpid">
@@ -99,7 +104,7 @@
         cpr.collectionProtocol.shortTitle = :shortTitle and
         p.empi = :empi
     </query>
-    
+
     <query name="getCprByCpIdAndPid">
       select
         cpr
@@ -133,6 +138,17 @@
         site.id in (:siteIds)
       group by
         site.name
+    </query>
+
+    <query name="getByPpids">
+      select
+        cpr
+      from
+        com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolRegistration cpr
+        join cpr.collectionProtocol cp
+      where
+        cp.shortTitle = :cpShortTitle and
+        cpr.ppid in (:ppids)
     </query>
   </class>
 </hibernate-mapping>

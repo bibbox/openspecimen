@@ -1,7 +1,6 @@
 package com.krishagni.catissueplus.core.administrative.domain.factory.impl;
 
 import static com.krishagni.catissueplus.core.common.PvAttributes.SPECIMEN_CLASS;
-import static com.krishagni.catissueplus.core.common.service.PvValidator.areValid;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -15,6 +14,7 @@ import org.apache.commons.lang3.BooleanUtils;
 import com.krishagni.catissueplus.core.administrative.domain.AutoFreezerProvider;
 import com.krishagni.catissueplus.core.administrative.domain.ContainerType;
 import com.krishagni.catissueplus.core.administrative.domain.DistributionProtocol;
+import com.krishagni.catissueplus.core.administrative.domain.PermissibleValue;
 import com.krishagni.catissueplus.core.administrative.domain.Site;
 import com.krishagni.catissueplus.core.administrative.domain.StorageContainer;
 import com.krishagni.catissueplus.core.administrative.domain.StorageContainerPosition;
@@ -35,6 +35,7 @@ import com.krishagni.catissueplus.core.common.Pair;
 import com.krishagni.catissueplus.core.common.errors.ActivityStatusErrorCode;
 import com.krishagni.catissueplus.core.common.errors.ErrorType;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
+import com.krishagni.catissueplus.core.common.events.UserSummary;
 import com.krishagni.catissueplus.core.common.util.AuthUtil;
 import com.krishagni.catissueplus.core.common.util.Status;
 import com.krishagni.catissueplus.core.de.domain.DeObject;
@@ -85,6 +86,7 @@ public class StorageContainerFactoryImpl implements StorageContainerFactory {
 		setAutoFreezerProvider(detail, existing, container, ose);
 		setCellDisplayProp(detail, existing, container, ose);
 		setExtension(detail, existing, container, ose);
+		setTransferDetails(detail, existing, container, ose);
 
 		if (!container.isDistributionContainer()) {
 			setAllowedSpecimenClasses(detail, existing, container, ose);
@@ -566,6 +568,32 @@ public class StorageContainerFactoryImpl implements StorageContainerFactory {
 			container.setExtension(existing.getExtension());
 		}
 	}
+
+	private void setTransferDetails(StorageContainerDetail detail, StorageContainer existing, StorageContainer container, OpenSpecimenException ose) {
+		container.setTransferDate(detail.getTransferDate());
+		container.setOpComments(detail.getTransferComments());
+
+		UserSummary transferredBy = detail.getTransferredBy();
+		if (transferredBy == null) {
+			return;
+		}
+
+		Object key = null;
+		User user = null;
+		if (transferredBy.getId() != null) {
+			user = daoFactory.getUserDao().getById(transferredBy.getId());
+			key = transferredBy.getId();
+		} else if (StringUtils.isNotBlank(transferredBy.getEmailAddress())) {
+			user = daoFactory.getUserDao().getUserByEmailAddress(transferredBy.getEmailAddress());
+			key = transferredBy.getEmailAddress();
+		}
+
+		if (key != null && user == null) {
+			ose.addError(UserErrorCode.NOT_FOUND, key);
+		}
+
+		container.setTransferredBy(user);
+	}
 	
 	private void setPosition(StorageContainerDetail detail, StorageContainer container, OpenSpecimenException ose) {
 		StorageContainer parentContainer = container.getParentContainer();
@@ -732,13 +760,19 @@ public class StorageContainerFactoryImpl implements StorageContainerFactory {
 	}
 
 	private void setAllowedSpecimenClasses(StorageContainerDetail detail, StorageContainer container, OpenSpecimenException ose) {
-		Set<String> allowedSpecimenClasses = detail.getAllowedSpecimenClasses();		
-		if (!areValid(SPECIMEN_CLASS, allowedSpecimenClasses)) {
+		Set<String> allowedSpecimenClasses = detail.getAllowedSpecimenClasses();
+		if (CollectionUtils.isEmpty(allowedSpecimenClasses)) {
+			return;
+		}
+
+		List<PermissibleValue> classPvs = daoFactory.getPermissibleValueDao()
+			.getPvs(SPECIMEN_CLASS, allowedSpecimenClasses);
+		if (classPvs.size() != allowedSpecimenClasses.size()) {
 			ose.addError(SpecimenErrorCode.INVALID_SPECIMEN_CLASS);
 			return;
 		}
-						
-		container.setAllowedSpecimenClasses(allowedSpecimenClasses);		
+
+		container.setAllowedSpecimenClasses(new HashSet<>(classPvs));
 	}
 	
 	private void setAllowedSpecimenClasses(StorageContainerDetail detail, StorageContainer existing, StorageContainer container, OpenSpecimenException ose) {
@@ -751,12 +785,25 @@ public class StorageContainerFactoryImpl implements StorageContainerFactory {
 	
 	private void setAllowedSpecimenTypes(StorageContainerDetail detail, StorageContainer container, OpenSpecimenException ose) {
 		Set<String> allowedSpecimenTypes = detail.getAllowedSpecimenTypes();
-		if (!areValid(SPECIMEN_CLASS, 1, allowedSpecimenTypes)) {
+		if (CollectionUtils.isEmpty(allowedSpecimenTypes)) {
+			return;
+		}
+
+		List<PermissibleValue> typePvs = daoFactory.getPermissibleValueDao()
+			.getPvs(SPECIMEN_CLASS, allowedSpecimenTypes);
+		if (typePvs.size() != allowedSpecimenTypes.size()) {
 			ose.addError(SpecimenErrorCode.INVALID_SPECIMEN_TYPE);
 			return;
 		}
-						
-		container.setAllowedSpecimenTypes(allowedSpecimenTypes);		
+
+		for (PermissibleValue typePv : typePvs) {
+			if (typePv.getParent() == null) {
+				ose.addError(SpecimenErrorCode.INVALID_SPECIMEN_TYPE);
+				return;
+			}
+		}
+
+		container.setAllowedSpecimenTypes(new HashSet<>(typePvs));
 	}
 	
 	private void setAllowedSpecimenTypes(StorageContainerDetail detail, StorageContainer existing, StorageContainer container, OpenSpecimenException ose) {
@@ -812,7 +859,7 @@ public class StorageContainerFactoryImpl implements StorageContainerFactory {
 			container.setAllowedDps(existing.getAllowedDps());
 		}
 	}
-	
+
 	private void setComputedRestrictions(StorageContainer container) {
 		if (container.isDistributionContainer()) {
 			container.setCompAllowedDps(container.computeAllowedDps());

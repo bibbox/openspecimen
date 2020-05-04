@@ -42,7 +42,7 @@ angular.module('os.administrative.user',
               return User.getById($stateParams.userId);
             }
 
-            return new User();
+            return new User({dnd: false});
           },
           users: function() {
             return [];
@@ -85,7 +85,7 @@ angular.module('os.administrative.user',
               breadcrumbs: [{state: 'user-list', title: 'user.list'}],
               objectType: objectType,
               title: title,
-              onSuccess: {state: 'user-list'}
+              onSuccess: {state: 'user-import-jobs'}
             };
           }
         },

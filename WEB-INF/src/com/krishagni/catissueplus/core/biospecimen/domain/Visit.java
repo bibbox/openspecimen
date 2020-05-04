@@ -7,6 +7,7 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -15,10 +16,12 @@ import org.apache.commons.lang.StringUtils;
 import org.hibernate.envers.AuditTable;
 import org.hibernate.envers.Audited;
 import org.hibernate.envers.NotAudited;
+import org.hibernate.envers.RelationTargetAuditMode;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Configurable;
 import org.springframework.beans.factory.annotation.Qualifier;
 
+import com.krishagni.catissueplus.core.administrative.domain.PermissibleValue;
 import com.krishagni.catissueplus.core.administrative.domain.Site;
 import com.krishagni.catissueplus.core.administrative.domain.User;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol.SpecimenLabelPrePrintMode;
@@ -29,6 +32,7 @@ import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
 import com.krishagni.catissueplus.core.biospecimen.services.SpecimenService;
 import com.krishagni.catissueplus.core.biospecimen.services.VisitService;
 import com.krishagni.catissueplus.core.common.CollectionUpdater;
+import com.krishagni.catissueplus.core.common.access.AccessCtrlMgr;
 import com.krishagni.catissueplus.core.common.domain.PrintItem;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.DependentEntityDetail;
@@ -37,6 +41,7 @@ import com.krishagni.catissueplus.core.common.service.impl.EventPublisher;
 import com.krishagni.catissueplus.core.common.util.Status;
 import com.krishagni.catissueplus.core.common.util.Utility;
 import com.krishagni.catissueplus.core.de.services.impl.FormUtil;
+import com.krishagni.rbac.common.errors.RbacErrorCode;
 
 @Configurable
 @Audited
@@ -58,9 +63,9 @@ public class Visit extends BaseExtensionEntity {
 	
 	private Date visitDate;
 
-	private Set<String> clinicalDiagnoses = new HashSet<>();
+	private Set<PermissibleValue> clinicalDiagnoses = new HashSet<>();
 
-	private String clinicalStatus;
+	private PermissibleValue clinicalStatus;
 
 	private String activityStatus;
 
@@ -84,11 +89,11 @@ public class Visit extends BaseExtensionEntity {
 	
 	private String defNameTmpl;
 
-	private String missedReason;
+	private PermissibleValue missedReason;
 
 	private User missedBy;
 	
-	private String cohort;
+	private PermissibleValue cohort;
 	
 	@Autowired
 	@Qualifier("visitNameGenerator")
@@ -133,19 +138,21 @@ public class Visit extends BaseExtensionEntity {
 		this.visitDate = visitDate;
 	}
 
-	public Set<String> getClinicalDiagnoses() {
+	@Audited(targetAuditMode = RelationTargetAuditMode.NOT_AUDITED)
+	public Set<PermissibleValue> getClinicalDiagnoses() {
 		return clinicalDiagnoses;
 	}
 
-	public void setClinicalDiagnoses(Set<String> clinicalDiagnoses) {
+	public void setClinicalDiagnoses(Set<PermissibleValue> clinicalDiagnoses) {
 		this.clinicalDiagnoses = clinicalDiagnoses;
 	}
 
-	public String getClinicalStatus() {
+	@Audited(targetAuditMode = RelationTargetAuditMode.NOT_AUDITED)
+	public PermissibleValue getClinicalStatus() {
 		return clinicalStatus;
 	}
 
-	public void setClinicalStatus(String clinicalStatus) {
+	public void setClinicalStatus(PermissibleValue clinicalStatus) {
 		this.clinicalStatus = clinicalStatus;
 	}
 
@@ -254,11 +261,12 @@ public class Visit extends BaseExtensionEntity {
 		this.defNameTmpl = defNameTmpl;
 	}
 
-	public String getMissedReason() {
+	@Audited(targetAuditMode = RelationTargetAuditMode.NOT_AUDITED)
+	public PermissibleValue getMissedReason() {
 		return missedReason;
 	}
 
-	public void setMissedReason(String missedVisitReason) {
+	public void setMissedReason(PermissibleValue missedVisitReason) {
 		this.missedReason = missedVisitReason;
 	}
 
@@ -270,11 +278,12 @@ public class Visit extends BaseExtensionEntity {
 		this.missedBy = missedBy;
 	}
 
-	public String getCohort() {
+	@Audited(targetAuditMode = RelationTargetAuditMode.NOT_AUDITED)
+	public PermissibleValue getCohort() {
 		return cohort;
 	}
 
-	public void setCohort(String cohort) {
+	public void setCohort(PermissibleValue cohort) {
 		this.cohort = cohort;
 	}
 
@@ -368,8 +377,20 @@ public class Visit extends BaseExtensionEntity {
 		if (checkDependency) {
 			ensureNoActiveChildObjects();
 		}
-		
+
+		Boolean hasDeleteSpmnRights = getRegistration().getHasDeleteSpecimenRights();
 		for (Specimen specimen : getSpecimens()) {
+			if (specimen.isActiveOrClosed() && specimen.isCollected()) {
+				if (hasDeleteSpmnRights == null) {
+					hasDeleteSpmnRights = AccessCtrlMgr.getInstance().hasDeleteSpecimenRights(getRegistration());
+					getRegistration().setHasDeleteSpecimenRights(hasDeleteSpmnRights);
+				}
+
+				if (!hasDeleteSpmnRights) {
+					throw OpenSpecimenException.userError(RbacErrorCode.ACCESS_DENIED);
+				}
+			}
+
 			specimen.disable(checkDependency);
 		}
 		
@@ -390,8 +411,8 @@ public class Visit extends BaseExtensionEntity {
 		
 		setName(visit.getName());
 		setClinicalStatus(visit.getClinicalStatus());
-		setCpEvent(visit.getCpEvent());
-		setRegistration(visit.getRegistration());
+		updateEvent(visit.getCpEvent());
+		updateRegistration(visit.getRegistration());
 		setSite(visit.getSite());
 		updateStatus(visit.getStatus());		
 		setComments(visit.getComments());
@@ -404,6 +425,7 @@ public class Visit extends BaseExtensionEntity {
 		setExtension(visit.getExtension());
 		CollectionUpdater.update(getClinicalDiagnoses(), visit.getClinicalDiagnoses());
 		setUpdated(true);
+
 	}
 
 	public void updateSprName(String sprName) {
@@ -693,6 +715,39 @@ public class Visit extends BaseExtensionEntity {
 
 			default:
 				return false;
+		}
+	}
+
+	private void updateEvent(CollectionProtocolEvent newEvent) {
+		CollectionProtocolEvent existingEvent = getCpEvent();
+		setCpEvent(newEvent);
+
+		if (Objects.equals(existingEvent, newEvent)) {
+			return;
+		}
+
+		// events differ. nullify the specimen requirements
+		for (Specimen spmn : getSpecimens()) {
+			spmn.setSpecimenRequirement(null);
+		}
+	}
+
+	private void updateRegistration(CollectionProtocolRegistration newCpr) {
+		CollectionProtocolRegistration existingCpr = getRegistration();
+		setRegistration(newCpr);
+
+		if (existingCpr.equals(newCpr)) {
+			return;
+		}
+
+		if (existingCpr.getCollectionProtocol().equals(newCpr.getCollectionProtocol())) {
+			return;
+		}
+
+		// CPs differ
+		for (Specimen spmn : getSpecimens()) {
+			spmn.setSpecimenRequirement(null);
+			spmn.setCollectionProtocol(newCpr.getCollectionProtocol());
 		}
 	}
 }
