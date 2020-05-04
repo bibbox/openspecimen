@@ -60,7 +60,7 @@
       </span>
       <span ng-switch-default ng-switch on="!!field.displayValue">
         <span ng-switch-when="true">{{field.displayValue}}</span>
-        <span ng-switch-default> {{field.value | osArrayJoin}}</span>
+        <span ng-switch-default> {{field.value | osArrayJoin | linky}}</span>
       </span>
     </span>
     <span ng-switch-default>
