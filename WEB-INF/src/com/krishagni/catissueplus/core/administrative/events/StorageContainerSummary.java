@@ -51,6 +51,8 @@ public class StorageContainerSummary extends AttributeModifiedSupport {
 	private String rowLabelingScheme;
 
 	private Integer freePositions;
+
+	private Integer usedPositions;
 	
 	private Boolean storeSpecimensEnabled;
 
@@ -63,6 +65,8 @@ public class StorageContainerSummary extends AttributeModifiedSupport {
 	private String autoFreezerProvider;
 	
 	private List<StorageContainerSummary> childContainers;
+
+	private Boolean starred;
 
 	public Long getId() {
 		return id;
@@ -200,6 +204,14 @@ public class StorageContainerSummary extends AttributeModifiedSupport {
 		this.freePositions = freePositions;
 	}
 
+	public Integer getUsedPositions() {
+		return usedPositions;
+	}
+
+	public void setUsedPositions(Integer usedPositions) {
+		this.usedPositions = usedPositions;
+	}
+
 	@JsonProperty
 	public boolean isStoreSpecimensEnabled() {
 		return storeSpecimensEnabled != null ? storeSpecimensEnabled : false;
@@ -253,6 +265,14 @@ public class StorageContainerSummary extends AttributeModifiedSupport {
 
 	public void setChildContainers(List<StorageContainerSummary> childContainers) {
 		this.childContainers = childContainers;
+	}
+
+	public Boolean getStarred() {
+		return starred;
+	}
+
+	public void setStarred(Boolean starred) {
+		this.starred = starred;
 	}
 
 	protected static void transform(StorageContainer container, StorageContainerSummary result) {

@@ -24,12 +24,16 @@ public interface SpecimenListDao extends Dao<SpecimenList> {
 	
 	void deleteSpecimenList(SpecimenList list);
 
+	boolean isListSharedWithUser(Long listId, Long userId);
+
 	//
 	// APIs to save specimen list items
 	//
 	void saveListItems(List<SpecimenListItem> items);
 
 	int deleteListItems(Long listId, List<Long> specimenIds);
+
+	int clearList(Long listId);
 
 	List<Long> getSpecimenIdsInList(Long listId, List<Long> specimenIds);
 

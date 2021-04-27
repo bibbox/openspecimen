@@ -17,6 +17,7 @@ angular.module('os.query.defineview', ['os.query.models'])
 
       $scope.dctx = {havingClause: queryCtx.havingClause};
       $scope.outputColumnExprs = queryCtx.outputColumnExprs;
+      $scope.caseSensitive = (queryCtx.caseSensitive == undefined || queryCtx.caseSensitive == null || queryCtx.caseSensitive);
       $scope.wideRowMode = angular.copy(queryCtx.wideRowMode); 
       $scope.reporting = angular.copy(queryCtx.reporting);
       $scope.pivotTable = (queryCtx.reporting.type == 'crosstab');
@@ -27,7 +28,8 @@ angular.module('os.query.defineview', ['os.query.models'])
           $scope.reportingOpts = [
             {type: 'none',          label: $translate.instant('queries.reporting.none')},
             {type: 'crosstab',      label: $translate.instant('queries.reporting.crosstab')},
-            {type: 'columnsummary', label: $translate.instant('queries.reporting.columnsummary')}
+            {type: 'columnsummary', label: $translate.instant('queries.reporting.columnsummary')},
+            {type: 'specimenqty',   label: $translate.instant('queries.reporting.specimenqty')}
           ];
         }
       );
@@ -85,17 +87,28 @@ angular.module('os.query.defineview', ['os.query.models'])
           Alerts.error('queries.no_total_or_avg_fields');
           return;
         }
+      } else if ($scope.reporting.type == 'specimenqty') {
+        if (!rptParams.restrictBy) {
+          Alerts.error('queries.specimenqty_rpt_no_restrict_by');
+          return;
+        }
+
+        if ((rptParams.minQty == undefined || rptParams.minQty == null || rptParams.minQty.trim() == '') &&
+            (rptParams.maxQty == undefined || rptParams.maxQty == null || rptParams.maxQty.trim() == '')) {
+          Alerts.error('queries.specimenqty_rpt_no_qty');
+          return;
+        }
       }
 
       sanitizeSelectedFields($scope.selectedFields);
       $modalInstance.close(angular.extend(queryCtx, {
-         outputColumnExprs: $scope.outputColumnExprs,
-         wideRowMode: $scope.wideRowMode, 
-         selectedFields: $scope.selectedFields, 
-         reporting: $scope.reporting,
-         havingClause: $scope.dctx.havingClause
-        })
-      );
+        outputColumnExprs: $scope.outputColumnExprs,
+        caseSensitive: $scope.caseSensitive,
+        wideRowMode: $scope.wideRowMode,
+        selectedFields: $scope.selectedFields,
+        reporting: $scope.reporting,
+        havingClause: $scope.dctx.havingClause
+      }));
     }
 
     $scope.cancel = function() {
@@ -109,6 +122,10 @@ angular.module('os.query.defineview', ['os.query.models'])
 
     $scope.setOutputColumnExprs = function(checked) {
       $scope.outputColumnExprs = checked;
+    }
+
+    $scope.setCaseSensitive = function(checked) {
+      $scope.caseSensitive = checked;
     }
 
     $scope.showCurrField = function(field) {
@@ -131,6 +148,8 @@ angular.module('os.query.defineview', ['os.query.models'])
       } else if (type == 'columnsummary') {
         $scope.reporting = {type: 'columnsummary', params: {sum: [], avg: []}};
         $scope.prepareColumnSummaryReportOpts();
+      } else if (type == 'specimenqty') {
+        $scope.reporting = {type: 'specimenqty', params: {restrictBy: 'participant'}};
       } else {
         $scope.reporting = {type: '', params: {}};
       } 
@@ -573,7 +592,7 @@ angular.module('os.query.defineview', ['os.query.models'])
         }
 
         for (var j = 0; j < nodes.length; j++) {
-          if (filterId && nodes[j].form.id == filterId) {
+          if (filterId && nodes[j].type == 'temporal' && nodes[j].form.id == filterId) {
             var node = nodes.splice(j, 1)[0]; // removes node 
             nodes.splice(i, 0, node); // inserts node
             node.checked = true;

@@ -4,8 +4,12 @@ package com.krishagni.catissueplus.core.de.events;
 import org.apache.commons.lang3.StringUtils;
 
 public class ExecuteQueryEventOp  {
+
+	private String querySpace;
 	
 	private Long cpId;
+
+	private Long cpGroupId;
 	
 	private String drivingForm;
 
@@ -23,7 +27,19 @@ public class ExecuteQueryEventOp  {
 
 	private boolean outputColumnExprs;
 
+	private boolean caseSensitive = true;
+
 	private boolean synchronous;
+
+	private boolean disableAccessChecks;
+
+	public String getQuerySpace() {
+		return querySpace;
+	}
+
+	public void setQuerySpace(String querySpace) {
+		this.querySpace = querySpace;
+	}
 
 	public Long getCpId() {
 		return cpId;
@@ -31,6 +47,14 @@ public class ExecuteQueryEventOp  {
 
 	public void setCpId(Long cpId) {
 		this.cpId = cpId;
+	}
+
+	public Long getCpGroupId() {
+		return cpGroupId;
+	}
+
+	public void setCpGroupId(Long cpGroupId) {
+		this.cpGroupId = cpGroupId;
 	}
 
 	public String getDrivingForm() {
@@ -97,11 +121,27 @@ public class ExecuteQueryEventOp  {
 		this.outputColumnExprs = outputColumnExprs;
 	}
 
+	public boolean isCaseSensitive() {
+		return caseSensitive;
+	}
+
+	public void setCaseSensitive(boolean caseSensitive) {
+		this.caseSensitive = caseSensitive;
+	}
+
 	public boolean isSynchronous() {
 		return synchronous;
 	}
 
 	public void setSynchronous(boolean synchronous) {
 		this.synchronous = synchronous;
+	}
+
+	public boolean isDisableAccessChecks() {
+		return disableAccessChecks;
+	}
+
+	public void setDisableAccessChecks(boolean disableAccessChecks) {
+		this.disableAccessChecks = disableAccessChecks;
 	}
 }

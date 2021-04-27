@@ -17,13 +17,14 @@ angular.module('os.administrative.container',
       .state('container-root', {
         abstract: true,
         template: '<div ui-view></div>',
-        controller: function($scope) {
+        controller: function($scope, AuthorizationService) {
           // Storage Container Authorization Options
           $scope.containerResource = {
             createOpts: {resource: 'StorageContainer', operations: ['Create']},
             updateOpts: {resource: 'StorageContainer', operations: ['Update']},
             deleteOpts: {resource: 'StorageContainer', operations: ['Delete']},
-            importOpts: {resource: 'StorageContainer', operations: ['Export Import']}
+            importOpts: {resource: 'StorageContainer', operations: ['Export Import']},
+            deleteAllowed: AuthorizationService.isAllowed({resource: 'StorageContainer', operations: ['Delete']})
           }
         },
         parent: 'signed-in'
@@ -77,7 +78,7 @@ angular.module('os.administrative.container',
               breadcrumbs: [{state: 'container-list', title: 'container.list'}],
               objectType: 'storageContainer',
               title: 'container.bulk_import',
-              onSuccess: {state: 'container-list'}
+              onSuccess: {state: 'container-import-jobs'}
             };
           }
         },
@@ -186,6 +187,23 @@ angular.module('os.administrative.container',
         url: '/specimens?filters',
         templateUrl: 'modules/administrative/container/specimens.html',
         controller: 'ContainerSpecimensCtrl',
+        parent: 'container-detail'
+      })
+      .state('container-detail.events', {
+        url: '/events',
+        templateUrl: 'modules/administrative/container/events.html',
+        controller: 'ContainerEventsCtrl',
+        resolve: {
+          events: function(container) {
+            return container.getTransferEvents();
+          }
+        },
+        parent: 'container-detail'
+      })
+      .state('container-detail.maintenance', {
+        url: '/maintenance',
+        templateUrl: 'modules/administrative/container/maintenance.html',
+        controller: 'ContainerMaintenanceCtrl',
         parent: 'container-detail'
       });
   })

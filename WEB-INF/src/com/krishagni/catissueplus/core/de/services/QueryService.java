@@ -5,6 +5,7 @@ import java.io.OutputStream;
 import java.util.List;
 import java.util.function.BiConsumer;
 
+import com.krishagni.catissueplus.core.common.events.EntityQueryCriteria;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
 import com.krishagni.catissueplus.core.common.events.ResponseEvent;
 import com.krishagni.catissueplus.core.common.events.UserSummary;
@@ -31,6 +32,8 @@ import edu.common.dynamicextensions.query.QueryResultData;
 
 public interface QueryService {	
 	ResponseEvent<SavedQueriesList> getSavedQueries(RequestEvent<ListSavedQueriesCriteria> req);
+
+	ResponseEvent<Long> getSavedQueriesCount(RequestEvent<ListSavedQueriesCriteria> req);
 
 	ResponseEvent<SavedQueryDetail> getSavedQuery(RequestEvent<Long> req);
 
@@ -60,7 +63,7 @@ public interface QueryService {
 
 	ResponseEvent<List<QueryFolderSummary>> getUserFolders(RequestEvent<?> req);
 
-	ResponseEvent<QueryFolderDetails> getFolder(RequestEvent<Long> req);
+	ResponseEvent<QueryFolderDetails> getFolder(RequestEvent<EntityQueryCriteria> req);
 
 	ResponseEvent<QueryFolderDetails> createFolder(RequestEvent<QueryFolderDetails> req);
 
@@ -69,6 +72,8 @@ public interface QueryService {
 	ResponseEvent<Long> deleteFolder(RequestEvent<Long> req);
 
 	ResponseEvent<SavedQueriesList> getFolderQueries(RequestEvent<ListFolderQueriesCriteria> req);
+
+	ResponseEvent<Long> getFolderQueriesCount(RequestEvent<ListFolderQueriesCriteria> req);
 
 	ResponseEvent<List<SavedQuerySummary>> updateFolderQueries(RequestEvent<UpdateFolderQueriesOp> req);
 
@@ -105,4 +110,8 @@ public interface QueryService {
 	// internal use
 	// 
 	String insertCustomQueryForms(String dirName) ;
+
+	void registerQuerySpaceProvider(QuerySpaceProvider qsProvider);
+
+	boolean toggleStarredQuery(Long queryId, boolean starred);
 }

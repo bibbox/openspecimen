@@ -1,6 +1,8 @@
 package com.krishagni.catissueplus.rest.controller;
 
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 import javax.servlet.http.HttpServletRequest;
 
@@ -15,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.ResponseStatus;
 
+import com.krishagni.catissueplus.core.common.events.EntityQueryCriteria;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
 import com.krishagni.catissueplus.core.common.events.ResponseEvent;
 import com.krishagni.catissueplus.core.common.events.UserSummary;
@@ -48,8 +51,16 @@ public class QueryFoldersController {
 	@RequestMapping(method = RequestMethod.GET, value="/{folderId}")
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody
-	public QueryFolderDetails getFolder(@PathVariable Long folderId) {
-		return response(querySvc.getFolder(getRequest(folderId)));
+	public QueryFolderDetails getFolder(
+		@PathVariable
+		Long folderId,
+
+		@RequestParam(value = "includeQueries", defaultValue = "true", required = false)
+		Boolean includeQueries) {
+
+		EntityQueryCriteria crit = new EntityQueryCriteria(folderId);
+		crit.setParams(Collections.singletonMap("includeQueries", includeQueries));
+		return response(querySvc.getFolder(getRequest(crit)));
 	}
 		
 	@RequestMapping(method = RequestMethod.POST)
@@ -103,7 +114,24 @@ public class QueryFoldersController {
 		
 		return response(querySvc.getFolderQueries(getRequest(crit)));
 	}
-	
+
+	@RequestMapping(method = RequestMethod.GET, value="/{folderId}/saved-queries-count")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public Map<String, Object> getFolderQueriesCount(
+		@PathVariable("folderId")
+		Long folderId,
+
+		@RequestParam(value = "searchString", required = false, defaultValue = "")
+		String searchString) {
+
+		ListFolderQueriesCriteria crit = new ListFolderQueriesCriteria()
+			.folderId(folderId)
+			.query(searchString);
+		Long count = response(querySvc.getFolderQueriesCount(getRequest(crit)));
+		return Collections.singletonMap("count", count);
+	}
+
 	@RequestMapping(method = RequestMethod.PUT, value="/{folderId}/saved-queries")
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody

@@ -18,6 +18,8 @@ public class LoginDetail {
 	private String apiUrl;
 	
 	private String requestMethod;
+
+	private String deviceDetails;
 	
 	private Map<String, String> props = new HashMap<>();
 
@@ -75,6 +77,14 @@ public class LoginDetail {
 
 	public void setRequestMethod(String requestMethod) {
 		this.requestMethod = requestMethod;
+	}
+
+	public String getDeviceDetails() {
+		return deviceDetails;
+	}
+
+	public void setDeviceDetails(String deviceDetails) {
+		this.deviceDetails = deviceDetails;
 	}
 
 	public Map<String, String> getProps() {

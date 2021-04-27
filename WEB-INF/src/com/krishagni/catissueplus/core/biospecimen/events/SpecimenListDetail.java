@@ -3,6 +3,7 @@ package com.krishagni.catissueplus.core.biospecimen.events;
 import java.util.List;
 import java.util.Set;
 
+import com.krishagni.catissueplus.core.administrative.events.UserGroupSummary;
 import com.krishagni.catissueplus.core.biospecimen.domain.SpecimenList;
 import com.krishagni.catissueplus.core.common.ListenAttributeChanges;
 import com.krishagni.catissueplus.core.common.events.UserSummary;
@@ -10,6 +11,8 @@ import com.krishagni.catissueplus.core.common.events.UserSummary;
 @ListenAttributeChanges
 public class SpecimenListDetail extends SpecimenListSummary {
 	private List<UserSummary> sharedWith;
+
+	private List<UserGroupSummary> sharedWithGroups;
 
 	private List<Long> specimenIds;
 
@@ -19,6 +22,14 @@ public class SpecimenListDetail extends SpecimenListSummary {
 
 	public void setSharedWith(List<UserSummary> sharedWith) {
 		this.sharedWith = sharedWith;
+	}
+
+	public List<UserGroupSummary> getSharedWithGroups() {
+		return sharedWithGroups;
+	}
+
+	public void setSharedWithGroups(List<UserGroupSummary> sharedWithGroups) {
+		this.sharedWithGroups = sharedWithGroups;
 	}
 
 	public List<Long> getSpecimenIds() {
@@ -37,6 +48,7 @@ public class SpecimenListDetail extends SpecimenListSummary {
 		details.setCreatedOn(list.getCreatedOn());
 		details.setOwner(UserSummary.from(list.getOwner()));
 		details.setSharedWith(UserSummary.from(list.getSharedWith()));
+		details.setSharedWithGroups(UserGroupSummary.from(list.getSharedWithGroups()));
 		details.setDefaultList(list.isDefaultList());
 		return details;
 	}

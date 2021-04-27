@@ -71,6 +71,13 @@
 
     <property name="aliquotsInSameContainer" column="ALIQUOTS_IN_SAME_CONT"/>
 
+    <property name="labelSequenceKey" column="LABEL_SEQ_KEY">
+      <type name="org.hibernate.type.EnumType">
+        <param name="enumClass">com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol$LabelSequenceKey</param>
+        <param name="type">12</param>
+      </type>
+    </property>
+
     <property name="visitCollectionMode" column="VISIT_COLLECTION_MODE">
       <type name="org.hibernate.type.EnumType">
         <param name="enumClass">com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol$VisitCollectionMode</param>
@@ -109,7 +116,7 @@
       <filter name="activeEntity"/>
     </set>
 
-    <set name="coordinators" table="CATISSUE_COLL_COORDINATORS" inverse="false" cascade="none" sort="unsorted">
+    <set name="coordinators" table="CATISSUE_COLL_COORDINATORS" cascade="none">
       <key column="COLLECTION_PROTOCOL_ID"/>
       <many-to-many class="com.krishagni.catissueplus.core.administrative.domain.User" column="USER_ID"/>
     </set>
@@ -125,13 +132,13 @@
       <filter name="activeEntity"/>
     </set>
     
-    <set name="collectionProtocolRegistrations" inverse="false" cascade="none">
+    <set name="collectionProtocolRegistrations" cascade="none">
       <key column="COLLECTION_PROTOCOL_ID"/>
       <one-to-many class="com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolRegistration"/>
       <filter name="activeEntity"/>
     </set>
     
-    <set name="storageContainers" table="OS_STOR_CONTAINER_CPS" inverse="false">
+    <set name="storageContainers" table="OS_STOR_CONTAINER_CPS">
       <key column="CP_ID"/>
       <many-to-many class="com.krishagni.catissueplus.core.administrative.domain.StorageContainer" column="STORAGE_CONTAINER_ID">
         <filter name="activeEntity" condition="activity_status != 'Disabled'"/>
@@ -144,6 +151,11 @@
         <filter name="activeEntity" condition="activity_status != 'Disabled'"/>
       </many-to-many>
     </set>
+
+    <set name="starred" table="OS_STARRED_CPS_VIEW">
+      <key column="CP_ID"/>
+      <many-to-many class="com.krishagni.catissueplus.core.administrative.domain.User" column="USER_ID"/>
+    </set>
     
     <filter name="activeEntity"/>
 
@@ -153,8 +165,9 @@
       <return-scalar column="specimenCnt" type="long"/>
 
       select 
-        cp.identifier as cpId, count(distinct cpr.identifier) as participantCnt, 
-        count(distinct sp.identifier) as specimenCnt 
+        cp.identifier as cpId,
+        case cp.specimen_centric when 0 then count(distinct cpr.identifier) else -1 end as participantCnt,
+        count(distinct sp.identifier) as specimenCnt
       from 
         catissue_collection_protocol cp 
         left join catissue_coll_prot_reg cpr 
@@ -171,7 +184,7 @@
         cp.identifier in (:cpIds) and
         cp.activity_status != 'Disabled'
       group by 
-        cp.identifier
+        cp.identifier, cp.specimen_centric
     </sql-query>
 
     <query name="getAllCpIds">
@@ -226,8 +239,7 @@
       from 
         com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol
       where
-        shortTitle in (:shortTitles) and 
-        activityStatus = 'Active'
+        shortTitle in (:shortTitles)
     </query>
     
     <query name="getCpsByShortTitleAndSite">
@@ -240,8 +252,8 @@
       where
         cp.shortTitle in (:shortTitles) and
         site.name = :siteName and
-        cp.activityStatus = 'Active' and
-        site.activityStatus = 'Active'
+        cp.activityStatus != 'Disabled' and
+        site.activityStatus != 'Disabled'
     </query>
     
     <query name="getConsentTier">
@@ -312,5 +324,33 @@
       where
         cp.barcodingEnabled = true
     </query>
+
+    <sql-query name="ensureCpIsAffiliatedtoUserInstitute">
+      <return-scalar column="cp_count" type="int"/>
+
+      select
+        count(cp.identifier) as cp_count
+      from
+        catissue_collection_protocol cp
+        inner join catissue_site_cp cp_site on cp_site.collection_protocol_id = cp.identifier
+        inner join catissue_site site on site.identifier = cp_site.site_id
+        inner join catissue_user usr on usr.institute_id = site.institute_id
+      where
+        cp.identifier = :cpId and
+        usr.identifier = :userId and
+        cp.activity_status != 'Disabled'
+    </sql-query>
+
+    <sql-query name="getContainersWithCpRestrictions">
+      <return-scalar column="container_name" type="string"/>
+
+      select
+        c.name as container_name
+      from
+        os_storage_containers c
+        inner join os_stor_container_cps ccps on ccps.storage_container_id = c.identifier
+      where
+        c.site_id in (:siteIds) and ccps.cp_id = :cpId
+    </sql-query>
   </class>
 </hibernate-mapping>

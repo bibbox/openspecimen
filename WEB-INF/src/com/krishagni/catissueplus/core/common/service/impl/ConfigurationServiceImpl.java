@@ -22,6 +22,8 @@ import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.LocaleUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.hibernate.Hibernate;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.context.ApplicationListener;
@@ -49,6 +51,7 @@ import com.krishagni.catissueplus.core.common.util.Status;
 import com.krishagni.catissueplus.core.common.util.Utility;
 
 public class ConfigurationServiceImpl implements ConfigurationService, InitializingBean, ApplicationListener<ContextRefreshedEvent> {
+	private static final Log logger = LogFactory.getLog(ConfigurationServiceImpl.class);
 	
 	private Map<String, List<ConfigChangeListener>> changeListeners = new ConcurrentHashMap<>();
 	
@@ -452,6 +455,7 @@ public class ConfigurationServiceImpl implements ConfigurationService, Initializ
 	public Map<String, Object> getAppProps() {
 		Map<String, Object> props = new HashMap<>();
 		props.put("plugins",                 PluginManager.getInstance().getPluginNames());
+		props.put("pluginsDetail",           PluginManager.getInstance().getPlugins());
 		props.put("build_version",           appProps.getProperty("buildinfo.version"));
 		props.put("build_date",              appProps.getProperty("buildinfo.date"));
 		props.put("build_commit_revision",   appProps.getProperty("buildinfo.commit_revision"));
@@ -468,6 +472,7 @@ public class ConfigurationServiceImpl implements ConfigurationService, Initializ
 		props.put("data_dir",                getDataDir());
 		props.put("not_specified",           getStrSetting("common", "not_specified_text"));
 		props.put("searchDelay",             getIntSetting("common", "search_delay", 1000));
+		props.put("allowHtmlMarkup",         getBoolSetting("common", "de_form_html_markup", true));
 		return props;
 	}
 
@@ -606,14 +611,18 @@ public class ConfigurationServiceImpl implements ConfigurationService, Initializ
 	}
 
 	private void notifyListeners(String module, String property, String setting) {
+		List<ConfigChangeListener> toNotifyListeners = new ArrayList<>();
 		List<ConfigChangeListener> listeners = changeListeners.get(module);
-		if (listeners == null) {
-			return;
+		if (listeners != null) {
+			toNotifyListeners.addAll(listeners);
 		}
-		
-		for (ConfigChangeListener listener : listeners) {
-			listener.onConfigChange(property, setting);
+
+		listeners = changeListeners.get("*");
+		if (listeners != null) {
+			toNotifyListeners.addAll(listeners);
 		}
+
+		toNotifyListeners.forEach(listener -> listener.onConfigChange(property, setting));
 	}
 	
 	private void setLocale() {
@@ -624,6 +633,8 @@ public class ConfigurationServiceImpl implements ConfigurationService, Initializ
 		if (!existingLocale.equals(newLocale)) {
 			Locale.setDefault(newLocale);
 		}
+
+		logger.info("App is using the locale: " + newLocale.toString());
 	}
 	
 	private boolean isAutoEmpiEnabled() {

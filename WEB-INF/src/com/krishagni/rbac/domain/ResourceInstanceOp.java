@@ -1,36 +1,21 @@
 package com.krishagni.rbac.domain;
 
-public class ResourceInstanceOp {
-	private Long id;
-	
-	private RoleAccessControl roleAccessControl;
-	
-	private Long resourceInstanceId;
-	
+import org.hibernate.envers.Audited;
+
+import com.krishagni.catissueplus.core.biospecimen.domain.BaseEntity;
+
+@Audited
+public class ResourceInstanceOp extends BaseEntity {
+	private RoleAccessControl accessControl;
+
 	private Operation operation;
 
-	public Long getId() {
-		return id;
+	public RoleAccessControl getAccessControl() {
+		return accessControl;
 	}
 
-	public void setId(Long id) {
-		this.id = id;
-	}
-
-	public RoleAccessControl getRoleAccessControl() {
-		return roleAccessControl;
-	}
-
-	public void setRoleAccessControl(RoleAccessControl roleAccessControl) {
-		this.roleAccessControl = roleAccessControl;
-	}
-
-	public Long getResourceInstanceId() {
-		return resourceInstanceId;
-	}
-
-	public void setResourceInstanceId(Long resourceInstanceId) {
-		this.resourceInstanceId = resourceInstanceId;
+	public void setAccessControl(RoleAccessControl accessControl) {
+		this.accessControl = accessControl;
 	}
 
 	public Operation getOperation() {

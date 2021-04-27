@@ -9,9 +9,13 @@ import java.util.Map;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.hibernate.Criteria;
-import org.hibernate.Query;
+import org.hibernate.criterion.DetachedCriteria;
+import org.hibernate.criterion.MatchMode;
+import org.hibernate.criterion.Order;
 import org.hibernate.criterion.Projections;
 import org.hibernate.criterion.Restrictions;
+import org.hibernate.criterion.Subqueries;
+import org.hibernate.sql.JoinType;
 
 import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
 import com.krishagni.catissueplus.core.biospecimen.domain.SpecimenList;
@@ -31,18 +35,18 @@ public class SpecimenListDaoImpl extends AbstractDao<SpecimenList> implements Sp
 	@SuppressWarnings("unchecked")
 	@Override
 	public List<SpecimenListSummary> getSpecimenLists(SpecimenListsCriteria crit) {
+		List<SpecimenList> lists = getCurrentSession().createCriteria(SpecimenList.class, "l")
+			.add(Subqueries.propertyIn("l.id", getSpecimenListsQuery(crit)))
+			.addOrder(Order.desc("l.lastUpdatedOn"))
+			.setFirstResult(crit.startAt())
+			.setMaxResults(crit.maxResults())
+			.list();
+
 		List<SpecimenListSummary> results = new ArrayList<>();
 		Map<Long, SpecimenListSummary> listMap = new HashMap<>();
-
-		Query query = getSpecimenListsQuery(crit, false)
-			.setFirstResult(crit.startAt())
-			.setMaxResults(crit.maxResults());
-
-		List<SpecimenList> lists = query.list();
 		for (SpecimenList list : lists) {
 			SpecimenListSummary summary = SpecimenListSummary.fromSpecimenList(list);
 			results.add(summary);
-
 			if (crit.includeStat()) {
 				listMap.put(list.getId(), summary);
 			}
@@ -66,19 +70,22 @@ public class SpecimenListDaoImpl extends AbstractDao<SpecimenList> implements Sp
 
 	@Override
 	public Long getSpecimenListsCount(SpecimenListsCriteria crit) {
-		return ((Number) getSpecimenListsQuery(crit, true).uniqueResult()).longValue();
+		Number count = (Number) getCurrentSession().createCriteria(SpecimenList.class, "l")
+			.add(Subqueries.propertyIn("l.id", getSpecimenListsQuery(crit)))
+			.setProjection(Projections.rowCount())
+			.uniqueResult();
+		return count.longValue();
 	}
 
 	@Override
 	public SpecimenList getSpecimenList(Long listId) {
-		return (SpecimenList)sessionFactory.getCurrentSession()
-				.get(SpecimenList.class, listId);
+		return getById(listId);
 	}
 	
 	@Override
 	@SuppressWarnings("unchecked")
 	public SpecimenList getSpecimenListByName(String name) {
-		List<SpecimenList> result = sessionFactory.getCurrentSession()
+		List<SpecimenList> result = getCurrentSession()
 				.getNamedQuery(GET_SPECIMEN_LIST_BY_NAME)
 				.setString("name", name)
 				.list();
@@ -107,7 +114,17 @@ public class SpecimenListDaoImpl extends AbstractDao<SpecimenList> implements Sp
 
 	@Override
 	public void deleteSpecimenList(SpecimenList list) {
-		sessionFactory.getCurrentSession().delete(list);
+		getCurrentSession().delete(list);
+	}
+
+	@Override
+	public boolean isListSharedWithUser(Long listId, Long userId) {
+		Long sharedListId = (Long) getCurrentSession().getNamedQuery(SHARED_WITH_USER)
+			.setParameter("listId", listId)
+			.setParameter("userId", userId)
+			.setMaxResults(1)
+			.uniqueResult();
+		return listId.equals(sharedListId);
 	}
 
 	//
@@ -135,6 +152,13 @@ public class SpecimenListDaoImpl extends AbstractDao<SpecimenList> implements Sp
 			.executeUpdate();
 	}
 
+	@Override
+	public int clearList(Long listId) {
+		return getCurrentSession().getNamedQuery(CLEAR_LIST)
+			.setParameter("listId", listId)
+			.executeUpdate();
+	}
+
 	@SuppressWarnings("unchecked")
 	@Override
 	public List<Long> getSpecimenIdsInList(Long listId, List<Long> specimenIds) {
@@ -157,7 +181,7 @@ public class SpecimenListDaoImpl extends AbstractDao<SpecimenList> implements Sp
 	@Override
 	@Deprecated
 	public Map<Long, List<Specimen>> getListCpSpecimens(Long listId) {
-		List<Object[]> rows = sessionFactory.getCurrentSession()
+		List<Object[]> rows = getCurrentSession()
 			.getNamedQuery(GET_LIST_CP_SPECIMENS)
 			.setLong("listId", listId)
 			.list();
@@ -182,53 +206,44 @@ public class SpecimenListDaoImpl extends AbstractDao<SpecimenList> implements Sp
 	@Override
 	@Deprecated
 	public List<Long> getListSpecimensCpIds(Long listId) {
-		return sessionFactory.getCurrentSession().getNamedQuery(GET_LIST_SPMNS_CP_IDS)
+		return getCurrentSession().getNamedQuery(GET_LIST_SPMNS_CP_IDS)
 			.setLong("listId", listId)
 			.list();
 	}
 
-	private Query getSpecimenListsQuery(SpecimenListsCriteria crit, boolean countReq) {
-		Query query = getCurrentSession().createQuery(getHql(crit, countReq));
-		return setParams(query, crit);
-	}
-
-	private String getHql(SpecimenListsCriteria crit, boolean countReq) {
-		StringBuilder hql = new StringBuilder(countReq ? "select count(distinct l.id) from " : "select distinct l from ")
-			.append(getType().getName()).append(" l");
+	private DetachedCriteria getSpecimenListsQuery(SpecimenListsCriteria crit) {
+		DetachedCriteria query = DetachedCriteria.forClass(SpecimenList.class, "l")
+			.setProjection(Projections.distinct(Projections.property("l.id")))
+			.add(Restrictions.isNull("l.deletedOn"));
 
 		if (crit.userId() != null) {
-			hql.append(" join l.owner owner").append(" left join l.sharedWith sharedWith");
-		}
-
-		hql.append(" where l.deletedOn is null");
-
-		if (crit.userId() != null) {
-			hql.append(" and (owner.id = :userId or sharedWith.id = :userId)");
+			query.createAlias("l.owner", "owner")
+				.createAlias("l.sharedWith", "sharedUser", JoinType.LEFT_OUTER_JOIN)
+				.createAlias("l.sharedWithGroups", "sharedGroup", JoinType.LEFT_OUTER_JOIN)
+				.createAlias("sharedGroup.users", "sharedGroupUser", JoinType.LEFT_OUTER_JOIN)
+				.add(
+					Restrictions.disjunction(
+						Restrictions.eq("owner.id", crit.userId()),
+						Restrictions.eq("sharedUser.id", crit.userId()),
+						Restrictions.eq("sharedGroupUser.id", crit.userId())
+					)
+				);
 		}
 
 		if (StringUtils.isNotBlank(crit.query())) {
-			hql.append(" and upper(l.name) like :name");
+			if (isMySQL()) {
+				query.add(Restrictions.like("l.name", crit.query(), MatchMode.ANYWHERE));
+			} else {
+				query.add(Restrictions.like("l.name", crit.query(), MatchMode.ANYWHERE).ignoreCase());
+			}
 		}
 
 		if (CollectionUtils.isNotEmpty(crit.ids())) {
-			hql.append(" and l.id in (:ids)");
+			query.add(Restrictions.in("l.id", crit.ids()));
 		}
 
-		hql.append(" order by l.lastUpdatedOn desc");
-		return hql.toString();
-	}
-
-	private Query setParams(Query query, SpecimenListsCriteria crit) {
-		if (crit.userId() != null) {
-			query.setLong("userId", crit.userId());
-		}
-
-		if (StringUtils.isNotBlank(crit.query())) {
-			query.setString("name", "%" + crit.query().toUpperCase() + "%");
-		}
-
-		if (CollectionUtils.isNotEmpty(crit.ids())) {
-			query.setParameterList("ids", crit.ids());
+		if (CollectionUtils.isNotEmpty(crit.notInIds())) {
+			query.add(Restrictions.not(Restrictions.in("l.id", crit.notInIds())));
 		}
 
 		return query;
@@ -245,6 +260,10 @@ public class SpecimenListDaoImpl extends AbstractDao<SpecimenList> implements Sp
 	private static final String GET_LIST_SPECIMENS_COUNT = FQN + ".getListSpecimensCount";
 
 	private static final String DELETE_LIST_SPECIMENS = FQN + ".deleteListSpecimens";
+
+	private static final String CLEAR_LIST = FQN + ".clearList";
+
+	private static final String SHARED_WITH_USER = FQN + ".sharedWithUser";
 
 	private static final String ADD_CHILD_SPECIMENS_MYSQL = FQN + ".addChildSpecimensMySQL";
 

@@ -1,6 +1,6 @@
 <div ng-show="domains.length > 0 && showSignIn">
   <div class="os-custom-banner">
-    <div style="height: 50px;"></div>
+    <div style="height: 10px;"></div>
     <h3 translate="user.sign_in_title">Sign in to continue to OpenSpecimen</h3>
   </div>
 
@@ -9,7 +9,7 @@
     <div class="alert alert-danger" ng-if="errors.length > 0">
       <ul class="os-signin-errors">
         <li ng-repeat="error in errors">
-          <span>{{error.message}} ({{error.code}})</span>
+          <span>{{error.message}} <span ng-show="error.code">({{error.code}})</span> </span>
         </li>
       </ul>
     </div>
@@ -28,6 +28,8 @@
             required placeholder="{{'user.login_name' | translate}}">
           <input type="password" class="form-control" ng-model="loginData.password"
             required placeholder="{{'user.password' | translate}}">
+          <input type="password" class="form-control" ng-model="loginData.props.otp"
+            required placeholder="{{'otp.title' | translate}}" ng-if="loginData.$$otpReq">
 
           <os-plugin-hooks view-name="'sign-in'" sec-name="'input-fields'">
           </os-plugin-hooks>

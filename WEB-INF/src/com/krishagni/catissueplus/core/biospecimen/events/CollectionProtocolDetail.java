@@ -64,6 +64,8 @@ public class CollectionProtocolDetail extends CollectionProtocolSummary {
 
 	private Boolean aliquotsInSameContainer;
 
+	private String labelSequenceKey;
+
 	private String visitCollectionMode;
 
 	private String visitNamePrintMode;
@@ -93,7 +95,7 @@ public class CollectionProtocolDetail extends CollectionProtocolSummary {
 	
 	private List<CollectionProtocolEventDetail> events;
 
-	private Map<String, CpWorkflowCfgDetail.WorkflowDetail> workflows;
+	private Map<String, WorkflowDetail> workflows;
 
 	public List<UserSummary> getCoordinators() {
 		return coordinators;
@@ -279,6 +281,14 @@ public class CollectionProtocolDetail extends CollectionProtocolSummary {
 		this.aliquotsInSameContainer = aliquotsInSameContainer;
 	}
 
+	public String getLabelSequenceKey() {
+		return labelSequenceKey;
+	}
+
+	public void setLabelSequenceKey(String labelSequenceKey) {
+		this.labelSequenceKey = labelSequenceKey;
+	}
+
 	public String getVisitCollectionMode() {
 		return visitCollectionMode;
 	}
@@ -383,11 +393,11 @@ public class CollectionProtocolDetail extends CollectionProtocolSummary {
 		this.events = events;
 	}
 
-	public Map<String, CpWorkflowCfgDetail.WorkflowDetail> getWorkflows() {
+	public Map<String, WorkflowDetail> getWorkflows() {
 		return workflows;
 	}
 
-	public void setWorkflows(Map<String, CpWorkflowCfgDetail.WorkflowDetail> workflows) {
+	public void setWorkflows(Map<String, WorkflowDetail> workflows) {
 		this.workflows = workflows;
 	}
 
@@ -424,6 +434,7 @@ public class CollectionProtocolDetail extends CollectionProtocolSummary {
 		result.setCloseParentSpecimens(cp.isCloseParentSpecimens());
 		result.setContainerSelectionStrategy(cp.getContainerSelectionStrategy());
 		result.setAliquotsInSameContainer(cp.getAliquotsInSameContainer());
+		result.setLabelSequenceKey(cp.getLabelSequenceKey().name());
 		result.setVisitCollectionMode(cp.getVisitCollectionMode().name());
 		result.setVisitNamePrintMode(cp.getVisitNamePrintMode().name());
 		result.setVisitNamePrintCopies(cp.getVisitNamePrintCopies());

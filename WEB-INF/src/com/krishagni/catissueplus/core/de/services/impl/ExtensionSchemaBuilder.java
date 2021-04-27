@@ -30,6 +30,7 @@ import edu.common.dynamicextensions.domain.nui.DataType;
 import edu.common.dynamicextensions.domain.nui.DatePicker;
 import edu.common.dynamicextensions.domain.nui.FileUploadControl;
 import edu.common.dynamicextensions.domain.nui.MultiSelectControl;
+import edu.common.dynamicextensions.domain.nui.SignatureControl;
 import edu.common.dynamicextensions.domain.nui.SubFormControl;
 
 public class ExtensionSchemaBuilder implements ObjectSchemaBuilder {
@@ -107,6 +108,8 @@ public class ExtensionSchemaBuilder implements ObjectSchemaBuilder {
 			fields.add(getField("cpShortTitle", "CP Short Title"));
 			fields.add(getField("specimenLabel", "Specimen Label"));
 			fields.add(getField("barcode", "Barcode"));
+		} else if (entityType.equals("User")) {
+			fields.add(getField("emailAddress", "Email Address"));
 		}
 		
 		fields.add(getField("activityStatus", "Activity Status"));
@@ -163,6 +166,8 @@ public class ExtensionSchemaBuilder implements ObjectSchemaBuilder {
 			}
 		} else if (ctrl instanceof FileUploadControl) {
 			field.setType("defile");
+		} else if (ctrl instanceof SignatureControl) {
+			field.setType("signature");
 		} else if (ctrl instanceof CheckBox) {
 			field.setType("boolean");
 		}

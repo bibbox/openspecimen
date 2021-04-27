@@ -1,17 +1,24 @@
 
 angular.module('os.administrative.user.list', ['os.administrative.models'])
   .controller('UserListCtrl', function(
-    $scope, $state, $modal, $translate, currentUser,
-    osRightDrawerSvc, User, ItemsHolder, PvManager,
-    Util, DeleteUtil, CheckList, Alerts, ListPagerOpts) {
+    $scope, $state, $modal, $translate, currentUser, group,
+    osRightDrawerSvc, osExportSvc, User, ItemsHolder, PvManager,
+    Util, DeleteUtil, CheckList, Alerts, ListPagerOpts, UserGroup) {
 
-    var pagerOpts, filterOpts;
+    var pagerOpts, filterOpts, ctx;
     var pvInit = false;
 
     function init() {
       pagerOpts = $scope.pagerOpts = new ListPagerOpts({listSizeGetter: getUsersCount});
-      $scope.ctx = {
-        exportDetail: {objectType: 'user'}
+      ctx = $scope.ctx = {
+        exportDetail: {objectType: 'user'},
+        group: group,
+        emptyState: {
+          empty: true,
+          loading: true,
+          emptyMessage: 'user.empty_list',
+          loadingMessage: 'user.loading_list'
+        }
       };
 
       initPvsAndFilterOpts();
@@ -21,6 +28,10 @@ angular.module('os.administrative.user.list', ['os.administrative.models'])
   
     function initPvsAndFilterOpts() {
       filterOpts = $scope.userFilterOpts = Util.filterOpts({includeStats: true, maxResults: pagerOpts.recordsPerPage + 1});
+      if (group) {
+        filterOpts.group = group.name;
+      }
+
       $scope.$on('osRightDrawerOpen', function() {
         if (pvInit) {
           return;
@@ -38,6 +49,7 @@ angular.module('os.administrative.user.list', ['os.administrative.models'])
         function(result) {
           var statuses = [].concat(result);
           statuses.push('Locked');
+          statuses.push('Expired');
           var idx = statuses.indexOf('Disabled');
           if (idx != -1) {
             statuses.splice(idx, 1);
@@ -73,6 +85,7 @@ angular.module('os.administrative.user.list', ['os.administrative.models'])
         filterOpts.institute = currentUser.instituteName;
       }
 
+      ctx.emptyState.loading = true;
       User.query(filterOpts).then(function(result) {
         if (!$scope.users && result.length > 12) {
           //
@@ -82,6 +95,8 @@ angular.module('os.administrative.user.list', ['os.administrative.models'])
         }
 
         $scope.users = result;
+        ctx.emptyState.loading = false;
+        ctx.emptyState.empty = result.length <= 0;
         pagerOpts.refreshOpts(result);
         $scope.ctx.checkList = new CheckList($scope.users);
       });
@@ -116,7 +131,13 @@ angular.module('os.administrative.user.list', ['os.administrative.models'])
     function getUserIds(users) {
       return users.map(function(user) { return user.id; });
     }
-    
+
+    function exportRecords(type) {
+      var userIds = getUserIds($scope.ctx.checkList.getSelectedItems());
+      var exportDetail = {objectType: type, recordIds: userIds};
+      osExportSvc.exportRecords(exportDetail);
+    }
+
     $scope.showUserOverview = function(user) {
       $state.go('user-detail.overview', {userId:user.id});
     };
@@ -188,6 +209,77 @@ angular.module('os.administrative.user.list', ['os.administrative.models'])
 
     $scope.pageSizeChanged = function() {
       filterOpts.maxResults = pagerOpts.recordsPerPage + 1;
+    }
+
+    $scope.exportUsers = function() {
+      exportRecords('user');
+    }
+
+    $scope.exportUserRoles = function() {
+      exportRecords('userRoles');
+    }
+
+    $scope.exportUserForms = function() {
+      var users = $scope.ctx.checkList.getSelectedItems();
+      ItemsHolder.setItems('users', users);
+      $state.go('user-export-forms');
+    }
+
+    $scope.addToGroup = function(group) {
+      var users = $scope.ctx.checkList.getSelectedItems();
+      if (!users || users.length == 0) {
+        return;
+      }
+
+      var instituteId = users[0].instituteId;
+      for (var i = 0; i < users.length; ++i) {
+        if (users[i].instituteId != instituteId) {
+          Alerts.error('user.multi_institute_users');
+          return;
+        }
+      }
+
+      if (!!group) {
+        group.addUsers(users).then(
+          function(result) {
+            Alerts.success('user.group_users_added', result);
+          }
+        );
+      } else {
+        ItemsHolder.setItems('users', users);
+        $state.go('user-group-addedit', {groupId: ''});
+      }
+    }
+
+    $scope.removeFromGroup = function(group) {
+      var users = $scope.ctx.checkList.getSelectedItems();
+      if (!users || users.length == 0) {
+        return;
+      }
+
+      group.removeUsers(users).then(
+        function(result) {
+          Alerts.success('user.group_users_removed');
+          loadUsers($scope.userFilterOpts);
+        }
+      )
+    }
+
+    $scope.searchGroups = function(query) {
+      if (ctx.defGroups && (!query || ctx.defGroups.length < 100)) {
+        ctx.groups = ctx.defGroups;
+        return;
+      }
+
+      UserGroup.query({query: query, listAll: false}).then(
+        function(groups) {
+          if (!query && !ctx.defGroups) {
+            ctx.defGroups = groups;
+          }
+
+          ctx.groups = groups;
+        }
+      );
     }
 
     init();

@@ -3,6 +3,7 @@ package com.krishagni.catissueplus.rest.controller;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -62,15 +63,36 @@ public class SavedQueriesController {
 		int max,
 
 		@RequestParam(value = "countReq", required = false, defaultValue = "false")
-		boolean countReq) {
+		boolean countReq,
+
+		@RequestParam(value = "orderByStarred", required = false, defaultValue = "false")
+		boolean orderByStarred) {
 		
 		ListSavedQueriesCriteria crit = new ListSavedQueriesCriteria()
 			.cpId(cpId)
 			.query(searchString)
 			.countReq(countReq)
+			.orderByStarred(orderByStarred)
 			.startAt(start)
 			.maxResults(max);
 		return response(querySvc.getSavedQueries(request(crit)));
+	}
+
+	@RequestMapping(method = RequestMethod.GET, value = "/count")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public Map<String, Long> getSavedQueriesCount(
+		@RequestParam(value = "cpId", required = false)
+		Long cpId,
+
+		@RequestParam(value = "searchString", required = false, defaultValue = "")
+		String searchString) {
+
+		ListSavedQueriesCriteria crit = new ListSavedQueriesCriteria()
+			.cpId(cpId)
+			.query(searchString);
+		Long count = response(querySvc.getSavedQueriesCount(request(crit)));
+		return Collections.singletonMap("count", count);
 	}
 
 	@RequestMapping(method = RequestMethod.GET, value = "/{id}")
@@ -151,7 +173,21 @@ public class SavedQueriesController {
 			.query(savedQueryId.toString()).startAt(startAt).maxResults(maxResults);
 		return response(querySvc.getAuditLogs(request(crit)));
 	}
-	
+
+	@RequestMapping(method = RequestMethod.POST, value = "/{id}/labels")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public Map<String, Boolean> addLabel(@PathVariable("id") Long queryId) {
+		return Collections.singletonMap("status", querySvc.toggleStarredQuery(queryId, true));
+	}
+
+	@RequestMapping(method = RequestMethod.DELETE, value = "/{id}/labels")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public Map<String, Boolean> removeLabel(@PathVariable("id") Long queryId) {
+		return Collections.singletonMap("status", querySvc.toggleStarredQuery(queryId, false));
+	}
+
 	private void curateSavedQueryDetail(SavedQueryDetail detail) {
 		Object[] selectList = detail.getSelectList();
 		if (selectList == null) {

@@ -1,5 +1,5 @@
 angular.module('os.biospecimen.models.specimenevent', ['os.common.models'])
-  .factory('SpecimenEvent', function(osModel, $http, Form) {
+  .factory('SpecimenEvent', function(osModel, $http, Form, CollectionProtocol) {
     var SpecimenEvent = osModel('specimen-events');
 
     var sysEvents = [
@@ -11,9 +11,23 @@ angular.module('os.biospecimen.models.specimenevent', ['os.common.models'])
       'SpecimenReturnEvent',
       'SpecimenChildrenEvent'
     ];
+
+    var editableEvents = [
+      'SpecimenCollectionEvent',
+      'SpecimenReceivedEvent',
+      'SpecimenDisposalEvent',
+      'SpecimenTransferEvent'
+    ];
+
+    var disabledFields = {
+      'SpecimenTransferEvent': [
+        'fromContainer', 'fromRow', 'fromCol', 'fromDimensionTwo', 'fromDimensionOne', 'fromPosition',
+        'toContainer', 'toRow', 'toCol', 'toDimensionTwo', 'toDimensionOne', 'toPosition'
+      ]
+    }
     
     SpecimenEvent.getEvents = function() {
-      return Form.listForms('SpecimenEvent');
+      return new CollectionProtocol({id: -1}).getForms(['SpecimenEvent']);
     }
 
     SpecimenEvent.save = function(formId, data) {
@@ -28,6 +42,14 @@ angular.module('os.biospecimen.models.specimenevent', ['os.common.models'])
 
     SpecimenEvent.isSysEvent = function(eventName) {
       return sysEvents.indexOf(eventName) != -1;
+    }
+
+    SpecimenEvent.isEditable = function(eventName) {
+      return editableEvents.indexOf(eventName) != -1;
+    }
+
+    SpecimenEvent.getDisabledFields = function(eventName) {
+      return disabledFields[eventName] || [];
     }
     
     return SpecimenEvent;

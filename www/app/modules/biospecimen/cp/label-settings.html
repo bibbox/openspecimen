@@ -99,6 +99,11 @@
             <span class="value value-md">{{settingCtx.cp.specimenBarcodeFmt | osNoValue}}</span>
           </li>
 
+          <li class="item">
+            <strong class="key key-sm" translate="cp.label_seq_key">Label Sequence Key</strong>
+            <span class="value value-md">{{'cp.label_seq_keys.' + settingCtx.cp.labelSequenceKey | translate}}</span>
+          </li>
+
           <li class="item" ng-show="!cp.specimenCentric">
             <strong class="key key-sm" translate="cp.on_visit_completion">On Visit Completion</strong>
             <span class="value value-md" ng-switch on="settingCtx.cp.visitCollectionMode">
@@ -112,23 +117,6 @@
             <span class="value value-md">
               {{'cp.spmn_label_pre_print_modes.' + settingCtx.cp.spmnLabelPrePrintMode | translate}}
             </span>
-          </li>
-        </ul>
-      </div>
-
-      <div class="os-section os-line-section" ng-if="!cp.specimenCentric">
-        <strong class="key key-sm" translate="cp.visit_print_settings">Visit Print Settings</strong>
-        <ul class="os-key-values os-one-col">
-          <li class="item">
-            <strong class="key key-sm" translate="cp.when_to_print">When to Print</strong>
-            <span class="value value-md">
-              {{'cp.visit_name_print_modes.' + settingCtx.cp.visitNamePrintMode | translate}}
-            </span>
-          </li>
-
-          <li class="item">
-            <strong class="key key-sm" translate="cp.copies">Copies</strong>
-            <span class="value value-md">{{settingCtx.cp.visitNamePrintCopies | osNoValue}}</span>
           </li>
         </ul>
       </div>
@@ -325,6 +313,22 @@
         </div>
       </div>
 
+      <div class="form-group">
+        <label class="control-label col-xs-3">
+          <span translate="cp.label_seq_key">Label Sequence Key</span>
+        </label>
+        <div class="col-xs-6">
+          <label class="radio-inline">
+            <input type="radio" name="labelSeqKey" ng-model="settingCtx.cp.labelSequenceKey" ng-value="'ID'">
+            <span translate="cp.label_seq_keys.ID">Record Identifier</span>
+          </label>
+          <label class="radio-inline">
+            <input type="radio" name="labelSeqKey" ng-model="settingCtx.cp.labelSequenceKey" ng-value="'LABEL'">
+            <span translate="cp.label_seq_keys.LABEL">Record Label</span>
+          </label>
+        </div>
+      </div>
+
       <div class="form-group" ng-if="!cp.specimenCentric">
         <label class="control-label col-xs-3">
           <span translate="cp.on_visit_completion">On Visit Completion</span>
@@ -354,34 +358,6 @@
             <span>{{prePrintMode.displayName}}</span>
           </label>
           <div os-field-warn="'cp.disable_pre_print_warning'" ng-if="settingCtx.prePrintDisabled"></div>
-        </div>
-      </div>
-
-      <div class="os-section-divider" ng-if="!cp.specimenCentric">
-        <span translate="cp.visit_print_settings">Visit Print Settings</span>
-      </div>
-
-      <div class="form-group" ng-if="!cp.specimenCentric">
-        <label class="control-label col-xs-3">
-          <span translate="cp.when_to_print">When to Print</span>
-        </label>
-        <div class="col-xs-6">
-          <label class="radio-inline" ng-repeat="printMode in settingCtx.visitNamePrintModes">
-            <input type="radio" name="visitNamePrintMode" ng-model="settingCtx.cp.visitNamePrintMode"
-              ng-value="printMode.name">
-            <span>{{printMode.displayName}}</span>
-          </label>
-        </div>
-      </div>
-
-      <div class="form-group" ng-if="!cp.specimenCentric">
-        <label class="control-label col-xs-3">
-          <span translate="cp.copies">Copies</span>
-        </label>
-        <div class="col-xs-6">
-          <input name="visitNamePrintCopies" type="text" ng-model="settingCtx.cp.visitNamePrintCopies"
-            class="form-control" placeholder="{{'cp.copies' | translate}}" ng-pattern="/^[0-9]+$/">
-          <div os-field-error field="lsForm.visitNamePrintCopies"></div>
         </div>
       </div>
 

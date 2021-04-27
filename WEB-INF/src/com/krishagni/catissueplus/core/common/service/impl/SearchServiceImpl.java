@@ -2,6 +2,7 @@ package com.krishagni.catissueplus.core.common.service.impl;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -11,6 +12,8 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.hibernate.SessionFactory;
 import org.hibernate.Transaction;
 import org.hibernate.engine.spi.SessionImplementor;
@@ -38,6 +41,8 @@ import com.krishagni.catissueplus.core.common.service.SearchService;
 import com.krishagni.catissueplus.core.common.util.AuthUtil;
 
 public class SearchServiceImpl implements SearchService, InitializingBean {
+	private static final Log logger = LogFactory.getLog(SearchServiceImpl.class);
+
 	private SessionFactory sessionFactory;
 
 	private DaoFactory daoFactory;
@@ -72,31 +77,40 @@ public class SearchServiceImpl implements SearchService, InitializingBean {
 		}
 
 		searchTerm = searchTerm.toLowerCase();
+		String[] pairs = searchTerm.split(":", 2);
+		searchTerm = pairs[pairs.length - 1].trim();
+
+		String entity = null;
+		if (pairs.length > 1) {
+			entity = pairs[0].trim();
+		}
+
 		if (AuthUtil.isAdmin()) {
-			List<SearchEntityKeyword> entities = daoFactory.getSearchEntityKeywordDao().getMatches(searchTerm, maxResults);
+			List<SearchEntityKeyword> matches = daoFactory.getSearchEntityKeywordDao().getMatches(entity, searchTerm, maxResults);
 			Set<String> seenEntities = new HashSet<>();
 
 			List<SearchResult> results = new ArrayList<>();
-			for (SearchEntityKeyword entity : entities) {
-				String entityKey = entity.getEntity() + "-" + entity.getEntityId();
+			for (SearchEntityKeyword match : matches) {
+				String entityKey = match.getEntity() + "-" + match.getEntityId();
 				if (seenEntities.add(entityKey)) {
-					results.add(SearchResult.from(entity));
+					results.add(SearchResult.from(match));
 				}
 			}
 
 			seenEntities.clear();
+			addEntityProps(results);
 			return results;
 		}
 
-		List<String> entities = daoFactory.getSearchEntityKeywordDao().getMatchingEntities(searchTerm);
+		List<String> matchingEntities = daoFactory.getSearchEntityKeywordDao().getMatchingEntities(entity, searchTerm);
 		Map<String, Integer> rankMap = new HashMap<>();
 		List<SearchResult> results = new ArrayList<>();
 
 		int rank = 0;
-		for (String entity : entities) {
-			rankMap.put(entity, ++rank);
+		for (String matchedEntity : matchingEntities) {
+			rankMap.put(matchedEntity, ++rank);
 
-			SearchResultProcessor proc = resultProcessors.get(entity);
+			SearchResultProcessor proc = resultProcessors.get(matchedEntity);
 			if (proc == null) {
 				continue;
 			}
@@ -121,15 +135,11 @@ public class SearchServiceImpl implements SearchService, InitializingBean {
 			}
 		}
 
-
-		return results.stream().sorted((r1, r2) -> {
-			int cmp = rankMap.get(r1.getEntity()).compareTo(rankMap.get(r2.getEntity()));
-			if (cmp == 0) {
-				cmp = r1.getValue().compareTo(r2.getValue());
-			}
-
-			return cmp;
-		}).collect(Collectors.toList());
+		addEntityProps(results);
+		return results.stream().sorted(
+			Comparator.comparingInt((SearchResult r) -> rankMap.get(r.getEntity()))
+				.thenComparing(SearchResult::getValue)
+		).collect(Collectors.toList());
 	}
 
 	@Override
@@ -177,6 +187,26 @@ public class SearchServiceImpl implements SearchService, InitializingBean {
 		}
 
 		processor.addKeywords(keywords);
+	}
+
+	private void addEntityProps(List<SearchResult> results) {
+		Map<String, Map<Long, SearchResult>> resultsByEntity = new HashMap<>();
+		for (SearchResult result : results) {
+			Map<Long, SearchResult> entityResults = resultsByEntity.computeIfAbsent(result.getEntity(), (k) -> new HashMap<>());
+			entityResults.put(result.getEntityId(), result);
+		}
+
+		for (Map.Entry<String, Map<Long, SearchResult>> entityResults : resultsByEntity.entrySet()) {
+			SearchResultProcessor proc = resultProcessors.get(entityResults.getKey());
+			if (proc == null) {
+				continue;
+			}
+
+			Map<Long, Map<String, Object>> entityProps = proc.getEntityProps(entityResults.getValue().keySet());
+			for (Map.Entry<Long, SearchResult> entityResult : entityResults.getValue().entrySet()) {
+				entityResult.getValue().setEntityProps(entityProps.get(entityResult.getKey()));
+			}
+		}
 	}
 
 	private class EntityEventListener implements PostInsertEventListener, PostUpdateEventListener, PostDeleteEventListener {
@@ -227,6 +257,8 @@ public class SearchServiceImpl implements SearchService, InitializingBean {
 			SearchEntityKeywordDao keywordDao = daoFactory.getSearchEntityKeywordDao();
 
 			for (SearchEntityKeyword keyword : keywords) {
+				logger.debug("Processing the search keyword: " + keyword);
+
 				if (StringUtils.isNotBlank(keyword.getValue())) {
 					keyword.setValue(keyword.getValue().toLowerCase());
 				}

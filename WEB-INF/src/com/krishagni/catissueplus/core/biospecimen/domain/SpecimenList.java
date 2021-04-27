@@ -14,11 +14,16 @@ import java.util.Set;
 
 import org.hibernate.envers.Audited;
 import org.hibernate.envers.NotAudited;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Configurable;
 
 import com.krishagni.catissueplus.core.administrative.domain.User;
+import com.krishagni.catissueplus.core.administrative.domain.UserGroup;
+import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
 import com.krishagni.catissueplus.core.common.util.Utility;
 
 @Audited
+@Configurable
 public class SpecimenList extends BaseEntity {
 	private static final String ENTITY_NAME = "specimen_list";
 
@@ -33,10 +38,15 @@ public class SpecimenList extends BaseEntity {
 	private Date lastUpdatedOn;
 	
 	private Set<User> sharedWith = new HashSet<>();
+
+	private Set<UserGroup> sharedWithGroups = new HashSet<>();
 	
 	private Set<SpecimenListItem> specimens = new HashSet<>();
 	
 	private Date deletedOn;
+
+	@Autowired
+	private DaoFactory daoFactory;
 
 	public static String getEntityName() {
 		return ENTITY_NAME;
@@ -92,6 +102,21 @@ public class SpecimenList extends BaseEntity {
 	}
 
 	@NotAudited
+	public Set<UserGroup> getSharedWithGroups() {
+		return sharedWithGroups;
+	}
+
+	public void setSharedWithGroups(Set<UserGroup> sharedWithGroups) {
+		this.sharedWithGroups = sharedWithGroups;
+	}
+
+	public Set<User> getAllSharedUsers() {
+		Set<User> users = new HashSet<>(getSharedWith());
+		getSharedWithGroups().forEach(g -> users.addAll(g.getUsers()));
+		return users;
+	}
+
+	@NotAudited
 	public Set<SpecimenListItem> getSpecimens() {
 		return specimens;
 	}
@@ -120,36 +145,29 @@ public class SpecimenList extends BaseEntity {
 	
 	public void updateSharedUsers(Collection<User> users) {
 		sharedWith.retainAll(users);
-
-		for (User user : users) {
-			if (!sharedWith.contains(user)) {
-				sharedWith.add(user);
-			}
-		}
-
+		sharedWith.addAll(users);
 		setLastUpdatedOn(Calendar.getInstance().getTime());
 	}
-		
+
+	public void updateSharedGroups(Collection<UserGroup> groups) {
+		sharedWithGroups.retainAll(groups);
+		sharedWithGroups.addAll(groups);
+		setLastUpdatedOn(Calendar.getInstance().getTime());
+	}
+
 	public boolean canUserAccess(Long userId) {
 		if (owner != null && userId.equals(owner.getId())) {
 			return true;
 		}
-		
-		boolean shared = false;
-		for (User user : sharedWith) {
-			if (user.getId().equals(userId)) {
-				shared = true;
-				break;
-			}			
-		}
-		
-		return shared;
-	}	
+
+		return daoFactory.getSpecimenListDao().isListSharedWithUser(getId(), userId);
+	}
 	
 	public void update(SpecimenList specimenList) {
 		setName(specimenList.getName());
 		setDescription(specimenList.getDescription());
 		updateSharedUsers(specimenList.getSharedWith());
+		updateSharedGroups(specimenList.getSharedWithGroups());
 		setLastUpdatedOn(Calendar.getInstance().getTime());
 	}
 

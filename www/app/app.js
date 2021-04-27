@@ -20,7 +20,8 @@ var osApp = angular.module('openspecimen', [
   'mgcrea.ngStrap.popover',
   'angular-loading-bar',
   'pascalprecht.translate',
-  'chart.js'
+  'chart.js',
+  'ui.tinymce'
   ]);
 
 osApp.config(function(
@@ -54,10 +55,24 @@ osApp.config(function(
         }
       })
       .state('alert-msg', {
-        url: '/alert?redirectTo&type&msg',
-        controller: function($state, $stateParams, Alerts) {
-          Alerts.add($stateParams.msg, $stateParams.type);
-          $state.go($stateParams.redirectTo || 'home');
+        url: '/alert?type&msg',
+        views: {
+          'nav-buttons': {
+            template: '<div></div>',
+            controller: function() { }
+          },
+
+          'app-body': {
+            template: '<div class="os-center-box" style="margin-top: 100px;">' +
+                      '  <div class="alert alert-{{actx.type}}">{{actx.msg}}</div>' +
+                      '  <button type="submit" class="btn btn-block btn-primary" ui-sref="login">' +
+                      '    <span translate="user.sign_in">Sign in</span>' +
+                      '  </button>' +
+                      '</div>',
+            controller: function($scope, $stateParams) {
+              $scope.actx = {type: $stateParams.type, msg: $stateParams.msg};
+            }
+          }
         },
         parent: 'default'
       })
@@ -73,6 +88,14 @@ osApp.config(function(
           },
           authInit: function(currentUser, AuthorizationService) {
             return AuthorizationService.initializeUserRights(currentUser);
+          },
+          videoSettings : function (Setting) {
+            return Setting.getWelcomeVideoSetting();
+          },
+          authToken: function(userUiState, AuthService) {
+            if (userUiState.authToken) {
+              AuthService.saveToken(userUiState.authToken);
+            }
           }
         },
         controller: 'SignedInCtrl'
@@ -80,8 +103,7 @@ osApp.config(function(
       .state('home', {
         url: '/home',
         templateUrl: 'modules/common/home.html',
-        controller: function() {
-        },
+        controller: 'HomePageCtrl',
         parent: 'signed-in'
       })
       .state('admin-view', {
@@ -330,6 +352,7 @@ osApp.config(function(
     });
 
     $http.defaults.headers.common['X-OS-API-CLIENT'] = "webui";
+    $http.defaults.headers.common['X-OS-CLIENT-TZ'] = Intl.DateTimeFormat().resolvedOptions().timeZone;
     $http.defaults.withCredentials = true;
 
     if ($window.localStorage['osAuthToken']) {
@@ -391,7 +414,8 @@ osApp.config(function(
     ui.os.global = $rootScope.global = {
       defaultDomain: 'openspecimen',	
       filterWaitInterval: ui.os.appProps.searchDelay,
-      appProps: ui.os.appProps
+      appProps: ui.os.appProps,
+      impersonate: !!$cookies['osImpersonateUser']
     };
 
     Setting.getLocale().then(

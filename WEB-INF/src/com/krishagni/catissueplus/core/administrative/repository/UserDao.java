@@ -10,8 +10,10 @@ import com.krishagni.catissueplus.core.administrative.domain.ForgotPasswordToken
 import com.krishagni.catissueplus.core.administrative.domain.Password;
 import com.krishagni.catissueplus.core.administrative.domain.User;
 import com.krishagni.catissueplus.core.administrative.domain.UserUiState;
+import com.krishagni.catissueplus.core.common.Pair;
 import com.krishagni.catissueplus.core.common.events.DependentEntityDetail;
 import com.krishagni.catissueplus.core.common.repository.Dao;
+import com.krishagni.catissueplus.core.de.events.FormCtxtSummary;
 
 public interface UserDao extends Dao<User> {
 	List<User> getUsers(UserListCriteria criteria);
@@ -58,6 +60,10 @@ public interface UserDao extends Dao<User> {
 
 	UserUiState getState(Long userId);
 
-	// [{emailId, type}, {'abc@localhost', 'SUPER'}]
-	Map<String, String> getEmailIdUserTypes(Collection<String> emailIds);
+	// [{emailId, DND}, {'abc@localhost', true}]
+	Map<String, Boolean> getEmailIdDnds(Collection<String> emailIds);
+
+	List<FormCtxtSummary> getForms(Long userId);
+
+	List<Map<String, Object>> getFormRecords(Long instituteId, Long formId, List<String> emailIds, int startAt, int maxResults);
 }

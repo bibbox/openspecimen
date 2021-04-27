@@ -1,11 +1,14 @@
 angular.module('os.administrative.container.locations', ['os.administrative.models'])
   .controller('ContainerLocationsCtrl', function(
-    $scope, $state, container, barcodingEnabled, Container, ContainerUtil, Alerts, Specimen, SpecimenUtil, Util) {
+    $scope, $state, $modal, container, barcodingEnabled,
+    Container, ContainerUtil, Alerts, Specimen, SpecimenUtil, Util) {
+
+    var lctx;
 
     function init() {
       $scope.ctx.showTree  = true;
       $scope.ctx.viewState = 'container-detail.locations';
-      $scope.lctx = {
+      lctx = $scope.lctx = {
         mapState: 'loading',
         input: {labels: '', noFreeLocs: false, vacateOccupants: false, useBarcode: false},
         entityInfo: {},
@@ -297,6 +300,43 @@ angular.module('os.administrative.container.locations', ['os.administrative.mode
 
     $scope.unblockAllPositions = function() {
       container.unblockPositions([]).then(setMap);
+    }
+
+    $scope.showColorCoding = function() {
+      var typesProps = ContainerUtil.getTypesProps();
+      if (!typesProps || Object.keys(typesProps).length == 0) {
+        alert('Not yet ready!');
+        return;
+      }
+
+      $modal.open({
+        templateUrl: 'modules/administrative/container/color-coding.html',
+        controller: function($scope, $modalInstance) {
+          var result = []
+          var resultMap = {};
+          angular.forEach(lctx.pristineMap,
+            function(occupant) {
+              if (occupant.occuypingEntity != 'specimen' || !occupant.occupantProps) {
+                return;
+              }
+
+              var op = occupant.occupantProps;
+              var code = ContainerUtil.getColorCode(op.specimenClass, op.type);
+              var key = code.specimenClass + ':' + (code.type || '*');
+              if (!resultMap[key]) {
+                result.push(code);
+                resultMap[key] = true;
+              }
+            }
+          );
+
+          $scope.mctx = {colorCodes: result};
+
+          $scope.ok = function() {
+            $modalInstance.dismiss('cancel');
+          }
+        }
+      });
     }
 
     init();

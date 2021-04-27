@@ -108,7 +108,10 @@ public class SpecimensController {
 			boolean exactMatch,
 
 			@RequestParam(value = "includeExtensions", required = false, defaultValue = "false")
-			boolean includeExtensions) {
+			boolean includeExtensions,
+
+			@RequestParam(value = "minimalInfo", required = false, defaultValue = "false")
+			boolean minimalInfo) {
 				
 		if (cprId != null) { // TODO: Move this to CPR controller
 			VisitSpecimensQueryCriteria crit = new VisitSpecimensQueryCriteria();
@@ -120,7 +123,7 @@ public class SpecimensController {
 			resp.throwErrorIfUnsuccessful();
 			return resp.getPayload();
 		} else if (CollectionUtils.isNotEmpty(ids)) {
-			ResponseEvent<List<? extends SpecimenInfo>> resp = specimenSvc.getSpecimensById(ids, includeExtensions);
+			ResponseEvent<List<? extends SpecimenInfo>> resp = specimenSvc.getSpecimensById(ids, includeExtensions, minimalInfo);
 			resp.throwErrorIfUnsuccessful();
 			return resp.getPayload();
 		} else if (CollectionUtils.isNotEmpty(labels) || CollectionUtils.isNotEmpty(barcodes)) {
@@ -140,6 +143,30 @@ public class SpecimensController {
 		} else {
 			return Collections.emptyList();
 		}
+	}
+
+	@RequestMapping(method = RequestMethod.POST, value = "/search")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public List<? extends SpecimenInfo> getSpecimens(@RequestBody SpecimenListCriteria crit) {
+		int size = 0;
+		if (crit.labels() != null) {
+			size += crit.labels().size();
+		}
+
+		if (crit.barcodes() != null) {
+			size += crit.barcodes().size();
+		}
+
+		if (size > 10000) {
+			throw OpenSpecimenException.userError(SpecimenErrorCode.LABELS_SRCH_LIMIT_MAXED, 1000);
+		}
+
+		if (crit.maxResults() > 10000) {
+			crit.maxResults(10000);
+		}
+
+		return ResponseEvent.unwrap(specimenSvc.getSpecimens(RequestEvent.wrap(crit.limitItems(true))));
 	}
 	
 	@RequestMapping(method = RequestMethod.GET, value = "/{id}")

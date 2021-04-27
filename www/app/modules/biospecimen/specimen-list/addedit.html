@@ -39,6 +39,17 @@
       </div>
 
       <div class="form-group">
+        <label class="col-xs-3 control-label">
+          <span translate="specimen_list.share_with_user_groups">Share with user groups</span>
+        </label>
+        <div class="col-xs-6">
+          <os-user-groups multiple ng-model="list.sharedWithGroups"
+            placeholder="{{'specimen_list.share_with_user_groups' | translate}}">
+          </os-user-groups>
+        </div>
+      </div>
+
+      <div class="form-group">
         <label class= "col-xs-3 control-label" translate="specimen_list.description">
           Description
         </label>

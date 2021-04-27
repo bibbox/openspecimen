@@ -19,6 +19,7 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.web.util.matcher.IpAddressMatcher;
 
 import com.krishagni.catissueplus.core.administrative.domain.factory.UserErrorCode;
 import com.krishagni.catissueplus.core.auth.domain.AuthDomain;
@@ -79,12 +80,22 @@ public class User extends BaseEntity implements UserDetails {
 	private Type type;
 
 	private Boolean manageForms;
-	
+
+	private String timeZone;
+
+	private Boolean dnd;
+
+	private boolean apiUser;
+
+	private String ipRange;
+
 	private Set<Password> passwords = new HashSet<>();
 
 	private Set<SubjectRole> roles = new HashSet<>();
 
 	private Set<SubjectAccess> acl = new HashSet<>();
+
+	private Set<UserGroup> groups = new HashSet<>();
 	
 	@Autowired 
 	private DaoFactory daoFactory;
@@ -235,6 +246,42 @@ public class User extends BaseEntity implements UserDetails {
 		this.manageForms = manageForms;
 	}
 
+	public String getTimeZone() {
+		return timeZone;
+	}
+
+	public void setTimeZone(String timeZone) {
+		this.timeZone = timeZone;
+	}
+
+	public boolean isDndEnabled() {
+		return Boolean.TRUE.equals(getDnd());
+	}
+
+	public Boolean getDnd() {
+		return dnd;
+	}
+
+	public void setDnd(Boolean dnd) {
+		this.dnd = dnd;
+	}
+
+	public boolean isApiUser() {
+		return apiUser;
+	}
+
+	public void setApiUser(Boolean apiUser) {
+		this.apiUser = apiUser;
+	}
+
+	public String getIpRange() {
+		return ipRange;
+	}
+
+	public void setIpRange(String ipRange) {
+		this.ipRange = ipRange;
+	}
+
 	@NotAudited
 	public Set<Password> getPasswords() {
 		return passwords;
@@ -260,6 +307,15 @@ public class User extends BaseEntity implements UserDetails {
 
 	public void setAcl(Set<SubjectAccess> acl) {
 		this.acl = acl;
+	}
+
+	@NotAudited
+	public Set<UserGroup> getGroups() {
+		return groups;
+	}
+
+	public void setGroups(Set<UserGroup> groups) {
+		this.groups = groups;
 	}
 
 	@Override
@@ -310,11 +366,15 @@ public class User extends BaseEntity implements UserDetails {
 		setEmailAddress(user.getEmailAddress());
 		setPhoneNumber(user.getPhoneNumber());
 		setComments(user.getComments());
+		setTimeZone(user.getTimeZone());
+		setDnd(user.isDndEnabled());
 
 		if (!isContact()) {
 			setAuthDomain(user.getAuthDomain());
 			setLoginName(user.getLoginName());
 			setManageForms(user.canManageForms());
+			setApiUser(user.isApiUser());
+			setIpRange(user.getIpRange());
 		}
 	}
 
@@ -415,6 +475,10 @@ public class User extends BaseEntity implements UserDetails {
 
 	public boolean isDisabled() {
 		return Status.ACTIVITY_STATUS_DISABLED.getStatus().equals(getActivityStatus());
+	}
+
+	public boolean isAllowedAccessFrom(String ipAddress) {
+		return !isApiUser() || getIpRange().equals("*") || new IpAddressMatcher(getIpRange()).matches(ipAddress);
 	}
 
 	private boolean isValidPasswordPattern(String password) {

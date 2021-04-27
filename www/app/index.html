@@ -72,6 +72,16 @@
     <!-- Add your site or application content here -->
     <div style="height:100%;" ui-view></div>
 
+    <iframe src="{{logoutUrl}}" style="height: 0; width: 0; display:none;" ng-if="logout"></iframe>
+
+    <script>
+      (function initTinyMce() {
+        window.tinyMCEPreInit = {
+          baseURL: 'plugin-ui-resources/tinymce', suffix: ''
+        };
+      })();
+    </script>
+
     <!-- build:js(.) scripts/vendor.js -->
     <!-- bower:js -->
     <script src="bower_components/jquery/dist/jquery.js"></script>
@@ -98,6 +108,9 @@
     <script src="bower_components/angular-translate/angular-translate.js"></script>
     <script src="bower_components/angular-translate-loader-partial/angular-translate-loader-partial.js"></script>
     <script src="bower_components/angular-cookies/angular-cookies.js"></script>
+    <script src="bower_components/html2pdf.js/dist/html2pdf.bundle.js"></script>
+    <script src="bower_components/tinymce/tinymce.js"></script>
+    <script src="bower_components/angular-ui-tinymce/src/tinymce.js"></script>
     <!-- endbower -->
     <script src="external_components/blueimp-file-upload/js/jquery.fileupload.js"></script>
     <script src="external_components/blueimp-file-upload/js/jquery.iframe-transport.js"></script>
@@ -107,6 +120,7 @@
     <script src="external_components/select2/select2.min.js"></script>
     <script src="external_components/Chart.js-2.2.1/Chart.bundle.js"></script>
     <script src="external_components/angular-chart.js-1.0.0/angular-chart.js"></script>
+    <script src="external_components/html2canvas/html2canvas.js"></script>
     <!-- endbuild -->
 
     <!-- build:js({.tmp,app}) scripts/scripts.js -->
@@ -194,6 +208,9 @@
     <script src="modules/common/home.js"></script>
     <script src="modules/common/ui-element.js"></script>
     <script src="modules/common/upload-attachments.js"></script>
+    <script src="modules/common/unsafe-html.js"></script>
+    <script src="modules/common/empty-state.js"></script>
+    <script src="modules/common/letter-avatar.js"></script>
 
     <!-- Search module -->
     <script src="modules/common/search/module.js"></script>
@@ -223,6 +240,7 @@
     <script src="modules/common/audit/module.js"></script>
     <script src="modules/common/audit/model.js"></script>
     <script src="modules/common/audit/overview.js"></script>
+    <script src="modules/common/audit/revisions.js"></script>
 
     <!-- File download module -->
     <script src="modules/common/file-download.js"></script>
@@ -233,6 +251,7 @@
     <!-- Administrative module models -->
     <script src="modules/administrative/models/module.js"></script>
     <script src="modules/administrative/models/user.js"></script>
+    <script src="modules/administrative/models/user-group.js"></script>
     <script src="modules/administrative/models/role.js"></script>
     <script src="modules/administrative/models/institute.js"></script>
     <script src="modules/administrative/models/site.js"></script>
@@ -243,11 +262,15 @@
     <script src="modules/administrative/models/shipment.js"></script>
     <script src="modules/administrative/models/container.js"></script>
     <script src="modules/administrative/models/container-type.js"></script>
+    <script src="modules/administrative/models/container-task.js"></script>
     <script src="modules/administrative/models/container-label-printer.js"></script>
+    <script src="modules/administrative/models/sched-container-activity.js"></script>
+    <script src="modules/administrative/models/container-activity-log.js"></script>
     <script src="modules/administrative/models/setting.js"></script>
     <script src="modules/administrative/models/auth-domain.js"></script>
     <script src="modules/administrative/models/job.js"></script>
     <script src="modules/administrative/models/support.js"></script>
+    <script src="modules/administrative/models/time-zone.js"></script>
 
     <!-- User module -->
     <script src="modules/user/login.js"></script>
@@ -267,6 +290,10 @@
     <script src="modules/administrative/user/roles.js"></script>
     <script src="modules/administrative/user/display-name.js"></script>
     <script src="modules/administrative/user/announcement.js"></script>
+    <script src="modules/administrative/user/assign-to-group.js"></script>
+    <script src="modules/administrative/user/list-groups.js"></script>
+    <script src="modules/administrative/user/addedit-group.js"></script>
+    <script src="modules/administrative/user/group-dropdown.js"></script>
 
     <!-- Institute Module -->
     <script src="modules/administrative/institute/module.js"></script>
@@ -285,6 +312,7 @@
     <!-- Distribution Protocol Module -->
     <script src="modules/administrative/dp/module.js"></script>
     <script src="modules/administrative/dp/list.js"></script>
+    <script src="modules/administrative/dp/home-list.js"></script>
     <script src="modules/administrative/dp/addedit.js"></script>
     <script src="modules/administrative/dp/detail.js"></script>
     <script src="modules/administrative/dp/history.js"></script>
@@ -299,6 +327,7 @@
     <!-- Distribution Order Module -->
     <script src="modules/administrative/order/module.js"></script>
     <script src="modules/administrative/order/list.js"></script>
+    <script src="modules/administrative/order/home-list.js"></script>
     <script src="modules/administrative/order/addedit.js"></script>
     <script src="modules/administrative/order/detail.js"></script>
     <script src="modules/administrative/order/items.js"></script>
@@ -307,6 +336,7 @@
     <!-- Shipping Order Module -->
     <script src="modules/administrative/shipment/module.js"></script>
     <script src="modules/administrative/shipment/list.js"></script>
+    <script src="modules/administrative/shipment/home-list.js"></script>
     <script src="modules/administrative/shipment/addedit.js"></script>
     <script src="modules/administrative/shipment/detail.js"></script>
     <script src="modules/administrative/shipment/receive.js"></script>
@@ -317,11 +347,17 @@
     <!-- Container Module -->
     <script src="modules/administrative/container/module.js"></script>
     <script src="modules/administrative/container/list.js"></script>
+    <script src="modules/administrative/container/home-list.js"></script>
     <script src="modules/administrative/container/addedit.js"></script>
     <script src="modules/administrative/container/detail.js"></script>
     <script src="modules/administrative/container/overview.js"></script>
+    <script src="modules/administrative/container/move.js"></script>
     <script src="modules/administrative/container/locations.js"></script>
     <script src="modules/administrative/container/specimens.js"></script>
+    <script src="modules/administrative/container/events.js"></script>
+    <script src="modules/administrative/container/maintenance.js"></script>
+    <script src="modules/administrative/container/addedit-sched-activity.js"></script>
+    <script src="modules/administrative/container/addedit-activity-log.js"></script>
     <script src="modules/administrative/container/position-selector.js"></script>
     <script src="modules/administrative/container/replicate.js"></script>
     <script src="modules/administrative/container/map.js"></script>
@@ -335,6 +371,11 @@
     <script src="modules/administrative/container-type/addedit.js"></script>
     <script src="modules/administrative/container-type/detail.js"></script>
 
+    <!-- Container Task Module -->
+    <script src="modules/administrative/container-task/module.js"></script>
+    <script src="modules/administrative/container-task/list.js"></script>
+    <script src="modules/administrative/container-task/addedit.js"></script>
+
     <!-- Role Module -->
     <script src="modules/administrative/role/module.js"></script>
     <script src="modules/administrative/role/list.js"></script>
@@ -347,6 +388,8 @@
     <script src="modules/administrative/form/addedit.js"></script>
     <script src="modules/administrative/form/association.js"></script>
     <script src="modules/administrative/form/entities.js"></script>
+    <script src="modules/administrative/form/import.js"></script>
+    <script src="modules/administrative/form/preview.js"></script>
     
     <!-- Support Module -->
     <script src="modules/administrative/support/feedback.js"></script>
@@ -375,6 +418,7 @@
     <script src="modules/biospecimen/models/specimen-list.js"></script>
     <script src="modules/biospecimen/models/specimen-event.js"></script>
     <script src="modules/biospecimen/models/consent-statement.js"></script>
+    <script src="modules/biospecimen/models/cp-group.js"></script>
 
     <!-- Extensions -->
     <script src="modules/biospecimen/extensions/module.js"></script>
@@ -389,10 +433,12 @@
     <script src="modules/biospecimen/extensions/fancy/de-users.js"></script>
     <script src="modules/biospecimen/extensions/fancy/de-storage-containers.js"></script>
     <script src="modules/biospecimen/extensions/fancy/de-sites.js"></script>
+    <script src="modules/biospecimen/extensions/fancy/de-pvs.js"></script>
 
     <!-- CP module -->
     <script src="modules/biospecimen/cp/module.js"></script>
     <script src="modules/biospecimen/cp/list.js"></script>
+    <script src="modules/biospecimen/cp/home-list.js"></script>
     <script src="modules/biospecimen/cp/addedit.js"></script>
     <script src="modules/biospecimen/cp/import.js"></script>
     <script src="modules/biospecimen/cp/detail.js"></script>
@@ -407,6 +453,14 @@
     <script src="modules/biospecimen/cp/report-settings.js"></script>
     <script src="modules/biospecimen/cp/dp-settings.js"></script>
     <script src="modules/biospecimen/cp/import-workflows.js"></script>
+
+    <!-- CP groups module -->
+    <script src="modules/biospecimen/cp-groups/module.js"></script>
+    <script src="modules/biospecimen/cp-groups/addedit.js"></script>
+    <script src="modules/biospecimen/cp-groups/list.js"></script>
+    <script src="modules/biospecimen/cp-groups/overview.js"></script>
+    <script src="modules/biospecimen/cp-groups/forms.js"></script>
+    <script src="modules/biospecimen/cp-groups/import-workflows.js"></script>
 
     <!-- Participant module -->
     <script src="modules/biospecimen/participant/module.js"></script>
@@ -426,6 +480,8 @@
     <script src="modules/biospecimen/participant/export-util.js"></script>
     <script src="modules/biospecimen/participant/specimens-list.js"></script>
     <script src="modules/biospecimen/participant/specimens-tree-panel.js"></script>
+    <script src="modules/biospecimen/participant/holder.js"></script>
+    <script src="modules/biospecimen/participant/bulk-edit.js"></script>
 
     <!-- Visit detail module -->
     <script src="modules/biospecimen/participant/visit/module.js"></script>
@@ -449,11 +505,13 @@
     <script src="modules/biospecimen/participant/specimen/bulk-edit.js"></script>
     <script src="modules/biospecimen/participant/specimen/add-specimens.js"></script>
     <script src="modules/biospecimen/participant/specimen/specimen-ops.js"></script>
+    <script src="modules/biospecimen/participant/specimen/system-event.js"></script>
 
     <!-- Specimen List module  -->
     <script src="modules/biospecimen/specimen-list/module.js"></script>
     <script src="modules/biospecimen/specimen-list/name.js"></script>
     <script src="modules/biospecimen/specimen-list/lists.js"></script>
+    <script src="modules/biospecimen/specimen-list/home-list.js"></script>
     <script src="modules/biospecimen/specimen-list/specimens.js"></script>
     <script src="modules/biospecimen/specimen-list/addedit.js"></script>
     <script src="modules/biospecimen/specimen-list/specimens-holder.js"></script>
@@ -490,6 +548,7 @@
     <script src="modules/query/delete.js"></script>
     <script src="modules/query/import_query.js"></script>
     <script src="modules/query/list.js"></script>
+    <script src="modules/query/home-list.js"></script>
     <script src="modules/query/util.js"></script>
     <script src="modules/query/datepicker.js"></script>
     <script src="modules/query/addedit.js"></script>

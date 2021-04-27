@@ -16,7 +16,6 @@ import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.hibernate.Session;
 
-import com.krishagni.catissueplus.core.administrative.domain.Institute;
 import com.krishagni.catissueplus.core.administrative.domain.Site;
 import com.krishagni.catissueplus.core.administrative.domain.User;
 import com.krishagni.catissueplus.core.administrative.domain.factory.SiteErrorCode;
@@ -322,15 +321,8 @@ public class RbacServiceImpl implements RbacService {
 	public ResponseEvent<RoleDetail> saveRole(RequestEvent<RoleDetail> req) {
 		try {
 			AccessCtrlMgr.getInstance().ensureUserIsAdmin();
-			
-			RoleDetail detail = req.getPayload();
-			Role role = createRole(detail);
+			Role role = createRole(req.getPayload());
 			ensureUniqueName(role, null);
-			checkCycles(role);
-			for (Role childRole : role.getChildRoles()) {
-				childRole.setParentRole(role);
-			}
-			
 			daoFactory.getRoleDao().saveOrUpdate(role);
 			return ResponseEvent.response(RoleDetail.from(role));
 		} catch (OpenSpecimenException ose) {
@@ -347,7 +339,6 @@ public class RbacServiceImpl implements RbacService {
 			AccessCtrlMgr.getInstance().ensureUserIsAdmin();
 			
 			RoleDetail detail = request.getPayload();
-		
 			Role existing = daoFactory.getRoleDao().getById(detail.getId());
 			if (existing == null) {
 				return ResponseEvent.userError(RbacErrorCode.ROLE_NOT_FOUND);
@@ -355,8 +346,6 @@ public class RbacServiceImpl implements RbacService {
 		
 			Role newRole = createRole(detail);
 			ensureUniqueName(newRole, existing);
-			checkCycles(newRole);
-				
 			existing.updateRole(newRole);
 			daoFactory.getRoleDao().saveOrUpdate(existing);
 			return ResponseEvent.response(RoleDetail.from(existing));
@@ -378,8 +367,7 @@ public class RbacServiceImpl implements RbacService {
 			if (role == null) {
 				return ResponseEvent.userError(RbacErrorCode.ROLE_NOT_FOUND);
 			}
-			
-			adjustParentChildRelationForRoleDeletion(role);
+
 			daoFactory.getRoleDao().delete(role);
 			return ResponseEvent.response(RoleDetail.from(role));
 		} catch (Exception e) {
@@ -423,7 +411,7 @@ public class RbacServiceImpl implements RbacService {
 			SubjectRole sr = null;
 			switch (subjectRoleOp.getOp()) {
 				case ADD:
-					sr = createSubjectRole(subjectRoleOp.getSubjectRole());
+					sr = createSubjectRole(subject, subjectRoleOp.getSubjectRole());
 					AccessCtrlMgr.getInstance().ensureCreateUpdateUserRolesRights(user, sr.getSite());
 					resp = subject.addRole(sr);
 					break;
@@ -435,7 +423,7 @@ public class RbacServiceImpl implements RbacService {
 					oldSrDetails.put("collectionProtocol", oldSr.getCollectionProtocol());
 					oldSrDetails.put("role", oldSr.getRole());
 					
-					sr = createSubjectRole(subjectRoleOp.getSubjectRole());
+					sr = createSubjectRole(subject, subjectRoleOp.getSubjectRole());
 					AccessCtrlMgr.getInstance().ensureCreateUpdateUserRolesRights(user, sr.getSite());
 					resp = subject.updateRole(sr);
 					break;
@@ -679,11 +667,6 @@ public class RbacServiceImpl implements RbacService {
 		setName(detail, role);
 		role.setDescription(detail.getDescription());
 		role.setAcl(getAcl(detail, role));
-		role.setParentRole(getRole(detail.getParentRoleName()));
-		
-		for (String childRole : detail.getChildRoles()) {
-			role.getChildRoles().add(getRole(childRole));
-		}
 		return role;
 	}
 	
@@ -693,24 +676,7 @@ public class RbacServiceImpl implements RbacService {
 		}
 		role.setName(detail.getName());
 	}
-	
-	private void checkCycles(Role role) {
-		if (role.equals(role.getParentRole()) || role.getChildRoles().contains(role)) {
-			throw OpenSpecimenException.userError(RbacErrorCode.CYCLE_DETECTED_IN_HIERARCHY);
-		}
-		
-		Role parentRole = role.getParentRole();
-		if (parentRole == null) {
-			return;
-		}
-		
-		for (Role childRole : role.getChildRoles()) {
-			if (parentRole.isDescendentOf(childRole)) {
-				throw OpenSpecimenException.userError(RbacErrorCode.CYCLE_DETECTED_IN_HIERARCHY);
-			}
-		}
-	}
-	
+
 	private Role getRole(String roleName) {
 		if (roleName == null) {
 			return null;
@@ -757,10 +723,8 @@ public class RbacServiceImpl implements RbacService {
 				}
 				
 				ResourceInstanceOp op = new ResourceInstanceOp();
-				op.setRoleAccessControl(rac);
-				op.setResourceInstanceId(riod.getResourceInstanceId());
+				op.setAccessControl(rac);
 				op.setOperation(operation);
-								
 				rac.getOperations().add(op);
 			}
 			
@@ -770,7 +734,7 @@ public class RbacServiceImpl implements RbacService {
 		return result;
 	}
 	
-	private SubjectRole createSubjectRole(SubjectRoleDetail srd) {
+	private SubjectRole createSubjectRole(Subject subject, SubjectRoleDetail srd) {
 		RoleDetail detail = srd.getRole();
 		if (detail == null || StringUtils.isEmpty(detail.getName())) {
 			throw OpenSpecimenException.userError(RbacErrorCode.ROLE_NAME_REQUIRED);
@@ -780,13 +744,38 @@ public class RbacServiceImpl implements RbacService {
 		if (role == null) {
 			throw OpenSpecimenException.userError(RbacErrorCode.ROLE_NOT_FOUND);
 		}
-		
+
+		CollectionProtocol cp = getCollectionProtocol(srd);
+		Site site = getSite(srd);
+
 		SubjectRole sr = new SubjectRole();
 		sr.setId(srd.getId());
-		sr.setCollectionProtocol(getCollectionProtocol(srd));
-		sr.setSite(getSite(srd));
+		sr.setCollectionProtocol(cp);
+		sr.setSite(site);
 		sr.setRole(role);
 		sr.setSystemRole(srd.getSystemRole());
+		sr.setSubject(subject);
+
+		if (site == null) {
+			if (cp != null) {
+				boolean valid = daoFactory.getCollectionProtocolDao().isCpAffiliatedToUserInstitute(cp.getId(), subject.getId());
+				if (!valid) {
+					throw OpenSpecimenException.userError(RbacErrorCode.INV_CP_USER, cp.getShortTitle());
+				}
+			}
+		} else {
+			if (!daoFactory.getSiteDao().isAffiliatedToUserInstitute(site.getId(), subject.getId())) {
+				throw OpenSpecimenException.userError(RbacErrorCode.INV_SITE_USER, site.getName());
+			}
+
+			if (cp != null) {
+				boolean valid = cp.getRepositories().stream().anyMatch(cpSite -> cpSite.equals(site));
+				if (!valid) {
+					throw OpenSpecimenException.userError(RbacErrorCode.INV_CP_SITE, site.getName(), cp.getShortTitle());
+				}
+			}
+		}
+
 		return sr;
 	}
 
@@ -878,27 +867,6 @@ public class RbacServiceImpl implements RbacService {
 		
 		return sr;
 	}
-	
-
-	private void adjustParentChildRelationForRoleDeletion(Role role) {
-		Role parent = role.getParentRole();
-		Set<Role> childRoles = role.getChildRoles();
-		
-		for (Role childRole : childRoles) {
-			childRole.setParentRole(parent);
-		}
-		
-		if (parent != null) {
-			parent.getChildRoles().remove(role);
-			parent.getChildRoles().addAll(childRoles);
-			daoFactory.getRoleDao().saveOrUpdate(parent);
-		} else {
-			for (Role childRole : childRoles) {
-				daoFactory.getRoleDao().saveOrUpdate(childRole);
-			}
-		}
-	}
-	
 	
 	private GroupRole createGroupRole(GroupRoleDetail gd) {
 		RoleDetail detail = gd.getRoleDetails();

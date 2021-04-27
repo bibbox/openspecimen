@@ -49,6 +49,8 @@ public enum SavedQueryErrorCode implements ErrorCode {
 
 	AUDIT_LOG_NOT_FOUND,
 
+	INVALID_GROUPS_LIST,
+
 	DEPS_FOUND;
 	
 	@Override

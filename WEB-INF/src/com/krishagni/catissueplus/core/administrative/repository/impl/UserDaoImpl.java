@@ -6,6 +6,8 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -13,6 +15,7 @@ import java.util.stream.Collectors;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.hibernate.Criteria;
+import org.hibernate.Query;
 import org.hibernate.criterion.DetachedCriteria;
 import org.hibernate.criterion.MatchMode;
 import org.hibernate.criterion.Order;
@@ -31,12 +34,14 @@ import com.krishagni.catissueplus.core.administrative.repository.UserDao;
 import com.krishagni.catissueplus.core.administrative.repository.UserListCriteria;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
 import com.krishagni.catissueplus.core.common.events.DependentEntityDetail;
+import com.krishagni.catissueplus.core.common.events.UserSummary;
 import com.krishagni.catissueplus.core.common.repository.AbstractDao;
 import com.krishagni.catissueplus.core.common.util.Status;
 import com.krishagni.catissueplus.core.common.util.Utility;
+import com.krishagni.catissueplus.core.de.events.FormCtxtSummary;
 
 public class UserDaoImpl extends AbstractDao<User> implements UserDao {
-	
+
 	@Override
 	public Class<?> getType() {
 		return User.class;
@@ -65,8 +70,7 @@ public class UserDaoImpl extends AbstractDao<User> implements UserDao {
 	
 	@SuppressWarnings("unchecked")
 	public List<User> getUsersByIdsAndInstitute(Collection<Long> userIds, Long instituteId) {
-		Criteria criteria = sessionFactory.getCurrentSession()
-			.createCriteria(User.class, "u")
+		Criteria criteria = getCurrentSession().createCriteria(User.class, "u")
 			.add(Restrictions.in("u.id", userIds));
 		
 		if (instituteId != null) {
@@ -224,11 +228,12 @@ public class UserDaoImpl extends AbstractDao<User> implements UserDao {
 
 	@Override
 	@SuppressWarnings("unchecked")
-	public Map<String, String> getEmailIdUserTypes(Collection<String> emailIds) {
-		List<Object[]> rows = getCurrentSession().getNamedQuery(GET_EMAIL_ID_TYPES)
+	public Map<String, Boolean> getEmailIdDnds(Collection<String> emailIds) {
+		List<Object[]> rows = getCurrentSession().getNamedQuery(GET_EMAIL_ID_DNDS)
 			.setParameterList("emailIds", emailIds)
 			.list();
-		return rows.stream().collect(Collectors.toMap(row -> (String)row[0], row -> ((User.Type)row[1]).name()));
+
+		return rows.stream().collect(Collectors.toMap(row -> (String) row[0], row -> (Boolean) row[1]));
 	}
 
 	@Override
@@ -241,6 +246,52 @@ public class UserDaoImpl extends AbstractDao<User> implements UserDao {
 		return (UserUiState) getCurrentSession().getNamedQuery(GET_STATE)
 			.setParameter("userId", userId)
 			.uniqueResult();
+	}
+
+	@SuppressWarnings("unchecked")
+	@Override
+	public List<FormCtxtSummary> getForms(Long userId) {
+		List<Object[]> rows = getCurrentSession().getNamedQuery(GET_FORMS)
+			.setParameter("userId", userId)
+			.list();
+		return getEntityForms(rows);
+	}
+
+	@Override
+	public List<Map<String, Object>> getFormRecords(Long instituteId, Long formId, List<String> emailIds, int startAt, int maxResults) {
+		String sql = getCurrentSession().getNamedQuery(GET_FORM_RECS).getQueryString();
+		if (CollectionUtils.isNotEmpty(emailIds)) {
+			int orderByIdx = sql.lastIndexOf("order by");
+			sql = sql.substring(0, orderByIdx) + " and usr.email_address in (:emailIds) " + sql.substring(orderByIdx);
+		}
+
+		if (instituteId != null && instituteId != -1L) {
+			int orderByIdx = sql.lastIndexOf("order by");
+			sql = sql.substring(0, orderByIdx) + " and institute.identifier = " + instituteId + " " + sql.substring(orderByIdx);
+		}
+
+		Query query = getCurrentSession().createSQLQuery(sql)
+			.setParameter("formId", formId)
+			.setFirstResult(startAt)
+			.setMaxResults(maxResults);
+		if (CollectionUtils.isNotEmpty(emailIds)) {
+			query.setParameterList("emailIds", emailIds);
+		}
+
+		return ((List<Object[]>)query.list()).stream()
+			.map(
+				(row) -> {
+					int idx = -1;
+					Map<String, Object> record = new HashMap<>();
+					record.put("instituteId", ((Number) row[++idx]).longValue());
+					record.put("instituteName", row[++idx]);
+					record.put("userId", ((Number) row[++idx]).longValue());
+					record.put("emailAddress", row[++idx]);
+					record.put("recordId", ((Number) row[++idx]).longValue());
+					return record;
+				}
+			)
+			.collect(Collectors.toList());
 	}
 
 	private Criteria getUsersListQuery(UserListCriteria crit) {
@@ -258,8 +309,12 @@ public class UserDaoImpl extends AbstractDao<User> implements UserDao {
 		return criteria;
 	}
 
-	private List<String> excludeUsersList() {
-		return Arrays.asList(User.SYS_USER, "public_catalog_user", "public_dashboard_user");
+	private List<String> excludeUsersList(boolean includeSysUser) {
+		if (includeSysUser) {
+			return Arrays.asList("public_catalog_user", "public_dashboard_user");
+		} else {
+			return Arrays.asList(User.SYS_USER, "public_catalog_user", "public_dashboard_user");
+		}
 	}
 
 	@SuppressWarnings("unchecked")
@@ -279,7 +334,7 @@ public class UserDaoImpl extends AbstractDao<User> implements UserDao {
 	}
 	
 	private Criteria addSearchConditions(Criteria criteria, UserListCriteria listCrit) {
-		addNonSystemUserRestriction(criteria);
+		addNonSystemUserRestriction(criteria, listCrit.includeSysUser());
 
 		String searchString = listCrit.query();
 		if (StringUtils.isBlank(searchString)) {
@@ -287,10 +342,10 @@ public class UserDaoImpl extends AbstractDao<User> implements UserDao {
 			addLoginNameRestriction(criteria, listCrit.loginName());
 		} else {
 			criteria.add(
-				Restrictions.disjunction()
-					.add(Restrictions.ilike("u.firstName", searchString, MatchMode.ANYWHERE))
-					.add(Restrictions.ilike("u.lastName",  searchString, MatchMode.ANYWHERE))
-					.add(Restrictions.ilike("u.loginName", searchString, MatchMode.ANYWHERE))
+				Restrictions.or(
+					Restrictions.ilike("u.firstName", searchString, MatchMode.ANYWHERE),
+					Restrictions.ilike("u.lastName",  searchString, MatchMode.ANYWHERE)
+				)
 			);
 		}
 
@@ -303,14 +358,15 @@ public class UserDaoImpl extends AbstractDao<User> implements UserDao {
 		addActiveSinceRestriction(criteria, listCrit.activeSince());
 		addRoleRestrictions(criteria, listCrit);
 		addResourceRestrictions(criteria, listCrit);
+		addGroupRestrictions(criteria, listCrit);
 		return criteria;
 	}
 
-	private void addNonSystemUserRestriction(Criteria criteria) {
+	private void addNonSystemUserRestriction(Criteria criteria, boolean includeSysUser) {
 		criteria.createAlias("u.authDomain", "domain")
 			.add( // not system user
 				Restrictions.not(Restrictions.conjunction()
-					.add(Restrictions.in("u.loginName", excludeUsersList()))
+					.add(Restrictions.in("u.loginName", excludeUsersList(includeSysUser)))
 					.add(Restrictions.eq("domain.name", User.DEFAULT_AUTH_DOMAIN))
 			)
 		);
@@ -339,10 +395,9 @@ public class UserDaoImpl extends AbstractDao<User> implements UserDao {
 	private void addActivityStatusRestriction(Criteria criteria, String activityStatus) {
 		if (StringUtils.isBlank(activityStatus)) {
 			criteria.add(Restrictions.ne("u.activityStatus", Status.ACTIVITY_STATUS_CLOSED.getStatus()));
-		} else {
+		} else if (!activityStatus.equalsIgnoreCase("all")) {
 			criteria.add(Restrictions.eq("u.activityStatus", activityStatus));
 		}
-
 	}
 
 	private void addTypeRestriction(Criteria criteria, String type) {
@@ -429,6 +484,15 @@ public class UserDaoImpl extends AbstractDao<User> implements UserDao {
 		}
 	}
 
+	private void addGroupRestrictions(Criteria criteria, UserListCriteria listCrit) {
+		if (StringUtils.isBlank(listCrit.group())) {
+			return;
+		}
+
+		criteria.createAlias("u.groups", "group")
+			.add(Restrictions.eq("group.name", listCrit.group()));
+	}
+
 	private void addSiteRestriction(Criteria criteria, String alias, String siteName) {
 		criteria.createAlias(alias + ".site", "rs", JoinType.LEFT_OUTER_JOIN);
 
@@ -500,6 +564,42 @@ public class UserDaoImpl extends AbstractDao<User> implements UserDao {
 		return dependentEntities;
  	}
 
+	private List<FormCtxtSummary> getEntityForms(List<Object[]> rows) {
+		Map<Long, FormCtxtSummary> formsMap = new LinkedHashMap<>();
+
+		for (Object[] row : rows) {
+			Long entityId = (Long)row[4];
+			Long formId = (Long)row[1];
+
+			FormCtxtSummary form = formsMap.get(formId);
+			if (form != null && entityId == -1) {
+				continue;
+			}
+
+			form = new FormCtxtSummary();
+			form.setFormCtxtId((Long)row[0]);
+			form.setFormId(formId);
+			form.setFormName((String)row[2]);
+			form.setFormCaption((String)row[3]);
+			form.setEntityType((String)row[5]);
+			form.setCreationTime((Date)row[6]);
+			form.setModificationTime((Date)row[7]);
+
+			UserSummary user = new UserSummary();
+			user.setId((Long)row[8]);
+			user.setFirstName((String)row[9]);
+			user.setLastName((String)row[10]);
+			form.setCreatedBy(user);
+
+			form.setMultiRecord((Boolean)row[11]);
+			form.setSysForm((Boolean)row[12]);
+			form.setNoOfRecords((Integer)row[13]);
+			formsMap.put(formId, form);
+		}
+
+		return new ArrayList<>(formsMap.values());
+	}
+
 	private static final String GET_USER_BY_EMAIL_HQL =
 			"from com.krishagni.catissueplus.core.administrative.domain.User where emailAddress = :emailAddress %s";
 	
@@ -521,7 +621,11 @@ public class UserDaoImpl extends AbstractDao<User> implements UserDao {
 	
 	private static final String UPDATE_STATUS = FQN + ".updateStatus";
 
-	private static final String GET_EMAIL_ID_TYPES = FQN + ".getEmailIdTypes";
+	private static final String GET_EMAIL_ID_DNDS = FQN + ".getEmailIdDnds";
+
+	private static final String GET_FORMS = FQN + ".getForms";
+
+	private static final String GET_FORM_RECS = FQN + ".getFormRecords";
 
 	private static final String GET_STATE = UserUiState.class.getName() + ".getState";
 }

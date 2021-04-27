@@ -161,12 +161,14 @@ public class ShipmentServiceImpl implements ShipmentService, ObjectAccessor {
 				return ResponseEvent.response(Collections.emptyList());
 			}
 
-			Map<Long, ShipmentContainerDetail> containersMap = getShipmentDao().getShipmentContainers(crit).stream()
-				.collect(Collectors.toMap(sc -> sc.getContainer().getId(), ShipmentContainerDetail::from));
-
-			if (containersMap.isEmpty()) {
+			List<ShipmentContainer> shipmentContainers = getShipmentDao().getShipmentContainers(crit);
+			if (shipmentContainers.isEmpty()) {
 				return ResponseEvent.response(Collections.emptyList());
 			}
+
+			List<ShipmentContainerDetail> result = ShipmentContainerDetail.from(shipmentContainers);
+			Map<Long, ShipmentContainerDetail> containersMap = result.stream()
+				.collect(Collectors.toMap(sc -> sc.getContainer().getId(), sc -> sc));
 
 			Map<Long, Integer> spmnCounts;
 			if (shipment.isPending()) {
@@ -176,7 +178,7 @@ public class ShipmentServiceImpl implements ShipmentService, ObjectAccessor {
 			}
 
 			spmnCounts.forEach((cid, count) -> containersMap.get(cid).setSpecimensCount(count));
-			return ResponseEvent.response(new ArrayList<>(containersMap.values()));
+			return ResponseEvent.response(result);
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
 		} catch (Exception e) {
@@ -365,13 +367,13 @@ public class ShipmentServiceImpl implements ShipmentService, ObjectAccessor {
 	}
 
 	private List<Specimen> getValidSpecimens(List<Long> specimenIds, OpenSpecimenException ose) {
-		List<SiteCpPair> siteCpPairs = AccessCtrlMgr.getInstance().getReadAccessSpecimenSiteCps();
-		if (siteCpPairs != null && siteCpPairs.isEmpty()) {
+		List<SiteCpPair> siteCps = AccessCtrlMgr.getInstance().getReadAccessSpecimenSiteCps();
+		if (siteCps != null && siteCps.isEmpty()) {
 			ose.addError(ShipmentErrorCode.INVALID_SPECIMENS);
 			return null;
 		}
 		
-		SpecimenListCriteria crit = new SpecimenListCriteria().ids(specimenIds).siteCps(siteCpPairs);
+		SpecimenListCriteria crit = new SpecimenListCriteria().ids(specimenIds).siteCps(siteCps);
 		List<Specimen> specimens = daoFactory.getSpecimenDao().getSpecimens(crit);
 		if (specimenIds.size() != specimens.size()) {
 			ose.addError(ShipmentErrorCode.INVALID_SPECIMENS);

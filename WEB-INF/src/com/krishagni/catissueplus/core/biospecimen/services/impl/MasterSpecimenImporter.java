@@ -1,5 +1,8 @@
 package com.krishagni.catissueplus.core.biospecimen.services.impl;
 
+import java.util.List;
+
+import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.time.DateUtils;
 import org.springframework.beans.BeanUtils;
@@ -8,14 +11,18 @@ import com.krishagni.catissueplus.core.administrative.events.StorageLocationSumm
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolEvent;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolRegistration;
+import com.krishagni.catissueplus.core.biospecimen.domain.Participant;
 import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
 import com.krishagni.catissueplus.core.biospecimen.domain.Visit;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.CpErrorCode;
+import com.krishagni.catissueplus.core.biospecimen.domain.factory.CprErrorCode;
+import com.krishagni.catissueplus.core.biospecimen.domain.factory.ParticipantErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.SpecimenErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.events.CollectionEventDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.CollectionProtocolRegistrationDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.MasterSpecimenDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.ParticipantDetail;
+import com.krishagni.catissueplus.core.biospecimen.events.PmiDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.ReceivedEventDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.SpecimenDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.VisitDetail;
@@ -29,6 +36,7 @@ import com.krishagni.catissueplus.core.common.events.RequestEvent;
 import com.krishagni.catissueplus.core.common.events.ResponseEvent;
 import com.krishagni.catissueplus.core.common.events.UserSummary;
 import com.krishagni.catissueplus.core.common.util.AuthUtil;
+import com.krishagni.catissueplus.core.de.services.impl.ExtensionsUtil;
 import com.krishagni.catissueplus.core.importer.events.ImportObjectDetail;
 import com.krishagni.catissueplus.core.importer.services.ObjectImporter;
 
@@ -70,6 +78,8 @@ public class MasterSpecimenImporter implements ObjectImporter<MasterSpecimenDeta
 			
 			createCpr(detail.getObject());
 			createVisit(detail.getObject());
+
+			ExtensionsUtil.initFileFields(detail.getUploadedFilesDir(), detail.getObject().getExtensionDetail());
 			createSpecimen(detail.getObject());
 			
 			return ResponseEvent.response(detail.getObject());
@@ -96,18 +106,20 @@ public class MasterSpecimenImporter implements ObjectImporter<MasterSpecimenDeta
 		CollectionProtocolRegistration cpr = null;
 		if (StringUtils.isNotBlank(detail.getPpid())) {
 			cpr = daoFactory.getCprDao().getCprByCpShortTitleAndPpid(detail.getCpShortTitle(), detail.getPpid());
+		} else if (StringUtils.isNotBlank(detail.getEmpi())) {
+			cpr = daoFactory.getCprDao().getCprByEmpi(detail.getCpShortTitle(), detail.getEmpi());
+		} else if (StringUtils.isNotBlank(detail.getUid())) {
+			cpr = daoFactory.getCprDao().getCprByUid(detail.getCpShortTitle(), detail.getUid());
+		} else if (CollectionUtils.isNotEmpty(detail.getPmis())) {
+			cpr = getCprByPmis(detail.getCpShortTitle(), detail.getPmis());
 		}
 
 		if (cpr != null) {
-			Visit matchedVisit = cpr.getVisits().stream()
+			cpr.getVisits().stream()
 				.filter(visit -> isVisitOfSameEvent(visit, detail.getEventLabel()))
 				.filter(visit -> DateUtils.isSameDay(visit.getVisitDate(), detail.getVisitDate()))
-				.findAny().orElse(null);
-
-			if (matchedVisit != null) {
-				detail.setVisitId(matchedVisit.getId());
-			}
-
+				.findAny().ifPresent(matchedVisit -> detail.setVisitId(matchedVisit.getId()));
+			detail.setPpid(cpr.getPpid());
 			return;
 		}
 
@@ -123,6 +135,15 @@ public class MasterSpecimenImporter implements ObjectImporter<MasterSpecimenDeta
 		resp.throwErrorIfUnsuccessful();
 		
 		detail.setPpid(resp.getPayload().getPpid());
+	}
+
+	private CollectionProtocolRegistration getCprByPmis(String cpShortTitle, List<PmiDetail> pmis) {
+		List<CollectionProtocolRegistration> cprs = daoFactory.getCprDao().getCprsByPmis(cpShortTitle, pmis);
+		if (cprs.size() > 1) {
+			throw OpenSpecimenException.userError(CprErrorCode.MUL_REGS_FOR_PMIS);
+		}
+
+		return cprs.isEmpty() ? null : cprs.iterator().next();
 	}
 
 	private boolean isVisitOfSameEvent(Visit visit, String eventLabel) {
@@ -170,17 +191,19 @@ public class MasterSpecimenImporter implements ObjectImporter<MasterSpecimenDeta
 		specimenDetail.setPathology(detail.getPathology());
 		specimenDetail.setInitialQty(detail.getInitialQty());
 		specimenDetail.setConcentration(detail.getConcentration());
+		specimenDetail.setFreezeThawCycles(detail.getFreezeThawCycles());
 		specimenDetail.setCreatedOn(detail.getCreatedOn());
 		specimenDetail.setCreatedBy(detail.getCreatedBy());
 		specimenDetail.setComments(detail.getComments());
 		specimenDetail.setExtensionDetail(detail.getExtensionDetail());
 		specimenDetail.setExternalIds(detail.getExternalIds());
+		specimenDetail.setStatus(StringUtils.isBlank(detail.getCollectionStatus()) ? Specimen.COLLECTED : detail.getCollectionStatus());
 		
 		setParentLabel(detail, specimenDetail);
 		setLocation(detail, specimenDetail);
 		setCollectionDetail(detail, specimenDetail);
 		setReceiveDetail(detail, specimenDetail);
-		
+
 		ResponseEvent<SpecimenDetail> resp = specimenSvc.createSpecimen(request(specimenDetail));
 		resp.throwErrorIfUnsuccessful();
 		
@@ -188,10 +211,30 @@ public class MasterSpecimenImporter implements ObjectImporter<MasterSpecimenDeta
 	}
 	
 	private void setParticipant(MasterSpecimenDetail detail, CollectionProtocolRegistrationDetail cprDetail) {
+		Participant existingParticipant = null;
+		if (StringUtils.isNotBlank(detail.getEmpi())) {
+			existingParticipant = daoFactory.getParticipantDao().getByEmpi(detail.getEmpi());
+		} else if (StringUtils.isNotBlank(detail.getUid())) {
+			existingParticipant = daoFactory.getParticipantDao().getByUid(detail.getUid());
+		} else if (CollectionUtils.isNotEmpty(detail.getPmis())) {
+			List<Participant> matches = daoFactory.getParticipantDao().getByPmis(detail.getPmis());
+			for (Participant match : matches) {
+				if (existingParticipant == null) {
+					existingParticipant = match;
+				} else if (!existingParticipant.equals(match)) {
+					throw OpenSpecimenException.userError(ParticipantErrorCode.MRN_DIFF, PmiDetail.toString(detail.getPmis()));
+				}
+			}
+		}
+
 		ParticipantDetail participantDetail = new ParticipantDetail();
-		BeanUtils.copyProperties(detail, participantDetail, 
-				new String[] {"id", "activityStatus", "phiAccess", "registeredCps", "extensionDetail"});
-		
+		if (existingParticipant != null) {
+			participantDetail.setId(existingParticipant.getId());
+		} else {
+			BeanUtils.copyProperties(detail, participantDetail,
+				"id", "activityStatus", "phiAccess", "registeredCps", "extensionDetail");
+		}
+
 		cprDetail.setParticipant(participantDetail);
 	}
 	

@@ -64,11 +64,10 @@
 }
 
 .os-folder-users-section {
-  height: 100px;
+  margin-bottom: 10px;
 }
 
 .os-folder-users-section .users-select-container {
-  height: 80px;
 }
 
 .os-folder-share-with-all-cb {

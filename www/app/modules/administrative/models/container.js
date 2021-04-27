@@ -174,6 +174,38 @@ angular.module('os.administrative.models.container', ['os.common.models'])
       );
     }
 
+    Container.prototype.generateMap = function() {
+      return $http.post(Container.url() + this.$id() + '/export-map', {}).then(
+        function(resp) {
+          return resp.data;
+        }
+      );
+    }
+
+    Container.prototype.generateEmptyPositionsReport = function() {
+      return $http.post(Container.url() + this.$id() + '/export-empty-positions', {}).then(
+        function(resp) {
+          return resp.data;
+        }
+      );
+    }
+
+    Container.prototype.generateUtilisationReport = function() {
+      return $http.post(Container.url() + this.$id() + '/export-utilisation', {}).then(
+        function(resp) {
+          return resp.data;
+        }
+      );
+    }
+
+    Container.prototype.getTransferEvents = function() {
+      return $http.get(Container.url() + this.$id() + '/transfer-events').then(
+        function(resp) {
+          return resp.data;
+        }
+      );
+    }
+
     Container.list = function(opts) {
       var defOpts = {topLevelContainers: true};
       return Container.query(angular.extend(defOpts, opts || {}));

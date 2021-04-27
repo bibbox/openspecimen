@@ -23,6 +23,7 @@ import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
 import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
 import com.krishagni.catissueplus.core.biospecimen.domain.SpecimenLabelPrintRule;
 import com.krishagni.catissueplus.core.biospecimen.events.FileDetail;
+import com.krishagni.catissueplus.core.common.Pair;
 import com.krishagni.catissueplus.core.common.PlusTransactional;
 import com.krishagni.catissueplus.core.common.domain.LabelPrintRule;
 import com.krishagni.catissueplus.core.common.domain.LabelTmplToken;
@@ -49,6 +50,10 @@ public class DefaultSpecimenLabelPrinter extends AbstractLabelPrinter<Specimen> 
 
 	@Override
 	protected boolean isApplicableFor(LabelPrintRule rule, Specimen specimen, User user, String ipAddr) {
+		if (StringUtils.isBlank(specimen.getLabel()) || specimen.isMissedOrNotCollected()) {
+			return false;
+		}
+
 		SpecimenLabelPrintRule spmnLabelPrintRule = (SpecimenLabelPrintRule) rule;
 		return spmnLabelPrintRule.isApplicableFor(specimen, user, ipAddr);
 	}
@@ -66,6 +71,11 @@ public class DefaultSpecimenLabelPrinter extends AbstractLabelPrinter<Specimen> 
 	@Override
 	protected String getItemLabel(Specimen specimen) {
 		return specimen.getLabel();
+	}
+
+	@Override
+	protected Long getItemId(Specimen specimen) {
+		return specimen.getId();
 	}
 
 	@Override
@@ -139,8 +149,8 @@ public class DefaultSpecimenLabelPrinter extends AbstractLabelPrinter<Specimen> 
 		SpecimenLabelPrintRule rule = new SpecimenLabelPrintRule();
 		rule.setCps(getCps(ruleLineFields[idx++]));
 		rule.setVisitSite(getSite(ruleLineFields[idx++]));
-		rule.setSpecimenClass(ruleLineFields[idx++]);
-		rule.setSpecimenType(ruleLineFields[idx++]);
+		idx++;
+		rule.setSpecimenTypes(Collections.singletonList(ruleLineFields[idx++]));
 		rule.setUsers(getUsers(ruleLineFields[idx++]));
 
 		if (!ruleLineFields[idx++].equals("*")) {
@@ -159,7 +169,12 @@ public class DefaultSpecimenLabelPrinter extends AbstractLabelPrinter<Specimen> 
 			tokens.add(token);
 		}
 
-		rule.setDataTokens(tokens);
+		List<Pair<LabelTmplToken, List<String>>> dataTokens = new ArrayList<>();
+		for (LabelTmplToken token : tokens) {
+			dataTokens.add(Pair.make(token, new ArrayList<>()));
+		}
+
+		rule.setDataTokens(dataTokens);
 		rule.setLabelDesign(ruleLineFields[idx++]);
 		rule.setPrinterName(ruleLineFields[idx++]);
 		rule.setCmdFilesDir(ruleLineFields[idx++]);
@@ -218,8 +233,7 @@ public class DefaultSpecimenLabelPrinter extends AbstractLabelPrinter<Specimen> 
 
 	private SpecimenLabelPrintRule replaceWildcardsWithNull(SpecimenLabelPrintRule rule) {
 		rule.setLineage(replaceWildcardWithNull(rule.getLineage()));
-		rule.setSpecimenClass(replaceWildcardWithNull(rule.getSpecimenClass()));
-		rule.setSpecimenType(replaceWildcardWithNull(rule.getSpecimenType()));
+		rule.setSpecimenTypes(replaceWildcardWithNull(rule.getSpecimenTypes()));
 		rule.setLabelType(replaceWildcardWithNull(rule.getLabelType()));
 		rule.setLabelDesign(replaceWildcardWithNull(rule.getLabelDesign()));
 		rule.setPrinterName(replaceWildcardWithNull(rule.getPrinterName()));

@@ -2,9 +2,13 @@
 package com.krishagni.catissueplus.core.administrative.domain.factory.impl;
 
 import java.util.Calendar;
+import java.util.TimeZone;
 import java.util.UUID;
 
 import org.apache.commons.lang.StringUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.springframework.security.web.util.matcher.IpAddressMatcher;
 
 import com.krishagni.catissueplus.core.administrative.domain.Institute;
 import com.krishagni.catissueplus.core.administrative.domain.Site;
@@ -17,12 +21,15 @@ import com.krishagni.catissueplus.core.administrative.events.UserDetail;
 import com.krishagni.catissueplus.core.auth.domain.AuthDomain;
 import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
 import com.krishagni.catissueplus.core.common.errors.ActivityStatusErrorCode;
+import com.krishagni.catissueplus.core.common.errors.CommonErrorCode;
 import com.krishagni.catissueplus.core.common.errors.ErrorType;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.util.Status;
 import com.krishagni.catissueplus.core.common.util.Utility;
 
 public class UserFactoryImpl implements UserFactory {
+
+	private static final Log logger = LogFactory.getLog(UserFactoryImpl.class);
 
 	private DaoFactory daoFactory;
 
@@ -47,6 +54,10 @@ public class UserFactoryImpl implements UserFactory {
 		setAddress(detail, user, ose);
 		setAuthDomain(detail, user, ose);
 		setManageForms(detail, user, ose);
+		setDnd(detail, user, ose);
+		setApiUser(detail, user, ose);
+		setIpRange(detail, user, ose);
+		setTimeZone(detail, user, ose);
 		user.setCreationDate(Calendar.getInstance().getTime());
 		ose.checkAndThrow();
 		return user;
@@ -70,6 +81,10 @@ public class UserFactoryImpl implements UserFactory {
 		setAddress(detail, existing, user, ose);
 		setAuthDomain(detail, existing, user, ose);
 		setManageForms(detail, existing, user, ose);
+		setDnd(detail, existing, user, ose);
+		setApiUser(detail, existing, user, ose);
+		setIpRange(detail, existing, user, ose);
+		setTimeZone(detail, existing, user, ose);
 		ose.checkAndThrow();
 		return user;		
 	}
@@ -329,6 +344,85 @@ public class UserFactoryImpl implements UserFactory {
 			setManageForms(detail, user, ose);
 		} else {
 			user.setManageForms(existing.getManageForms());
+		}
+	}
+
+	private void setDnd(UserDetail detail, User existing, User user, OpenSpecimenException ose) {
+		if (detail.isAttrModified("dnd")) {
+			setDnd(detail, user, ose);
+		} else {
+			user.setDnd(existing.getDnd());
+		}
+	}
+
+	private void setDnd(UserDetail detail, User user, OpenSpecimenException ose) {
+		user.setDnd(detail.getDnd());
+	}
+
+	private void setApiUser(UserDetail detail, User existing, User user, OpenSpecimenException ose) {
+		if (detail.isAttrModified("apiUser")) {
+			setApiUser(detail, user, ose);
+		} else {
+			user.setApiUser(existing.isApiUser());
+		}
+	}
+
+	private void setApiUser(UserDetail detail, User user, OpenSpecimenException ose) {
+		user.setApiUser(detail.isApiUser());
+	}
+
+	private void setIpRange(UserDetail detail, User existing, User user, OpenSpecimenException ose) {
+		if (detail.isAttrModified("ipRange")) {
+			setIpRange(detail, user, ose);
+		} else {
+			user.setIpRange(existing.getIpRange());
+		}
+
+		if (user.isApiUser() && StringUtils.isBlank(user.getIpRange())) {
+			ose.addError(UserErrorCode.IP_REQ);
+		}
+
+	}
+
+	private void setIpRange(UserDetail detail, User user, OpenSpecimenException ose) {
+		user.setIpRange(detail.getIpRange());
+
+		try {
+			if (StringUtils.isNotBlank(user.getIpRange()) && !user.getIpRange().equals("*")) {
+				new IpAddressMatcher(user.getIpRange());
+			}
+		} catch (Exception e) {
+			ose.addError(UserErrorCode.INVALID_IP, user.getIpRange());
+		}
+
+		if (user.isApiUser() && StringUtils.isBlank(user.getIpRange())) {
+			ose.addError(UserErrorCode.IP_REQ);
+		}
+	}
+
+	private void setTimeZone(UserDetail detail, User user, OpenSpecimenException ose) {
+		if (StringUtils.isBlank(detail.getTimeZone())) {
+			return;
+		}
+
+		try {
+			TimeZone tz = TimeZone.getTimeZone(detail.getTimeZone());
+			if (tz == null) {
+				ose.addError(CommonErrorCode.INVALID_TZ, detail.getTimeZone());
+			}
+
+			user.setTimeZone(detail.getTimeZone());
+		} catch (Exception e) {
+			ose.addError(CommonErrorCode.INVALID_TZ, detail.getTimeZone());
+			logger.error("Error obtaining timezone for " + detail.getTimeZone(), e);
+		}
+	}
+
+	private void setTimeZone(UserDetail detail, User existing, User user, OpenSpecimenException ose) {
+		if (detail.isAttrModified("timeZone")) {
+			setTimeZone(detail, user, ose);
+		} else {
+			user.setTimeZone(existing.getTimeZone());
 		}
 	}
 }

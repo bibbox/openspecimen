@@ -28,5 +28,7 @@ public interface DistributionOrderDao extends Dao<DistributionOrder> {
 
 	List<DistributionOrderItem> getOrderItems(DistributionOrderItemListCriteria crit);
 
+	DistributionOrderItem getOrderItem(Long orderId, String spmnLabel);
+
 	void saveOrUpdateOrderItem(DistributionOrderItem item);
 }

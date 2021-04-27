@@ -23,6 +23,11 @@
     </record>
     
     <field>
+      <caption>#getMessage("cp_identifier")</caption>
+      <attribute>id</attribute>
+    </field>
+
+    <field>
       <caption>#getMessage("cp_title")</caption>
       <attribute>title</attribute>
     </field>
@@ -59,13 +64,13 @@
     </record>
     
     <field>
-      <type>date</type>
+      <type>dateOnly</type>
       <caption>#getMessage("cp_start_date")</caption>
       <attribute>startDate</attribute>
     </field>
   
     <field>
-      <type>date</type>
+      <type>dateOnly</type>
       <caption>#getMessage("cp_end_date")</caption>
       <attribute>endDate</attribute>
     </field>
@@ -122,6 +127,11 @@
       <caption>#getMessage("cp_manual_spmn_label_enabled")</caption>
       <attribute>manualSpecLabelEnabled</attribute>
     </field>
+
+    <field>
+      <caption>#getMessage("cp_label_seq_key")</caption>
+      <attribute>labelSequenceKey</attribute>
+    </field>
     
     <field>
       <caption>#getMessage("cp_spmn_label_pre_print_mode")</caption>
@@ -158,5 +168,9 @@
       <caption>#getMessage("cp_activity_status")</caption>
       <attribute>activityStatus</attribute>
     </field>
+
+   <record type="customFields" entityType="CollectionProtocolExtension">
+     <attribute>extensionDetail</attribute>
+   </record>
   </record>
 </object-schema>

@@ -1,5 +1,5 @@
 angular.module('os.biospecimen.participant')
-  .factory('ImportUtil', function($translate) {
+  .factory('ImportUtil', function($translate, $injector) {
     var pluginTypes = {};
 
     function addPluginTypes(importTypes, group, entityType) {
@@ -38,7 +38,7 @@ angular.module('os.biospecimen.participant')
       return importTypes;
     }
 
-    function getParticipantTypes(entityForms, cpId) {
+    function getParticipantTypes(entityForms, cpId, addConsent) {
       var group = $translate.instant('participant.title');
 
       var importTypes = [];
@@ -57,17 +57,29 @@ angular.module('os.biospecimen.participant')
         ]
       }
 
-      importTypes = importTypes.concat([
-        {
-          group: group, type: 'consent', title: 'participant.consents',
-          showImportType: false, csvType: 'MULTIPLE_ROWS_PER_OBJ', importType: 'UPDATE'
-        }
-      ]);
+      if (addConsent) {
+        importTypes = importTypes.concat(getConsentTypes(cpId));
+      }
 
       addPluginTypes(importTypes, group, 'Participant');
       addForms(importTypes, group, 'CommonParticipant', entityForms['CommonParticipant']);
       return addForms(importTypes, group, 'Participant', entityForms['Participant']);
     } 
+
+    function getConsentTypes(cpId) {
+      var group = $translate.instant('participant.title');
+      if ($injector.has('ecDocument')) {
+        return [{
+          group: group, type: 'econsentsDocumentResponse', title: 'participant.consents',
+          showImportType: false, importType: 'UPDATE'
+        }];
+      } else {
+        return [{
+          group: group, type: 'consent', title: 'participant.consents',
+          showImportType: false, csvType: 'MULTIPLE_ROWS_PER_OBJ', importType: 'UPDATE'
+        }];
+      }
+    }
 
     function getVisitTypes(entityForms) {
       var group = $translate.instant('visits.title');
@@ -76,25 +88,35 @@ angular.module('os.biospecimen.participant')
       return addForms(importTypes, group, 'SpecimenCollectionGroup', entityForms['SpecimenCollectionGroup']);
     }
 
-    function getSpecimenTypes(cp, entityForms) {
+    function getSpecimenTypes(cp, allowedEntityTypes, entityForms) {
       var group = $translate.instant('specimens.title');
 
       var importTypes = [];
 
       importTypes.push({ group: group, type: 'specimen', title: 'specimens.list' });
-      importTypes.push({
-        group: group, type: 'specimenAliquot', title: 'specimens.spmn_aliquots',
-        showImportType: false, importType    : 'CREATE'
-      });
-      importTypes.push({
-        group: group, type: 'specimenDerivative', title: 'specimens.spmn_derivatives',
-        showImportType: false, importType    : 'CREATE'
-      });
+
+      if (allowedEntityTypes.indexOf('DerivativeAndAliquots') != -1) {
+        importTypes.push({
+          group: group, type: 'specimenAliquot', title: 'specimens.spmn_aliquots',
+          showImportType: false, importType    : 'CREATE'
+        });
+        importTypes.push({
+          group: group, type: 'specimenDerivative', title: 'specimens.spmn_derivatives',
+          showImportType: false, importType    : 'CREATE'
+        });
+      }
 
       if (!cp.specimenCentric) {
         importTypes.push({
           group: group, type: 'masterSpecimen', title: 'participant.master_specimens',
           showImportType: false, importType    : 'CREATE'
+        });
+      }
+
+      if (cp.id == -1) {
+        importTypes.push({
+          group: group, type: 'containerSpecimen', title: 'specimens.container_specimens',
+          showImportType: false, importType: 'UPDATE'
         });
       }
 
@@ -105,17 +127,45 @@ angular.module('os.biospecimen.participant')
 
       addPluginTypes(importTypes, group, 'Specimen');
       addForms(importTypes, group, 'Specimen', entityForms['Specimen']);
-      return addForms(importTypes, group, 'SpecimenEvent', entityForms['SpecimenEvent']);
+      addForms(importTypes, group, 'SpecimenEvent', entityForms['SpecimenEvent']);
+      return addEventTypes(cp, importTypes, group);
+    }
+
+    function addEventTypes(cp, importTypes, group) {
+      if (cp.id != -1) {
+        return importTypes;
+      }
+
+      var events = [
+        'containerTransferEvent', 'specimenDisposalEvent',
+        'specimenReservedEvent', 'specimenReservationCancelEvent',
+        'specimenReturnEvent', 'specimenTransferEvent'
+      ];
+
+      angular.forEach(events,
+        function(event) {
+          importTypes.push({
+            group: group,
+            type: event,
+            title: 'bulk_imports.object_types.' + event,
+            showImportType: false,
+            importType: 'UPDATE',
+            params: {}
+          });
+        }
+      );
+
+      return importTypes;
     }
 
     function getImportDetail(cp, allowedEntityTypes, forms) {
       var breadcrumbs, onSuccess;
       if (cp.id == -1) {
         breadcrumbs = [{state: 'cp-list', title: "cp.list"}];
-        onSuccess = {state: 'cp-list'};
+        onSuccess = {state: 'import-multi-cp-jobs'};
       } else {
         breadcrumbs = [{state: 'cp-list-view', title: cp.shortTitle, params: '{cpId:' + cp.id + '}'}];
-        onSuccess = {state: 'cp-list-view', params: {cpId: cp.id}};
+        onSuccess = {state: 'import-cp-jobs', params: {cpId: cp.id}};
       }
 
       var entityForms = {};
@@ -129,7 +179,9 @@ angular.module('os.biospecimen.participant')
 
       var importTypes = [];
       if (!cp.specimenCentric && allowedEntityTypes.indexOf('Participant') >= 0) {
-        importTypes = importTypes.concat(getParticipantTypes(entityForms, cp.id));
+        importTypes = importTypes.concat(getParticipantTypes(entityForms, cp.id, allowedEntityTypes.indexOf('Consent') >= 0));
+      } else if (!cp.specimenCentric && allowedEntityTypes.indexOf('Consent') >= 0) {
+        importTypes = importTypes.concat(getConsentTypes(cp.id));
       }
 
       if (!cp.specimenCentric && allowedEntityTypes.indexOf('SpecimenCollectionGroup') >= 0) {
@@ -137,7 +189,7 @@ angular.module('os.biospecimen.participant')
       }
 
       if (allowedEntityTypes.indexOf('Specimen') >= 0) {
-        importTypes = importTypes.concat(getSpecimenTypes(cp, entityForms));
+        importTypes = importTypes.concat(getSpecimenTypes(cp, allowedEntityTypes, entityForms));
       }
 
       angular.forEach(importTypes,

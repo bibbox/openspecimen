@@ -2,6 +2,7 @@
 package com.krishagni.catissueplus.core.biospecimen.services.impl;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -9,46 +10,38 @@ import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.springframework.beans.BeanUtils;
-import org.springframework.beans.factory.InitializingBean;
 
-import com.krishagni.catissueplus.core.biospecimen.ConfigParams;
+import com.krishagni.catissueplus.core.administrative.domain.Site;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolRegistration;
 import com.krishagni.catissueplus.core.biospecimen.domain.Participant;
+import com.krishagni.catissueplus.core.biospecimen.domain.ParticipantMedicalIdentifier;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.ParticipantErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.ParticipantFactory;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.ParticipantUtil;
+import com.krishagni.catissueplus.core.biospecimen.domain.factory.impl.ParticipantLookupFactoryImpl;
 import com.krishagni.catissueplus.core.biospecimen.events.MatchedParticipant;
 import com.krishagni.catissueplus.core.biospecimen.events.MatchedParticipantsList;
 import com.krishagni.catissueplus.core.biospecimen.events.ParticipantDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.PmiDetail;
-import com.krishagni.catissueplus.core.biospecimen.matching.ParticipantLookupLogic;
 import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
 import com.krishagni.catissueplus.core.biospecimen.services.ParticipantService;
-import com.krishagni.catissueplus.core.common.OpenSpecimenAppCtxProvider;
 import com.krishagni.catissueplus.core.common.PlusTransactional;
 import com.krishagni.catissueplus.core.common.access.AccessCtrlMgr;
 import com.krishagni.catissueplus.core.common.errors.ErrorType;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
 import com.krishagni.catissueplus.core.common.events.ResponseEvent;
-import com.krishagni.catissueplus.core.common.service.ConfigChangeListener;
-import com.krishagni.catissueplus.core.common.service.ConfigurationService;
 import com.krishagni.catissueplus.core.common.service.MpiGenerator;
 import com.krishagni.catissueplus.core.common.service.ObjectAccessor;
 
-public class ParticipantServiceImpl implements ParticipantService, ObjectAccessor, InitializingBean {
-	private static Log logger = LogFactory.getLog(ParticipantServiceImpl.class);
+public class ParticipantServiceImpl implements ParticipantService, ObjectAccessor {
+	private static final Log logger = LogFactory.getLog(ParticipantServiceImpl.class);
 
 	private DaoFactory daoFactory;
 
 	private ParticipantFactory participantFactory;
 
-	private ParticipantLookupLogic defaultParticipantLookupFlow;
-
-	private ParticipantLookupLogic participantLookupLogic;
-
-	private ConfigurationService cfgSvc;
+	private ParticipantLookupFactoryImpl lookupFactory;
 
 	public void setDaoFactory(DaoFactory daoFactory) {
 		this.daoFactory = daoFactory;
@@ -58,12 +51,8 @@ public class ParticipantServiceImpl implements ParticipantService, ObjectAccesso
 		this.participantFactory = participantFactory;
 	}
 
-	public void setDefaultParticipantLookupFlow(ParticipantLookupLogic defaultParticipantLookupFlow) {
-		this.defaultParticipantLookupFlow = defaultParticipantLookupFlow;
-	}
-
-	public void setCfgSvc(ConfigurationService cfgSvc) {
-		this.cfgSvc = cfgSvc;
+	public void setLookupFactory(ParticipantLookupFactoryImpl lookupFactory) {
+		this.lookupFactory = lookupFactory;
 	}
 
 	@Override
@@ -83,7 +72,7 @@ public class ParticipantServiceImpl implements ParticipantService, ObjectAccesso
 	public ResponseEvent<ParticipantDetail> createParticipant(RequestEvent<ParticipantDetail> req) {
 		try {
 			Participant participant = participantFactory.createParticipant(req.getPayload());
-			createParticipant(participant);
+			participant = createParticipant(participant);
 			return ResponseEvent.response(ParticipantDetail.from(participant, false));
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
@@ -159,7 +148,7 @@ public class ParticipantServiceImpl implements ParticipantService, ObjectAccesso
 			List<MatchedParticipantsList> result = new ArrayList<>();
 
 			for (ParticipantDetail inputCrit : req.getPayload()) {
-				List<MatchedParticipant> matchedParticipants = getParticipantLookupLogic().getMatchingParticipants(inputCrit);
+				List<MatchedParticipant> matchedParticipants = lookupFactory.getLookupLogic().getMatchingParticipants(inputCrit);
 				if (inputCrit.isReqRegInfo()) {
 					addRegInfo(matchedParticipants);
 				}
@@ -175,7 +164,7 @@ public class ParticipantServiceImpl implements ParticipantService, ObjectAccesso
 		}
 	}
 	
-	public void createParticipant(Participant participant) {
+	public Participant createParticipant(Participant participant) {
 		OpenSpecimenException ose = new OpenSpecimenException(ErrorType.USER_ERROR);
 		ParticipantUtil.ensureUniqueUid(daoFactory, participant.getUid(), ose);
 		ParticipantUtil.ensureUniquePmis(daoFactory, PmiDetail.from(participant.getPmis(), false), participant, ose);
@@ -186,13 +175,12 @@ public class ParticipantServiceImpl implements ParticipantService, ObjectAccesso
 		participant.setEmpiIfEmpty();
 		daoFactory.getParticipantDao().saveOrUpdate(participant, true);
 		participant.addOrUpdateExtension();
+		return participant;
 	}
 
 	public void updateParticipant(Participant existing, Participant newParticipant) {
 		ParticipantUtil.ensureLockedFieldsAreUntouched(existing, newParticipant);
-
 		OpenSpecimenException ose = new OpenSpecimenException(ErrorType.USER_ERROR);
-
 		String existingUid = existing.getUid();
 		String newUid = newParticipant.getUid();
 		if (StringUtils.isNotBlank(newUid) && !newUid.equals(existingUid)) {
@@ -207,7 +195,8 @@ public class ParticipantServiceImpl implements ParticipantService, ObjectAccesso
 		} else if (generator == null && StringUtils.isNotBlank(newEmpi) && !newEmpi.equals(existingEmpi)) {
 			ParticipantUtil.ensureUniqueEmpi(daoFactory, newEmpi, ose);
 		}
-		
+
+
 		List<PmiDetail> pmis = PmiDetail.from(newParticipant.getPmis(), false);
 		ParticipantUtil.ensureUniquePmis(daoFactory, pmis, existing, ose);
 		ose.checkAndThrow();
@@ -223,7 +212,7 @@ public class ParticipantServiceImpl implements ParticipantService, ObjectAccesso
 
 		if (existing == null) {
 			Participant participant = participantFactory.createParticipant(detail);
-			createParticipant(participant);
+			participant = createParticipant(participant);
 			return ParticipantDetail.from(participant, false);
 		} else {
 			Participant participant = participantFactory.createParticipant(existing, detail);
@@ -250,16 +239,6 @@ public class ParticipantServiceImpl implements ParticipantService, ObjectAccesso
 	@Override
 	public void ensureReadAllowed(Long objectId) {
 		AccessCtrlMgr.getInstance().ensureReadParticipantRights(objectId);
-	}
-
-	@Override
-	public void afterPropertiesSet() throws Exception {
-		cfgSvc.registerChangeListener(ConfigParams.MODULE, new ConfigChangeListener() {
-			@Override
-			public void onConfigChange(String name, String value) {
-				participantLookupLogic = null;
-			}
-		});
 	}
 
 	private Participant getParticipant(ParticipantDetail detail, boolean forUpdate) {
@@ -297,46 +276,6 @@ public class ParticipantServiceImpl implements ParticipantService, ObjectAccesso
 		return result;
 	}
 
-	private ParticipantLookupLogic getParticipantLookupLogic() {
-		if (participantLookupLogic == null) {
-			initParticipantLookupFlow(cfgSvc.getStrSetting(ConfigParams.MODULE, ConfigParams.PARTICIPANT_LOOKUP_FLOW));
-		}
-
-		return participantLookupLogic;
-	}
-
-	private void initParticipantLookupFlow(String lookupFlow) {
-		if (StringUtils.isBlank(lookupFlow)) {
-			participantLookupLogic = defaultParticipantLookupFlow;
-			return;
-		}
-
-		ParticipantLookupLogic result = null;
-		try {
-			lookupFlow = lookupFlow.trim();
-			if (lookupFlow.startsWith("bean:")) {
-				result = OpenSpecimenAppCtxProvider.getBean(lookupFlow.substring("bean:".length()).trim());
-			} else {
-				String className = lookupFlow;
-				if (lookupFlow.startsWith("class:")) {
-					className = lookupFlow.substring("class:".length()).trim();
-				}
-
-
-				Class<ParticipantLookupLogic> klass = (Class<ParticipantLookupLogic>) Class.forName(className);
-				result = BeanUtils.instantiate(klass);
-			}
-		} catch (Exception e) {
-			logger.info("Invalid participant lookup flow configuration setting: " + lookupFlow, e);
-		}
-
-		if (result == null) {
-			throw OpenSpecimenException.userError(ParticipantErrorCode.INVALID_LOOKUP_FLOW, lookupFlow);
-		}
-
-		participantLookupLogic = result;
-	}
-
 	//
 	// TODO: We are assuming there won't be many matched participants;
 	// If this is slow then we need to issue a single query to obtain
@@ -358,5 +297,22 @@ public class ParticipantServiceImpl implements ParticipantService, ObjectAccesso
 
 	private List<CollectionProtocolRegistration> getCprs(Participant participant) {
 		return AccessCtrlMgr.getInstance().getAccessibleCprs(participant.getCprs());
+	}
+
+	private List<ParticipantMedicalIdentifier> getNewlyAddedPmis(Participant existing, Participant newParticipant) {
+		Map<Site, String> existingPmis = new HashMap<>();
+		for (ParticipantMedicalIdentifier pmi : existing.getPmis()) {
+			existingPmis.put(pmi.getSite(), pmi.getMedicalRecordNumber());
+		}
+
+		List<ParticipantMedicalIdentifier> newPmis = new ArrayList<>();
+		for (ParticipantMedicalIdentifier newPmi : newParticipant.getPmis()) {
+			String existingMrn = existingPmis.get(newPmi.getSite());
+			if (!StringUtils.equals(existingMrn, newPmi.getMedicalRecordNumber())) {
+				newPmis.add(newPmi);
+			}
+		}
+
+		return newPmis;
 	}
 }

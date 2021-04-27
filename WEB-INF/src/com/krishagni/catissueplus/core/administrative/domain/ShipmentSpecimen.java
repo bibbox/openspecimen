@@ -1,6 +1,7 @@
 package com.krishagni.catissueplus.core.administrative.domain;
 
 import org.hibernate.envers.Audited;
+import org.hibernate.envers.RelationTargetAuditMode;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Configurable;
 
@@ -21,7 +22,7 @@ public class ShipmentSpecimen extends BaseEntity {
 
 	private ShipmentContainer shipmentContainer;
 	
-	private String receivedQuality;
+	private PermissibleValue receivedQuality;
 
 	@Autowired
 	private SpecimenService spmnSvc;
@@ -50,15 +51,20 @@ public class ShipmentSpecimen extends BaseEntity {
 		this.shipmentContainer = shipmentContainer;
 	}
 
-	public String getReceivedQuality() {
+	@Audited(targetAuditMode = RelationTargetAuditMode.NOT_AUDITED)
+	public PermissibleValue getReceivedQuality() {
 		return receivedQuality;
 	}
 
-	public void setReceivedQuality(String receivedQuality) {
+	public void setReceivedQuality(PermissibleValue receivedQuality) {
 		this.receivedQuality = receivedQuality;
 	}
 
 	public void ship() {
+		if (!shipment.isPending()) {
+			return;
+		}
+
 		Shipment shipment = getShipment();
 		if (shipment.isSpecimenShipment()) {
 			StorageContainerPosition position = new StorageContainerPosition();
@@ -73,13 +79,17 @@ public class ShipmentSpecimen extends BaseEntity {
 	
 	public void receive(ShipmentSpecimen other) {
 		setReceivedQuality(other.getReceivedQuality());
-		updateSpecimen(other);
-		SpecimenShipmentReceivedEvent.createForShipmentItem(this).saveRecordEntry();
+		if (!shipment.isReceived()) {
+			updateSpecimen(other);
+			SpecimenShipmentReceivedEvent.createForShipmentItem(this).saveRecordEntry();
+		}
 	}
 
-	public void receive(String receivedQuality) {
+	public void receive(PermissibleValue receivedQuality) {
 		setReceivedQuality(receivedQuality);
-		SpecimenShipmentReceivedEvent.createForShipmentItem(this).saveRecordEntry();
+		if (!shipment.isReceived()) {
+			SpecimenShipmentReceivedEvent.createForShipmentItem(this).saveRecordEntry();
+		}
 	}
 
 	public static ShipmentSpecimen createShipmentSpecimen(Shipment shipment, Specimen specimen) {

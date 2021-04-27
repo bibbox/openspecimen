@@ -4,9 +4,7 @@
     "http://hibernate.sourceforge.net/hibernate-mapping-3.0.dtd">
 
 <hibernate-mapping>
-  <class 
-    name="com.krishagni.rbac.domain.RoleAccessControl" 
-    table="RBAC_ROLE_ACCESS_LIST">
+  <class name="com.krishagni.rbac.domain.RoleAccessControl" table="RBAC_ROLE_ACCESS_LIST">
 
     <id name="id" column="IDENTIFIER">
       <generator class="native">
@@ -14,25 +12,14 @@
       </generator>
     </id>
     
-    <many-to-one
-      name="role"
-      class="com.krishagni.rbac.domain.Role"
-      column="ROLE_ID"/>
+    <many-to-one name="role" column="ROLE_ID"/>
     
-    <many-to-one
-      name="resource"
-      class="com.krishagni.rbac.domain.Resource"
-      column="RESOURCE_ID"/>
+    <many-to-one name="resource" column="RESOURCE_ID"/>
       
-    <set 
-      name="operations" 
-      inverse="true" 
-      cascade="all-delete-orphan"
-      table="RBAC_ROLE_ACCESS_LIST_OPS">
+    <set name="operations" inverse="true" cascade="all-delete-orphan" table="RBAC_ROLE_ACCESS_LIST_OPS">
       <key column="ACL_ID"/>
       <one-to-many class="com.krishagni.rbac.domain.ResourceInstanceOp"/>
     </set>
-    
   </class>
 </hibernate-mapping> 
  

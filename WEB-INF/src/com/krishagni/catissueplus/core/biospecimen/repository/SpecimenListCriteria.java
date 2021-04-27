@@ -2,6 +2,8 @@ package com.krishagni.catissueplus.core.biospecimen.repository;
 
 import java.util.List;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.krishagni.catissueplus.core.common.access.SiteCpPair;
 import com.krishagni.catissueplus.core.common.events.AbstractListCriteria;
 
@@ -15,7 +17,7 @@ public class SpecimenListCriteria extends AbstractListCriteria<SpecimenListCrite
 	private String[] collectionStatuses;
 
 	private List<SiteCpPair> siteCps;
-	
+
 	private List<String> labels;
 
 	private List<String> barcodes;
@@ -26,7 +28,13 @@ public class SpecimenListCriteria extends AbstractListCriteria<SpecimenListCrite
 
 	private String storageLocationSite;
 
+	private Long cprId;
+
 	private String ppid;
+
+	private Long visitId;
+
+	private Long ancestorId;
 
 	private String anatomicSite;
 
@@ -44,6 +52,8 @@ public class SpecimenListCriteria extends AbstractListCriteria<SpecimenListCrite
 
 	private Long reservedForDp;
 
+	private boolean minimalInfo;
+
 	@Override
 	public SpecimenListCriteria self() {		
 		return this;
@@ -53,6 +63,7 @@ public class SpecimenListCriteria extends AbstractListCriteria<SpecimenListCrite
 		return cpId;
 	}
 
+	@JsonProperty("cpId")
 	public SpecimenListCriteria cpId(Long cpId) {
 		this.cpId = cpId;
 		return self();
@@ -62,6 +73,7 @@ public class SpecimenListCriteria extends AbstractListCriteria<SpecimenListCrite
 		return cpShortTitle;
 	}
 
+	@JsonProperty("cpShortTitle")
 	public SpecimenListCriteria cpShortTitle(String cpShortTitle) {
 		this.cpShortTitle = cpShortTitle;
 		return self();
@@ -71,6 +83,8 @@ public class SpecimenListCriteria extends AbstractListCriteria<SpecimenListCrite
 		return lineages;
 	}
 
+	@JsonProperty("lineages")
+	@JsonAlias({"lineage"})
 	public SpecimenListCriteria lineages(String[] lineages) {
 		this.lineages = lineages;
 		return self();
@@ -80,6 +94,8 @@ public class SpecimenListCriteria extends AbstractListCriteria<SpecimenListCrite
 		return collectionStatuses;
 	}
 
+	@JsonProperty("collectionStatuses")
+	@JsonAlias({"collectionStatus"})
 	public SpecimenListCriteria collectionStatuses(String[] collectionStatuses) {
 		this.collectionStatuses = collectionStatuses;
 		return self();
@@ -93,11 +109,13 @@ public class SpecimenListCriteria extends AbstractListCriteria<SpecimenListCrite
 		this.siteCps = siteCps;
 		return self();
 	}
-	
+
 	public List<String> labels() {
 		return labels;
 	}
-	
+
+	@JsonProperty("labels")
+	@JsonAlias({"label"})
 	public SpecimenListCriteria labels(List<String> labels) {
 		this.labels = labels;
 		return self();
@@ -107,6 +125,8 @@ public class SpecimenListCriteria extends AbstractListCriteria<SpecimenListCrite
 		return barcodes;
 	}
 
+	@JsonProperty("barcodes")
+	@JsonAlias({"barcode"})
 	public SpecimenListCriteria barcodes(List<String> barcodes) {
 		this.barcodes = barcodes;
 		return self();
@@ -116,6 +136,8 @@ public class SpecimenListCriteria extends AbstractListCriteria<SpecimenListCrite
 		return specimenListId;
 	}
 
+	@JsonProperty("listId")
+	@JsonAlias({"specimenListId"})
 	public SpecimenListCriteria specimenListId(Long specimenListId) {
 		this.specimenListId = specimenListId;
 		return self();
@@ -134,8 +156,20 @@ public class SpecimenListCriteria extends AbstractListCriteria<SpecimenListCrite
 		return storageLocationSite;
 	}
 
+	@JsonProperty("storageLocationSite")
+	@JsonAlias({"locationSite"})
 	public SpecimenListCriteria storageLocationSite(String storageLocationSite) {
 		this.storageLocationSite = storageLocationSite;
+		return self();
+	}
+
+	public Long cprId() {
+		return cprId;
+	}
+
+	@JsonProperty("cprId")
+	public SpecimenListCriteria cprId(Long cprId) {
+		this.cprId = cprId;
 		return self();
 	}
 
@@ -143,8 +177,29 @@ public class SpecimenListCriteria extends AbstractListCriteria<SpecimenListCrite
 		return ppid;
 	}
 
+	@JsonProperty("ppid")
 	public SpecimenListCriteria ppid(String ppid) {
 		this.ppid = ppid;
+		return self();
+	}
+
+	public Long visitId() {
+		return visitId;
+	}
+
+	@JsonProperty("visitId")
+	public SpecimenListCriteria visitId(Long visitId) {
+		this.visitId = visitId;
+		return self();
+	}
+
+	public Long ancestorId() {
+		return ancestorId;
+	}
+
+	@JsonProperty("ancestorId")
+	public SpecimenListCriteria ancestorId(Long ancestorId) {
+		this.ancestorId = ancestorId;
 		return self();
 	}
 
@@ -152,6 +207,7 @@ public class SpecimenListCriteria extends AbstractListCriteria<SpecimenListCrite
 		return anatomicSite;
 	}
 
+	@JsonProperty("anatomicSite")
 	public SpecimenListCriteria anatomicSite(String anatomicSite) {
 		this.anatomicSite = anatomicSite;
 		return self();
@@ -161,6 +217,7 @@ public class SpecimenListCriteria extends AbstractListCriteria<SpecimenListCrite
 		return type;
 	}
 
+	@JsonProperty("type")
 	public SpecimenListCriteria type(String type) {
 		this.type = type;
 		return self();
@@ -170,6 +227,7 @@ public class SpecimenListCriteria extends AbstractListCriteria<SpecimenListCrite
 		return container;
 	}
 
+	@JsonProperty("container")
 	public SpecimenListCriteria container(String container) {
 		this.container = container;
 		return self();
@@ -179,6 +237,7 @@ public class SpecimenListCriteria extends AbstractListCriteria<SpecimenListCrite
 		return containerId;
 	}
 
+	@JsonProperty("containerId")
 	public SpecimenListCriteria containerId(Long containerId) {
 		this.containerId = containerId;
 		return self();
@@ -188,6 +247,7 @@ public class SpecimenListCriteria extends AbstractListCriteria<SpecimenListCrite
 		return ancestorContainerId;
 	}
 
+	@JsonProperty("ancestorContainerId")
 	public SpecimenListCriteria ancestorContainerId(Long ancestorContainerId) {
 		this.ancestorContainerId = ancestorContainerId;
 		return self();
@@ -197,6 +257,7 @@ public class SpecimenListCriteria extends AbstractListCriteria<SpecimenListCrite
 		return this.available;
 	}
 
+	@JsonProperty("available")
 	public SpecimenListCriteria available(boolean available) {
 		this.available = available;
 		return self();
@@ -206,6 +267,7 @@ public class SpecimenListCriteria extends AbstractListCriteria<SpecimenListCrite
 		return this.noQty;
 	}
 
+	@JsonProperty("noQty")
 	public SpecimenListCriteria noQty(boolean noQty) {
 		this.noQty = noQty;
 		return self();
@@ -215,8 +277,19 @@ public class SpecimenListCriteria extends AbstractListCriteria<SpecimenListCrite
 		return reservedForDp;
 	}
 
+	@JsonProperty("reservedForDp")
 	public SpecimenListCriteria reservedForDp(Long reservedForDp) {
 		this.reservedForDp = reservedForDp;
+		return self();
+	}
+
+	public boolean minimalInfo() {
+		return minimalInfo;
+	}
+
+	@JsonProperty("minimalInfo")
+	public SpecimenListCriteria minimalInfo(boolean minimalInfo) {
+		this.minimalInfo = minimalInfo;
 		return self();
 	}
 }

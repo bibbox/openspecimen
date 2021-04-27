@@ -8,7 +8,7 @@ angular.module('os.administrative.setting',
     $stateProvider
       .state('settings', {
         url: '/settings',
-        controller: function($scope, $translate, settings, areTranslationsLoaded) {
+        controller: function($scope, $translate, settings) {
           $scope.ctx = {
             dbModules: {},
             dbModuleNames: [],
@@ -28,10 +28,18 @@ angular.module('os.administrative.setting',
               }
 
               module.settings.push(setting);
+            }
+          );
 
-              var pnKey = 'settings.' + setting.module + '.' + setting.name;
-              setting.$$osPropName = $translate.instant(pnKey);
-              setting.$$osPropDesc = $translate.instant(pnKey + '_desc');
+          $translate('common.none').then(
+            function() {
+              angular.forEach(settings,
+                function(setting) {
+                  var pnKey = 'settings.' + setting.module + '.' + setting.name;
+                  setting.$$osPropName = $translate.instant(pnKey);
+                  setting.$$osPropDesc = $translate.instant(pnKey + '_desc');
+                }
+              );
             }
           );
 
@@ -40,16 +48,8 @@ angular.module('os.administrative.setting',
         },
         template: '<div ui-view></div>',
         resolve: {
-          settings: function(isAdmin, Setting) {
+          settings: function(Setting) {
             return Setting.query();
-          },
-
-          areTranslationsLoaded: function($translate) {
-            return $translate('common.none').then(
-              function() {
-                return true;
-              }
-            );
           }
         },
         parent: 'admin-view',

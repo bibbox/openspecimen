@@ -22,6 +22,7 @@ import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.InitializingBean;
 
 import com.krishagni.catissueplus.core.administrative.domain.User;
+import com.krishagni.catissueplus.core.administrative.domain.UserGroup;
 import com.krishagni.catissueplus.core.biospecimen.ConfigParams;
 import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
 import com.krishagni.catissueplus.core.biospecimen.domain.SpecimenList;
@@ -48,6 +49,7 @@ import com.krishagni.catissueplus.core.common.events.RequestEvent;
 import com.krishagni.catissueplus.core.common.events.ResponseEvent;
 import com.krishagni.catissueplus.core.common.events.UserSummary;
 import com.krishagni.catissueplus.core.common.service.ObjectAccessor;
+import com.krishagni.catissueplus.core.common.service.StarredItemService;
 import com.krishagni.catissueplus.core.common.util.AuthUtil;
 import com.krishagni.catissueplus.core.common.util.ConfigUtil;
 import com.krishagni.catissueplus.core.common.util.EmailUtil;
@@ -83,6 +85,8 @@ public class SpecimenListServiceImpl implements SpecimenListService, Initializin
 
 	private QueryService querySvc;
 
+	private StarredItemService starredItemSvc;
+
 	public SpecimenListFactory getSpecimenListFactory() {
 		return specimenListFactory;
 	}
@@ -111,12 +115,32 @@ public class SpecimenListServiceImpl implements SpecimenListService, Initializin
 		this.querySvc = querySvc;
 	}
 
+	public void setStarredItemSvc(StarredItemService starredItemSvc) {
+		this.starredItemSvc = starredItemSvc;
+	}
+
 	@Override
 	@PlusTransactional
 	public ResponseEvent<List<SpecimenListSummary>> getSpecimenLists(RequestEvent<SpecimenListsCriteria> req) {
 		try {
+			List<SpecimenListSummary> lists = new ArrayList<>();
 			SpecimenListsCriteria crit = addSpecimenListsCriteria(req.getPayload());
-			return ResponseEvent.response(daoFactory.getSpecimenListDao().getSpecimenLists(crit));
+			if (crit.orderByStarred()) {
+				List<Long> listIds = daoFactory.getStarredItemDao().getItemIds(getObjectName(), AuthUtil.getCurrentUser().getId());
+				if (!listIds.isEmpty()) {
+					crit.ids(listIds);
+					lists = daoFactory.getSpecimenListDao().getSpecimenLists(crit);
+					crit.ids(Collections.emptyList()).notInIds(listIds);
+					lists.forEach(l -> l.setStarred(true));
+				}
+			}
+
+			if (lists.size() < crit.maxResults()) {
+				crit.maxResults(crit.maxResults() - lists.size());
+				lists.addAll(daoFactory.getSpecimenListDao().getSpecimenLists(crit));
+			}
+
+			return ResponseEvent.response(lists);
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
 		} catch (Exception e) {
@@ -383,6 +407,27 @@ public class SpecimenListServiceImpl implements SpecimenListService, Initializin
 	}
 
 	@Override
+	@PlusTransactional
+	public boolean toggleStarredSpecimenList(Long listId, boolean starred) {
+		try {
+			SpecimenList list = getSpecimenList(listId, null);
+			if (starred) {
+				starredItemSvc.save(getObjectName(), list.getId());
+			} else {
+				starredItemSvc.delete(getObjectName(), list.getId());
+			}
+
+			return true;
+		} catch (Exception e) {
+			if (e instanceof OpenSpecimenException) {
+				throw e;
+			}
+
+			throw OpenSpecimenException.serverError(e);
+		}
+	}
+
+	@Override
 	public String getObjectName() {
 		return SpecimenList.getEntityName();
 	}
@@ -464,8 +509,8 @@ public class SpecimenListServiceImpl implements SpecimenListService, Initializin
 			ensureUniqueName(existing, specimenList);
 			ensureValidSpecimensAndUsers(listDetails, specimenList, null);
 
-			Collection<User> addedUsers   = CollectionUtils.subtract(specimenList.getSharedWith(), existing.getSharedWith());
-			Collection<User> removedUsers = CollectionUtils.subtract(existing.getSharedWith(), specimenList.getSharedWith());
+			Collection<User> addedUsers   = CollectionUtils.subtract(specimenList.getAllSharedUsers(), existing.getAllSharedUsers());
+			Collection<User> removedUsers = CollectionUtils.subtract(existing.getAllSharedUsers(), specimenList.getAllSharedUsers());
 
 			existing.update(specimenList);
 			daoFactory.getSpecimenListDao().saveOrUpdate(existing);
@@ -553,7 +598,11 @@ public class SpecimenListServiceImpl implements SpecimenListService, Initializin
 		}
 		
 		if (details.isAttrModified("sharedWith")){
-			ensureValidUsers(specimenList, siteCpPairs);
+			ensureValidUsers(specimenList);
+		}
+
+		if (details.isAttrModified("sharedWithGroups")) {
+			ensureValidGroups(specimenList);
 		}
 	}
 	
@@ -572,21 +621,28 @@ public class SpecimenListServiceImpl implements SpecimenListService, Initializin
 		}
 	}
 
-	private void ensureValidUsers(SpecimenList specimenList, List<SiteCpPair> siteCps) {
-		if (CollectionUtils.isEmpty(specimenList.getSharedWith())) {
+	private void ensureValidUsers(SpecimenList specimenList) {
+		if (CollectionUtils.isEmpty(specimenList.getSharedWith()) || AuthUtil.isAdmin()) {
 			return;
 		}
-		
-		Long userId = specimenList.getOwner().getId();
-		List<Long> sharedUsers = new ArrayList<Long>();
-		for (User user : specimenList.getSharedWith()) {
-			if (user.getId().equals(userId)) {
-				continue;
-			}
-			sharedUsers.add(user.getId());
-		}
-		
+
+		List<Long> sharedUsers = specimenList.getSharedWith().stream()
+			.filter(user -> !user.equals(specimenList.getOwner()))
+			.map(User::getId)
+			.collect(Collectors.toList());
 		ensureValidUsers(sharedUsers);
+	}
+
+	private void ensureValidGroups(SpecimenList specimenList) {
+		if (CollectionUtils.isEmpty(specimenList.getSharedWithGroups()) || AuthUtil.isAdmin()) {
+			return;
+		}
+
+		for (UserGroup group : specimenList.getSharedWithGroups()) {
+			if (!group.getInstitute().equals(AuthUtil.getCurrentUserInstitute())) {
+				throw OpenSpecimenException.userError(SpecimenListErrorCode.INVALID_GROUPS_LIST);
+			}
+		}
 	}
 	
 	private void ensureValidUsers(List<Long> userIds) {
@@ -657,8 +713,8 @@ public class SpecimenListServiceImpl implements SpecimenListService, Initializin
 		}
 
 		List<SiteCpPair> siteCps = AccessCtrlMgr.getInstance().getReadAccessSpecimenSiteCps();
-		String siteCpRestriction = BiospecimenDaoHelper.getInstance().getSiteCpsCondAql(
-			siteCps, AccessCtrlMgr.getInstance().isAccessRestrictedBasedOnMrn());
+		boolean useMrnSites = AccessCtrlMgr.getInstance().isAccessRestrictedBasedOnMrn();
+		String siteCpRestriction = BiospecimenDaoHelper.getInstance().getSiteCpsCondAql(siteCps, useMrnSites);
 		if (StringUtils.isNotBlank(siteCpRestriction)) {
 			restriction += " and " + siteCpRestriction;
 		}
@@ -691,7 +747,7 @@ public class SpecimenListServiceImpl implements SpecimenListService, Initializin
 	}
 
 	private void notifyUsersOnCreate(SpecimenList specimenList) {
-		notifyUsersOnListOp(specimenList, specimenList.getSharedWith(), "ADD");
+		notifyUsersOnListOp(specimenList, specimenList.getAllSharedUsers(), "ADD");
 	}
 
 	private void notifyUsersOnUpdate(SpecimenList existing, Collection<User> addedUsers, Collection<User> removedUsers) {
@@ -700,7 +756,7 @@ public class SpecimenListServiceImpl implements SpecimenListService, Initializin
 	}
 
 	private void notifyUsersOnDelete(SpecimenList specimenList) {
-		notifyUsersOnListOp(specimenList, specimenList.getSharedWith(), "DELETE");
+		notifyUsersOnListOp(specimenList, specimenList.getAllSharedUsers(), "DELETE");
 	}
 
 	private void notifyUsersOnListOp(SpecimenList specimenList, Collection<User> notifyUsers, String op) {

@@ -51,18 +51,20 @@
         </os-users>
       </div>
     </div>
+    <div class="os-folder-users-section" ng-if="folder.sharedWithAll != 1 && folder.sharedWithAll != true">
+      <label translate="queries.share_folder_with_user_groups">Share folder with following user groups</label>
+      <div class="users-select-container">
+        <os-user-groups multiple ng-model="folder.sharedWithGroups"></os-user-groups>
+      </div>
+    </div>
   </div>
 
   <div class="os-modal-footer">
-    <button class="btn os-btn-text" 
-      ng-click="cancel()" 
-      translate="common.buttons.cancel">
-      Cancel
+    <button class="btn os-btn-text" ng-click="cancel()">
+      <span translate="common.buttons.cancel">Cancel</span>
     </button>
-    <button class="btn btn-danger" ng-if="folder.id"
-      ng-click="deleteFolder()"
-      translate="common.buttons.delete">
-      Delete
+    <button class="btn btn-danger" ng-if="folder.id" ng-click="deleteFolder()">
+      <span translate="common.buttons.delete">Delete</span>
     </button>
     <button class="btn btn-primary" 
       ng-disabled="folder.queries.length == 0 || !folder.name" 

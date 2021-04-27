@@ -7,6 +7,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import com.krishagni.catissueplus.core.administrative.domain.PermissibleValue;
 import com.krishagni.catissueplus.core.administrative.domain.ShipmentSpecimen;
 import com.krishagni.catissueplus.core.biospecimen.events.SpecimenInfo;
 
@@ -53,15 +54,11 @@ public class ShipmentSpecimenDetail implements Comparable<ShipmentSpecimenDetail
 		ShipmentSpecimenDetail itemDetail = new ShipmentSpecimenDetail();
 		itemDetail.setId(shipmentSpecimen.getId());
 		itemDetail.setSpecimen(SpecimenInfo.from(shipmentSpecimen.getSpecimen()));
-		
-		if (shipmentSpecimen.getReceivedQuality() != null) {
-			itemDetail.setReceivedQuality(shipmentSpecimen.getReceivedQuality().toString());
-		}
-		
+		itemDetail.setReceivedQuality(PermissibleValue.getValue(shipmentSpecimen.getReceivedQuality()));
 		return itemDetail;
 	}
 	
 	public static List<ShipmentSpecimenDetail> from(Collection<ShipmentSpecimen> shipmentSpmns) {
-		return shipmentSpmns.stream().map(ShipmentSpecimenDetail::from).sorted().collect(Collectors.toList());
+		return shipmentSpmns.stream().map(ShipmentSpecimenDetail::from).collect(Collectors.toList());
 	}
 }

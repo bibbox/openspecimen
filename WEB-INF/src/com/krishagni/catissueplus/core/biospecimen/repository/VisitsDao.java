@@ -10,14 +10,11 @@ import com.krishagni.catissueplus.core.biospecimen.events.VisitSummary;
 import com.krishagni.catissueplus.core.common.repository.Dao;
 
 public interface VisitsDao extends Dao<Visit> {
-	//
-	// TODO: VP: Below commented method should be removed before v5.0 RC
-	//
-//	List<VisitSummary> getVisits(VisitsListCriteria crit);
-
 	void loadCreatedVisitStats(Map<Long, ? extends VisitSummary> visits);
 
 	void loadAnticipatedVisitStats(Map<Long, ? extends VisitSummary> visits);
+
+	Long getVisitsCount(VisitsListCriteria crit);
 
 	List<Visit> getVisitsList(VisitsListCriteria crit);
 	
@@ -36,4 +33,6 @@ public interface VisitsDao extends Dao<Visit> {
 	List<Visit> getByEmpiOrMrn(Long cpId, String empiOrMrn);
 
 	List<Visit> getBySpr(Long cpId, String sprNumber);
+
+	List<Visit> getByEvent(Long cprId, String eventLabel);
 }

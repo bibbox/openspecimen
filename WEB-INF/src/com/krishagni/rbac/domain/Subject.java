@@ -7,30 +7,21 @@ import java.util.Set;
 import org.hibernate.Session;
 
 import com.krishagni.catissueplus.core.administrative.domain.Site;
+import com.krishagni.catissueplus.core.biospecimen.domain.BaseEntity;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
 import com.krishagni.catissueplus.core.common.CollectionUpdater;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.rbac.common.errors.RbacErrorCode;
 
-public class Subject {
-	private Long id;
-	
+public class Subject extends BaseEntity {
 	private String activityStatus;
 	
-	private Set<SubjectRole> roles = new HashSet<SubjectRole>();
+	private Set<SubjectRole> roles = new HashSet<>();
 	
 	//
 	// read only
 	//
-	private Set<SubjectAccess> accessList = new HashSet<SubjectAccess>();
-
-	public Long getId() {
-		return id;
-	}
-
-	public void setId(Long id) {
-		this.id = id;
-	}
+	private Set<SubjectAccess> accessList = new HashSet<>();
 
 	public String getActivityStatus() {
 		return activityStatus;

@@ -77,6 +77,14 @@ public class VisitsDaoImpl extends AbstractDao<Visit> implements VisitsDao {
 	}
 
 	@Override
+	public Long getVisitsCount(VisitsListCriteria crit) {
+		Number count = (Number) getVisitIdsListQuery(crit).getExecutableCriteria(getCurrentSession())
+			.setProjection(Projections.rowCount())
+			.uniqueResult();
+		return count.longValue();
+	}
+
+	@Override
 	@SuppressWarnings("unchecked")
 	public List<Visit> getVisitsList(VisitsListCriteria crit) {
 		Criteria query = getCurrentSession().createCriteria(Visit.class, "visit")
@@ -116,9 +124,18 @@ public class VisitsDaoImpl extends AbstractDao<Visit> implements VisitsDao {
 	@Override
 	@SuppressWarnings("unchecked")
 	public List<Visit> getBySpr(String sprNumber) {
-		return sessionFactory.getCurrentSession()
-			.getNamedQuery(GET_VISIT_BY_SPR)
+		return getCurrentSession().getNamedQuery(GET_VISIT_BY_SPR)
 			.setParameter("sprNumber", sprNumber.toUpperCase())
+			.list();
+	}
+
+	@Override
+	public List<Visit> getByEvent(Long cprId, String eventLabel) {
+		return getCurrentSession().createCriteria(Visit.class, "v")
+			.createAlias("v.cpEvent", "event")
+			.createAlias("v.registration", "reg")
+			.add(Restrictions.eq("reg.id", cprId))
+			.add(Restrictions.eq("event.eventLabel", eventLabel))
 			.list();
 	}
 
@@ -204,15 +221,13 @@ public class VisitsDaoImpl extends AbstractDao<Visit> implements VisitsDao {
 		}
 
 		if (CollectionUtils.isNotEmpty(crit.siteCps())) {
-			BiospecimenDaoHelper.getInstance().addSiteCpsCond(query, crit.siteCps(), crit.useMrnSites(), startAlias);
+			BiospecimenDaoHelper.getInstance().addSiteCpsCond(query, crit.siteCps(), crit.useMrnSites(), startAlias, false);
 		}
 
 		return detachedCriteria;
 	}
 
 	private static final String FQN = Visit.class.getName();
-	
-//	private static final String GET_VISITS_SUMMARY_BY_CPR_ID = FQN + ".getVisitsSummaryByCprId";
 
 	private static final String GET_VISIT_STATS = FQN + ".getVisitStats";
 

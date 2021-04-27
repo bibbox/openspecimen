@@ -7,6 +7,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang.StringUtils;
 import org.hibernate.Criteria;
 import org.hibernate.Query;
@@ -23,8 +24,6 @@ import com.krishagni.catissueplus.core.de.domain.SavedQuery;
 import com.krishagni.catissueplus.core.de.events.ListSavedQueriesCriteria;
 import com.krishagni.catissueplus.core.de.events.SavedQuerySummary;
 import com.krishagni.catissueplus.core.de.repository.SavedQueryDao;
-
-import org.springframework.util.CollectionUtils;
 
 public class SavedQueryDaoImpl extends AbstractDao<SavedQuery> implements SavedQueryDao {
 
@@ -86,6 +85,7 @@ public class SavedQueryDaoImpl extends AbstractDao<SavedQuery> implements SavedQ
 				.setProjection(Projections.countDistinct("s.id"));
 		
 		addSearchConditions(criteria, searchString);
+		addActiveCpGroupCond(criteria);
 		return ((Number)criteria.uniqueResult()).longValue();
 	}
 
@@ -218,15 +218,28 @@ public class SavedQueryDaoImpl extends AbstractDao<SavedQuery> implements SavedQ
 			.createAlias("createdBy", "c")
 			.createAlias("folders", "f", JoinType.LEFT_OUTER_JOIN)
 			.createAlias("f.sharedWith", "su", JoinType.LEFT_OUTER_JOIN)
+			.createAlias("f.sharedWithGroups", "sg", JoinType.LEFT_OUTER_JOIN)
+			.createAlias("sg.users", "gu", JoinType.LEFT_OUTER_JOIN)
 			.add(Restrictions.isNull("s.deletedOn"))
 			.add(Restrictions.disjunction()
 				.add(Restrictions.eq("f.sharedWithAll", true))
 				.add(Restrictions.eq("c.id", crit.userId()))
-				.add(Restrictions.eq("su.id", crit.userId())));
+				.add(Restrictions.eq("su.id", crit.userId()))
+				.add(Restrictions.eq("gu.id", crit.userId()))
+			);
 
 		addCpCondition(query, crit.cpId());
 		addSearchConditions(query, crit.query());
-		return query;
+
+		if (CollectionUtils.isNotEmpty(crit.ids())) {
+			query.add(Restrictions.in("s.id", crit.ids()));
+		}
+
+		if (CollectionUtils.isNotEmpty(crit.notInIds())) {
+			query.add(Restrictions.not(Restrictions.in("s.id", crit.notInIds())));
+		}
+
+		return addActiveCpGroupCond(query);
 	}
 
 	private Criteria addCpCondition(Criteria query, Long cpId) {
@@ -254,6 +267,22 @@ public class SavedQueryDaoImpl extends AbstractDao<SavedQuery> implements SavedQ
 
 		srchCond.add(Restrictions.ilike("s.title", searchTerm, MatchMode.ANYWHERE));
 		return query.add(srchCond);
+	}
+
+	private Criteria addActiveCpGroupCond(Criteria query) {
+		return query.add(
+			Restrictions.or(
+				Restrictions.isNull("s.cpId"),
+				Restrictions.sqlRestriction(
+					"{alias}.cp_id in (select identifier from catissue_collection_protocol where activity_status != 'Disabled')")
+			)
+		).add(
+			Restrictions.or(
+				Restrictions.isNull("s.cpGroupId"),
+				Restrictions.sqlRestriction(
+					"{alias}.cp_group_id in (select identifier from os_cp_groups where activity_status != 'Disabled')")
+			)
+		);
 	}
 
 	private static final String INSERT_QUERY_CHANGE_LOG_SQL = FQN + ".insertQueryChangeLog"; 

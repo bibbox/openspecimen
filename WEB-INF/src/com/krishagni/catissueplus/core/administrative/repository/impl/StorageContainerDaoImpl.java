@@ -47,6 +47,7 @@ import com.krishagni.catissueplus.core.biospecimen.repository.impl.BiospecimenDa
 import com.krishagni.catissueplus.core.common.access.SiteCpPair;
 import com.krishagni.catissueplus.core.common.repository.AbstractDao;
 import com.krishagni.catissueplus.core.common.util.Status;
+import com.krishagni.catissueplus.core.common.util.Utility;
 
 public class StorageContainerDaoImpl extends AbstractDao<StorageContainer> implements StorageContainerDao {
 
@@ -115,29 +116,29 @@ public class StorageContainerDaoImpl extends AbstractDao<StorageContainer> imple
 			query.createAlias("d.compAllowedSpecimenClasses", "spmnClass", JoinType.LEFT_OUTER_JOIN);
 			restriction.add(
 				Restrictions.conjunction()
-					.add(Restrictions.isNotNull("spmnClass.elements"))
-					.add(Restrictions.not(Restrictions.in("spmnClass.elements", crit.specimenClasses())))
+					.add(Restrictions.isNotNull("spmnClass.id"))
+					.add(Restrictions.not(Restrictions.in("spmnClass.id", getPvIds(crit.specimenClasses()))))
 			);
 		}
 
 		query.createAlias("d.compAllowedSpecimenTypes", "spmnType", JoinType.LEFT_OUTER_JOIN);
 		Junction notInTypes = Restrictions.conjunction();
 		if (isNotEmpty(crit.specimenTypes())) {
-			notInTypes.add(Restrictions.not(Restrictions.in("spmnType.elements", crit.specimenTypes())));
+			notInTypes.add(Restrictions.not(Restrictions.in("spmnType.id", getPvIds(crit.specimenTypes()))));
 		}
 
 		if (isNotEmpty(crit.specimenClasses())) {
 			DetachedCriteria typesCrit = DetachedCriteria.forClass(PermissibleValue.class, "pv")
 				.createAlias("pv.parent", "ppv")
 				.add(Restrictions.eq("pv.attribute", "specimen_type"))
-				.add(Restrictions.in("ppv.value", crit.specimenClasses()))
-				.setProjection(Property.forName("pv.value"));
-			notInTypes.add(Subqueries.propertyNotIn("spmnType.elements", typesCrit));
+				.add(Restrictions.in("ppv.id", getPvIds(crit.specimenClasses())))
+				.setProjection(Property.forName("pv.id"));
+			notInTypes.add(Subqueries.propertyNotIn("spmnType.id", typesCrit));
 		}
 
 		restriction.add(
 			Restrictions.conjunction()
-				.add(Restrictions.isNotNull("spmnType.elements"))
+				.add(Restrictions.isNotNull("spmnType.id"))
 				.add(notInTypes)
 		);
 
@@ -496,6 +497,27 @@ public class StorageContainerDaoImpl extends AbstractDao<StorageContainer> imple
 			.list();
 	}
 
+	@Override
+	public List<StorageContainerSummary> getUtilisations(Collection<Long> containerIds) {
+		List<Object[]> rows = getCurrentSession().getNamedQuery(GET_CONTAINER_UTILISATION)
+			.setParameterList("containerIds", containerIds)
+			.list();
+
+		return rows.stream().map(
+			row -> {
+				int idx = -1;
+
+				StorageContainerSummary summary = new StorageContainerSummary();
+				summary.setId((Long) row[++idx]);
+				summary.setName((String) row[++idx]);
+				summary.setNoOfRows((Integer) row[++idx]);
+				summary.setNoOfColumns((Integer) row[++idx]);
+				summary.setUsedPositions((Integer) row[++idx]);
+				return summary;
+			}
+		).collect(Collectors.toList());
+	}
+
 	@SuppressWarnings("unchecked")
 	private Map<String, List<String>> getInvalidSpecimens(List<Long> containerIds, DetachedCriteria validSpmnsQuery, int firstN) {
 		List<Object[]> rows = getCurrentSession().createCriteria(Specimen.class, "specimen")
@@ -546,6 +568,8 @@ public class StorageContainerDaoImpl extends AbstractDao<StorageContainer> imple
 				int rowNo = (Integer)row[idx++];
 				int colNo = (Integer)row[idx++];
 				location.setPosition((rowNo - 1) * 10000 + colNo);
+				location.setPositionY((String)row[idx++]);
+				location.setPositionX((String)row[idx++]);
 			}
 
 			container.setStorageLocation(location);
@@ -622,11 +646,13 @@ public class StorageContainerDaoImpl extends AbstractDao<StorageContainer> imple
 		}
 
 		if (StringUtils.isNotBlank(crit.type())) {
-			query.add(Restrictions.eq("specimen.specimenType", crit.type()));
+			query.createAlias("specimen.specimenType", "typePv")
+				.add(Restrictions.eq("typePv.value", crit.type()));
 		}
 
 		if (StringUtils.isNotBlank(crit.anatomicSite())) {
-			query.add(Restrictions.eq("specimen.tissueSite", crit.anatomicSite()));
+			query.createAlias("specimen.tissueSite", "anatomicPv")
+				.add(Restrictions.eq("anatomicPv.value", crit.anatomicSite()));
 		}
 
 		String startAlias = "visit";
@@ -657,6 +683,10 @@ public class StorageContainerDaoImpl extends AbstractDao<StorageContainer> imple
 		return detachedCriteria;
 	}
 
+	private List<Long> getPvIds(Collection<PermissibleValue> pvs) {
+		return Utility.nullSafeStream(pvs).map(PermissibleValue::getId).collect(Collectors.toList());
+	}
+
 	private class ListQueryBuilder {
 		private StorageContainerListCriteria crit;
 		
@@ -678,6 +708,7 @@ public class StorageContainerDaoImpl extends AbstractDao<StorageContainer> imple
 
 		public Query query() {
 			addIdsRestriction();
+			addNotInIdsRestriction();
 			addNameRestriction();		
 			addSiteRestriction();
 					
@@ -742,6 +773,16 @@ public class StorageContainerDaoImpl extends AbstractDao<StorageContainer> imple
 			addAnd();
 			where.append("c.id in :ids");
 			params.put("ids", crit.ids());
+		}
+
+		private void addNotInIdsRestriction() {
+			if (CollectionUtils.isEmpty(crit.notInIds())) {
+				return;
+			}
+
+			addAnd();
+			where.append("c.id not in :notInIds");
+			params.put("notInIds", crit.notInIds());
 		}
 
 		private void addNameRestriction() {
@@ -833,17 +874,14 @@ public class StorageContainerDaoImpl extends AbstractDao<StorageContainer> imple
 			
 			addAnd();
 			if (crit.hierarchical()) {
-				where.append("(:specimenClass in elements(dc.compAllowedSpecimenClasses)")
-				.append(" or ")
-				.append(":specimenType in elements(dc.compAllowedSpecimenTypes)")
-				.append(")");				
+				from.append(" left join dc.compAllowedSpecimenClasses spmnClass")
+					.append(" left join dc.compAllowedSpecimenTypes spmnType");
 			} else {
-				where.append("(:specimenClass in elements(c.compAllowedSpecimenClasses)")
-				.append(" or ")
-				.append(":specimenType in elements(c.compAllowedSpecimenTypes)")
-				.append(")");				
+				from.append(" left join c.compAllowedSpecimenClasses spmnClass")
+					.append(" left join c.compAllowedSpecimenTypes spmnType");
 			}
-			
+
+			where.append("(spmnClass.value = :specimenClass or spmnType.value = :specimenType)");
 			params.put("specimenClass", specimenClass);
 			params.put("specimenType", specimenType);
 		}
@@ -989,4 +1027,6 @@ public class StorageContainerDaoImpl extends AbstractDao<StorageContainer> imple
 	private static final String GET_DESCENDANT_CONTAINER_IDS = FQN + ".getDescendantContainerIds";
 
 	private static final String GET_SHIPPED_CONTAINERS = FQN + ".getShippedContainers";
+
+	private static final String GET_CONTAINER_UTILISATION = FQN + ".getContainersUtilisation";
 }

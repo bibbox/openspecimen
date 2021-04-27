@@ -9,17 +9,20 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.springframework.context.ApplicationListener;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.krishagni.catissueplus.core.administrative.domain.User;
+import com.krishagni.catissueplus.core.administrative.domain.UserGroup;
+import com.krishagni.catissueplus.core.administrative.domain.UserGroupSavedEvent;
 import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
+import com.krishagni.catissueplus.core.common.PlusTransactional;
 import com.krishagni.catissueplus.core.common.domain.LabelPrintJob;
 import com.krishagni.catissueplus.core.common.domain.LabelPrintJobItem;
 import com.krishagni.catissueplus.core.common.domain.LabelPrintJobItem.Status;
@@ -34,17 +37,18 @@ import com.krishagni.catissueplus.core.common.events.EventCode;
 import com.krishagni.catissueplus.core.common.events.OpenSpecimenEvent;
 import com.krishagni.catissueplus.core.common.repository.PrintRuleConfigsListCriteria;
 import com.krishagni.catissueplus.core.common.service.LabelPrinter;
+import com.krishagni.catissueplus.core.common.service.impl.EventPublisher;
 import com.krishagni.catissueplus.core.common.util.AuthUtil;
 import com.krishagni.catissueplus.core.common.util.Utility;
 
-public abstract class AbstractLabelPrinter<T> implements LabelPrinter<T>, ApplicationListener<OpenSpecimenEvent> {
+public abstract class AbstractLabelPrinter<T> implements LabelPrinter<T> {
 	//
 	// format: <entity_type>_<yyyyMMddHHmm>_<unique_os_run_num>_<copy>.txt
 	// E.g. specimen_201604040807_1_1.txt, specimen_201604040807_1_2.txt, visit_201604040807_1_1.txt etc
 	//
 	private static final Log logger = LogFactory.getLog(AbstractLabelPrinter.class);
 
-	private static final String LABEL_FILENAME_FMT = "%s_%s_%d_%d.txt";
+	private static final String LABEL_FILENAME_FMT = "%s_%s_%d_%d.%s";
 
 	private static final String TSTAMP_FMT = "yyyyMMddHHmm";
 
@@ -106,6 +110,7 @@ public abstract class AbstractLabelPrinter<T> implements LabelPrinter<T>, Applic
 					item.setJob(job);
 					item.setPrinterName(rule.getPrinterName());
 					item.setItemLabel(getItemLabel(obj));
+					item.setItemId(getItemId(obj));
 					item.setCopies(printItem.getCopies());
 					item.setStatus(LabelPrintJobItem.Status.QUEUED);
 					item.setLabelType(rule.getLabelType());
@@ -137,16 +142,37 @@ public abstract class AbstractLabelPrinter<T> implements LabelPrinter<T>, Applic
 		}
 	}
 
-	@Override
 	public void onApplicationEvent(OpenSpecimenEvent event) {
 		EventCode code = event.getEventCode();
-		if (code != PrintRuleEvent.CREATED && code != PrintRuleEvent.UPDATED && code != PrintRuleEvent.DELETED) {
-			return;
-		}
+		if (code == PrintRuleEvent.CREATED || code == PrintRuleEvent.UPDATED || code == PrintRuleEvent.DELETED) {
+			PrintRuleConfig ruleCfg = (PrintRuleConfig) event.getEventData();
+			if (ruleCfg.getObjectType().equals(getObjectType())) {
+				loadRulesFromDb();
+			}
+		} else if (event instanceof UserGroupSavedEvent && rules != null) {
+			UserGroup group = ((UserGroupSavedEvent) event).getEventData();
+			boolean cacheUpdated = false;
 
-		PrintRuleConfig ruleCfg = (PrintRuleConfig) event.getEventData();
-		if (ruleCfg.getObjectType().equals(getObjectType())) {
-			loadRulesFromDb();
+			for (LabelPrintRule rule : rules) {
+				int idx = rule.getUserGroups().indexOf(group);
+				if (idx == -1) {
+					continue;
+				}
+
+				rule.getUserGroups().remove(idx);
+				if (!group.isDeleted()) {
+					rule.getUserGroups().add(group);
+				}
+
+				rule.recomputeEffectiveUsers();
+				cacheUpdated = true;
+			}
+
+			if (cacheUpdated) {
+				PrintRuleConfig ruleCfg = new PrintRuleConfig();
+				ruleCfg.setObjectType(getObjectType());
+				EventPublisher.getInstance().publish(PrintRuleEvent.CACHE_UPDATED, ruleCfg);
+			}
 		}
 	}
 
@@ -158,6 +184,9 @@ public abstract class AbstractLabelPrinter<T> implements LabelPrinter<T>, Applic
 
 	protected abstract String getItemLabel(T obj);
 
+	protected abstract Long getItemId(T obj);
+
+	@PlusTransactional
 	protected void loadRulesFromDb() {
 		try {
 			logger.info("Loading print rules from database for: " + getObjectType());
@@ -172,7 +201,7 @@ public abstract class AbstractLabelPrinter<T> implements LabelPrinter<T>, Applic
 	}
 
 	protected Map<String, Object> makeLabelData(LabelPrintJobItem item, LabelPrintRule rule, Map<String, String> dataItems) {
-		Map<String, Object> labelData = new HashMap<String, Object>();
+		Map<String, Object> labelData = new HashMap<>();
 		labelData.put("jobItem", item);
 		labelData.put("rule", rule);
 		labelData.put("dataItems", dataItems);
@@ -198,11 +227,15 @@ public abstract class AbstractLabelPrinter<T> implements LabelPrinter<T>, Applic
 			String content = null;
 			switch (rule.getCmdFileFmt()) {
 				case CSV:
-					content = getCommaSeparatedValueFields(dataItems);
+					content = getCommaSeparatedValueFields(dataItems, rule.getLineEnding());
 					break;
 
 				case KEY_VALUE:
-					content = getKeyValueFields(dataItems);
+					content = getKeyValueFields(dataItems, false, rule.getLineEnding());
+					break;
+
+				case KEY_Q_VALUE:
+					content = getKeyValueFields(dataItems, true, rule.getLineEnding());
 					break;
 			}
 
@@ -213,21 +246,25 @@ public abstract class AbstractLabelPrinter<T> implements LabelPrinter<T>, Applic
 		}
 	}
 
-	private String getCommaSeparatedValueFields(Map<String, String> dataItems) {
-		return Utility.stringListToCsv(dataItems.values());
+	private String getCommaSeparatedValueFields(Map<String, String> dataItems, String lineEnding) {
+		return Utility.stringListToCsv(dataItems.values(), true, ',', getLineEnding(lineEnding));
 	}
 
-	private String getKeyValueFields(Map<String, String> dataItems) {
+	private String getKeyValueFields(Map<String, String> dataItems, boolean quotedValues, String lineEnding) {
+		String fmt = "%s=%s" + getLineEnding(lineEnding);
 		StringBuilder content = new StringBuilder();
-		for (Map.Entry<String, String> dataItem : dataItems.entrySet()) {
-			content.append(String.format("%s=%s\n", dataItem.getKey(), dataItem.getValue()));
-		}
 
-		if (!dataItems.isEmpty()) {
+		Function<String, String> transformFn = quotedValues ? Utility::getQuotedString : (v) -> v;
+		dataItems.forEach((key, value) -> content.append(String.format(fmt, key, transformFn.apply(value))));
+		if (!dataItems.isEmpty() && "LF".equals(lineEnding)) {
 			content.deleteCharAt(content.length() - 1);
 		}
 
 		return content.toString();
+	}
+
+	private String getLineEnding(String lineEnding) {
+		return "CRLF".equals(lineEnding) ? "\r\n" : "\n";
 	}
 
 	private void writeToFile(LabelPrintJobItem item, LabelPrintRule rule, String content)
@@ -236,7 +273,7 @@ public abstract class AbstractLabelPrinter<T> implements LabelPrinter<T>, Applic
 		int labelCount = uniqueNum.incrementAndGet();
 
 		for (int i = 0; i < item.getCopies(); ++i) {
-			String filename = String.format(LABEL_FILENAME_FMT, item.getJob().getItemType(), tstamp, labelCount, (i + 1));
+			String filename = String.format(LABEL_FILENAME_FMT, item.getJob().getItemType(), tstamp, labelCount, (i + 1), rule.getFileExtn());
 			FileUtils.write(new File(rule.getCmdFilesDir(), filename), content);
 		}
 	}

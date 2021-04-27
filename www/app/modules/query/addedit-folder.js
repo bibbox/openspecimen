@@ -3,9 +3,10 @@ angular.module('os.query.addeditfolder', ['os.query.models'])
     $scope.folder = folder;
 
     $scope.saveOrUpdateFolder = function () {
-      var sharedWith = [];
+      var sharedWith = [], sharedWithGroups;
       if (!$scope.folder.sharedWithAll) {
         sharedWith = $scope.folder.sharedWith.map(function(user) { return {id: user.id} });
+        sharedWithGroups = ($scope.folder.sharedWithGroups || []).map(function(group) { return {id: group.id} });
       }
 
       var queries = $scope.folder.queries.map(function(query) { return {id: query.id} });
@@ -15,6 +16,7 @@ angular.module('os.query.addeditfolder', ['os.query.models'])
         name: $scope.folder.name,
         sharedWithAll: $scope.folder.sharedWithAll,
         sharedWith: sharedWith,
+        sharedWithGroups: sharedWithGroups,
         queries: queries
       });
         

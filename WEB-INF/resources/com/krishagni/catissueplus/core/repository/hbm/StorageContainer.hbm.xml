@@ -93,14 +93,14 @@
       </many-to-many>
     </set>
 
-    <set name="allowedSpecimenClasses" table="OS_STOR_CONT_SPEC_CLASSES" cascade="all-delete-orphan">
+    <set name="allowedSpecimenClasses" table="OS_STOR_CONT_SPEC_CLASSES">
       <key column="STORAGE_CONTAINER_ID"/>
-      <element column="SPECIMEN_CLASS" type="string"/>
+      <many-to-many class="com.krishagni.catissueplus.core.administrative.domain.PermissibleValue" column="SPECIMEN_CLASS_ID"/>
     </set>
 
-    <set name="allowedSpecimenTypes" table="OS_STOR_CONT_SPEC_TYPES" cascade="all-delete-orphan">
+    <set name="allowedSpecimenTypes" table="OS_STOR_CONT_SPEC_TYPES">
       <key column="STORAGE_CONTAINER_ID"/>
-      <element column="SPECIMEN_TYPE" type="string"/>
+      <many-to-many class="com.krishagni.catissueplus.core.administrative.domain.PermissibleValue" column="SPECIMEN_TYPE_ID"/>
     </set>
             
     <set name="allowedCps" table="OS_STOR_CONTAINER_CPS">
@@ -113,14 +113,14 @@
       <many-to-many class="com.krishagni.catissueplus.core.administrative.domain.DistributionProtocol" column="DP_ID"/>
     </set>
 
-    <set name="compAllowedSpecimenClasses" table="OS_STOR_CONT_COMP_SPEC_CLASSES" cascade="all-delete-orphan">
+    <set name="compAllowedSpecimenClasses" table="OS_STOR_CONT_COMP_SPEC_CLASSES">
       <key column="STORAGE_CONTAINER_ID"/>
-      <element column="SPECIMEN_CLASS" type="string"/>
+      <many-to-many class="com.krishagni.catissueplus.core.administrative.domain.PermissibleValue" column="SPECIMEN_CLASS_ID"/>
     </set>
 
-    <set name="compAllowedSpecimenTypes" table="OS_STOR_CONT_COMP_SPEC_TYPES" cascade="all-delete-orphan">
+    <set name="compAllowedSpecimenTypes" table="OS_STOR_CONT_COMP_SPEC_TYPES">
       <key column="STORAGE_CONTAINER_ID"/>
-      <element column="SPECIMEN_TYPE" type="string"/>
+      <many-to-many class="com.krishagni.catissueplus.core.administrative.domain.PermissibleValue" column="SPECIMEN_TYPE_ID"/>
     </set>
             
     <set name="compAllowedCps" table="OS_STOR_CONTAINER_COMP_CPS">
@@ -143,6 +143,11 @@
     <set name="occupiedPositions" table="OS_CONTAINER_POSITIONS" cascade="all-delete-orphan" inverse="true">
       <key column="STORAGE_CONTAINER_ID" not-null="true"/>
       <one-to-many class="com.krishagni.catissueplus.core.administrative.domain.StorageContainerPosition"/>
+    </set>
+
+    <set name="transferEvents" table="OS_CONTAINER_TRANSFER_EVENTS" inverse="true" cascade="all-delete-orphan" order-by="id">
+      <key column="CONTAINER_ID"/>
+      <one-to-many class="com.krishagni.catissueplus.core.administrative.domain.ContainerTransferEvent"/>
     </set>
 
     <many-to-one
@@ -233,11 +238,14 @@
       <return-scalar column="parentId"      type="long"/>
       <return-scalar column="rowNo"         type="int"/>
       <return-scalar column="colNo"         type="int"/>
+      <return-scalar column="rowStr"        type="string"/>
+      <return-scalar column="colStr"        type="string"/>
 
       select
         s.identifier as containerId, s.name as containerName,
         s.no_of_rows as noOfRows, s.no_of_cols as noOfColumns, s.pos_assignment as posAssignment,
-        s.parent_container_id as parentId, p.pos_two as rowNo, p.pos_one as colNo
+        s.parent_container_id as parentId, p.pos_two as rowNo, p.pos_one as colNo,
+        p.pos_two_str as rowStr, p.pos_one_str as colStr
       from
         os_storage_containers s
         inner join os_container_positions p on p.occupying_container_id = s.identifier
@@ -249,7 +257,7 @@
       select
         s.identifier as containerId, s.name as containerName,
         s.no_of_rows as noOfRows, s.no_of_cols as noOfColumns, s.pos_assignment as posAssignment,
-        null as parentId, null as rowNo, null as colNo
+        null as parentId, null as rowNo, null as colNo, null as rowStr, null as colStr
       from
         os_storage_containers s
       where
@@ -265,11 +273,14 @@
       <return-scalar column="parentId"      type="long"/>
       <return-scalar column="rowNo"         type="int"/>
       <return-scalar column="colNo"         type="int"/>
+      <return-scalar column="rowStr"        type="string"/>
+      <return-scalar column="colStr"        type="string"/>
 
       select
         s.identifier as containerId, s.name as containerName,
         s.no_of_rows as noOfRows, s.no_of_cols as noOfColumns, null as posAssignment,
-        s.parent_container_id as parentId, p.pos_two as rowNo, p.pos_one as colNo
+        s.parent_container_id as parentId, p.pos_two as rowNo, p.pos_one as colNo,
+        p.pos_two_str as rowStr, p.pos_one_str as colStr
       from
         os_storage_containers s
         inner join os_container_positions p on p.occupying_container_id = s.identifier
@@ -282,12 +293,10 @@
         c.identifier as containerId
       from
         os_storage_containers c
-        left join os_container_positions p on p.storage_container_id = c.identifier
         left join os_stor_container_comp_cps allowed_cps on allowed_cps.storage_container_id = c.identifier
       where
         c.store_specimens = 1 and
         c.activity_status = 'Active' and
-        (p.reservation_time is null or p.reservation_time > :reservedLaterThan or p.blocked = 1) and
         (
           allowed_cps.cp_id = :cpId or
           (allowed_cps.cp_id is null and
@@ -307,9 +316,10 @@
             select
               count(*)
             from
-              os_stor_cont_comp_spec_classes
+              os_stor_cont_comp_spec_classes cc
+              inner join catissue_permissible_value pcc on pcc.identifier = cc.specimen_class_id
             where
-              specimen_class = :specimenClass and
+              pcc.value = :specimenClass and
               storage_container_id = c.identifier
           ) > 0
           or
@@ -317,18 +327,16 @@
             select
               count(*)
             from
-              os_stor_cont_comp_spec_types
+              os_stor_cont_comp_spec_types ct
+              inner join catissue_permissible_value pct on pct.identifier = ct.specimen_type_id
             where
-              specimen_type = :specimenType and
+              pct.value = :specimenType and
               storage_container_id = c.identifier
           ) > 0
-        )
-      group by
-        c.identifier, c.no_of_rows, c.no_of_cols
-      having
-        (c.no_of_rows * c.no_of_cols - count(p.identifier)) > (:minFreeLocs - 1)
+        ) and
+        (c.no_of_rows * c.no_of_cols - c.utilisation) > (:minFreeLocs - 1)
       order by
-        (c.no_of_rows * c.no_of_cols - count(p.identifier)), c.identifier
+        (c.no_of_rows * c.no_of_cols - c.utilisation), c.identifier
     </sql-query>
 
     <sql-query name="getRootContainerSpecimensCount">
@@ -354,17 +362,18 @@
       <return-scalar column="specimens" type="integer"/>
 
       select
-        s.specimen_type as type, count(s.identifier) as specimens
+        pt.value as type, count(s.identifier) as specimens
       from
         os_storage_containers f
         inner join os_containers_hierarchy h on h.ancestor_id = f.identifier
         inner join os_container_positions p on p.storage_container_id = h.descendent_id
         inner join catissue_specimen s on s.identifier = p.occupying_specimen_id
+        inner join catissue_permissible_value pt on pt.identifier = s.specimen_type_id
       where
         f.activity_status != 'Disabled' and
         f.identifier = :containerId
       group by
-        s.specimen_type
+        pt.value
     </sql-query>
 
     <sql-query name="getDescendantContainerIds">
@@ -382,6 +391,25 @@
         a.activity_status != 'Disabled' and
         d.activity_status != 'Disabled' and
         a.identifier != d.identifier
+    </sql-query>
+
+    <sql-query name="getContainersUtilisation">
+      <return-scalar column="identifier" type="long"/>
+      <return-scalar column="name" type="string"/>
+      <return-scalar column="no_of_rows" type="integer"/>
+      <return-scalar column="no_of_cols" type="integer"/>
+      <return-scalar column="occupied" type="integer"/>
+
+      select
+        b.identifier, b.name, b.no_of_rows, b.no_of_cols, count(p.identifier) as occupied
+      from
+        os_storage_containers b
+        left join os_container_positions p on p.storage_container_id = b.identifier
+      where
+        b.identifier in (:containerIds) and
+        b.activity_status != 'Disabled'
+      group by
+        b.identifier, b.name, b.no_of_rows, b.no_of_cols
     </sql-query>
   </class>
 </hibernate-mapping>

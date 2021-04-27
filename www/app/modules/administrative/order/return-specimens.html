@@ -57,14 +57,14 @@
                 <th class="col os-col-10">
                   <span translate="orders.return_qty">Return Quantity</span>
                 </th>
-                <th class="col os-col-25">
+                <th class="col os-col-23">
                   <span translate="orders.spec.location">Location</span>
                 </th>
                 <th class="col os-col-15">
                   <span translate="orders.user">User</span>
                 </th>
-                <th class="col os-col-12">
-                  <span translate="orders.date">Date</span>
+                <th class="col os-col-15">
+                  <span translate="orders.date_time">Date</span>
                 </th>
                 <th class="col os-col-10">
                   <span translate="orders.freeze_thaw_on_return">Freeze/Thaw</span>
@@ -100,14 +100,13 @@
                   <os-spmn-measure name="qty" md-input specimen="item.specimen" quantity="item.quantity"
                     ensure-range="[
                       {tgt: item.distQty, cmp: 'le', errorKey: 'retQtyGtDistQty'},
-                      {tgt: 0, cmp: 'gt', errorKey: 'distQtyLeZero'}
+                      {tgt: 0, cmp: 'gt', errorKey: 'retQtyLeZero'}
                     ]"
                     required ng-switch-when="true">
                   </os-spmn-measure>
                   <os-spmn-measure name="qty" md-input specimen="item.specimen" quantity="item.quantity"
                     ensure-range="[
-                      {tgt: item.distQty, cmp: 'le', errorKey: 'retQtyGtDistQty'},
-                      {tgt: 0, cmp: 'gt', errorKey: 'distQtyLeZero'}
+                      {tgt: item.distQty, cmp: 'le', errorKey: 'retQtyGtDistQty'}
                     ]"
                     ng-switch-default>
                   </os-spmn-measure>
@@ -124,8 +123,14 @@
                   </div>
                 </td>
                 <td class="col">
-                  <os-date-picker name="returnDate" date="item.time" md-type="true">
-                  </os-date-picker>
+                  <div class="os-date-time clearfix">
+                    <os-date-picker class="col-xs-9 os-no-left-padding" name="returnDate" date="item.time" md-type="true">
+                    </os-date-picker>
+                    <div class="col-xs-3 os-md-time os-no-padding">
+                      <timepicker class="os-md-input os-time-no-wheels" ng-model="item.time" show-meridian="false">
+                      </timepicker>
+                    </div>
+                  </div>
                 </td>
                 <td class="col">
                   <input os-md-input ng-model="item.incrFreezeThaw" ng-pattern="/^[0-9]*$/">

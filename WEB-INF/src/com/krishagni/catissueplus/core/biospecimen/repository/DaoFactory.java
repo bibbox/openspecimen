@@ -2,13 +2,16 @@
 package com.krishagni.catissueplus.core.biospecimen.repository;
 
 import com.krishagni.catissueplus.core.administrative.repository.AutoFreezerProviderDao;
+import com.krishagni.catissueplus.core.administrative.repository.ContainerActivityLogDao;
 import com.krishagni.catissueplus.core.administrative.repository.ContainerStoreListDao;
+import com.krishagni.catissueplus.core.administrative.repository.ContainerTaskDao;
 import com.krishagni.catissueplus.core.administrative.repository.ContainerTypeDao;
 import com.krishagni.catissueplus.core.administrative.repository.DistributionOrderDao;
 import com.krishagni.catissueplus.core.administrative.repository.DistributionProtocolDao;
 import com.krishagni.catissueplus.core.administrative.repository.DpRequirementDao;
 import com.krishagni.catissueplus.core.administrative.repository.InstituteDao;
 import com.krishagni.catissueplus.core.administrative.repository.PermissibleValueDao;
+import com.krishagni.catissueplus.core.administrative.repository.ScheduledContainerActivityDao;
 import com.krishagni.catissueplus.core.administrative.repository.ScheduledJobDao;
 import com.krishagni.catissueplus.core.administrative.repository.ShipmentDao;
 import com.krishagni.catissueplus.core.administrative.repository.SiteDao;
@@ -16,6 +19,7 @@ import com.krishagni.catissueplus.core.administrative.repository.SpecimenRequest
 import com.krishagni.catissueplus.core.administrative.repository.StorageContainerDao;
 import com.krishagni.catissueplus.core.administrative.repository.StorageContainerPositionDao;
 import com.krishagni.catissueplus.core.administrative.repository.UserDao;
+import com.krishagni.catissueplus.core.administrative.repository.UserGroupDao;
 import com.krishagni.catissueplus.core.audit.repository.AuditDao;
 import com.krishagni.catissueplus.core.auth.repository.AuthDao;
 import com.krishagni.catissueplus.core.common.repository.ConfigSettingDao;
@@ -23,6 +27,7 @@ import com.krishagni.catissueplus.core.common.repository.ExternalAppIdDao;
 import com.krishagni.catissueplus.core.common.repository.MessageLogDao;
 import com.krishagni.catissueplus.core.common.repository.PrintRuleConfigDao;
 import com.krishagni.catissueplus.core.common.repository.SearchEntityKeywordDao;
+import com.krishagni.catissueplus.core.common.repository.StarredItemDao;
 import com.krishagni.catissueplus.core.common.repository.UnhandledExceptionDao;
 import com.krishagni.catissueplus.core.common.repository.UniqueIdGenerator;
 import com.krishagni.catissueplus.core.common.repository.UpgradeLogDao;
@@ -50,6 +55,8 @@ public interface DaoFactory {
 	StagedVisitDao getStagedVisitDao();
 
 	UserDao getUserDao();
+
+	UserGroupDao getUserGroupDao();
 	
 	AuthDao getAuthDao();
 
@@ -62,6 +69,12 @@ public interface DaoFactory {
 	StorageContainerPositionDao getStorageContainerPositionDao();
 	
 	ContainerTypeDao getContainerTypeDao();
+
+	ContainerTaskDao getContainerTaskDao();
+
+	ScheduledContainerActivityDao getScheduledContainerActivityDao();
+
+	ContainerActivityLogDao getContainerActivityLogDao();
 
 	DistributionProtocolDao getDistributionProtocolDao();
 
@@ -108,4 +121,8 @@ public interface DaoFactory {
 	MessageLogDao getMessageLogDao();
 
 	SearchEntityKeywordDao getSearchEntityKeywordDao();
+
+	CollectionProtocolGroupDao getCpGroupDao();
+
+	StarredItemDao getStarredItemDao();
 } 

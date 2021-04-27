@@ -26,12 +26,15 @@ import org.hibernate.sql.JoinType;
 import com.krishagni.catissueplus.core.administrative.domain.DistributionOrder;
 import com.krishagni.catissueplus.core.administrative.domain.DistributionOrderItem;
 import com.krishagni.catissueplus.core.administrative.domain.Site;
+import com.krishagni.catissueplus.core.administrative.domain.factory.DistributionOrderErrorCode;
 import com.krishagni.catissueplus.core.administrative.events.DistributionOrderItemListCriteria;
 import com.krishagni.catissueplus.core.administrative.events.DistributionOrderListCriteria;
 import com.krishagni.catissueplus.core.administrative.events.DistributionOrderSummary;
 import com.krishagni.catissueplus.core.administrative.events.DistributionProtocolDetail;
 import com.krishagni.catissueplus.core.administrative.repository.DistributionOrderDao;
+import com.krishagni.catissueplus.core.common.OrderByNotNullProperty;
 import com.krishagni.catissueplus.core.common.access.SiteCpPair;
+import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.UserSummary;
 import com.krishagni.catissueplus.core.common.repository.AbstractDao;
 
@@ -43,7 +46,7 @@ public class DistributionOrderDaoImpl extends AbstractDao<DistributionOrder> imp
 		Criteria query = getOrderListQuery(listCrit)
 			.setFirstResult(listCrit.startAt())
 			.setMaxResults(listCrit.maxResults())
-			.addOrder(Order.desc("id"));
+			.addOrder(OrderByNotNullProperty.desc("executionDate", "creationDate"));
 
 		addProjections(query, CollectionUtils.isNotEmpty(listCrit.sites()));
 		List<Object[]> rows = query.list();
@@ -70,8 +73,8 @@ public class DistributionOrderDaoImpl extends AbstractDao<DistributionOrder> imp
 	@Override
 	public Long getOrdersCount(DistributionOrderListCriteria listCrit) {
 		Number count = (Number) getOrderListQuery(listCrit)
-				.setProjection(Projections.rowCount())
-				.uniqueResult();
+			.setProjection(Projections.rowCount())
+			.uniqueResult();
 		return count.longValue();
 	}
 
@@ -85,10 +88,9 @@ public class DistributionOrderDaoImpl extends AbstractDao<DistributionOrder> imp
 	@Override
 	@SuppressWarnings("unchecked")
 	public List<DistributionOrder> getOrders(List<String> names) {
-		return getSessionFactory().getCurrentSession()
-				.getNamedQuery(GET_ORDERS_BY_NAME)
-				.setParameterList("names", names)
-				.list();
+		return getCurrentSession().getNamedQuery(GET_ORDERS_BY_NAME)
+			.setParameterList("names", names)
+			.list();
 	}
 
 	@Override
@@ -105,9 +107,9 @@ public class DistributionOrderDaoImpl extends AbstractDao<DistributionOrder> imp
 	@SuppressWarnings("unchecked")
 	public List<DistributionOrderItem> getDistributedOrderItems(List<Long> specimenIds) {
 		return getSessionFactory().getCurrentSession()
-				.getNamedQuery(GET_DISTRIBUTED_ITEMS_BY_SPMN_IDS)
-				.setParameterList("ids", specimenIds)
-				.list();
+			.getNamedQuery(GET_DISTRIBUTED_ITEMS_BY_SPMN_IDS)
+			.setParameterList("ids", specimenIds)
+			.list();
 	}
 
 	@Override
@@ -145,6 +147,16 @@ public class DistributionOrderDaoImpl extends AbstractDao<DistributionOrder> imp
 	}
 
 	@Override
+	public DistributionOrderItem getOrderItem(Long orderId, String spmnLabel) {
+		return (DistributionOrderItem) getCurrentSession().createCriteria(DistributionOrderItem.class, "item")
+			.createAlias("item.order", "order")
+			.createAlias("item.specimen", "spmn")
+			.add(Restrictions.eq("order.id", orderId))
+			.add(Restrictions.eq("spmn.label", spmnLabel).ignoreCase())
+			.uniqueResult();
+	}
+
+	@Override
 	public void saveOrUpdateOrderItem(DistributionOrderItem item) {
 		getCurrentSession().saveOrUpdate(item);
 	}
@@ -169,6 +181,7 @@ public class DistributionOrderDaoImpl extends AbstractDao<DistributionOrder> imp
 		addExecutionDtRestriction(query, crit);
 		addReceivingSiteRestriction(query, crit, matchMode);
 		addReceivingInstRestriction(query, crit, matchMode);
+		addStatusRestriction(query, crit);
 		return query;
 	}
 
@@ -296,6 +309,18 @@ public class DistributionOrderDaoImpl extends AbstractDao<DistributionOrder> imp
 		
 		query.createAlias("site.institute", "institute")
 			.add(Restrictions.ilike("institute.name", crit.receivingInstitute(), mode));
+	}
+
+	private void addStatusRestriction(Criteria query, DistributionOrderListCriteria crit) {
+		if (StringUtils.isBlank(crit.status())) {
+			return;
+		}
+
+		try {
+			query.add(Restrictions.eq("status", DistributionOrder.Status.valueOf(crit.status())));
+		} catch (Exception e) {
+			throw OpenSpecimenException.userError(DistributionOrderErrorCode.INVALID_STATUS, crit.status());
+		}
 	}
 	
 	private void addProjections(Criteria query, boolean isDistinct) {

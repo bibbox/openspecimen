@@ -9,11 +9,11 @@
 
   <div class="os-page-commands">
     <div class="left">
-      <button class="default" ui-sref="query-addedit({queryId: undefined})">
+      <button class="default" show-if-allowed="permOpts.create" ui-sref="query-addedit({queryId: undefined})">
         <span class="fa fa-plus"></span>
         <span translate="common.buttons.create">Create</span>
       </button>
-      <button class="default" ng-click="importQuery()">
+      <button class="default" show-if-allowed="permOpts.create" ng-click="importQuery()">
         <span class="fa fa-upload"></span>
         <span translate="common.buttons.import">Import</span>
       </button>
@@ -74,7 +74,7 @@
   <div class="os-table os-table-hover" overflow="auto" ng-if="queryList.queries.length > 0">
     <div class="os-table-head">
       <div class="row">
-        <div class="col col-xs-6" style="padding-left: 20px;" translate="queries.title">
+        <div class="col col-xs-6" style="padding-left: 40px;" translate="queries.title">
           Title
         </div>
         <div class="col col-xs-3" translate="queries.created_by">
@@ -91,8 +91,14 @@
         ng-class="{selected: query.selected}" os-row-click="viewResults(query)">
         <div class="col col-xs-6">
           <div class="clearfix">
-            <div class="pull-left os-query-select-cb os-click-esc">
-              <os-checkbox ng-change="toggleQuerySelect(query)" ng-model="query.selected"></os-checkbox>
+            <div class="pull-left os-click-esc">
+              <div class="os-query-select-cb">
+                <os-checkbox ng-change="toggleQuerySelect(query)" ng-model="query.selected"></os-checkbox>
+              </div>
+              <span class="os-starred-item fa"
+                ng-class="{true: 'fa-star starred', false: 'fa-star-o'}[query.starred == true]"
+                ng-click="toggleStar(query)">
+              </span>
             </div>
             <div class="pull-left" style="padding-left: 12px;">
               <a ui-sref="query-results({queryId: query.id})" title="{{'queries.tooltip.view_records' | translate}}">
@@ -109,31 +115,25 @@
               <span class="fa fa-ellipsis-v"></span>
             </button>
             <ul class="dropdown-menu dropdown-menu-right">
-              <li>
+              <li ng-show="permOpts.updateAllowed">
                 <a ui-sref="query-addedit({queryId: query.id})">
                   <span class="fa fa-pencil"></span>
                   <span translate="queries.edit"></span>
                 </a>
               </li>
               <li>
-                <a href="{{query.getQueryDefUrl()}}" target="_blank">
+                <a href="{{query.getQueryDefUrl()}}" target="_blank" rel="noopener">
                   <span class="fa fa-download"></span>
                   <span translate="queries.download_def"></span>
                 </a>
               </li>
-              <li show-if="jobCreateOpts">
+              <li ng-show="permOpts.createJobAllowed">
                 <a ui-sref="job-addedit({queryId: query.id})">
                   <span class="fa fa-clock-o"></span>
                   <span translate="queries.schedule"></span>
                 </a>
               </li>
-              <!--<li>
-                <a>
-                  <span class="fa fa-list"></span>
-                  <span translate="queries.view_query_run_log"></span>
-                </a>
-              </li>-->
-              <li ng-click="deleteQuery(query)">
+              <li ng-show="permOpts.deleteAllowed" ng-click="deleteQuery(query)">
                 <a>
                   <span class="fa fa-trash"></span>
                   <span translate="queries.delete"></span>
@@ -198,7 +198,7 @@
         <div class="row" ng-repeat="folder in folders.myFolders"> 
           <div class="col col-xs-12 clearfix folder" 
             ng-class="{'os-query-selected-folder': folders.selectedFolder.id == folder.id}">
-            <div class="pull-left" ng-click="selectFolder(folder)" title="{{folder.name}}">
+            <div class="pull-left" ng-click="selectFolder(folder)" os-tooltip="{{folder.name}}">
               {{folder.name}}
             </div>
 
@@ -234,8 +234,13 @@
         <div class="row" ng-repeat="folder in folders.sharedFolders">
           <div class="col col-xs-12 clearfix folder"
             ng-class="{'os-query-selected-folder': folders.selectedFolder == folder}">
-            <div class="pull-left" ng-click="selectFolder(folder)" title="{{folder.name}}">
+            <div class="pull-left" ng-click="selectFolder(folder)" os-tooltip="{{folder.name}}">
               {{folder.name}}
+            </div>
+            <div class="pull-right">
+              <button class="btn btn-xs btn-default" ng-click="showFolderInfo(folder)">
+                <span style="font-size: 14px;" class="fa fa-info-circle"></span>
+              </button>
             </div>
           </div>
         </div>

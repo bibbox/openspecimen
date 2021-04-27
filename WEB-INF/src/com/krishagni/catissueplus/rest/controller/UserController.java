@@ -3,6 +3,7 @@ package com.krishagni.catissueplus.rest.controller;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -34,7 +35,12 @@ import com.krishagni.catissueplus.core.common.events.DependentEntityDetail;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
 import com.krishagni.catissueplus.core.common.events.ResponseEvent;
 import com.krishagni.catissueplus.core.common.events.UserSummary;
+import com.krishagni.catissueplus.core.common.util.AuthUtil;
 import com.krishagni.catissueplus.core.common.util.Status;
+import com.krishagni.catissueplus.core.de.events.EntityFormRecords;
+import com.krishagni.catissueplus.core.de.events.FormCtxtSummary;
+import com.krishagni.catissueplus.core.de.events.FormRecordsList;
+import com.krishagni.catissueplus.core.de.events.GetEntityFormRecordsOp;
 import com.krishagni.rbac.events.SubjectRoleDetail;
 
 @Controller
@@ -72,6 +78,9 @@ public class UserController {
 		@RequestParam(value = "institute", required = false)
 		String institute,
 
+		@RequestParam(value = "group", required = false)
+		String group,
+
 		@RequestParam(value = "domainName", required = false)
 		String domainName,
 
@@ -107,7 +116,10 @@ public class UserController {
 		String resourceName,
 
 		@RequestParam(value = "op", required = false)
-		String[] ops) {
+		String[] ops,
+
+		@RequestParam(value = "includeSysUser", required = false, defaultValue = "false")
+		boolean includeSysUser) {
 		
 		UserListCriteria crit = new UserListCriteria()
 			.startAt(start)
@@ -116,6 +128,7 @@ public class UserController {
 			.name(name)
 			.loginName(loginName)
 			.instituteName(institute)
+			.group(group)
 			.domainName(domainName)
 			.activityStatus(activityStatus)
 			.listAll(listAll)
@@ -127,7 +140,8 @@ public class UserController {
 			.cpShortTitle(cpShortTitle)
 			.roleNames(roles != null ? Arrays.asList(roles) : Collections.emptyList())
 			.resourceName(resourceName)
-			.opNames(ops != null ? Arrays.asList(ops) : Collections.emptyList());
+			.opNames(ops != null ? Arrays.asList(ops) : Collections.emptyList())
+			.includeSysUser(includeSysUser);
 		
 		
 		RequestEvent<UserListCriteria> req = new RequestEvent<>(crit);
@@ -152,7 +166,10 @@ public class UserController {
 			
 		@RequestParam(value = "institute", required = false)
 		String institute,
-			
+
+		@RequestParam(value = "group", required = false)
+		String group,
+
 		@RequestParam(value = "domainName", required = false)
 		String domainName,
 			
@@ -170,19 +187,24 @@ public class UserController {
 
 		@RequestParam(value = "activeSince", required = false)
 		@DateTimeFormat(pattern="yyyy-MM-dd")
-		Date activeSince) {
+		Date activeSince,
+
+		@RequestParam(value = "includeSysUser", required = false, defaultValue = "false")
+		boolean includeSysUser) {
 		
 		UserListCriteria crit = new UserListCriteria()
 			.query(searchString)
 			.name(name)
 			.loginName(loginName)
 			.instituteName(institute)
+			.group(group)
 			.domainName(domainName)
 			.activityStatus(activityStatus)
 			.type(type)
 			.excludeTypes(excludeTypes != null ? Arrays.asList(excludeTypes) : null)
 			.listAll(listAll)
-			.activeSince(activeSince);
+			.activeSince(activeSince)
+			.includeSysUser(includeSysUser);
 		
 		RequestEvent<UserListCriteria> req = new RequestEvent<>(crit);
 		ResponseEvent<Long> resp = userService.getUsersCount(req);
@@ -328,31 +350,21 @@ public class UserController {
 	@ResponseBody
 	@ResponseStatus(HttpStatus.OK)
 	public Boolean resetPassword(@RequestBody PasswordDetails passwordDetails) {
-		RequestEvent<PasswordDetails> req = new RequestEvent<PasswordDetails>(passwordDetails);
-		ResponseEvent<Boolean> resp = userService.resetPassword(req);
-		resp.throwErrorIfUnsuccessful();
-		
-		return resp.getPayload();
+		return ResponseEvent.unwrap(userService.resetPassword(RequestEvent.wrap(passwordDetails)));
 	}
 
 	@RequestMapping(method = RequestMethod.POST, value = "/forgot-password")
 	@ResponseBody
 	@ResponseStatus(HttpStatus.OK)
 	public Boolean forgotPassword(@RequestBody UserDetail detail) {
-		RequestEvent<UserDetail> req = new RequestEvent<UserDetail>(detail);
-		ResponseEvent<Boolean> resp = userService.forgotPassword(req);
-		resp.throwErrorIfUnsuccessful();
-		
-		return resp.getPayload();
+		return ResponseEvent.unwrap(userService.forgotPassword(RequestEvent.wrap(detail)));
 	}
 	
 	@RequestMapping(method = RequestMethod.GET, value = "/current-user")
 	@ResponseBody
 	@ResponseStatus(HttpStatus.OK)
 	public UserSummary getCurrentUser() {
-		ResponseEvent<UserSummary> resp = userAuthService.getCurrentLoggedInUser();
-		resp.throwErrorIfUnsuccessful();
-		return resp.getPayload();
+		return ResponseEvent.unwrap(userAuthService.getCurrentLoggedInUser());
  	}
 	
 	@RequestMapping(method = RequestMethod.GET, value = "/current-user-roles")
@@ -367,10 +379,22 @@ public class UserController {
 	@RequestMapping(method = RequestMethod.GET, value = "/current-user-ui-state")
 	@ResponseBody
 	@ResponseStatus(HttpStatus.OK)
-	public Map<String, Object> getCurrentUserUiState() {
+	public Map<String, Object> getCurrentUserUiState(HttpServletRequest httpReq) {
 		ResponseEvent<UserUiState> resp = userService.getUiState();
 		resp.throwErrorIfUnsuccessful();
-		return resp.getPayload() == null ? Collections.emptyMap() : resp.getPayload().getState();
+
+		String authToken = AuthUtil.getAuthTokenFromHeader(httpReq);
+		if (authToken == null) {
+			authToken = AuthUtil.getTokenFromCookie(httpReq);
+		}
+
+		Map<String, Object> state = new HashMap<>();
+		if (resp.getPayload() != null) {
+			state.putAll(resp.getPayload().getState());
+		}
+
+		state.put("authToken", authToken);
+		return state;
 	}
 
 	@RequestMapping(method = RequestMethod.PUT, value = "/current-user-ui-state")
@@ -398,5 +422,35 @@ public class UserController {
 		ResponseEvent<Boolean> resp = userService.broadcastAnnouncement(new RequestEvent<>(detail));
 		resp.throwErrorIfUnsuccessful();
 		return resp.getPayload();
+	}
+
+	@RequestMapping(method = RequestMethod.GET, value = "/{id}/forms")
+	@ResponseBody
+	@ResponseStatus(HttpStatus.OK)
+	public List<FormCtxtSummary> getForms(@PathVariable Long id) {
+		return ResponseEvent.unwrap(userService.getForms(RequestEvent.wrap(id)));
+	}
+
+	@RequestMapping(method = RequestMethod.GET, value="/{id}/form-records")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public List<FormRecordsList> getFormRecords(@PathVariable("id") Long userId) {
+		return ResponseEvent.unwrap(userService.getAllFormRecords(RequestEvent.wrap(userId)));
+	}
+
+	@RequestMapping(method = RequestMethod.GET, value = "/{id}/forms/{formCtxtId}/records")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public EntityFormRecords getFormRecords(
+		@PathVariable("id")
+		Long userId,
+
+		@PathVariable("formCtxtId")
+		Long formCtxtId) {
+
+		GetEntityFormRecordsOp op = new GetEntityFormRecordsOp();
+		op.setEntityId(userId);
+		op.setFormCtxtId(formCtxtId);
+		return  ResponseEvent.unwrap(userService.getFormRecords(RequestEvent.wrap(op)));
 	}
 }

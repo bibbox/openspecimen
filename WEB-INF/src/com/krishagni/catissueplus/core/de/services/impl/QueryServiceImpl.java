@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TimeZone;
 import java.util.TreeSet;
 import java.util.UUID;
 import java.util.concurrent.Callable;
@@ -43,19 +44,23 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import com.krishagni.catissueplus.core.administrative.domain.ScheduledJob;
 import com.krishagni.catissueplus.core.administrative.domain.User;
 import com.krishagni.catissueplus.core.administrative.repository.UserDao;
+import com.krishagni.catissueplus.core.biospecimen.domain.factory.CpGroupErrorCode;
 import com.krishagni.catissueplus.core.common.OpenSpecimenAppCtxProvider;
 import com.krishagni.catissueplus.core.common.PlusTransactional;
 import com.krishagni.catissueplus.core.common.access.AccessCtrlMgr;
 import com.krishagni.catissueplus.core.common.access.AccessCtrlMgr.ParticipantReadAccess;
 import com.krishagni.catissueplus.core.common.access.SiteCpPair;
 import com.krishagni.catissueplus.core.common.domain.Notification;
+import com.krishagni.catissueplus.core.common.errors.CommonErrorCode;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
+import com.krishagni.catissueplus.core.common.events.EntityQueryCriteria;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
 import com.krishagni.catissueplus.core.common.events.ResponseEvent;
 import com.krishagni.catissueplus.core.common.events.UserSummary;
 import com.krishagni.catissueplus.core.common.service.ConfigChangeListener;
 import com.krishagni.catissueplus.core.common.service.ConfigurationService;
 import com.krishagni.catissueplus.core.common.service.EmailService;
+import com.krishagni.catissueplus.core.common.service.StarredItemService;
 import com.krishagni.catissueplus.core.common.service.TemplateService;
 import com.krishagni.catissueplus.core.common.util.AuthUtil;
 import com.krishagni.catissueplus.core.common.util.ConfigUtil;
@@ -89,6 +94,7 @@ import com.krishagni.catissueplus.core.de.events.UpdateFolderQueriesOp;
 import com.krishagni.catissueplus.core.de.repository.DaoFactory;
 import com.krishagni.catissueplus.core.de.repository.SavedQueryDao;
 import com.krishagni.catissueplus.core.de.services.QueryService;
+import com.krishagni.catissueplus.core.de.services.QuerySpaceProvider;
 import com.krishagni.catissueplus.core.de.services.SavedQueryErrorCode;
 import com.krishagni.catissueplus.core.init.ImportQueryForms;
 import com.krishagni.catissueplus.core.init.ImportSpecimenEventForms;
@@ -105,6 +111,7 @@ import edu.common.dynamicextensions.query.QueryResultCsvExporter;
 import edu.common.dynamicextensions.query.QueryResultData;
 import edu.common.dynamicextensions.query.QueryResultExporter;
 import edu.common.dynamicextensions.query.QueryResultScreener;
+import edu.common.dynamicextensions.query.QuerySpace;
 import edu.common.dynamicextensions.query.ResultColumn;
 import edu.common.dynamicextensions.query.WideRowMode;
 
@@ -135,6 +142,8 @@ public class QueryServiceImpl implements QueryService {
 	
 	private static final int ONLINE_EXPORT_TIMEOUT_SECS = 30;
 
+	private static final String FORM_RECORD_URL = "#/object-state-params-resolver?objectName=formRecord&key=recordId&value={{$value}}";
+
 	private static ExecutorService exportThreadPool = Executors.newFixedThreadPool(EXPORT_THREAD_POOL_SIZE);
 
 	private DaoFactory daoFactory;
@@ -149,11 +158,15 @@ public class QueryServiceImpl implements QueryService {
 
 	private ConfigurationService cfgService;
 
+	private StarredItemService starredItemSvc;
+
 	private int maxConcurrentQueries = DEF_MAX_CONCURRENT_QUERIES;
 
 	private int maxRecsInMemory = DEF_MAX_RECS_IN_MEM;
 
 	private AtomicInteger concurrentQueriesCnt = new AtomicInteger(0);
+
+	private List<QuerySpaceProvider> querySpaceProviders = new ArrayList<>();
 
 	static {
 		initExportFileCleaner();
@@ -210,24 +223,64 @@ public class QueryServiceImpl implements QueryService {
 		});
 	}
 
+	public void setStarredItemSvc(StarredItemService starredItemSvc) {
+		this.starredItemSvc = starredItemSvc;
+	}
+
 	@Override
 	@PlusTransactional
 	public ResponseEvent<SavedQueriesList> getSavedQueries(RequestEvent<ListSavedQueriesCriteria> req) {
 		try {
+			ensureReadRights();
+
 			ListSavedQueriesCriteria crit = req.getPayload();
 			if (crit.startAt() < 0 || crit.maxResults() <= 0) {
 				return ResponseEvent.userError(SavedQueryErrorCode.INVALID_PAGINATION_FILTER);
 			}
 
 			crit.userId(AuthUtil.getCurrentUser().getId());
-			List<SavedQuerySummary> queries = daoFactory.getSavedQueryDao().getQueries(crit);
-			
+
+			List<SavedQuerySummary> queries = new ArrayList<>();
+			if (crit.orderByStarred()) {
+				List<Long> queryIds = starredItemSvc.getItemIds(getObjectName(), AuthUtil.getCurrentUser().getId());
+				if (!queryIds.isEmpty()) {
+					crit.ids(queryIds);
+					queries.addAll(daoFactory.getSavedQueryDao().getQueries(crit));
+					queries.forEach(q -> q.setStarred(true));
+					crit.ids(Collections.emptyList()).notInIds(queryIds);
+				}
+			}
+
+			if (queries.size() < crit.maxResults()) {
+				crit.maxResults(crit.maxResults() - queries.size());
+				queries.addAll(daoFactory.getSavedQueryDao().getQueries(crit));
+			}
+
 			Long count = null;
 			if (crit.countReq()) {
-				count = daoFactory.getSavedQueryDao().getQueriesCount(crit);
+				count = daoFactory.getSavedQueryDao().getQueriesCount(crit.ids(null).notInIds(null));
 			}
-			
+
 			return ResponseEvent.response(SavedQueriesList.create(queries, count));
+		} catch (OpenSpecimenException ose) {
+			return ResponseEvent.error(ose);
+		} catch (Exception e) {
+			return ResponseEvent.serverError(e);
+		}
+	}
+
+	@Override
+	@PlusTransactional
+	public ResponseEvent<Long> getSavedQueriesCount(RequestEvent<ListSavedQueriesCriteria> req) {
+		try {
+			ensureReadRights();
+
+			ListSavedQueriesCriteria crit = req.getPayload();
+			crit.userId(AuthUtil.getCurrentUser().getId());
+			Long count = daoFactory.getSavedQueryDao().getQueriesCount(crit.ids(null).notInIds(null));
+			return ResponseEvent.response(count);
+		} catch (OpenSpecimenException ose) {
+			return ResponseEvent.error(ose);
 		} catch (Exception e) {
 			return ResponseEvent.serverError(e);
 		}
@@ -237,12 +290,16 @@ public class QueryServiceImpl implements QueryService {
 	@PlusTransactional
 	public ResponseEvent<SavedQueryDetail> getSavedQuery(RequestEvent<Long> req) {
 		try {
+			ensureReadRights();
+
 			SavedQuery savedQuery = daoFactory.getSavedQueryDao().getQuery(req.getPayload());
 			if (savedQuery == null) {
 				return ResponseEvent.userError(SavedQueryErrorCode.NOT_FOUND, req.getPayload());
 			}
 			
 			return ResponseEvent.response(SavedQueryDetail.fromSavedQuery(savedQuery));
+		} catch (OpenSpecimenException ose) {
+			return ResponseEvent.error(ose);
 		} catch (Exception e) {
 			return ResponseEvent.serverError(e);
 		}
@@ -252,6 +309,8 @@ public class QueryServiceImpl implements QueryService {
 	@PlusTransactional
 	public ResponseEvent<SavedQueryDetail> saveQuery(RequestEvent<SavedQueryDetail> req) {
 		try {
+			ensureCreateRights();
+
 			SavedQueryDetail queryDetail = req.getPayload();
 			queryDetail.setId(null);
 
@@ -262,7 +321,7 @@ public class QueryServiceImpl implements QueryService {
 
 			Query.createQuery()
 				.wideRowMode(mode)
-				.ic(true)
+				.ic(!queryDetail.isCaseSensitive())
 				.dateFormat(ConfigUtil.getInstance().getDeDateFmt())
 				.timeFormat(ConfigUtil.getInstance().getTimeFmt())
 				.compile(cprForm, getAql(queryDetail));
@@ -284,11 +343,13 @@ public class QueryServiceImpl implements QueryService {
 	@PlusTransactional
 	public ResponseEvent<SavedQueryDetail> updateQuery(RequestEvent<SavedQueryDetail> req) {
 		try {
+			ensureUpdateRights();
+
 			SavedQueryDetail queryDetail = req.getPayload();
 
 			Query.createQuery()
 				.wideRowMode(WideRowMode.DEEP)
-				.ic(true)
+				.ic(!queryDetail.isCaseSensitive())
 				.dateFormat(ConfigUtil.getInstance().getDeDateFmt())
 				.timeFormat(ConfigUtil.getInstance().getTimeFmt())
 				.compile(cprForm, getAql(queryDetail));
@@ -323,6 +384,8 @@ public class QueryServiceImpl implements QueryService {
 	@PlusTransactional
 	public ResponseEvent<Long> deleteQuery(RequestEvent<Long> req) {
 		try {
+			ensureDeleteRights();
+
 			Long queryId = req.getPayload();
 			SavedQuery query = daoFactory.getSavedQueryDao().getQuery(queryId);
 			if (query == null) {
@@ -345,6 +408,8 @@ public class QueryServiceImpl implements QueryService {
 			query.setDeletedOn(Calendar.getInstance().getTime());
 			daoFactory.getSavedQueryDao().saveOrUpdate(query);
 			return ResponseEvent.response(queryId);
+		} catch (OpenSpecimenException ose) {
+			return ResponseEvent.error(ose);
 		} catch (Exception e) {
 			return ResponseEvent.serverError(e);
 		}
@@ -357,11 +422,14 @@ public class QueryServiceImpl implements QueryService {
 
 		boolean queryCntIncremented = false;
 		try {
+			ExecuteQueryEventOp opDetail = req.getPayload();
+			if (!opDetail.isDisableAccessChecks()) {
+				ensureReadRights();
+			}
+
 			queryCntIncremented = incConcurrentQueriesCnt();
 
-			ExecuteQueryEventOp opDetail = req.getPayload();
 			Query query = getQuery(opDetail);
-
 			QueryResponse resp = query.getData();
 			insertAuditLog(AuthUtil.getCurrentUser(), opDetail, resp);
 			
@@ -373,16 +441,16 @@ public class QueryServiceImpl implements QueryService {
 				indices = queryResult.getColumnIndices(opDetail.getIndexOf());
 			}
 
-			return ResponseEvent.response(
-				new QueryExecResult()
-					.setColumnMetadata(queryResult.getColumnMetadata())
-					.setColumnLabels(queryResult.getColumnLabels())
-					.setColumnTypes(queryResult.getColumnTypes())
-					.setColumnUrls(queryResult.getColumnUrls())
-					.setRows(queryResult.getStringifiedRows())
-					.setDbRowsCount(queryResult.getDbRowsCount())
-					.setColumnIndices(indices)
-			);
+			QueryExecResult formattedResult = new QueryExecResult()
+				.setColumnMetadata(queryResult.getColumnMetadata())
+				.setColumnLabels(queryResult.getColumnLabels())
+				.setColumnTypes(queryResult.getColumnTypes())
+				.setColumnUrls(queryResult.getColumnUrls())
+				.setRows(queryResult.getStringifiedRows())
+				.setDbRowsCount(queryResult.getDbRowsCount())
+				.setColumnIndices(indices);
+
+			return ResponseEvent.response(addRecordIdUrls(queryResult, formattedResult));
 		} catch (QueryParserException | IllegalArgumentException qpe) {
 			return ResponseEvent.userError(SavedQueryErrorCode.MALFORMED, qpe.getMessage());
 		} catch (QueryException qe) {
@@ -412,6 +480,8 @@ public class QueryServiceImpl implements QueryService {
 	@PlusTransactional
 	public ResponseEvent<QueryExecResult> executeSavedQuery(RequestEvent<ExecuteSavedQueryOp> req) {
 		try {
+			ensureReadRights();
+
 			ExecuteSavedQueryOp input = req.getPayload();
 			SavedQuery query = daoFactory.getSavedQueryDao().getQuery(input.getSavedQueryId());
 			if (query == null) {
@@ -438,10 +508,12 @@ public class QueryServiceImpl implements QueryService {
 
 			ExecuteQueryEventOp op = new ExecuteQueryEventOp();
 			op.setCpId(query.getCpId());
+			op.setCpGroupId(query.getCpGroupId());
 			op.setDrivingForm(input.getDrivingForm());
 			op.setRunType(input.getRunType());
 			op.setWideRowMode(input.getWideRowMode());
 			op.setSavedQueryId(query.getId());
+			op.setCaseSensitive(query.isCaseSensitive());
 			op.setAql(query.getAql() + " limit " + input.getStartAt() + ", " + input.getMaxResults());
 			return executeQuery(new RequestEvent<>(op));
 		} catch (OpenSpecimenException ose) {
@@ -456,6 +528,8 @@ public class QueryServiceImpl implements QueryService {
 	public ResponseEvent<QueryDataExportResult> exportQueryData(RequestEvent<ExecuteQueryEventOp> req) {
 		boolean queryCntIncremented = false;
 		try {
+			ensureReadRights();
+
 			queryCntIncremented = incConcurrentQueriesCnt();
 			return ResponseEvent.response(exportData(req.getPayload(), null, null));
 		} catch (QueryParserException | IllegalArgumentException qpe) {
@@ -476,9 +550,12 @@ public class QueryServiceImpl implements QueryService {
 	}
 	
 	@Override
+	@PlusTransactional
 	public ResponseEvent<File> getExportDataFile(RequestEvent<String> req) {
 		String fileId = req.getPayload();
 		try {
+			ensureReadRights();
+
 			String path = getExportDataDir() + File.separator + fileId;
 			File f = new File(path);
 			if (f.exists()) {
@@ -486,6 +563,8 @@ public class QueryServiceImpl implements QueryService {
 			} else {
 				return ResponseEvent.userError(SavedQueryErrorCode.EXPORT_DATA_FILE_NOT_FOUND);
 			}
+		} catch (OpenSpecimenException ose) {
+			return ResponseEvent.error(ose);
 		} catch (Exception e) {
 			return ResponseEvent.serverError(e);
 		}
@@ -505,10 +584,10 @@ public class QueryServiceImpl implements QueryService {
 	
 	@Override
 	@PlusTransactional
-	public ResponseEvent<QueryFolderDetails> getFolder(RequestEvent<Long> req) {
+	public ResponseEvent<QueryFolderDetails> getFolder(RequestEvent<EntityQueryCriteria> req) {
 		try {
-			Long folderId = req.getPayload();
-			QueryFolder folder = daoFactory.getQueryFolderDao().getQueryFolder(folderId);
+			EntityQueryCriteria crit = req.getPayload();
+			QueryFolder folder = daoFactory.getQueryFolderDao().getQueryFolder(crit.getId());
 			if (folder == null) {
 				return ResponseEvent.userError(SavedQueryErrorCode.FOLDER_NOT_FOUND);
 			}
@@ -517,13 +596,13 @@ public class QueryServiceImpl implements QueryService {
 			if (!user.isAdmin() && !folder.canUserAccess(user.getId())) {
 				return ResponseEvent.userError(SavedQueryErrorCode.OP_NOT_ALLOWED);
 			}
-			
-			return ResponseEvent.response(QueryFolderDetails.from(folder));			
+
+			boolean includeQueries = Boolean.TRUE.equals(crit.paramBoolean("includeQueries"));
+			return ResponseEvent.response(QueryFolderDetails.from(folder, includeQueries));
 		} catch (Exception e) {
 			return ResponseEvent.serverError(e);			
 		}
-	}	
-	
+	}
 	
 	@Override
 	@PlusTransactional
@@ -537,9 +616,10 @@ public class QueryServiceImpl implements QueryService {
 			
 			QueryFolder queryFolder = queryFolderFactory.createQueryFolder(folderDetails);			
 			daoFactory.getQueryFolderDao().saveOrUpdate(queryFolder);
-			
-			if (!queryFolder.getSharedWith().isEmpty()) {
-				notifyFolderShared(queryFolder.getOwner(), queryFolder, queryFolder.getSharedWith());
+
+			Collection<User> sharedUsers = queryFolder.getAllSharedUsers();
+			if (!sharedUsers.isEmpty()) {
+				notifyFolderShared(queryFolder.getOwner(), queryFolder, sharedUsers);
 			}			
 			return ResponseEvent.response(QueryFolderDetails.from(queryFolder));
 		} catch (OpenSpecimenException ose) {
@@ -574,10 +654,10 @@ public class QueryServiceImpl implements QueryService {
 			folderDetails.setOwner(owner);
 			
 			QueryFolder queryFolder = queryFolderFactory.createQueryFolder(folderDetails);
-			Set<User> newUsers = new HashSet<>(queryFolder.getSharedWith());
-			newUsers.removeAll(existing.getSharedWith());
+			Set<User> newUsers = queryFolder.getAllSharedUsers();
+			newUsers.removeAll(existing.getAllSharedUsers());
+
 			existing.update(queryFolder);
-			
 			daoFactory.getQueryFolderDao().saveOrUpdate(existing);
 			
 			if (!newUsers.isEmpty()) {
@@ -621,6 +701,8 @@ public class QueryServiceImpl implements QueryService {
 	@PlusTransactional
 	public ResponseEvent<SavedQueriesList> getFolderQueries(RequestEvent<ListFolderQueriesCriteria> req) {
 		try {
+			ensureReadRights();
+
 			ListFolderQueriesCriteria crit = req.getPayload();
 			QueryFolder folder = daoFactory.getQueryFolderDao().getQueryFolder(crit.folderId());
 			if (folder == null) {
@@ -648,7 +730,31 @@ public class QueryServiceImpl implements QueryService {
 			return ResponseEvent.serverError(e);
 		}
 	}
-	
+
+	@Override
+	@PlusTransactional
+	public ResponseEvent<Long> getFolderQueriesCount(RequestEvent<ListFolderQueriesCriteria> req) {
+		try {
+			ensureReadRights();
+
+			ListFolderQueriesCriteria crit = req.getPayload();
+			QueryFolder folder = daoFactory.getQueryFolderDao().getQueryFolder(crit.folderId());
+			if (folder == null) {
+				return ResponseEvent.userError(SavedQueryErrorCode.FOLDER_NOT_FOUND);
+			}
+
+			User user = AuthUtil.getCurrentUser();
+			if (!user.isAdmin() && !folder.canUserAccess(user.getId())) {
+				return ResponseEvent.userError(SavedQueryErrorCode.OP_NOT_ALLOWED);
+			}
+
+			Long count = daoFactory.getSavedQueryDao().getQueriesCountByFolderId(crit.folderId(), crit.query());
+			return ResponseEvent.response(count);
+		} catch (Exception e) {
+			return ResponseEvent.serverError(e);
+		}
+	}
+
 	@Override
 	@PlusTransactional
 	public ResponseEvent<List<SavedQuerySummary>> updateFolderQueries(RequestEvent<UpdateFolderQueriesOp> req) {
@@ -817,9 +923,10 @@ public class QueryServiceImpl implements QueryService {
 	@PlusTransactional
 	public ResponseEvent<String> getQueryDef(RequestEvent<Long> req) {
 		try {
+			ensureReadRights();
+
+			Long queryId = req.getPayload();
 			SavedQueryDao queryDao = daoFactory.getSavedQueryDao();
-			
-			Long queryId = req.getPayload();			
 			SavedQuery query = queryDao.getQuery(queryId);			
 			if (query == null) {
 				return ResponseEvent.userError(SavedQueryErrorCode.NOT_FOUND, queryId);
@@ -841,12 +948,14 @@ public class QueryServiceImpl implements QueryService {
 	@Override
 	@PlusTransactional
 	public QueryDataExportResult exportQueryData(final ExecuteQueryEventOp opDetail, final ExportProcessor processor) {
+		ensureReadRights();
 		return exportData(opDetail, processor, null);
 	}
 
 	@Override
 	@PlusTransactional
 	public QueryDataExportResult exportQueryData(final ExecuteQueryEventOp opDetail, BiConsumer<QueryResultData, OutputStream> qdConsumer) {
+		ensureReadRights();
 		return exportData(opDetail, null, qdConsumer);
 	}
 
@@ -855,8 +964,12 @@ public class QueryServiceImpl implements QueryService {
 	public ResponseEvent<List<FacetDetail>> getFacetValues(RequestEvent<GetFacetValuesOp> req) {
 		try {
 			GetFacetValuesOp op = req.getPayload();
+			if (!op.isDisableAccessChecks()) {
+				ensureReadRights();
+			}
+
 			List<FacetDetail> result = op.getFacets().stream()
-				.map(facet -> getFacetDetail(op.getCpId(), facet, op.getRestriction(), op.getSearchTerm()))
+				.map(facet -> getFacetDetail(op, facet))
 				.collect(Collectors.toList());
 			return ResponseEvent.response(result);
 		} catch (OpenSpecimenException ose) {
@@ -871,7 +984,7 @@ public class QueryServiceImpl implements QueryService {
 		StringBuilder templates = new StringBuilder();
 		try {
 			PathMatchingResourcePatternResolver resolver = new PathMatchingResourcePatternResolver(getClass().getClassLoader());
-			Resource[] resources = resolver.getResources("classpath:/query-forms/" + dirName + "/*.xml");
+			Resource[] resources = resolver.getResources("classpath*:/query-forms/" + dirName + "/*.xml");
 
 			for (Resource resource : resources) {
 				String filename = "query-forms/" + dirName + "/" + resource.getFilename();
@@ -885,11 +998,48 @@ public class QueryServiceImpl implements QueryService {
 		
 		return templates.toString();
 	}
-		
+
+	@Override
+	public void registerQuerySpaceProvider(QuerySpaceProvider qsProvider) {
+		if (!querySpaceProviders.contains(qsProvider)) {
+			querySpaceProviders.add(qsProvider);
+		}
+	}
+
+	@Override
+	@PlusTransactional
+	public boolean toggleStarredQuery(Long queryId, boolean starred) {
+		try {
+			ensureReadRights();
+
+			SavedQuery query = daoFactory.getSavedQueryDao().getQuery(queryId);
+			if (query == null) {
+				throw OpenSpecimenException.userError(SavedQueryErrorCode.NOT_FOUND, queryId);
+			}
+
+			if (starred) {
+				starredItemSvc.save(getObjectName(), queryId);
+			} else {
+				starredItemSvc.delete(getObjectName(), queryId);
+			}
+
+			return true;
+		} catch (OpenSpecimenException e) {
+			throw e;
+		} catch (Exception e) {
+			throw OpenSpecimenException.serverError(e);
+		}
+	}
+
+	private String getObjectName() {
+		return "saved_query";
+	}
+
 	private SavedQuery getSavedQuery(SavedQueryDetail detail) {
 		SavedQuery savedQuery = new SavedQuery();		
 		savedQuery.setTitle(detail.getTitle());
 		savedQuery.setCpId(detail.getCpId());
+		savedQuery.setCpGroupId(detail.getCpGroupId());
 		savedQuery.setSelectList(detail.getSelectList());
 		savedQuery.setFilters(detail.getFilters());
 		savedQuery.setSubQueries(Arrays.stream(detail.getFilters())
@@ -907,6 +1057,7 @@ public class QueryServiceImpl implements QueryService {
 		savedQuery.setReporting(detail.getReporting());
 		savedQuery.setWideRowMode(detail.getWideRowMode());
 		savedQuery.setOutputColumnExprs(detail.isOutputColumnExprs());
+		savedQuery.setCaseSensitive(detail.isCaseSensitive());
 		return savedQuery;
 	}
 
@@ -921,19 +1072,29 @@ public class QueryServiceImpl implements QueryService {
 	private Query getQuery(ExecuteQueryEventOp op) {
 		boolean countQuery = "Count".equals(op.getRunType());
 		User user = AuthUtil.getCurrentUser();
+		TimeZone tz = AuthUtil.getUserTimeZone();
+		Query query = Query.createQuery()
+			.wideRowMode(WideRowMode.valueOf(op.getWideRowMode()))
+			.ic(!op.isCaseSensitive())
+			.outputIsoDateTime(op.isOutputIsoDateTime())
+			.outputExpression(op.isOutputColumnExprs())
+			.dateFormat(ConfigUtil.getInstance().getDeDateFmt())
+			.timeFormat(ConfigUtil.getInstance().getTimeFmt())
+			.timeZone(tz != null ? tz.getID() : null);
+		addAutoJoinParams(query);
+
+
+		if (StringUtils.isNotBlank(op.getQuerySpace())) {
+			QuerySpace qs = getQuerySpace(op.getQuerySpace());
+			query.querySpace(qs).compile(qs.getRootForm(), op.getAql());
+			return query;
+		}
 
 		String rootForm = cprForm;
 		if (StringUtils.isNotBlank(op.getDrivingForm())) {
 			rootForm = op.getDrivingForm();
 		}
 
-		Query query = Query.createQuery()
-			.wideRowMode(WideRowMode.valueOf(op.getWideRowMode()))
-			.ic(true)
-			.outputIsoDateTime(op.isOutputIsoDateTime())
-			.outputExpression(op.isOutputColumnExprs())
-			.dateFormat(ConfigUtil.getInstance().getDeDateFmt())
-			.timeFormat(ConfigUtil.getInstance().getTimeFmt());
 		query.compile(rootForm, op.getAql());
 
 		String aql = op.getAql();
@@ -945,8 +1106,16 @@ public class QueryServiceImpl implements QueryService {
 			aql = getAqlWithCpIdInSelect(user, countQuery, aql);
 		}
 
-		query.compile(rootForm, aql, getRestriction(user, op.getCpId()));
+		query.compile(rootForm, aql, getRestriction(user, op.getCpId(), op.getCpGroupId()));
 		return query;
+	}
+
+	private Query addAutoJoinParams(Query query) {
+		if (AuthUtil.getCurrentUser() == null) {
+			return query;
+		}
+
+		return query.autoJoinParams(Collections.singletonMap("user", AuthUtil.getCurrentUser().getId().toString()));
 	}
 
 	private QueryResultScreener getResultScreener(Query query) {
@@ -957,36 +1126,63 @@ public class QueryServiceImpl implements QueryService {
 		return null;
 	}
 
-	private String getRestriction(User user, Long cpId) {
-		if (user.isAdmin()) {
-			if (cpId != null && cpId != -1) {
-				return cpForm + ".id = " + cpId;
+	private QueryExecResult addRecordIdUrls(QueryResultData queryResult, QueryExecResult formattedResult) {
+		int idx = 0;
+		for (ResultColumn rc : queryResult.getResultColumns()) {
+			String columnExpr = rc.getExpression().getAql();
+			if (columnExpr != null && !columnExpr.contains("customFields") && columnExpr.endsWith("_?primary_key?_")) {
+				formattedResult.getColumnUrls()[idx] = FORM_RECORD_URL;
 			}
-		} else {
-			if (cpId != null && cpId != -1) {
-				AccessCtrlMgr.getInstance().ensureReadCpRights(cpId);
-				return cpForm + ".id = " + cpId;
-			} else {
-				Set<SiteCpPair> siteCps = AccessCtrlMgr.getInstance().getReadableSiteCps();
-				if (CollectionUtils.isEmpty(siteCps)) {
-					throw OpenSpecimenException.userError(RbacErrorCode.ACCESS_DENIED);
-				}
 
-				List<String> cpSitesConds = new ArrayList<>(); // joined by or
-				for (SiteCpPair siteCp : siteCps) {
-					String cond = getAqlSiteIdRestriction("CollectionProtocol.cpSites.siteId", siteCp);
-					if (siteCp.getCpId() != null) {
-						cond += " and CollectionProtocol.id = " + siteCp.getCpId();
-					}
-
-					cpSitesConds.add("(" + cond + ")");
-				}
-
-				return "(" + StringUtils.join(cpSitesConds, " or ") + ")";
-			}
+			++idx;
 		}
-		
-		return null;
+
+		return formattedResult;
+	}
+
+	private String getRestriction(User user, Long cpId, Long groupId) {
+		if (groupId != null && groupId != -1) {
+			Set<Long> cpIds = AccessCtrlMgr.getInstance().getReadAccessGroupCpIds(groupId);
+			if (CollectionUtils.isEmpty(cpIds)) {
+				throw OpenSpecimenException.userError(RbacErrorCode.ACCESS_DENIED);
+			}
+
+			if (cpId != null && cpId != -1) {
+				if (cpIds.contains(cpId)) {
+					cpIds = Collections.singleton(cpId);
+				} else {
+					AccessCtrlMgr.getInstance().ensureReadCpRights(cpId);
+					throw OpenSpecimenException.userError(CpGroupErrorCode.CP_NOT_IN_GRP, cpId, groupId);
+				}
+			}
+
+			return cpForm + ".id in (" + Utility.join(cpIds, Objects::toString, ",") + ")";
+		} else if (cpId != null && cpId != -1) {
+			if (!user.isAdmin()) {
+				AccessCtrlMgr.getInstance().ensureReadCpRights(cpId);
+			}
+
+			return cpForm + ".id = " + cpId;
+		} else if (!user.isAdmin()) {
+			Set<SiteCpPair> siteCps = AccessCtrlMgr.getInstance().getReadableSiteCps();
+			if (CollectionUtils.isEmpty(siteCps)) {
+				throw OpenSpecimenException.userError(RbacErrorCode.ACCESS_DENIED);
+			}
+
+			List<String> cpSitesConds = new ArrayList<>(); // joined by or
+			for (SiteCpPair siteCp : siteCps) {
+				String cond = getAqlSiteIdRestriction("CollectionProtocol.cpSites.siteId", siteCp);
+				if (siteCp.getCpId() != null) {
+					cond += " and CollectionProtocol.id = " + siteCp.getCpId();
+				}
+
+				cpSitesConds.add("(" + cond + ")");
+			}
+
+			return "(" + StringUtils.join(cpSitesConds, " or ") + ")";
+		} else {
+			return null;
+		}
 	}
 	
 	private String getAqlWithCpIdInSelect(User user, boolean isCount, String aql) {
@@ -1003,6 +1199,21 @@ public class QueryServiceImpl implements QueryService {
 				return "select " + cpForm + ".id, " + afterSelect;
 			}
 		}
+	}
+
+	private QuerySpace getQuerySpace(String name) {
+		if (StringUtils.isBlank(name)) {
+			return null;
+		}
+
+		for (QuerySpaceProvider qsProvider : querySpaceProviders) {
+			QuerySpace result = qsProvider.getQuerySpace(name);
+			if (result != null) {
+				return result;
+			}
+		}
+
+		throw OpenSpecimenException.userError(CommonErrorCode.INVALID_INPUT, "Invalid query space: " + name);
 	}
 	
 	private static int getThreadPoolSize() {
@@ -1041,7 +1252,23 @@ public class QueryServiceImpl implements QueryService {
 		auditLog.setSql(resp.getSql());
 		daoFactory.getQueryAuditLogDao().saveOrUpdate(auditLog);
 	}
-	
+
+	private void ensureReadRights() {
+		AccessCtrlMgr.getInstance().ensureReadQueryRights();
+	}
+
+	private void ensureCreateRights() {
+		AccessCtrlMgr.getInstance().ensureCreateQueryRights();
+	}
+
+	private void ensureUpdateRights() {
+		AccessCtrlMgr.getInstance().ensureUpdateQueryRights();
+	}
+
+	private void ensureDeleteRights() {
+		AccessCtrlMgr.getInstance().ensureDeleteQueryRights();
+	}
+
 	private class QueryResultScreenerImpl implements QueryResultScreener {
 		private User user;
 		
@@ -1205,7 +1432,7 @@ public class QueryServiceImpl implements QueryService {
 		NotifUtil.getInstance().notify(notif, Collections.singletonMap("folder-queries", sharedUsers));
 	}
 
-	private FacetDetail getFacetDetail(Long cpId, String facet, String restriction, String searchTerm) {
+	private FacetDetail getFacetDetail(GetFacetValuesOp op, String facet) {
 		String[] fieldParts = facet.split("\\.");
 		String rootForm = fieldParts[0];
 
@@ -1231,7 +1458,8 @@ public class QueryServiceImpl implements QueryService {
 			fieldName = StringUtils.join(fieldParts, ".", idx + 2, fieldParts.length);
 		}
 
-		Container form = Container.getContainer(formName);
+		QuerySpace qs = getQuerySpace(op.getQuerySpace());
+		Container form = qs != null ? qs.getForm(formName) : Container.getContainer(formName);
 		if (form == null) {
 			throw new IllegalArgumentException("Invalid facet: " + facet);
 		}
@@ -1245,7 +1473,7 @@ public class QueryServiceImpl implements QueryService {
 		List<Object> aqlFmtArgs = new ArrayList<>();
 
 		QueryResultScreener screener = null;
-		if (!AuthUtil.isAdmin() && field.isPhi()) {
+		if (qs == null && !AuthUtil.isAdmin() && field.isPhi()) {
 			aqlFmtArgs.add(cpForm + ".id, ");
 			screener = new QueryResultScreenerImpl(AuthUtil.getCurrentUser(), false, "");
 		} else {
@@ -1255,45 +1483,61 @@ public class QueryServiceImpl implements QueryService {
 		aqlFmtArgs.add(facet);
 
 		String searchTermCond = facet;
-		if (StringUtils.isNotBlank(searchTerm)) {
-			searchTermCond += " contains \"" + searchTerm.trim() + "\"";
+		if (StringUtils.isNotBlank(op.getSearchTerm())) {
+			searchTermCond += " contains \"" + op.getSearchTerm().trim() + "\"";
 		} else {
 			searchTermCond += " exists";
 		}
 		aqlFmtArgs.add(searchTermCond);
 
 		String restrictionCond = "";
-		if (StringUtils.isNotBlank(restriction)) {
-			restrictionCond = " and (" + restriction + ")";
-			rootForm = cprForm;
+		if (StringUtils.isNotBlank(op.getRestriction())) {
+			restrictionCond = " and (" + op.getRestriction() + ")";
+			rootForm = qs != null ? qs.getRootForm() : cprForm;
 		}
 		aqlFmtArgs.add(restrictionCond);
 
+		TimeZone tz = AuthUtil.getUserTimeZone();
 		String aql = String.format(aqlFmt, aqlFmtArgs.toArray());
 		Query query = Query.createQuery()
 			.ic(true)
 			.dateFormat(ConfigUtil.getInstance().getDeDateFmt())
 			.timeFormat(ConfigUtil.getInstance().getTimeFmt())
-			.wideRowMode(WideRowMode.OFF);
-		query.compile(rootForm, aql, getRestriction(AuthUtil.getCurrentUser(), cpId));
+			.timeZone(tz != null ? tz.getID() : null)
+			.wideRowMode(WideRowMode.OFF)
+			.querySpace(qs);
+		addAutoJoinParams(query);
 
-		QueryResponse queryResp = query.getData();
-		QueryResultData queryResult = queryResp.getResultData();
-		queryResult.setScreener(screener);
-
-		Collection<Object> values = new TreeSet<Object>();
-		for (Object[] row : queryResult.getRows()) {
-			if (row[0] != null && !row[0].toString().isEmpty()) {
-				values.add(row[0]);
-			}
+		String restriction = null;
+		if (qs == null) {
+			restriction = getRestriction(AuthUtil.getCurrentUser(), op.getCpId(), op.getCpGroupId());
 		}
 
-		String[] columnLabels = queryResp.getResultData().getColumnLabels()[0].split("#");
-		FacetDetail result = new FacetDetail();
-		result.setExpr(facet);
-		result.setCaption(columnLabels[columnLabels.length - 1]);
-		result.setValues(values);
-		return result;
+		QueryResultData queryResult = null;
+		try {
+			query.compile(rootForm, aql, restriction);
+			QueryResponse queryResp = query.getData();
+			queryResult = queryResp.getResultData();
+			queryResult.setScreener(screener);
+
+			Collection<Object> values = new TreeSet<>();
+			for (Object[] row : queryResult.getRows()) {
+				if (row[0] != null && !row[0].toString().isEmpty()) {
+					values.add(row[0]);
+				}
+			}
+
+			String[] columnLabels = queryResp.getResultData().getColumnLabels()[0].split("#");
+			FacetDetail result = new FacetDetail();
+			result.setExpr(facet);
+			result.setCaption(columnLabels[columnLabels.length - 1]);
+			result.setValues(values);
+			return result;
+		} finally {
+			if (queryResult != null) {
+				queryResult.close();
+			}
+		}
 	}
 
 	private void refreshConfig() {
@@ -1352,7 +1596,7 @@ public class QueryServiceImpl implements QueryService {
 
 		try {
 			if (proc == null) {
-				proc = new DefaultQueryExportProcessor(op.getCpId());
+				proc = new DefaultQueryExportProcessor(op.getCpId(), op.getCpGroupId());
 			}
 
 			ExportQueryDataTask task = new ExportQueryDataTask();
@@ -1380,7 +1624,7 @@ public class QueryServiceImpl implements QueryService {
 					completed = promise.get(ONLINE_EXPORT_TIMEOUT_SECS, TimeUnit.SECONDS);
 					out = task.fout;
 				} catch (TimeoutException te) {
-					completed = true;
+					completed = false;
 				}
 			}
 
@@ -1416,6 +1660,7 @@ public class QueryServiceImpl implements QueryService {
 		public Boolean call() {
 			SecurityContextHolder.getContext().setAuthentication(auth);
 
+			QueryResultData data = null;
 			try {
 				QueryResponse resp;
 				if (procFn == null) {
@@ -1423,7 +1668,7 @@ public class QueryServiceImpl implements QueryService {
 					resp = exporter.export(fout, query, getResultScreener(query));
 				} else {
 					resp = query.getData();
-					QueryResultData data = resp.getResultData();
+					data = resp.getResultData();
 					data.setScreener(getResultScreener(query));
 					procFn.accept(data, fout);
 				}
@@ -1435,6 +1680,9 @@ public class QueryServiceImpl implements QueryService {
 				throw OpenSpecimenException.serverError(e);
 			} finally {
 				IOUtils.closeQuietly(fout);
+				if (data != null) {
+					data.close();
+				}
 			}
 
 			return true;

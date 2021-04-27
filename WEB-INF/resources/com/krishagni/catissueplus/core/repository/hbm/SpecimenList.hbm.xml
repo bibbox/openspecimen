@@ -26,6 +26,13 @@
       <key column="TAG_ID"/>
       <many-to-many class="com.krishagni.catissueplus.core.administrative.domain.User" column="USER_ID"/>
     </set>
+
+    <set name="sharedWithGroups" table="OS_SPECIMEN_LIST_SHARED_GROUPS">
+      <key column="LIST_ID"/>
+      <many-to-many class="com.krishagni.catissueplus.core.administrative.domain.UserGroup" column="GROUP_ID">
+        <filter name="activeEntity" condition="activity_status != 'Disabled'"/>
+      </many-to-many>
+    </set>
 	
     <set name="specimens" table="CATISSUE_SPEC_TAG_ITEMS" inverse="true">
       <key column="TAG_ID"/>
@@ -33,7 +40,7 @@
     </set>
     
     <property name="deletedOn" column="DELETED_ON"/>
-    
+
     <query name="getSpecimenListByName">
       from SpecimenList l where l.name = :name
     </query>
@@ -84,6 +91,44 @@
 
     <sql-query name="deleteListSpecimens">
       delete from catissue_spec_tag_items where tag_id = :listId and obj_id in (:specimenIds)
+    </sql-query>
+
+    <sql-query name="clearList">
+      delete from catissue_spec_tag_items where tag_id = :listId
+    </sql-query>
+
+    <sql-query name="sharedWithUser">
+      <return-scalar column="listId" type="long"/>
+
+      select
+        l.identifier as listId
+      from
+        catissue_specimenlist_tags l
+      where
+        l.identifier = :listId and
+        (
+          exists (
+            select
+              u.tag_id
+            from
+              shared_specimenlist_tags u
+            where
+              u.tag_id = l.identifier and
+              u.user_id = :userId
+          ) or
+          exists (
+            select
+              lg.list_id
+            from
+              os_specimen_list_shared_groups lg
+              inner join os_user_groups g on g.identifier = lg.group_id
+              inner join os_user_group_users gu on gu.group_id = g.identifier
+            where
+              lg.list_id = l.identifier and
+              g.activity_status != 'Disabled' and
+              gu.user_id = :userId
+          )
+        )
     </sql-query>
 
     <sql-query name="addChildSpecimensMySQL">

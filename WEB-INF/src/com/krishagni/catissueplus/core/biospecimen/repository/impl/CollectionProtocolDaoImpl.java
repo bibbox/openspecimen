@@ -14,7 +14,6 @@ import java.util.stream.Collectors;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang.StringUtils;
 import org.hibernate.Criteria;
-import org.hibernate.criterion.DetachedCriteria;
 import org.hibernate.criterion.Disjunction;
 import org.hibernate.criterion.Junction;
 import org.hibernate.criterion.MatchMode;
@@ -41,14 +40,14 @@ public class CollectionProtocolDaoImpl extends AbstractDao<CollectionProtocol> i
 
 	@SuppressWarnings("unchecked")
 	@Override
-	public List<CollectionProtocolSummary> getCollectionProtocols(CpListCriteria cpCriteria) {
+	public List<CollectionProtocolSummary> getCollectionProtocols(CpListCriteria crit) {
 		List<CollectionProtocolSummary> cpList = new ArrayList<>();
 		Map<Long, CollectionProtocolSummary> cpMap = new HashMap<>();
 		
-		boolean includePi = cpCriteria.includePi();
-		boolean includeStats = cpCriteria.includeStat();		
+		boolean includePi = crit.includePi();
+		boolean includeStats = crit.includeStat();
 		
-		List<Object[]> rows = getCpList(cpCriteria);
+		List<Object[]> rows = getCpList(crit);
 		for (Object[] row : rows) {
 			CollectionProtocolSummary cp = getCp(row, includePi);
 			if (includeStats) {
@@ -195,7 +194,16 @@ public class CollectionProtocolDaoImpl extends AbstractDao<CollectionProtocol> i
 				.list();
 		return rows.stream().map(row -> SiteCpPair.make((Long) row[1], (Long) row[2], (Long) row[0])).collect(Collectors.toSet());
 	}
-	
+
+	@Override
+	public boolean isCpAffiliatedToUserInstitute(Long cpId, Long userId) {
+		Integer count = (Integer) getCurrentSession().getNamedQuery(IS_CP_RELATED_TO_USER_INSTITUTE)
+			.setParameter("cpId", cpId)
+			.setParameter("userId", userId)
+			.uniqueResult();
+		return count != null && count > 0;
+	}
+
 	@Override
 	public CollectionProtocolEvent getCpe(Long cpeId) {
 		List<CollectionProtocolEvent> events = getCpes(Collections.singleton(cpeId));
@@ -348,27 +356,37 @@ public class CollectionProtocolDaoImpl extends AbstractDao<CollectionProtocol> i
 				.list();
 		return CollectionUtils.isNotEmpty(result);
 	}
-		
+
+	@Override
+	public List<String> getDependentContainers(Long cpId, Collection<Long> siteIds) {
+		return getCurrentSession().getNamedQuery(GET_DEPENDENT_CONTAINERS)
+			.setParameter("cpId", cpId)
+			.setParameterList("siteIds", siteIds)
+			.setMaxResults(10)
+			.list();
+	}
+
 	@Override
 	public Class<CollectionProtocol> getType() {
 		return CollectionProtocol.class;
 	}
-	
+
 	@SuppressWarnings("unchecked")
-	private List<Object[]> getCpList(CpListCriteria cpCriteria) {
-		return addProjections(getCpQuery(cpCriteria), cpCriteria)
-				.setMaxResults(cpCriteria.maxResults())
+	private List<Object[]> getCpList(CpListCriteria crit) {
+		Criteria query = getCpQuery(crit);
+		return addProjections(query, crit)
+				.setMaxResults(crit.maxResults())
 				.addOrder(Order.asc("shortTitle"))
 				.list();
 	}
 	
-	private Criteria getCpQuery(CpListCriteria cpCriteria) {
-		Criteria query = sessionFactory.getCurrentSession().createCriteria(CollectionProtocol.class)
-				.setFirstResult(cpCriteria.startAt())
+	private Criteria getCpQuery(CpListCriteria crit) {
+		Criteria query = getCurrentSession().createCriteria(CollectionProtocol.class)
+				.setFirstResult(crit.startAt())
 				.add(Restrictions.ne("activityStatus", Status.ACTIVITY_STATUS_DISABLED.getStatus()))
 				.createAlias("principalInvestigator", "pi");
 		
-		return addSearchConditions(query, cpCriteria);
+		return addSearchConditions(query, crit);
 	}
 
 	private Criteria addSearchConditions(Criteria query, CpListCriteria crit) {
@@ -402,14 +420,29 @@ public class CollectionProtocolDaoImpl extends AbstractDao<CollectionProtocol> i
 			query.createCriteria("sites", "cpSite")
 				.createAlias("cpSite.site", "site")
 				.add(Restrictions.eq("site.name", repositoryName));
+		} else if (crit.instituteId() != null) {
+			boolean addInst = CollectionUtils.isEmpty(crit.siteCps());
+			if (!addInst) {
+				addInst = crit.siteCps().stream().noneMatch(scp -> scp.getInstituteId().equals(crit.instituteId()));
+			}
+
+			if (addInst) {
+				SiteCpPair siteCp = new SiteCpPair();
+				siteCp.setInstituteId(crit.instituteId());
+				addSiteCpsCond(query, Collections.singleton(siteCp));
+			}
 		}
 
 		applyIdsFilter(query, "id", crit.ids());
 		addSiteCpsCond(query, crit.siteCps());
+		if (CollectionUtils.isNotEmpty(crit.notInIds())) {
+			query.add(Restrictions.not(Restrictions.in("id", crit.notInIds())));
+		}
+
 		return query;
 	}
 	
-	private Criteria addProjections(Criteria query, CpListCriteria cpCriteria) {
+	private Criteria addProjections(Criteria query, CpListCriteria crit) {
 		ProjectionList projs = Projections.projectionList();
 		query.setProjection(projs);
 		
@@ -423,7 +456,7 @@ public class CollectionProtocolDaoImpl extends AbstractDao<CollectionProtocol> i
 		projs.add(Projections.property("specimenCentric"));
 		projs.add(Projections.property("catalogId"));
 
-		if (cpCriteria.includePi()) {
+		if (crit.includePi()) {
 			projs.add(Projections.property("pi.id"));
 			projs.add(Projections.property("pi.firstName"));
 			projs.add(Projections.property("pi.lastName"));
@@ -454,8 +487,8 @@ public class CollectionProtocolDaoImpl extends AbstractDao<CollectionProtocol> i
 			user.setLoginName((String)fields[idx++]);
 			cp.setPrincipalInvestigator(user);
 		}
-		
-		return cp;		
+
+		return cp;
 	}
 
 	private void addSiteCpsCond(Criteria query, Collection<SiteCpPair> siteCps) {
@@ -463,35 +496,7 @@ public class CollectionProtocolDaoImpl extends AbstractDao<CollectionProtocol> i
 			return;
 		}
 
-		boolean siteAdded = false, instAdded = false;
-		DetachedCriteria filter = DetachedCriteria.forClass(CollectionProtocol.class, "cp");
-		Disjunction orCond = Restrictions.disjunction();
-
-		for (SiteCpPair siteCp : siteCps) {
-			if (siteCp.getCpId() != null) {
-				orCond.add(Restrictions.eq("cp.id", siteCp.getCpId()));
-			} else {
-				if (!siteAdded) {
-					filter.createAlias("cp.sites", "cpSite")
-						.createAlias("cpSite.site", "site");
-					siteAdded = true;
-				}
-
-				if (siteCp.getSiteId() != null) {
-					orCond.add(Restrictions.eq("site.id", siteCp.getSiteId()));
-				} else {
-					if (!instAdded) {
-						filter.createAlias("site.institute", "institute");
-						instAdded = true;
-					}
-
-					orCond.add(Restrictions.eq("institute.id", siteCp.getInstituteId()));
-				}
-			}
-		}
-
-		filter.add(orCond).setProjection(Projections.distinct(Projections.property("cp.id")));
-		query.add(Subqueries.propertyIn("id", filter));
+		query.add(Subqueries.propertyIn("id", BiospecimenDaoHelper.getInstance().getCpIdsFilter(siteCps)));
 	}
 
 	private static final String FQN = CollectionProtocol.class.getName();
@@ -515,6 +520,8 @@ public class CollectionProtocolDaoImpl extends AbstractDao<CollectionProtocol> i
 	private static final String GET_EXPIRING_CPS = FQN + ".getExpiringCps";
 	
 	private static final String GET_CP_BY_CODE = FQN + ".getByCode";
+
+	private static final String IS_CP_RELATED_TO_USER_INSTITUTE = FQN + ".ensureCpIsAffiliatedtoUserInstitute";
 	
 	private static final String GET_SITE_IDS_BY_CP_IDS = FQN + ".getRepoIdsByCps";
 	
@@ -523,7 +530,9 @@ public class CollectionProtocolDaoImpl extends AbstractDao<CollectionProtocol> i
 	private static final String GET_CONSENT_TIER_BY_STATEMENT = FQN + ".getConsentTierByStatement";
 	
 	private static final String GET_CONSENT_RESP_COUNT = FQN + ".getConsentResponsesCount";
-		
+
+	private static final String GET_DEPENDENT_CONTAINERS = FQN + ".getContainersWithCpRestrictions";
+
 	private static final String CPE_FQN = CollectionProtocolEvent.class.getName();
 	
 	private static final String GET_CPE_BY_IDS = CPE_FQN + ".getCpeByIds";

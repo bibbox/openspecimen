@@ -12,6 +12,7 @@ import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -21,20 +22,22 @@ import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang3.BooleanUtils;
 import org.hibernate.envers.Audited;
 import org.hibernate.envers.NotAudited;
+import org.hibernate.envers.RelationTargetAuditMode;
 
 import com.krishagni.catissueplus.core.administrative.domain.factory.StorageContainerErrorCode;
 import com.krishagni.catissueplus.core.administrative.repository.ContainerRestrictionsCriteria;
 import com.krishagni.catissueplus.core.administrative.repository.StorageContainerDao;
-import com.krishagni.catissueplus.core.biospecimen.domain.BaseEntity;
 import com.krishagni.catissueplus.core.biospecimen.domain.BaseExtensionEntity;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
 import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
 import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
 import com.krishagni.catissueplus.core.common.OpenSpecimenAppCtxProvider;
 import com.krishagni.catissueplus.core.common.Pair;
+import com.krishagni.catissueplus.core.common.TransactionalThreadLocals;
 import com.krishagni.catissueplus.core.common.access.AccessCtrlMgr;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.DependentEntityDetail;
+import com.krishagni.catissueplus.core.common.util.AuthUtil;
 import com.krishagni.catissueplus.core.common.util.MessageUtil;
 import com.krishagni.catissueplus.core.common.util.SchemeOrdinalConverterUtil;
 import com.krishagni.catissueplus.core.common.util.Status;
@@ -88,6 +91,8 @@ public class StorageContainer extends BaseExtensionEntity {
 	public static final String LOWER_CASE_ROMAN_LABELING_SCHEME = "Roman Lower Case";
 
 	private static final Map<PositionAssignment, PositionAssigner> POS_ASSIGNERS = new HashMap<PositionAssignment, PositionAssigner>() {
+		private static final long serialVersionUID = -2190575701287414096L;
+
 		{
 			put(PositionAssignment.HZ_TOP_DOWN_LEFT_RIGHT,  new HzTopDownLeftRightPosAssigner());
 			put(PositionAssignment.HZ_TOP_DOWN_RIGHT_LEFT,  new HzTopDownRightLeftPosAssigner());
@@ -99,6 +104,15 @@ public class StorageContainer extends BaseExtensionEntity {
 			put(PositionAssignment.VT_BOTTOM_UP_RIGHT_LEFT, new VtBottomUpRightLeftPosAssigner());
 		}
 	};
+
+	private static final ThreadLocal<Map<Long, StorageContainerPosition>> lastAssignedPositions =
+		new ThreadLocal<Map<Long, StorageContainerPosition>>() {
+			@Override
+			protected Map<Long, StorageContainerPosition> initialValue() {
+				TransactionalThreadLocals.getInstance().register(this);
+				return new HashMap<>();
+			}
+		};
 
 	private String name;
 
@@ -149,9 +163,9 @@ public class StorageContainer extends BaseExtensionEntity {
 	//
 	// all types of these specimen classes are allowed
 	//
-	private Set<String> allowedSpecimenClasses = new HashSet<>();
+	private Set<PermissibleValue> allowedSpecimenClasses = new HashSet<>();
 	
-	private Set<String> allowedSpecimenTypes = new HashSet<>();
+	private Set<PermissibleValue> allowedSpecimenTypes = new HashSet<>();
 	
 	private Set<CollectionProtocol> allowedCps = new HashSet<>();
 
@@ -163,20 +177,27 @@ public class StorageContainer extends BaseExtensionEntity {
 	
 	private Set<StorageContainerPosition> occupiedPositions = new HashSet<>();
 
+	private Set<ContainerTransferEvent> transferEvents = new LinkedHashSet<>();
+
 	//
 	// query capabilities
 	//
 	private StorageContainerStats stats;
 	
-	private Set<String> compAllowedSpecimenClasses = new HashSet<>();
+	private Set<PermissibleValue> compAllowedSpecimenClasses = new HashSet<>();
 	
-	private Set<String> compAllowedSpecimenTypes = new HashSet<>();
+	private Set<PermissibleValue> compAllowedSpecimenTypes = new HashSet<>();
 	
 	private Set<CollectionProtocol> compAllowedCps = new HashSet<>();
 
 	private Set<DistributionProtocol> compAllowedDps = new HashSet<>();
 
-	private transient StorageContainerPosition lastAssignedPos;
+	//
+	// transfer event
+	//
+	private transient User transferredBy;
+
+	private transient Date transferDate;
 
 	public StorageContainer() {
 		ancestorContainers.add(this);
@@ -391,11 +412,27 @@ public class StorageContainer extends BaseExtensionEntity {
 	}
 
 	public StorageContainerPosition getLastAssignedPos() {
-		return lastAssignedPos;
+		return lastAssignedPositions.get().get(getId());
 	}
 
 	public void setLastAssignedPos(StorageContainerPosition lastAssignedPos) {
-		this.lastAssignedPos = lastAssignedPos;
+		lastAssignedPositions.get().put(getId(), lastAssignedPos);
+	}
+
+	public User getTransferredBy() {
+		return transferredBy;
+	}
+
+	public void setTransferredBy(User transferredBy) {
+		this.transferredBy = transferredBy;
+	}
+
+	public Date getTransferDate() {
+		return transferDate;
+	}
+
+	public void setTransferDate(Date transferDate) {
+		this.transferDate = transferDate;
 	}
 
 	@NotAudited
@@ -430,19 +467,21 @@ public class StorageContainer extends BaseExtensionEntity {
 		this.descendentContainers = descendentContainers;
 	}
 
-	public Set<String> getAllowedSpecimenClasses() {
+	@Audited(targetAuditMode = RelationTargetAuditMode.NOT_AUDITED)
+	public Set<PermissibleValue> getAllowedSpecimenClasses() {
 		return allowedSpecimenClasses;
 	}
 
-	public void setAllowedSpecimenClasses(Set<String> allowedSpecimenClasses) {
+	public void setAllowedSpecimenClasses(Set<PermissibleValue> allowedSpecimenClasses) {
 		this.allowedSpecimenClasses = allowedSpecimenClasses;
 	}
 
-	public Set<String> getAllowedSpecimenTypes() {
+	@Audited(targetAuditMode = RelationTargetAuditMode.NOT_AUDITED)
+	public Set<PermissibleValue> getAllowedSpecimenTypes() {
 		return allowedSpecimenTypes;
 	}
 
-	public void setAllowedSpecimenTypes(Set<String> allowedSpecimenTypes) {
+	public void setAllowedSpecimenTypes(Set<PermissibleValue> allowedSpecimenTypes) {
 		this.allowedSpecimenTypes = allowedSpecimenTypes;
 	}
 
@@ -488,6 +527,15 @@ public class StorageContainer extends BaseExtensionEntity {
 	}
 
 	@NotAudited
+	public Set<ContainerTransferEvent> getTransferEvents() {
+		return transferEvents;
+	}
+
+	public void setTransferEvents(Set<ContainerTransferEvent> transferEvents) {
+		this.transferEvents = transferEvents;
+	}
+
+	@NotAudited
 	public StorageContainerStats getStats() {
 		return stats;
 	}
@@ -497,20 +545,20 @@ public class StorageContainer extends BaseExtensionEntity {
 	}
 
 	@NotAudited
-	public Set<String> getCompAllowedSpecimenClasses() {
+	public Set<PermissibleValue> getCompAllowedSpecimenClasses() {
 		return compAllowedSpecimenClasses;
 	}
 
-	public void setCompAllowedSpecimenClasses(Set<String> compAllowedSpecimenClasses) {
+	public void setCompAllowedSpecimenClasses(Set<PermissibleValue> compAllowedSpecimenClasses) {
 		this.compAllowedSpecimenClasses = compAllowedSpecimenClasses;
 	}
 
 	@NotAudited
-	public Set<String> getCompAllowedSpecimenTypes() {
+	public Set<PermissibleValue> getCompAllowedSpecimenTypes() {
 		return compAllowedSpecimenTypes;
 	}
 
-	public void setCompAllowedSpecimenTypes(Set<String> compAllowedSpecimenTypes) {
+	public void setCompAllowedSpecimenTypes(Set<PermissibleValue> compAllowedSpecimenTypes) {
 		this.compAllowedSpecimenTypes = compAllowedSpecimenTypes;
 	}
 
@@ -597,15 +645,7 @@ public class StorageContainer extends BaseExtensionEntity {
 	}
 
 	public List<StorageContainer> getChildContainersSortedByPosition() {
-		return getChildContainers().stream()
-			.sorted((c1, c2) -> {
-				if (isDimensionless()) {
-					return c1.getId().compareTo(c2.getId());
-				} else {
-					return c1.getPosition().getPosition().compareTo(c2.getPosition().getPosition());
-				}
-			})
-			.collect(Collectors.toList());
+		return sort(this, getChildContainers());
 	}
 
 	public Set<Integer> occupiedPositionsOrdinals() {
@@ -713,6 +753,7 @@ public class StorageContainer extends BaseExtensionEntity {
 
 	public StorageContainerPosition nextAvailablePosition(boolean fromLastAssignedPos) {
 		String row = null, col = null;
+		StorageContainerPosition lastAssignedPos = lastAssignedPositions.get().get(getId());
 		if (!isDimensionless() && fromLastAssignedPos && lastAssignedPos != null) {
 			Pair<Integer, Integer> startPos = getPositionAssigner().nextPosition(this, lastAssignedPos.getPosTwoOrdinal(), lastAssignedPos.getPosOneOrdinal());
 			row = fromOrdinal(getRowLabelingScheme(), startPos.first());
@@ -749,7 +790,9 @@ public class StorageContainer extends BaseExtensionEntity {
 		if (nextPos != null) {
 			String posOne = fromOrdinal(getColumnLabelingScheme(), nextPos.second());
 			String posTwo = fromOrdinal(getRowLabelingScheme(), nextPos.first());
-			return (lastAssignedPos = createPosition(nextPos.second(), posOne, nextPos.first(), posTwo));
+			StorageContainerPosition position = createPosition(nextPos.second(), posOne, nextPos.first(), posTwo);
+			lastAssignedPositions.get().put(getId(), position);
+			return position;
 		}
 
 		if (startPosSpecified) {
@@ -793,7 +836,7 @@ public class StorageContainer extends BaseExtensionEntity {
 		if (isDistributionContainer()) {
 			return canContainSpecimen(specimen.getDp());
 		} else {
-			return canContainSpecimen(specimen.getCollectionProtocol(), specimen.getSpecimenClass(), specimen.getSpecimenType());
+			return canContainSpecimen(specimen.getCollectionProtocol(), specimen.getSpecimenClass().getValue(), specimen.getSpecimenType().getValue());
 		}
 	}
 	
@@ -802,12 +845,12 @@ public class StorageContainer extends BaseExtensionEntity {
 			return getCompAllowedDps().isEmpty() || getCompAllowedDps().containsAll(container.getCompAllowedDps());
 		}
 
-		Set<String> allowedClasses = getCompAllowedSpecimenClasses();
+		Set<PermissibleValue> allowedClasses = getCompAllowedSpecimenClasses();
 		if (!allowedClasses.containsAll(container.getCompAllowedSpecimenClasses())) {
 			return false;
 		}
 		
-		Set<String> allowedTypes = getCompAllowedSpecimenTypes();
+		Set<PermissibleValue> allowedTypes = getCompAllowedSpecimenTypes();
 		if (!allowedTypes.containsAll(container.getCompAllowedSpecimenTypes())) {
 			allowedTypes = computeAllAllowedSpecimenTypes();
 			if (!allowedTypes.containsAll(container.getCompAllowedSpecimenTypes())) { 
@@ -832,10 +875,10 @@ public class StorageContainer extends BaseExtensionEntity {
 		if (!isStoreSpecimenEnabled()) {
 			return false;
 		}
-		
-		if (!getCompAllowedSpecimenClasses().contains(specimenClass) && 
-				!getCompAllowedSpecimenTypes().contains(specimenType)) {
-			return false;						
+
+		if (!contains(getCompAllowedSpecimenClasses(), specimenClass) &&
+				!contains(getCompAllowedSpecimenTypes(), specimenType)) {
+			return false;
 		}
 		
 		if (!getCompAllowedCps().isEmpty()) {
@@ -918,7 +961,7 @@ public class StorageContainer extends BaseExtensionEntity {
 		}
 	}
 	
-	public Set<String> computeAllowedSpecimenClasses() {
+	public Set<PermissibleValue> computeAllowedSpecimenClasses() {
 		if (CollectionUtils.isNotEmpty(getAllowedSpecimenTypes()) || 
 				CollectionUtils.isNotEmpty(getAllowedSpecimenClasses())) {
 			return new HashSet<>(getAllowedSpecimenClasses());
@@ -931,8 +974,8 @@ public class StorageContainer extends BaseExtensionEntity {
 		return new HashSet<>(getDaoFactory().getPermissibleValueDao().getSpecimenClasses());
 	}
 	
-	public Set<String> computeAllowedSpecimenTypes() {
-		Set<String> types = new HashSet<>();
+	public Set<PermissibleValue> computeAllowedSpecimenTypes() {
+		Set<PermissibleValue> types = new HashSet<>();
 		if (CollectionUtils.isNotEmpty(getAllowedSpecimenTypes())) {
 			types.addAll(getAllowedSpecimenTypes());
 		} else if (CollectionUtils.isEmpty(getAllowedSpecimenClasses()) && getParentContainer() != null) {
@@ -1236,6 +1279,18 @@ public class StorageContainer extends BaseExtensionEntity {
 		return UUID.randomUUID().toString();
 	}
 
+	public static List<StorageContainer> sort(StorageContainer parent, Collection<StorageContainer> containers) {
+		return containers.stream()
+			.sorted((c1, c2) -> {
+				if (parent.isDimensionless()) {
+					return c1.getId().compareTo(c2.getId());
+				} else {
+					return c1.getPosition().getPosition().compareTo(c2.getPosition().getPosition());
+				}
+			})
+			.collect(Collectors.toList());
+	}
+
 	private void deleteWithoutCheck() {
 		getChildContainers().forEach(StorageContainer::deleteWithoutCheck);
 
@@ -1262,8 +1317,8 @@ public class StorageContainer extends BaseExtensionEntity {
 		return getDaoFactory().getStorageContainerDao().getSpecimensCount(getId());
 	}
 	
-	private Set<String> computeAllAllowedSpecimenTypes() {
-		Set<String> types = new HashSet<String>();
+	private Set<PermissibleValue> computeAllAllowedSpecimenTypes() {
+		Set<PermissibleValue> types = new HashSet<>();
 		
 		if (CollectionUtils.isNotEmpty(getAllowedSpecimenTypes())) {
 			types.addAll(getAllowedSpecimenTypes());
@@ -1273,9 +1328,11 @@ public class StorageContainer extends BaseExtensionEntity {
 			}
 		}
 
-		Set<String> classes = getCompAllowedSpecimenClasses();
+		Set<PermissibleValue> classes = getCompAllowedSpecimenClasses();
 		if (CollectionUtils.isNotEmpty(classes)) {
-			types.addAll(getDaoFactory().getPermissibleValueDao().getSpecimenTypes(classes));
+			for (PermissibleValue classPv : classes) {
+				types.addAll(classPv.getChildren());
+			}
 		}
 				
 		return types;
@@ -1405,12 +1462,33 @@ public class StorageContainer extends BaseExtensionEntity {
 	}
 	
 	private void updateContainerLocation(StorageContainer other) {
-		updateContainerLocation(other.getSite(), other.getParentContainer(), other.getPosition());
+		updateContainerLocation(
+			other.getSite(), other.getParentContainer(), other.getPosition(),
+			other.getTransferredBy(), other.getTransferDate(), other.getOpComments()
+		);
 	}
 
 	private void updateContainerLocation(Site otherSite, StorageContainer otherParentContainer, StorageContainerPosition otherPos) {
+		updateContainerLocation(otherSite, otherParentContainer, otherPos, null, null, null);
+	}
+
+	private void updateContainerLocation(
+		Site otherSite, StorageContainer otherParentContainer, StorageContainerPosition otherPos,
+		User transferredBy, Date transferDate, String transferReasons) {
 		Site existing = site;
-		
+
+		ContainerTransferEvent transferEvent = null;
+		if (!Objects.equals(site, otherSite) ||
+			!Objects.equals(parentContainer, otherParentContainer) ||
+			!StorageContainerPosition.areSame(position, otherPos)) {
+
+			transferEvent = new ContainerTransferEvent().fromLocation(site, parentContainer, position);
+			transferEvent.setContainer(this);
+			transferEvent.setUser(transferredBy != null ? transferredBy : AuthUtil.getCurrentUser());
+			transferEvent.setTime(transferDate != null ? transferDate : Calendar.getInstance().getTime());
+			transferEvent.setReason(transferReasons);
+		}
+
 		if (otherParentContainer == null) {
 			if (getParentContainer() != null) {
 				getParentContainer().removePosition(position);
@@ -1432,9 +1510,20 @@ public class StorageContainer extends BaseExtensionEntity {
 				setPosition(otherPos);
 			}			
 		}
-		
-		if (!site.equals(existing)) { // has site changed? if yes, ensure all child containers beneath it are updated
+
+		//
+		// has site changed?
+		//
+		if (!site.equals(existing)) {
+			//
+			// if yes, ensure all the child containers beneath it are updated
+			//
 			updateSite(site);
+		}
+
+		if (transferEvent != null) {
+			transferEvent.toLocation(site, parentContainer, position);
+			getTransferEvents().add(transferEvent);
 		}
 	}
 	
@@ -1650,5 +1739,9 @@ public class StorageContainer extends BaseExtensionEntity {
 		}
 
 		return code;
+	}
+
+	private boolean contains(Collection<PermissibleValue> pvs, String value) {
+		return Utility.nullSafeStream(pvs).anyMatch(pv -> pv.getValue().equals(value));
 	}
 }

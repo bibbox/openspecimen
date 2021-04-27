@@ -3,17 +3,21 @@ package com.krishagni.catissueplus.core.de.events;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import com.krishagni.catissueplus.core.administrative.domain.User;
+import com.krishagni.catissueplus.core.administrative.events.UserGroupSummary;
 import com.krishagni.catissueplus.core.common.events.UserSummary;
 import com.krishagni.catissueplus.core.de.domain.QueryFolder;
 import com.krishagni.catissueplus.core.de.domain.SavedQuery;
 
 public class QueryFolderDetails extends QueryFolderSummary {
 
-	private List<UserSummary> sharedWith = new ArrayList<UserSummary>();
+	private List<UserSummary> sharedWith = new ArrayList<>();
 
-	private List<SavedQuerySummary> queries = new ArrayList<SavedQuerySummary>();
+	private List<UserGroupSummary> sharedWithGroups = new ArrayList<>();
+
+	private List<SavedQuerySummary> queries = new ArrayList<>();
 
 	public List<UserSummary> getSharedWith() {
 		return sharedWith;
@@ -21,6 +25,14 @@ public class QueryFolderDetails extends QueryFolderSummary {
 
 	public void setSharedWith(List<UserSummary> sharedWith) {
 		this.sharedWith = sharedWith;
+	}
+
+	public List<UserGroupSummary> getSharedWithGroups() {
+		return sharedWithGroups;
+	}
+
+	public void setSharedWithGroups(List<UserGroupSummary> sharedWithGroups) {
+		this.sharedWithGroups = sharedWithGroups;
 	}
 
 	public List<SavedQuerySummary> getQueries() {
@@ -32,35 +44,31 @@ public class QueryFolderDetails extends QueryFolderSummary {
 	}
 
 	public static QueryFolderDetails from(QueryFolder folder) {
+		return from(folder, true);
+	}
+
+	public static QueryFolderDetails from(QueryFolder folder, boolean includeQueries) {
 		QueryFolderDetails fd = new QueryFolderDetails();
 		fd.setId(folder.getId());
 		fd.setName(folder.getName());
 		fd.setOwner(UserSummary.from(folder.getOwner()));
-		fd.setQueries(fromSavedQueries(folder.getSavedQueries()));
 		fd.setSharedWith(fromUsers(folder.getSharedWith()));
+		fd.setSharedWithGroups(UserGroupSummary.from(folder.getSharedWithGroups()));
 		fd.setSharedWithAll(folder.isSharedWithAll());
+		if (includeQueries) {
+			fd.setQueries(fromSavedQueries(folder.getSavedQueries()));
+		}
+
 		return fd;
 	}
 
 	private static List<SavedQuerySummary> fromSavedQueries(Set<SavedQuery> savedQueries) {
-		List<SavedQuerySummary> result = new ArrayList<SavedQuerySummary>();
-		for (SavedQuery query : savedQueries) {
-			if (query.getDeletedOn() != null) {
-				continue;
-			}
-			
-			result.add(SavedQuerySummary.fromSavedQuery(query));
-		}
-
-		return result;
+		return savedQueries.stream().filter(q -> q.getDeletedOn() == null)
+			.map(SavedQuerySummary::fromSavedQuery)
+			.collect(Collectors.toList());
 	}
 
 	private static List<UserSummary> fromUsers(Set<User> users) {
-		List<UserSummary> result = new ArrayList<UserSummary>();
-		for (User user : users) {
-			result.add(UserSummary.from(user));
-		}
-
-		return result;
+		return users.stream().map(UserSummary::from).collect(Collectors.toList());
 	}
 }

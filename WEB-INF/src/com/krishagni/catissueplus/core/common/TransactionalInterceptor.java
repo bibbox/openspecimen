@@ -21,13 +21,16 @@ import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.annotation.Pointcut;
+import org.springframework.core.NestedExceptionUtils;
 import org.springframework.dao.DataAccessException;
+import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import com.krishagni.catissueplus.core.common.errors.CommonErrorCode;
 import com.krishagni.catissueplus.core.common.errors.ErrorType;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.ResponseEvent;
@@ -35,6 +38,8 @@ import com.krishagni.catissueplus.core.common.util.AuthUtil;
 import com.krishagni.catissueplus.core.common.util.ConfigUtil;
 import com.krishagni.catissueplus.core.common.util.EmailUtil;
 import com.krishagni.catissueplus.core.common.util.UnhandledExceptionUtil;
+
+import edu.common.dynamicextensions.napi.FormException;
 
 @Aspect
 public class TransactionalInterceptor {
@@ -78,12 +83,18 @@ public class TransactionalInterceptor {
 			return doWork0(pjp, rollback);
 		} catch (DataAccessException dae) {
 			throw OpenSpecimenException.serverError(dae.getCause() != null ? dae.getCause() : dae);
+		} catch (CannotCreateTransactionException te) {
+			String rootCause = NestedExceptionUtils.getMostSpecificCause(te).getMessage();
+			throw OpenSpecimenException.serverError(CommonErrorCode.DB_CONN_ERROR, rootCause);
 		} catch (Throwable t) {
 			if (t instanceof OpenSpecimenException) {
 				OpenSpecimenException ose = (OpenSpecimenException) t;
 				if (ose.getErrorType() == ErrorType.USER_ERROR) {
 					throw ose;
 				}
+			} else if (t instanceof FormException) {
+				FormException fe = (FormException) t;
+				throw OpenSpecimenException.userError(CommonErrorCode.FORM_ERROR, fe.getError());
 			}
 
 			logger.error("Error doing work inside " + pjp.getSignature(), t);
@@ -122,6 +133,9 @@ public class TransactionalInterceptor {
 				} catch (OpenSpecimenException ose) {
 					status.setRollbackOnly();
 					throw ose;
+				} catch (FormException fe) {
+					status.setRollbackOnly();
+					throw OpenSpecimenException.userError(CommonErrorCode.FORM_ERROR, fe.getError());
 				} catch (Throwable t) {
 					logger.error("Error doing work inside " + pjp.getSignature(), t);
 					status.setRollbackOnly();

@@ -4,13 +4,17 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
 import java.util.List;
+import java.util.stream.Collectors;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.krishagni.catissueplus.core.administrative.domain.DistributionProtocol;
 import com.krishagni.catissueplus.core.common.AttributeModifiedSupport;
 import com.krishagni.catissueplus.core.common.ListenAttributeChanges;
 import com.krishagni.catissueplus.core.common.events.UserSummary;
+import com.krishagni.catissueplus.core.common.util.Utility;
 
 @ListenAttributeChanges
+@JsonSerialize(include = JsonSerialize.Inclusion.NON_NULL)
 public class DistributionProtocolSummary extends AttributeModifiedSupport {
 	private Long id;
 	
@@ -27,6 +31,8 @@ public class DistributionProtocolSummary extends AttributeModifiedSupport {
 	private String defReceivingSiteName;
 
 	private int distributedSpecimensCount;
+
+	private Boolean starred;
 
 	public Long getId() {
 		return id;
@@ -91,7 +97,15 @@ public class DistributionProtocolSummary extends AttributeModifiedSupport {
 	public void setDistributedSpecimensCount(int distributedSpecimensCount) {
 		this.distributedSpecimensCount = distributedSpecimensCount;
 	}
-	
+
+	public Boolean getStarred() {
+		return starred;
+	}
+
+	public void setStarred(Boolean starred) {
+		this.starred = starred;
+	}
+
 	public static DistributionProtocolSummary from(DistributionProtocol dp) {
 		DistributionProtocolSummary summary = new DistributionProtocolSummary();
 		copy(dp, summary);
@@ -99,13 +113,7 @@ public class DistributionProtocolSummary extends AttributeModifiedSupport {
 	}
 	
 	public static List<DistributionProtocolSummary> from(Collection<DistributionProtocol> dps) {
-		List<DistributionProtocolSummary> result = new ArrayList<DistributionProtocolSummary>();
-		
-		for (DistributionProtocol dp : dps) {
-			result.add(from(dp));
-		}
-		
-		return result;
+		return Utility.nullSafeStream(dps).map(DistributionProtocolSummary::from).collect(Collectors.toList());
 	}
 	
 	public static void copy(DistributionProtocol dp, DistributionProtocolSummary detail) {
@@ -119,5 +127,4 @@ public class DistributionProtocolSummary extends AttributeModifiedSupport {
 			detail.setDefReceivingSiteName(dp.getDefReceivingSite().getName());
 		}
 	}
-	
 }

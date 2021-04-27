@@ -4,9 +4,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.apache.commons.lang3.StringUtils;
-import org.codehaus.jackson.annotate.JsonProperty;
 import org.hibernate.criterion.MatchMode;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 public abstract class AbstractListCriteria<T extends ListCriteria<T>> implements ListCriteria<T> {
 	private Long lastId;
@@ -29,6 +29,14 @@ public abstract class AbstractListCriteria<T extends ListCriteria<T>> implements
 	
 	private List<Long> ids = new ArrayList<>();
 
+	private List<Long> notInIds = new ArrayList<>();
+
+	private String orderBy;
+
+	private boolean asc = true;
+
+	private boolean orderByStarred;
+
 	@Override
 	public Long lastId() {
 		return lastId;
@@ -42,7 +50,7 @@ public abstract class AbstractListCriteria<T extends ListCriteria<T>> implements
 
 	@Override
 	public int startAt() {
-		return startAt <= 0 ? 0 : startAt;
+		return Math.max(startAt, 0);
 	}
 
 	@Override
@@ -142,8 +150,49 @@ public abstract class AbstractListCriteria<T extends ListCriteria<T>> implements
 	}
 	
 	@Override
+	@JsonProperty("ids")
 	public T ids(List<Long> ids) {
 		this.ids = ids;
+		return self();
+	}
+
+	@Override
+	public List<Long> notInIds() {
+		return notInIds;
+	}
+
+	@Override
+	@JsonProperty("notInIds")
+	public T notInIds(List<Long> notInIds) {
+		this.notInIds = notInIds;
+		return self();
+	}
+
+
+	public String orderBy() {
+		return orderBy;
+	}
+
+	public T orderBy(String orderBy) {
+		this.orderBy = orderBy;
+		return self();
+	}
+
+	public boolean asc() {
+		return asc;
+	}
+
+	public T asc(boolean asc) {
+		this.asc = asc;
+		return self();
+	}
+
+	public boolean orderByStarred() {
+		return orderByStarred;
+	}
+
+	public T orderByStarred(boolean orderByStarred) {
+		this.orderByStarred = orderByStarred;
 		return self();
 	}
 	

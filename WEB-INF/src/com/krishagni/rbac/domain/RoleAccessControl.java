@@ -3,22 +3,17 @@ package com.krishagni.rbac.domain;
 import java.util.HashSet;
 import java.util.Set;
 
-public class RoleAccessControl {
-	private Long id;
-	
+import org.hibernate.envers.Audited;
+
+import com.krishagni.catissueplus.core.biospecimen.domain.BaseEntity;
+
+@Audited
+public class RoleAccessControl extends BaseEntity {
 	private Role role;
 	
 	private Resource resource;
 	
-	private Set<ResourceInstanceOp> operations = new HashSet<ResourceInstanceOp>();
-
-	public Long getId() {
-		return id;
-	}
-
-	public void setId(Long id) {
-		this.id = id;
-	}
+	private Set<ResourceInstanceOp> operations = new HashSet<>();
 
 	public Role getRole() {
 		return role;

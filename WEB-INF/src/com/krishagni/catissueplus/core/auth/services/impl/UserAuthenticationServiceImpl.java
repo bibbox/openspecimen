@@ -40,18 +40,29 @@ import com.krishagni.catissueplus.core.common.util.EmailUtil;
 import com.krishagni.catissueplus.core.common.util.MessageUtil;
 import com.krishagni.catissueplus.core.common.util.NotifUtil;
 import com.krishagni.catissueplus.core.common.util.Status;
+import com.krishagni.catissueplus.core.common.util.Utility;
 
 public class UserAuthenticationServiceImpl implements UserAuthenticationService {
 	private static final String ACCOUNT_LOCKED_NOTIF_TMPL = "account_locked_notification";
 
+	private static final String FAILED_LOGIN_USER_NOTIF_TMPL = "failed_login_user";
+
+	private static final String FAILED_LOGIN_USER_ADMIN_TMPL = "failed_login_admins";
+
 	private DaoFactory daoFactory;
+
+	private com.krishagni.catissueplus.core.de.repository.DaoFactory deDaoFactory;
 	
 	private AuditService auditService;
 
 	public void setDaoFactory(DaoFactory daoFactory) {
 		this.daoFactory = daoFactory;
 	}
-	
+
+	public void setDeDaoFactory(com.krishagni.catissueplus.core.de.repository.DaoFactory deDaoFactory) {
+		this.deDaoFactory = deDaoFactory;
+	}
+
 	public void setAuditService(AuditService auditService) {
 		this.auditService = auditService;
 	}
@@ -65,6 +76,10 @@ public class UserAuthenticationServiceImpl implements UserAuthenticationService 
 			user = daoFactory.getUserDao().getUser(loginDetail.getLoginName(), loginDetail.getDomainName());
 			if (user == null) {
 				throw OpenSpecimenException.userError(AuthErrorCode.INVALID_CREDENTIALS);
+			}
+
+			if (!user.isAllowedAccessFrom(loginDetail.getIpAddress())) {
+				throw OpenSpecimenException.userError(AuthErrorCode.NA_IP_ADDRESS, loginDetail.getIpAddress());
 			}
 
 			if (!user.isAdmin() && isSystemLockedDown()) {
@@ -96,17 +111,21 @@ public class UserAuthenticationServiceImpl implements UserAuthenticationService 
 
 			Map<String, Object> authDetail = new HashMap<>();
 			authDetail.put("user", user);
-			
-			String authToken = generateToken(user, loginDetail);
-			if (authToken != null) {
-				authDetail.put("token", authToken);
+
+			AuthToken token = createToken(user, loginDetail);
+			if (token != null) {
+				authDetail.put("token", AuthUtil.encodeToken(token.getToken()));
+				authDetail.put("tokenObj", token);
 			}
 			
 			return ResponseEvent.response(authDetail);
 		} catch (OpenSpecimenException ose) {
 			if (user != null && user.isEnabled()) {
 				insertLoginAudit(user, loginDetail.getIpAddress(), false);
-				checkFailedLoginAttempt(user, loginDetail.getIpAddress());
+				checkFailedLoginAttempt(user);
+				if (ose.containsError(AuthErrorCode.INVALID_CREDENTIALS)) {
+					notifyFailedLogin(loginDetail, user);
+				}
 			}
 			return ResponseEvent.error(ose, true);
 		} catch (Exception e) {
@@ -126,6 +145,10 @@ public class UserAuthenticationServiceImpl implements UserAuthenticationService 
 			}
 
 			User user = authToken.getUser();
+			if (!user.isAllowedAccessFrom(tokenDetail.getIpAddress())) {
+				throw OpenSpecimenException.userError(AuthErrorCode.NA_IP_ADDRESS, tokenDetail.getIpAddress());
+			}
+
 			long timeSinceLastApiCall = auditService.getTimeSinceLastApiCall(user.getId(), token);
 			int tokenInactiveInterval = AuthConfig.getInstance().getTokenInactiveIntervalInMinutes();
 			if (!user.isAdmin() && isSystemLockedDown()) {
@@ -171,41 +194,52 @@ public class UserAuthenticationServiceImpl implements UserAuthenticationService 
 			loginAuditLog.setLogoutTime(Calendar.getInstance().getTime());
 			
 			daoFactory.getAuthDao().deleteAuthToken(token);
+			daoFactory.getAuthDao().deleteCredentials(token.getToken());
 			return ResponseEvent.response("Success");
 		} catch (Exception e) {	
 			return ResponseEvent.serverError(e);
 		}
 	}
-	
+
+	@Override
+	@PlusTransactional
+	public User getUser(String domainName, String loginName) {
+		return daoFactory.getUserDao().getUser(loginName, domainName);
+	}
+
 	@Scheduled(cron="0 0 12 ? * *")
 	@PlusTransactional
 	public void deleteInactiveAuthTokens() {
 		Calendar cal = Calendar.getInstance();
 		cal.add(Calendar.MINUTE, -AuthConfig.getInstance().getTokenInactiveIntervalInMinutes());
 		daoFactory.getAuthDao().deleteInactiveAuthTokens(cal.getTime());
+		daoFactory.getAuthDao().deleteDanglingCredentials();
 	}
 	
 	public String generateToken(User user, LoginDetail loginDetail) {
+		AuthToken token = createToken(user, loginDetail);
+		return token != null ? AuthUtil.encodeToken(token.getToken()) : null;
+	}
+
+	private AuthToken createToken(User user, LoginDetail loginDetail) {
 		LoginAuditLog loginAuditLog = insertLoginAudit(user, loginDetail.getIpAddress(), true);
 
+		AuthToken authToken = new AuthToken();
+		authToken.setIpAddress(loginDetail.getIpAddress());
+		authToken.setUser(user);
+		authToken.setLoginAuditLog(loginAuditLog);
+
 		if (loginDetail.isDoNotGenerateToken()) {
-			return null;
+			return authToken;
 		}
 
 		String token = UUID.randomUUID().toString();
-		AuthToken authToken = new AuthToken();
-		authToken.setIpAddress(loginDetail.getIpAddress());
 		authToken.setToken(token);
-		authToken.setUser(user);
-		authToken.setLoginAuditLog(loginAuditLog);
 		daoFactory.getAuthDao().saveAuthToken(authToken);
-
 		insertApiCallLog(loginDetail, user, loginAuditLog);
-		return AuthUtil.encodeToken(token);
+		return authToken;
 	}
 
-
-	
 	private LoginAuditLog insertLoginAudit(User user, String ipAddress, boolean loginSuccessful) {
 		LoginAuditLog loginAuditLog = new LoginAuditLog();
 		loginAuditLog.setUser(user);
@@ -218,7 +252,7 @@ public class UserAuthenticationServiceImpl implements UserAuthenticationService 
 		return loginAuditLog;
 	}
 	
-	private void checkFailedLoginAttempt(User user, String ipAddress) {
+	private void checkFailedLoginAttempt(User user) {
 		int failedLoginAttempts = AuthConfig.getInstance().getAllowedFailedLoginAttempts();
 		List<LoginAuditLog> logs = daoFactory.getAuthDao()
 			.getLoginAuditLogsByUser(user.getId(), failedLoginAttempts);
@@ -235,6 +269,37 @@ public class UserAuthenticationServiceImpl implements UserAuthenticationService 
 		
 		user.setActivityStatus(Status.ACTIVITY_STATUS_LOCKED.getStatus());
 		notifyUserAccountLocked(user, failedLoginAttempts);
+	}
+
+	private void notifyFailedLogin(LoginDetail loginDetail, User user) {
+		if (!AuthConfig.getInstance().isFailedLoginNotifEnabled()) {
+			return;
+		}
+
+		String[] subjParams = { user.formattedName(), user.getLoginName() };
+		Map<String, Object> props = new HashMap<>();
+		props.put("user", user);
+		props.put("$subject", subjParams);
+		props.put("ccAdmin", false);
+		props.put("ignoreDnd", true);
+		props.put("ipAddress", loginDetail.getIpAddress());
+		props.put("dateTime", Utility.getDateTimeString(Calendar.getInstance().getTime()));
+		EmailUtil.getInstance().sendEmail(FAILED_LOGIN_USER_NOTIF_TMPL, new String[] { user.getEmailAddress() }, null, props);
+
+		List<User> admins = daoFactory.getUserDao().getSuperAndInstituteAdmins(user.getInstitute().getName());
+		for (User admin : admins) {
+			props.put("admin", admin);
+			EmailUtil.getInstance().sendEmail(FAILED_LOGIN_USER_ADMIN_TMPL, new String[] { admin.getEmailAddress() }, null, props);
+		}
+
+		Notification notif = new Notification();
+		notif.setEntityId(user.getId());
+		notif.setEntityType(User.getEntityName());
+		notif.setCreatedBy(daoFactory.getUserDao().getSystemUser());
+		notif.setCreationTime(Calendar.getInstance().getTime());
+		notif.setOperation("UPDATE");
+		notif.setMessage(MessageUtil.getInstance().getMessage(FAILED_LOGIN_USER_ADMIN_TMPL + "_subj", subjParams));
+		NotifUtil.getInstance().notify(notif, Collections.singletonMap("user-overview", admins));
 	}
 	
 	private void insertApiCallLog(LoginDetail loginDetail, User user, LoginAuditLog loginAuditLog) {
@@ -261,6 +326,7 @@ public class UserAuthenticationServiceImpl implements UserAuthenticationService 
 		emailProps.put("failedLoginAttempts", failedLoginAttempts);
 		emailProps.put("$subject", subjParams);
 		emailProps.put("ccAdmin", false);
+		emailProps.put("ignoreDnd", true);
 
 		List<User> rcpts = daoFactory.getUserDao().getSuperAndInstituteAdmins(lockedUser.getInstitute().getName());
 		if (!rcpts.contains(lockedUser)) {

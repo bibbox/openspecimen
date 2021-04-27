@@ -120,15 +120,18 @@ public class CsvFileReader implements CsvReader {
 	public boolean next() {
 		try {
 			currentRow = csvReader.readNext();
+			if (currentRow == null || currentRow.length == 0) {
+				return false;
+			}
 
-			boolean hasNext = currentRow != null && currentRow.length > 0;
-			if (hasNext) {
-				for (int i = 0; i < currentRow.length; i++) {
-					currentRow[i] = StringUtils.trim(currentRow[i]);
+			for (int i = 0; i < currentRow.length; i++) {
+				String col = currentRow[i] = StringUtils.trim(currentRow[i]);
+				if (col != null && col.length() > 1 && col.charAt(0) == '\'' && UNSAFE_CHARS.indexOf(col.charAt(1)) > -1) {
+					currentRow[i] = col.substring(1);
 				}
 			}
 
-			return hasNext;
+			return true;
 		} catch (IOException e) {
 			throw new CsvException("Error reading line from CSV file", e);
 		}
@@ -153,11 +156,14 @@ public class CsvFileReader implements CsvReader {
 			}
 
 			for (int i = 0; i < line.length; ++i) {
-				if (line[i] == null || line[i].trim().length() == 0) {
-					throw new CsvException(
-							"CSV file column names line has empty/blank column names", line);
+				String column = line[i] != null ? line[i].trim() : null;
+				if (StringUtils.isBlank(column)) {
+					throw new CsvException("CSV file column names line has empty/blank column names", line);
+				} else if (columnNameIdxMap.containsKey(column)) {
+					throw new CsvException("CSV file column names are duplicate: " + column, line);
 				}
-				columnNameIdxMap.put(line[i].trim(), i);
+
+				columnNameIdxMap.put(column, i);
 			}
 		} catch (IOException e) {
 			throw new CsvException("Error reading CSV file column names line", e);
@@ -173,4 +179,6 @@ public class CsvFileReader implements CsvReader {
 		Integer columnIdx = columnNameIdxMap.get(columnName.trim());
 		return columnIdx == null ? -1 : columnIdx;
 	}
+
+	private static final String UNSAFE_CHARS = ";=@+-";
 }

@@ -69,17 +69,47 @@ angular.module('os.biospecimen.participant.root', ['os.biospecimen.models'])
         }
       };
 
-      // Specimen and Visit Authorization Options
-      $scope.specimenResource = {
+      $scope.visitResource = {
         updateOpts: {
-          resource: 'VisitAndSpecimen',
+          resource: 'Visit',
           operations: ['Update'],
           cp: $scope.cpr.cpShortTitle,
           sites: sites
         },
 
         deleteOpts: {
-          resource: 'VisitAndSpecimen',
+          resource: 'Visit',
+          operations: ['Delete'],
+          cp: $scope.cpr.cpShortTitle,
+          sites: sites
+        }
+      };
+
+      // Specimen Authorization Options
+      $scope.specimenResource = {
+        allReadOpts: {
+          resources: ['Specimen'],
+          operations: ['Read'],
+          cp: $scope.cpr.cpShortTitle,
+          sites: sites
+        },
+
+        allUpdateOpts: {
+          resources: ['Specimen'],
+          operations: ['Update'],
+          cp: $scope.cpr.cpShortTitle,
+          sites: sites
+        },
+
+        updateOpts: {
+          resources: ['Specimen', 'PrimarySpecimen'],
+          operations: ['Update'],
+          cp: $scope.cpr.cpShortTitle,
+          sites: sites
+        },
+
+        deleteOpts: {
+          resources: ['Specimen', 'PrimarySpecimen'],
           operations: ['Delete'],
           cp: $scope.cpr.cpShortTitle,
           sites: sites
@@ -88,8 +118,10 @@ angular.module('os.biospecimen.participant.root', ['os.biospecimen.models'])
 
       // Specimen Tree Authorization Options
       var update = AuthorizationService.isAllowed($scope.specimenResource.updateOpts);
+      var allUpdate = AuthorizationService.isAllowed($scope.specimenResource.allUpdateOpts);
       var del = AuthorizationService.isAllowed($scope.specimenResource.deleteOpts);
-      $scope.specimenAllowedOps = {update: update, delete: del};
+      var store = AuthorizationService.isAllowed({sites: sites, resource: 'StorageContainer', operations: ['Read']});
+      $scope.specimenAllowedOps = {allUpdate: allUpdate, update: update, delete: del, store: store};
 
       // Surgical Pathology Report Authorization Options
       $scope.sprResource = {

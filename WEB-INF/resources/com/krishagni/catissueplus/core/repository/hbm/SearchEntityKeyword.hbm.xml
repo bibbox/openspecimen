@@ -48,6 +48,7 @@
         os_search_entity_keywords k
         inner join os_search_entity_ranks r on r.entity = k.entity
       where
+        %s
         k.value like :value and
         k.status = 1
       order by
@@ -68,7 +69,9 @@
             distinct k.entity
           from
             os_search_entity_keywords k
+            %s
           where
+            %s
             k.value like :value and
             k.status = 1
         )

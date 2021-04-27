@@ -14,6 +14,8 @@ public class AuthConfig {
 	public static final String VERIFY_TOKEN_IP   = "verify_token_ip_address";
 	
 	public static final String TOKEN_INACTIVE_INTERVAL = "token_inactive_interval";
+
+	public static final String NOTIFY_FAILED_LOGINS = "notify_failed_logins";
 	
 	private static AuthConfig instance = null;
 	
@@ -42,5 +44,9 @@ public class AuthConfig {
 	
 	public int getTokenInactiveIntervalInMinutes() {
 		return cfgSvc.getIntSetting(MODULE, TOKEN_INACTIVE_INTERVAL, 60);
+	}
+
+	public boolean isFailedLoginNotifEnabled() {
+		return cfgSvc.getBoolSetting(MODULE, NOTIFY_FAILED_LOGINS, false);
 	}
 }

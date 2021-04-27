@@ -135,6 +135,11 @@
   width: 100%;
 }
 
+.os-container-map-wrapper.os-color-coded-spmns .slot-desc {
+  padding: 12.5% 5px;
+  height: calc(100% - 25px);
+}
+
 .os-container-map .slot-desc:hover {
   color: white;
 }
@@ -160,7 +165,7 @@
 }
 
 .os-container-map .slot-blocked {
-  background: #d9534f;
+  background: gray;
 }
 
 .os-container-map .slot-reserved {

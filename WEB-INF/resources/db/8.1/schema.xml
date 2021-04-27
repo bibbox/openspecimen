@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+  xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+  http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-3.1.xsd">
+
+  <changeSet author="vpawar" id="API Users and their IP address range">
+    <addColumn tableName="CATISSUE_USER">
+      <column name="API_USER" type="${boolean.type}" defaultValueBoolean="false"/>
+      <column name="IP_RANGE" type="${text.type}(64)"/>
+    </addColumn>
+  </changeSet>
+
+  <changeSet author="vpawar" id="User groups">
+    <createTable tableName="OS_USER_GROUPS">
+      <column name="IDENTIFIER" type="${int.type}" autoIncrement="${autoIncrement}">
+        <constraints primaryKey="true" nullable="false"/>
+      </column>
+      <column name="NAME" type="${text.type}(64)">
+        <constraints nullable="false"/>
+      </column>
+      <column name="DESCRIPTION" type="${text.type}(255)">
+        <constraints nullable="false"/>
+      </column>
+      <column name="INSTITUTE_ID" type="${int.type}">
+        <constraints nullable="false" foreignKeyName="FK_USER_GROUP_INSTITUTE"
+          referencedTableName="CATISSUE_INSTITUTION" referencedColumnNames="IDENTIFIER"/>
+      </column>
+      <column name="ACTIVITY_STATUS" type="${text.type}(32)">
+        <constraints nullable="false"/>
+      </column>
+    </createTable>
+  </changeSet>
+
+  <changeSet author="vpawar" id="User group ID sequence" dbms="oracle">
+    <createSequence sequenceName="OS_USER_GROUP_SEQ" startValue="1" incrementBy="1" ordered="true"/>
+  </changeSet>
+
+  <changeSet author="vpawar" id="User group users">
+    <createTable tableName="OS_USER_GROUP_USERS">
+      <column name="GROUP_ID" type="${int.type}">
+        <constraints nullable="false" foreignKeyName="FK_GRP_USERS_GRP_ID"
+          referencedTableName="OS_USER_GROUPS" referencedColumnNames="IDENTIFIER"/>
+      </column>
+      <column name="USER_ID" type="${int.type}">
+        <constraints nullable="false" foreignKeyName="FK_GRP_USERS_USR_ID"
+          referencedTableName="CATISSUE_USER" referencedColumnNames="IDENTIFIER"/>
+      </column>
+    </createTable>
+  </changeSet>
+
+  <changeSet author="vpawar" id="Unique constraint on user group users">
+    <addUniqueConstraint constraintName="OS_USER_GROUP_USERS_UQ"
+      tableName="OS_USER_GROUP_USERS" columnNames="GROUP_ID,USER_ID"/>
+  </changeSet>
+
+  <changeSet author="vpawar" id="Specimen list shared groups">
+    <createTable tableName="OS_SPECIMEN_LIST_SHARED_GROUPS">
+      <column name="LIST_ID" type="${int.type}">
+        <constraints nullable="false" foreignKeyName="FK_SPMN_LIST_SHR_GRP_LIST_ID"
+          referencedTableName="CATISSUE_SPECIMENLIST_TAGS" referencedColumnNames="IDENTIFIER"/>
+      </column>
+      <column name="GROUP_ID" type="${int.type}">
+        <constraints nullable="false" foreignKeyName="FK_SPMN_LIST_SHR_GRP_GRP_ID"
+          referencedTableName="OS_USER_GROUPS" referencedColumnNames="IDENTIFIER"/>
+      </column>
+    </createTable>
+  </changeSet>
+
+  <changeSet author="vpawar" id="Specimen list shared group unique constraint">
+    <addUniqueConstraint constraintName="OS_SPMN_LIST_SHARED_GRPS_UQ"
+      tableName="OS_SPECIMEN_LIST_SHARED_GROUPS" columnNames="LIST_ID,GROUP_ID"/>
+  </changeSet>
+
+  <changeSet author="vpawar" id="Query folders shared groups">
+    <createTable tableName="OS_QUERY_FOLDER_SHARED_GROUPS">
+      <column name="FOLDER_ID" type="${int.type}">
+        <constraints nullable="false" foreignKeyName="FK_QFOLDER_SHR_GRP_FOLDER_ID"
+          referencedTableName="CATISSUE_QUERY_FOLDERS" referencedColumnNames="IDENTIFIER"/>
+      </column>
+      <column name="GROUP_ID" type="${int.type}">
+        <constraints nullable="false" foreignKeyName="FK_QFOLDER_SHR_GRP_GRP_ID"
+          referencedTableName="OS_USER_GROUPS" referencedColumnNames="IDENTIFIER"/>
+      </column>
+    </createTable>
+  </changeSet>
+
+  <changeSet author="vpawar" id="Query folders shared groups unique constraint">
+    <addUniqueConstraint constraintName="OS_QFOLDER_SHARED_GRPS_UQ"
+      tableName="OS_QUERY_FOLDER_SHARED_GROUPS" columnNames="FOLDER_ID,GROUP_ID"/>
+  </changeSet>
+</databaseChangeLog>

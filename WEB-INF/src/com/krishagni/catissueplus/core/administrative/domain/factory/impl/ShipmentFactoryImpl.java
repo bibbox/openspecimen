@@ -12,6 +12,7 @@ import java.util.Set;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 
+import com.krishagni.catissueplus.core.administrative.domain.PermissibleValue;
 import com.krishagni.catissueplus.core.administrative.domain.Shipment;
 import com.krishagni.catissueplus.core.administrative.domain.ShipmentContainer;
 import com.krishagni.catissueplus.core.administrative.domain.ShipmentSpecimen;
@@ -189,12 +190,8 @@ public class ShipmentFactoryImpl implements ShipmentFactory {
 	
 	private void setShippedDate(ShipmentDetail detail, Shipment shipment, OpenSpecimenException ose) {
 		Date shippedDate = detail.getShippedDate();
-		Date todayDate = Calendar.getInstance().getTime();
 		if (shippedDate == null) {
-			shippedDate = todayDate;
-		} else if (shippedDate.after(todayDate)) {
-			ose.addError(ShipmentErrorCode.INVALID_SHIPPED_DATE);
-			return;
+			shippedDate = Calendar.getInstance().getTime();
 		}
 
 		shipment.setShippedDate(shippedDate);
@@ -222,8 +219,8 @@ public class ShipmentFactoryImpl implements ShipmentFactory {
 		Date receivedDate = detail.getReceivedDate();
 		Date todayDate = Calendar.getInstance().getTime();
 		if (receivedDate == null) {
-			receivedDate = todayDate;
-		} else if (receivedDate.before(shipment.getShippedDate()) || receivedDate.after(todayDate)) {
+			receivedDate = todayDate.after(shipment.getShippedDate()) ? todayDate : shipment.getShippedDate();
+		} else if (receivedDate.before(shipment.getShippedDate())) {
 			ose.addError(ShipmentErrorCode.INVALID_RECEIVED_DATE);
 		}
 
@@ -369,12 +366,7 @@ public class ShipmentFactoryImpl implements ShipmentFactory {
 	}
 	
 	private ShipmentSpecimen getShipmentSpmn(ShipmentSpecimenDetail detail, Shipment shipment, OpenSpecimenException ose) {
-		if (shipment.isReceived() && StringUtils.isBlank(detail.getReceivedQuality())) {
-			ose.addError(ShipmentErrorCode.RECV_QUALITY_REQ);
-			return null;
-		}
-		
-		String receivedQuality = null;
+		PermissibleValue receivedQuality = null;
 		if (shipment.isReceived()) {
 			receivedQuality = getReceivedQuality(detail.getReceivedQuality(), ose);
 		}
@@ -394,12 +386,7 @@ public class ShipmentFactoryImpl implements ShipmentFactory {
 	}
 
 	private ShipmentContainer getShipmentContainer(ShipmentContainerDetail detail, Shipment shipment, OpenSpecimenException ose) {
-		if (shipment.isReceived() && StringUtils.isBlank(detail.getReceivedQuality())) {
-			ose.addError(ShipmentErrorCode.RECV_QUALITY_REQ);
-			return null;
-		}
-
-		String receivedQuality = null;
+		PermissibleValue receivedQuality = null;
 		if (shipment.isReceived()) {
 			receivedQuality = getReceivedQuality(detail.getReceivedQuality(), ose);
 		}
@@ -416,12 +403,18 @@ public class ShipmentFactoryImpl implements ShipmentFactory {
 		return shipmentContainer;
 	}
 
-	private String getReceivedQuality(String input, OpenSpecimenException ose) {
-		if (!PvValidator.isValid(RECV_QUALITY, input)) {
+	private PermissibleValue getReceivedQuality(String input, OpenSpecimenException ose) {
+		if (StringUtils.isBlank(input)) {
+			ose.addError(ShipmentErrorCode.RECV_QUALITY_REQ);
+			return null;
+		}
+
+		PermissibleValue recvQualityPv = daoFactory.getPermissibleValueDao().getPv(RECV_QUALITY, input);
+		if (recvQualityPv == null) {
 			ose.addError(ShipmentErrorCode.INV_RECEIVED_QUALITY, input);
 		}
 
-		return input;
+		return recvQualityPv;
 	}
 
 	private Specimen getSpecimen(Shipment shipment, SpecimenInfo info, OpenSpecimenException ose) {

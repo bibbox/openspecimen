@@ -11,10 +11,12 @@ import java.util.List;
 import org.apache.commons.lang.StringUtils;
 import org.hibernate.Criteria;
 import org.hibernate.Query;
+import org.hibernate.criterion.DetachedCriteria;
 import org.hibernate.criterion.Disjunction;
-import org.hibernate.criterion.ProjectionList;
 import org.hibernate.criterion.Projections;
 import org.hibernate.criterion.Restrictions;
+import org.hibernate.criterion.SimpleExpression;
+import org.hibernate.criterion.Subqueries;
 
 import com.krishagni.catissueplus.core.biospecimen.domain.Participant;
 import com.krishagni.catissueplus.core.biospecimen.events.PmiDetail;
@@ -26,20 +28,18 @@ public class ParticipantDaoImpl extends AbstractDao<Participant> implements Part
 	@Override
 	@SuppressWarnings("unchecked")
 	public Participant getByUid(String uid) {		
-		List<Participant> participants = sessionFactory.getCurrentSession()
-				.getNamedQuery(GET_BY_UID)
-				.setString("uid", uid.toLowerCase())
-				.list();
+		List<Participant> participants = getCurrentSession().getNamedQuery(GET_BY_UID)
+			.setParameter("uid", uid.toLowerCase())
+			.list();
 		return participants == null || participants.isEmpty() ? null : participants.iterator().next();
 	}
 	
 	@Override
 	@SuppressWarnings("unchecked")
 	public Participant getByEmpi(String empi) {
-		List<Participant> participants = sessionFactory.getCurrentSession()
-				.getNamedQuery(GET_BY_EMPI)
-				.setString("empi", empi.toLowerCase())
-				.list();
+		List<Participant> participants = getCurrentSession().getNamedQuery(GET_BY_EMPI)
+			.setParameter("empi", empi.toLowerCase())
+			.list();
 		return participants == null || participants.isEmpty() ? null : participants.iterator().next();
 	}
 
@@ -61,25 +61,25 @@ public class ParticipantDaoImpl extends AbstractDao<Participant> implements Part
 	@Override
 	@SuppressWarnings("unchecked")	
 	public List<Participant> getByPmis(List<PmiDetail> pmis) {
-		Criteria query = getByPmisQuery(pmis);
-		if (query == null) {
+		DetachedCriteria subQuery = getByPmisQuery(pmis);
+		if (subQuery == null) {
 			return Collections.emptyList();
 		}
-		
-		return query.list();
+
+		return getCurrentSession().createCriteria(Participant.class, "p")
+			.add(Subqueries.propertyIn("p.id", subQuery))
+			.list();
 	}
 	
 	@Override
 	@SuppressWarnings("unchecked")
 	public List<Long> getParticipantIdsByPmis(List<PmiDetail> pmis) {
-		Criteria query = getByPmisQuery(pmis);
-		if (query == null) {
+		DetachedCriteria subQuery = getByPmisQuery(pmis);
+		if (subQuery == null) {
 			return Collections.emptyList();
 		}
-		
-		ProjectionList projs = Projections.projectionList().add(Projections.property("id"));
-		query.setProjection(projs);
-		return query.list();
+
+		return subQuery.getExecutableCriteria(getCurrentSession()).list();
 	}
 	
 	@Override
@@ -102,33 +102,37 @@ public class ParticipantDaoImpl extends AbstractDao<Participant> implements Part
 		return Participant.class;
 	}
 	
-	private Criteria getByPmisQuery(List<PmiDetail> pmis) {
-		Criteria query = sessionFactory.getCurrentSession().createCriteria(Participant.class)
-				.createAlias("pmis", "pmi")
-				.createAlias("pmi.site", "site");
-		
+	private DetachedCriteria getByPmisQuery(List<PmiDetail> pmis) {
+		DetachedCriteria detachedCriteria = DetachedCriteria.forClass(Participant.class, "p")
+			.setProjection(Projections.distinct(Projections.property("p.id")));
+		Criteria query = detachedCriteria.getExecutableCriteria(getCurrentSession())
+			.createAlias("p.pmis", "pmi")
+			.createAlias("pmi.site", "site");
+
 		Disjunction junction = Restrictions.disjunction();
-		
 		boolean added = false;
 		for (PmiDetail pmi : pmis) {
 			if (StringUtils.isBlank(pmi.getSiteName()) || StringUtils.isBlank(pmi.getMrn())) {
 				continue;
 			}
-			
-			junction.add(
-					Restrictions.and(
-							Restrictions.ilike("pmi.medicalRecordNumber", pmi.getMrn()),
-							Restrictions.ilike("site.name", pmi.getSiteName())));
-			
+
+			SimpleExpression eqMrn  = Restrictions.eq("pmi.medicalRecordNumber", pmi.getMrn());
+			SimpleExpression eqSite = Restrictions.eq("site.name", pmi.getSiteName());
+			if (!isMySQL()) {
+				eqMrn  = eqMrn.ignoreCase();
+				eqSite = eqSite.ignoreCase();
+			}
+
+			junction.add(Restrictions.and(eqMrn, eqSite));
 			added = true;
 		}
-		
-		if (!added) {
+
+		if (added) {
+			query.add(junction);
+			return detachedCriteria;
+		} else {
 			return null;
 		}
-		
-		return query.add(junction);						
-		
 	}
 
 	private static final String FQN = Participant.class.getName();
@@ -140,6 +144,6 @@ public class ParticipantDaoImpl extends AbstractDao<Participant> implements Part
 	private static final String GET_BY_UID = FQN + ".getByUid";
 	
 	private static final String GET_BY_EMPI = FQN + ".getByEmpi";
-	
+
 	private static final String GET_BY_LNAME_AND_DOB = FQN + ".getByLnameAndDob";
 }

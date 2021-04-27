@@ -38,7 +38,13 @@ public enum RbacErrorCode implements ErrorCode {
 
 	ADMIN_RIGHTS_REQUIRED,
 
-	SUBJECT_ROLE_NOT_FOUND;
+	SUBJECT_ROLE_NOT_FOUND,
+
+	INV_CP_USER,
+
+	INV_CP_SITE,
+
+	INV_SITE_USER;
 	
 	@Override
 	public String code() {

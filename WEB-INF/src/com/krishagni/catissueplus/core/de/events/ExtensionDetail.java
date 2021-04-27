@@ -8,11 +8,12 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 import org.apache.commons.collections.CollectionUtils;
-import org.codehaus.jackson.annotate.JsonIgnore;
-import org.codehaus.jackson.annotate.JsonProperty;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.krishagni.catissueplus.core.de.domain.DeObject;
 import com.krishagni.catissueplus.core.de.domain.DeObject.Attr;
+import com.krishagni.catissueplus.core.exporter.services.impl.ExporterContextHolder;
 
 public class ExtensionDetail implements Serializable {
 	private Long id;
@@ -26,6 +27,8 @@ public class ExtensionDetail implements Serializable {
 	private List<AttrDetail> attrs = new ArrayList<>();
 
 	private Map<String, Object> attrsMap;
+
+	private boolean useUdn;
 	
 	public Long getId() {
 		return id;
@@ -90,7 +93,15 @@ public class ExtensionDetail implements Serializable {
 
 		return attrsMap;
 	}
-	
+
+	public boolean isUseUdn() {
+		return useUdn;
+	}
+
+	public void setUseUdn(boolean useUdn) {
+		this.useUdn = useUdn;
+	}
+
 	public static ExtensionDetail from(DeObject extension) {
 		return from(extension, true);
 	}
@@ -131,6 +142,8 @@ public class ExtensionDetail implements Serializable {
 				}
 			} else if ("fileUpload".equals(attr.getType()) || attr.getValue() instanceof List) {
 				attrsMap.put(attr.getName(), attr.getValue());
+			} else if ("datePicker".equals(attr.getType()) && ExporterContextHolder.getInstance().isExportOp()) {
+				attrsMap.put(attr.getName(), attr.getValue());
 			} else {
 				Object value = attr.getDisplayValue();
 				if (value == null) {
@@ -155,6 +168,8 @@ public class ExtensionDetail implements Serializable {
 		private String type;
 
 		private String displayValue;
+
+		private String codedValue;
 
 		public String getName() {
 			return name;
@@ -204,6 +219,10 @@ public class ExtensionDetail implements Serializable {
 			this.displayValue = displayValue;
 		}
 
+		public void setCodedValue(String codedValue) {
+			this.codedValue = codedValue;
+		}
+
 		@SuppressWarnings({"unchecked" })
 		public static AttrDetail from(Attr attr, boolean excludePhi) {
 			AttrDetail detail = new AttrDetail();
@@ -211,6 +230,7 @@ public class ExtensionDetail implements Serializable {
 			detail.setUdn(attr.getUdn());
 			detail.setCaption(attr.getCaption());
 			detail.setType(attr.getType());
+			detail.setCodedValue(attr.getCodedValue());
 
 			if (attr.isSubForm()) {
 				if (attr.isOneToOne()) {

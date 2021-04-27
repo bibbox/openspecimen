@@ -44,6 +44,8 @@ public interface CollectionProtocolDao extends Dao<CollectionProtocol> {
 	
 	public Set<SiteCpPair> getSiteCps(Collection<Long> cpIds);
 
+	public boolean isCpAffiliatedToUserInstitute(Long cpId, Long userId);
+
 	public CollectionProtocolEvent getCpe(Long cpeId);
 	
 	public List<CollectionProtocolEvent> getCpes(Collection<Long> cpeIds);
@@ -79,4 +81,6 @@ public interface CollectionProtocolDao extends Dao<CollectionProtocol> {
 	public int getConsentRespsCount(Long consentId);
 
 	public boolean anyBarcodingEnabledCpExists();
+
+	public List<String> getDependentContainers(Long cpId, Collection<Long> siteIds);
 }

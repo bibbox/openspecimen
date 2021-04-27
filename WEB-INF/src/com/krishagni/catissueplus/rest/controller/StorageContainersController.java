@@ -1,8 +1,5 @@
 package com.krishagni.catissueplus.rest.controller;
 
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.InputStream;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
@@ -30,6 +27,7 @@ import com.krishagni.catissueplus.core.administrative.events.ContainerDefragDeta
 import com.krishagni.catissueplus.core.administrative.events.ContainerHierarchyDetail;
 import com.krishagni.catissueplus.core.administrative.events.ContainerQueryCriteria;
 import com.krishagni.catissueplus.core.administrative.events.ContainerReplicationDetail;
+import com.krishagni.catissueplus.core.administrative.events.ContainerTransferEventDetail;
 import com.krishagni.catissueplus.core.administrative.events.PositionsDetail;
 import com.krishagni.catissueplus.core.administrative.events.ReservePositionsOp;
 import com.krishagni.catissueplus.core.administrative.events.StorageContainerDetail;
@@ -53,8 +51,6 @@ import com.krishagni.catissueplus.core.common.util.MessageUtil;
 import com.krishagni.catissueplus.core.common.util.Utility;
 import com.krishagni.catissueplus.core.de.events.QueryDataExportResult;
 import com.krishagni.catissueplus.core.de.services.FormService;
-
-import edu.common.dynamicextensions.nutility.IoUtil;
 
 @Controller
 @RequestMapping("/storage-containers")
@@ -128,7 +124,10 @@ public class StorageContainersController {
 		boolean hierarchical,
 
 		@RequestParam(value = "includeStats", required = false, defaultValue = "false")
-		boolean includeStats) {
+		boolean includeStats,
+
+		@RequestParam(value = "orderByStarred", required = false, defaultValue = "false")
+		Boolean orderByStarred) {
 		
 		StorageContainerListCriteria crit = new StorageContainerListCriteria()
 			.query(name)
@@ -148,7 +147,8 @@ public class StorageContainersController {
 			.storeSpecimensEnabled(storeSpecimensEnabled)
 			.usageMode(usageMode)
 			.hierarchical(hierarchical)
-			.includeStat(includeStats);
+			.includeStat(includeStats)
+			.orderByStarred(orderByStarred);
 					
 		RequestEvent<StorageContainerListCriteria> req = new RequestEvent<>(crit);
 		ResponseEvent<List<StorageContainerSummary>> resp = storageContainerSvc.getStorageContainers(req);
@@ -439,32 +439,33 @@ public class StorageContainersController {
 		return resp.getPayload();
 	}
 
-	@RequestMapping(method = RequestMethod.GET, value="{id}/export-map")
+	@RequestMapping(method = RequestMethod.POST, value="{id}/export-map")
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody	
-	public void exportContainerMap(@PathVariable("id") Long id, HttpServletResponse response) {
+	public Map<String, String> exportContainerMap(@PathVariable("id") Long id) {
 		ContainerQueryCriteria crit = new ContainerQueryCriteria(id);
-		RequestEvent<ContainerQueryCriteria> req = new RequestEvent<ContainerQueryCriteria>(crit);
-		ResponseEvent<ExportedFileDetail> resp = storageContainerSvc.exportMap(req);
-		resp.throwErrorIfUnsuccessful();
-		
-		
-		ExportedFileDetail detail = resp.getPayload();
-		response.setContentType("application/csv");
-		response.setHeader("Content-Disposition", "attachment;filename=" + detail.getName() + ".csv");
-			
-		InputStream in = null;
-		try {
-			in = new FileInputStream(detail.getFile());
-			IoUtil.copy(in, response.getOutputStream());
-		} catch (IOException e) {
-			throw new RuntimeException("Error sending file", e);
-		} finally {
-			IoUtil.close(in);
-			detail.getFile().delete();
-		}				
+		ExportedFileDetail file = ResponseEvent.unwrap(storageContainerSvc.exportMap(RequestEvent.wrap(crit)));
+		return Collections.singletonMap("fileId", file != null ? file.getName() : null);
 	}
-	
+
+	@RequestMapping(method = RequestMethod.POST, value = "/{id}/export-empty-positions")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public Map<String, String> exportEmptyPositions(@PathVariable("id") Long id) {
+		ContainerQueryCriteria crit = new ContainerQueryCriteria(id);
+		ExportedFileDetail file = ResponseEvent.unwrap(storageContainerSvc.exportEmptyPositions(RequestEvent.wrap(crit)));
+		return Collections.singletonMap("fileId", file != null ? file.getName() : null);
+	}
+
+	@RequestMapping(method = RequestMethod.POST, value = "/{id}/export-utilisation")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public Map<String, String> exportUtilisation(@PathVariable("id") Long id) {
+		ContainerQueryCriteria crit = new ContainerQueryCriteria(id);
+		ExportedFileDetail file = ResponseEvent.unwrap(storageContainerSvc.exportUtilisation(RequestEvent.wrap(crit)));
+		return Collections.singletonMap("fileId", file != null ? file.getName() : null);
+	}
+
 	@RequestMapping(method = RequestMethod.POST, value="{id}/occupied-positions")
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody
@@ -563,6 +564,13 @@ public class StorageContainersController {
 		return resp.getPayload();
 	}
 
+	@RequestMapping(method = RequestMethod.GET, value="/{id}/transfer-events")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public List<ContainerTransferEventDetail> getTransferEvents(@PathVariable("id") Long containerId) {
+		return ResponseEvent.unwrap(storageContainerSvc.getTransferEvents(RequestEvent.wrap(new ContainerQueryCriteria(containerId))));
+	}
+
 	//
 	// Block slots in container
 	//
@@ -646,22 +654,21 @@ public class StorageContainersController {
 	@RequestMapping(method = RequestMethod.POST, value = "/{id}/defragment")
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody
-	public ContainerDefragDetail defragment(@PathVariable("id") Long id, @RequestBody ContainerDefragDetail detail) {
+	public Map<String, String> defragment(@PathVariable("id") Long id, @RequestBody ContainerDefragDetail detail) {
 		if (detail == null) {
 			detail = new ContainerDefragDetail();
 		}
 
 		detail.setId(id);
-		ResponseEvent<ContainerDefragDetail> resp = storageContainerSvc.defragment(new RequestEvent<>(detail));
-		resp.throwErrorIfUnsuccessful();
-		return resp.getPayload();
+		ExportedFileDetail file = ResponseEvent.unwrap(storageContainerSvc.defragment(RequestEvent.wrap(detail)));
+		return Collections.singletonMap("fileId", file != null ? file.getName() : null);
 	}
 
-	@RequestMapping(method = RequestMethod.GET, value="/defragment-report")
+	@RequestMapping(method = RequestMethod.GET, value="/report")
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody
-	public void downloadDefragReport(@RequestParam(value = "fileId") String fileId, HttpServletResponse httpResp) {
-		ResponseEvent<FileDetail> resp = storageContainerSvc.getDefragReport(new RequestEvent<>(fileId));
+	public void downloadReport(@RequestParam(value = "fileId") String fileId, HttpServletResponse httpResp) {
+		ResponseEvent<FileDetail> resp = storageContainerSvc.getReport(new RequestEvent<>(fileId));
 		resp.throwErrorIfUnsuccessful();
 
 		FileDetail file = resp.getPayload();
@@ -779,6 +786,20 @@ public class StorageContainersController {
 		ResponseEvent<List<StorageLocationSummary>> resp = storageContainerSvc.getVacantPositions(req);
 		resp.throwErrorIfUnsuccessful();
 		return resp.getPayload();
+	}
+
+	@RequestMapping(method = RequestMethod.POST, value = "/{id}/labels")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public Map<String, Boolean> addLabel(@PathVariable("id") Long containerId) {
+		return Collections.singletonMap("status", storageContainerSvc.toggleStarredContainer(containerId, true));
+	}
+
+	@RequestMapping(method = RequestMethod.DELETE, value = "/{id}/labels")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public Map<String, Boolean> removeLabel(@PathVariable("id") Long containerId) {
+		return Collections.singletonMap("status", storageContainerSvc.toggleStarredContainer(containerId, false));
 	}
 
 	@RequestMapping(method = RequestMethod.GET, value="/extension-form")

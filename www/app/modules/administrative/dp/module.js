@@ -14,13 +14,15 @@ angular.module('os.administrative.dp',
       .state('dp-root', {
         abstract: true,
         template: '<div ui-view></div>',
-        controller: function($scope) {
+        controller: function($scope, AuthorizationService) {
           // Distribution Protocol Authorization Options
           $scope.dpResource = {
             createOpts: {resource: 'DistributionProtocol', operations: ['Create']},
             deleteOpts: {resource: 'DistributionProtocol', operations: ['Delete']},
             importOpts: {resource: 'DistributionProtocol', operations: ['Export Import']}
           }
+
+          $scope.dpDeleteAllowed = AuthorizationService.isAllowed($scope.dpResource.deleteOpts);
         },
         parent: 'signed-in'
       })
@@ -57,7 +59,7 @@ angular.module('os.administrative.dp',
               breadcrumbs: [{state: 'dp-list', title: 'dp.list'}],
               objectType: 'distributionProtocol',
               title: 'dp.bulk_import',
-              onSuccess: {state: 'dp-list'}
+              onSuccess: {state: 'dp-import-jobs'}
             };
           }
         },
@@ -73,7 +75,7 @@ angular.module('os.administrative.dp',
               breadcrumbs: [{state: 'dp-list', title: 'dp.list'}],
               objectType: 'dpRequirement',
               title: 'dp.req_bulk_import',
-              onSuccess: {state: 'dp-list'}
+              onSuccess: {state: 'dp-import-jobs'}
             };
           }
         },
@@ -115,8 +117,11 @@ angular.module('os.administrative.dp',
         templateUrl: 'modules/administrative/dp/consents.html',
         parent: 'dp-detail',
         resolve: {
-          consentTiers: function(distributionProtocol) {
-            return distributionProtocol.getConsentTiers();
+          hasEc: function($injector) {
+            return $injector.has('ecValidation');
+          },
+          consentTiers: function(hasEc, distributionProtocol) {
+            return hasEc ? [] : distributionProtocol.getConsentTiers();
           }
         },
         controller: 'DpConsentsCtrl'

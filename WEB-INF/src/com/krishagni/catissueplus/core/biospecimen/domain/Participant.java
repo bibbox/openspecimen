@@ -15,7 +15,9 @@ import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang3.ObjectUtils;
 import org.hibernate.envers.Audited;
 import org.hibernate.envers.NotAudited;
+import org.hibernate.envers.RelationTargetAuditMode;
 
+import com.krishagni.catissueplus.core.administrative.domain.PermissibleValue;
 import com.krishagni.catissueplus.core.administrative.domain.Site;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.ParticipantErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.ParticipantUtil;
@@ -44,13 +46,15 @@ public class Participant extends BaseExtensionEntity {
 
 	private Date birthDate;
 
-	private String gender;
+	private String emailAddress;
+
+	private PermissibleValue gender;
 
 	private String sexGenotype;
 
-	private Set<String> races = new HashSet<>();
+	private Set<PermissibleValue> races = new HashSet<>();
 
-	private Set<String> ethnicities = new HashSet<>();
+	private Set<PermissibleValue> ethnicities = new HashSet<>();
 
 	private String uid;
 
@@ -58,7 +62,7 @@ public class Participant extends BaseExtensionEntity {
 
 	private Date deathDate;
 
-	private String vitalStatus;
+	private PermissibleValue vitalStatus;
 	
 	private String empi;
 	
@@ -71,6 +75,8 @@ public class Participant extends BaseExtensionEntity {
 	private transient Set<Long> oldCprIds;
 
 	private transient Set<Long> newCprIds;
+
+	private transient Set<Long> kwAddedCprIds;
 
 	public String getSource() {
 		return StringUtils.isBlank(source) ? DEF_SOURCE : source;
@@ -112,11 +118,28 @@ public class Participant extends BaseExtensionEntity {
 		this.birthDate = birthDate;
 	}
 
-	public String getGender() {
+	public String getEmailAddress() {
+		return emailAddress;
+	}
+
+	public void setEmailAddress(String emailAddress) {
+		if (StringUtils.isBlank(emailAddress)) {
+			//
+			// this is done to avoid UQ violation because of ''
+			// For more details, refer to OPSMN-5344
+			//
+			this.emailAddress = null;
+		} else {
+			this.emailAddress = emailAddress;
+		}
+	}
+
+	@Audited(targetAuditMode = RelationTargetAuditMode.NOT_AUDITED)
+	public PermissibleValue getGender() {
 		return gender;
 	}
 
-	public void setGender(String gender) {
+	public void setGender(PermissibleValue gender) {
 		this.gender = gender;
 	}
 
@@ -128,19 +151,21 @@ public class Participant extends BaseExtensionEntity {
 		this.sexGenotype = sexGenotype;
 	}
 
-	public Set<String> getRaces() {
+	@Audited(targetAuditMode = RelationTargetAuditMode.NOT_AUDITED)
+	public Set<PermissibleValue> getRaces() {
 		return races;
 	}
 
-	public void setRaces(Set<String> races) {
+	public void setRaces(Set<PermissibleValue> races) {
 		this.races = races;
 	}
 
-	public Set<String> getEthnicities() {
+	@Audited(targetAuditMode = RelationTargetAuditMode.NOT_AUDITED)
+	public Set<PermissibleValue> getEthnicities() {
 		return ethnicities;
 	}
 
-	public void setEthnicities(Set<String> ethnicities) {
+	public void setEthnicities(Set<PermissibleValue> ethnicities) {
 		this.ethnicities = ethnicities;
 	}
 
@@ -180,11 +205,12 @@ public class Participant extends BaseExtensionEntity {
 		this.deathDate = deathDate;
 	}
 
-	public String getVitalStatus() {
+	@Audited(targetAuditMode = RelationTargetAuditMode.NOT_AUDITED)
+	public PermissibleValue getVitalStatus() {
 		return vitalStatus;
 	}
 
-	public void setVitalStatus(String vitalStatus) {
+	public void setVitalStatus(PermissibleValue vitalStatus) {
 		this.vitalStatus = vitalStatus;
 	}
 
@@ -229,12 +255,29 @@ public class Participant extends BaseExtensionEntity {
 		this.newCprIds = newCprIds;
 	}
 
+	public Set<Long> getKwAddedCprIds() {
+		return kwAddedCprIds;
+	}
+
+	public void setKwAddedCprIds(Set<Long> kwAddedCprIds) {
+		this.kwAddedCprIds = kwAddedCprIds;
+	}
+
+	public void addKwAddedCprId(Long cprId) {
+		if (kwAddedCprIds == null) {
+			kwAddedCprIds = new HashSet<>();
+		}
+
+		kwAddedCprIds.add(cprId);
+	}
+
 	public void update(Participant participant) {
 		setFirstName(participant.getFirstName());
 		setLastName(participant.getLastName());
 		setMiddleName(participant.getMiddleName());
 		setUid(participant.getUid());
 		setEmpi(participant.getEmpi());
+		setEmailAddress(participant.getEmailAddress());
 		setActivityStatus(participant.getActivityStatus());
 		setSexGenotype(participant.getSexGenotype());
 		setVitalStatus(participant.getVitalStatus());
@@ -269,6 +312,7 @@ public class Participant extends BaseExtensionEntity {
 		disableMrns();		
 		setUid(Utility.getDisabledValue(getUid(), 50));
 		setEmpi(Utility.getDisabledValue(getEmpi(), 50));
+		setEmailAddress(Utility.getDisabledValue(getEmailAddress(), 255));
 		activityStatus = Status.ACTIVITY_STATUS_DISABLED.getStatus();
 		FormUtil.getInstance().deleteRecords(-1L, Collections.singletonList("CommonParticipant"), getId());
 	}
@@ -284,12 +328,7 @@ public class Participant extends BaseExtensionEntity {
 	}
 	
 	public Set<Site> getMrnSites() {
-		Set<Site> result = new HashSet<Site>();
-		for (ParticipantMedicalIdentifier pmi : getPmis()) {
-			result.add(pmi.getSite());
-		}
-		
-		return result;
+		return getPmis().stream().map(ParticipantMedicalIdentifier::getSite).collect(Collectors.toSet());
 	}
 	
 	public void setEmpiIfEmpty() {
@@ -327,6 +366,23 @@ public class Participant extends BaseExtensionEntity {
 	
 	public CollectionProtocolRegistration getCpr(CollectionProtocol cp) {
 		return getCprs().stream().filter(cpr -> cpr.getCollectionProtocol().equals(cp)).findFirst().orElse(null);
+	}
+
+	public String formattedName() {
+		StringBuilder name = new StringBuilder();
+		if (StringUtils.isNotBlank(firstName)) {
+			name.append(firstName);
+		}
+
+		if (StringUtils.isNotBlank(lastName)) {
+			if (name.length() > 0) {
+				name.append(" ");
+			}
+
+			name.append(lastName);
+		}
+
+		return name.toString();
 	}
 
 	public static String getEntityName() {

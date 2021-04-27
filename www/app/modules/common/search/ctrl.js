@@ -59,6 +59,16 @@ angular.module('os.common.search.ctrl', [])
       ctx.searching = false;
     }
 
+    $scope.openInNewTab = function(event, match) {
+      event.stopPropagation();
+      event.preventDefault();
+
+      var state = QuickSearchSvc.getState(match.entity);
+      var stateParams = {stateName: state, objectName: match.entity, key: 'id', value: match.entityId};
+      var url = $state.href('object-state-params-resolver', stateParams);
+      $window.open(url, '_blank');
+    }
+
     $scope.activateSearch = function() {
       ctx.searching = true;
       $timeout( function() { ctx.selectCtrl.activate(); });

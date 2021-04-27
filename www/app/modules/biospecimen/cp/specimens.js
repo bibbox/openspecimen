@@ -1,7 +1,7 @@
 
 angular.module('os.biospecimen.cp.specimens', ['os.biospecimen.models'])
   .controller('CpSpecimensCtrl', function(
-    $scope, $state, $stateParams, $timeout, $modal,
+    $scope, $state, $stateParams, $timeout, $modal, $injector,
     cp, events, specimenRequirements, aliquotQtyReq,
     Specimen, SpecimenRequirement, PvManager, Alerts, Util) {
 
@@ -42,6 +42,7 @@ angular.module('os.biospecimen.cp.specimens', ['os.biospecimen.models'])
         }
       );
 
+      angular.forEach(reqs, function(req) { req.children = sortReqs(req.children); });
       return reqs;
     }
 
@@ -94,7 +95,7 @@ angular.module('os.biospecimen.cp.specimens', ['os.biospecimen.models'])
         parent.children.push(child);
       });
 
-      $scope.specimenRequirements = Specimen.flatten(specimenRequirements);
+      $scope.specimenRequirements = Specimen.flatten(sortReqs(specimenRequirements));
     };
 
     var pvsLoaded = false;
@@ -113,7 +114,7 @@ angular.module('os.biospecimen.cp.specimens', ['os.biospecimen.models'])
       $scope.spmnLabelAutoPrintModes = [];
       PvManager.loadPvs('specimen-label-auto-print-modes').then(
         function(pvs) {
-          if ($scope.cp.spmnLabelPrePrintMode != 'NONE') {
+          if ($scope.cp.spmnLabelPrePrintMode != 'NONE' || $injector.has('Supply')) {
             $scope.spmnLabelAutoPrintModes = pvs;
           } else {
             $scope.spmnLabelAutoPrintModes = pvs.filter(
@@ -413,6 +414,17 @@ angular.module('os.biospecimen.cp.specimens', ['os.biospecimen.models'])
           );
         }
       });
+    }
+
+    $scope.reopenSr = function(sr) {
+      var toOpen = cloneSr(sr);
+      toOpen.activityStatus = 'Active';
+
+      removeUiProps(toOpen).$saveOrUpdate().then(
+        function(result) {
+          updateSrList(result);
+        }
+      );
     }
 
     init();

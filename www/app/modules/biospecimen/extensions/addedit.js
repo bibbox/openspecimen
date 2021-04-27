@@ -24,6 +24,7 @@ angular.module('os.biospecimen.extensions.addedit-record', [])
         objectId: $scope.object.id,
         showActionBtns: viewOpts.showActionBtns == false ? false : true,
         showSaveNext: viewOpts.showSaveNext && !!nextForm,
+        disableFields: viewOpts.disabledFields || [],
 
         onSave: function(formData, next) {
           angular.forEach(postSaveFilters, function(filter) {
@@ -39,7 +40,7 @@ angular.module('os.biospecimen.extensions.addedit-record', [])
             LocationChangeListener.allowChange();
             $state.go($state.current.name, params);
           } else {
-            gotoRecsList();
+            gotoRecsList(formData);
           }
         },
 
@@ -90,9 +91,9 @@ angular.module('os.biospecimen.extensions.addedit-record', [])
       return nextForm;
     }
 
-    function gotoRecsList() {
+    function gotoRecsList(savedFormData) {
       if (typeof viewOpts.goBackFn == 'function') {
-        viewOpts.goBackFn();
+        viewOpts.goBackFn(savedFormData);
         return;
       }
 

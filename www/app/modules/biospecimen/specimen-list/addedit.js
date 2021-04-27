@@ -32,7 +32,7 @@ angular.module('os.biospecimen.specimenlist.addedit', ['os.biospecimen.models'])
         return specimenList.$saveOrUpdate();
       }
 
-      var filterOpts = {};
+      var filterOpts = {exactMatch: true};
       if (!!$scope.input.useBarcode) {
         filterOpts.barcode = labels;
         labels = undefined;
@@ -65,6 +65,7 @@ angular.module('os.biospecimen.specimenlist.addedit', ['os.biospecimen.models'])
         name: $scope.list.name,
         description: $scope.list.description,
         sharedWith: sharedWith,
+        sharedWithGroups: $scope.list.sharedWithGroups,
         specimenIds: $scope.input.specimenIds || []
       });
 

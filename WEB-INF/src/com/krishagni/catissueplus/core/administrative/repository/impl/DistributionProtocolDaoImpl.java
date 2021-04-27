@@ -11,6 +11,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -52,9 +53,9 @@ public class DistributionProtocolDaoImpl extends AbstractDao<DistributionProtoco
 
 	@Override
 	public Long getDistributionProtocolsCount(DpListCriteria criteria) {
-		Number count = (Number) getDpListQuery(criteria)
-				.setProjection(Projections.rowCount())
-				.uniqueResult();
+		Number count = (Number) getDpIdsQuery(criteria).getExecutableCriteria(getCurrentSession())
+			.setProjection(Projections.rowCount())
+			.uniqueResult();
 		return count.longValue();
 	}
 
@@ -101,13 +102,9 @@ public class DistributionProtocolDaoImpl extends AbstractDao<DistributionProtoco
 				.getNamedQuery(GET_SPMN_COUNT_BY_DPS)
 				.setParameterList("dpIds", dpIds)
 				.list();
-		
-		Map<Long, Integer> countMap = new HashMap<Long, Integer>();
-		for (Object[] row : rows) {
-			countMap.put((Long)row[0], ((Long)row[1]).intValue());
-		}
-		
-		return countMap;
+
+		return rows.stream().collect(
+			Collectors.toMap(row -> (Long) row[0], row -> ((Long) row[1]).intValue()));
 	}
 	
 	public Class<DistributionProtocol> getType() {
@@ -117,23 +114,26 @@ public class DistributionProtocolDaoImpl extends AbstractDao<DistributionProtoco
 	@SuppressWarnings("unchecked")
 	@Override
 	public List<DistributionOrderStat> getOrderStats(DistributionOrderStatListCriteria listCrit) {
-		Criteria query = sessionFactory.getCurrentSession().createCriteria(DistributionOrder.class)
-				.createAlias("orderItems", "item")
-				.createAlias("item.specimen", "specimen");
+		Criteria query = getCurrentSession().createCriteria(DistributionOrder.class)
+			.createAlias("distributionProtocol", "dp")
+			.createAlias("orderItems", "item")
+			.createAlias("item.specimen", "specimen",
+				JoinType.LEFT_OUTER_JOIN,
+				Restrictions.ne("specimen.activityStatus", "Disabled")
+			)
+			.add(Restrictions.eq("status", DistributionOrder.Status.EXECUTED));
 
-		query.add(Restrictions.eq("status", DistributionOrder.Status.EXECUTED));
 		if (listCrit.dpId() != null) {
-			query.add(Restrictions.eq("distributionProtocol.id", listCrit.dpId()));
+			query.add(Restrictions.eq("dp.id", listCrit.dpId()));
 		} else if (CollectionUtils.isNotEmpty(listCrit.sites())) {
-			query.createAlias("distributionProtocol", "dp")
-				.createAlias("dp.distributingSites", "distSites");
+			query.createAlias("dp.distributingSites", "distSites");
 			addSitesCondition(query, listCrit.sites());
 		}
 		
 		addOrderStatProjections(query, listCrit);
 		
 		List<Object []> rows = query.list();
-		List<DistributionOrderStat> result = new ArrayList<DistributionOrderStat>();
+		List<DistributionOrderStat> result = new ArrayList<>();
 		for (Object[] row : rows) {
 			DistributionOrderStat detail = getDOStats(row, listCrit);
 			result.add(detail);
@@ -160,6 +160,11 @@ public class DistributionProtocolDaoImpl extends AbstractDao<DistributionProtoco
 	@Override
 	public void saveReservedEvents(Collection<SpecimenReservedEvent> events) {
 		events.forEach(event -> getCurrentSession().saveOrUpdate(event));
+	}
+
+	@Override
+	public void unlinkCustomForm(Long formId) {
+		getCurrentSession().getNamedQuery(UNLINK_CUSTOM_FORM).setParameter("formId", formId).executeUpdate();
 	}
 
 	private Criteria getDpListQuery(DpListCriteria crit) {
@@ -203,9 +208,15 @@ public class DistributionProtocolDaoImpl extends AbstractDao<DistributionProtoco
 		addPiCondition(query, crit);
 		addIrbIdCondition(query, crit);
 		addInstCondition(query, crit);
+		addRecvSiteCondition(query, crit);
 		addDistSitesCondition(query, crit);
 		addExpiredDpsCondition(query, crit);
 		addActivityStatusCondition(query, crit);
+
+		if (CollectionUtils.isNotEmpty(crit.notInIds())) {
+			query.add(Restrictions.not(Restrictions.in("id", crit.notInIds())));
+		}
+
 		return query;
 	}
 	
@@ -233,6 +244,15 @@ public class DistributionProtocolDaoImpl extends AbstractDao<DistributionProtoco
 
 		query.createAlias("institute", "institute")
 			.add(Restrictions.eq("institute.name", crit.receivingInstitute().trim()));
+	}
+
+	private void addRecvSiteCondition(Criteria query, DpListCriteria crit) {
+		if (StringUtils.isBlank(crit.receivingSite())) {
+			return;
+		}
+
+		query.createAlias("defReceivingSite", "recvSite")
+			.add(Restrictions.eq("recvSite.name", crit.receivingSite().trim()));
 	}
 	
 	private void addDistSitesCondition(Criteria query, DpListCriteria crit) {
@@ -277,14 +297,15 @@ public class DistributionProtocolDaoImpl extends AbstractDao<DistributionProtoco
 		
 		for (String attr : crit.groupByAttrs()) {
 			String prop = props.get(attr);
-			projs.add(Projections.groupProperty(prop));
+			query.createAlias(prop, attr + "pv", JoinType.LEFT_OUTER_JOIN);
+			projs.add(Projections.groupProperty(attr + "pv.value"));
 		}
 		
 		query.setProjection(projs);
 	}
 	
 	private Map<String, String> getProps() {
-		Map<String, String> props = new HashMap<String, String>();
+		Map<String, String> props = new HashMap<>();
 		props.put("specimenType", "specimen.specimenType");
 		props.put("anatomicSite", "specimen.tissueSite");
 		props.put("pathologyStatus", "specimen.pathologicalStatus");
@@ -366,4 +387,6 @@ public class DistributionProtocolDaoImpl extends AbstractDao<DistributionProtoco
 	private static final String GET_SPMN_COUNT_BY_DPS = FQN + ".getSpmnCountByDps";
 
 	private static final String GET_NON_CONSENTING_SPMNS = FQN + ".getNonConsentingSpecimens";
+
+	private static final String UNLINK_CUSTOM_FORM = FQN + ".unlinkCustomForm";
 }

@@ -46,9 +46,9 @@ import com.krishagni.catissueplus.core.biospecimen.events.CopyCpOpDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.CpQueryCriteria;
 import com.krishagni.catissueplus.core.biospecimen.events.CpReportSettingsDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.CpWorkflowCfgDetail;
-import com.krishagni.catissueplus.core.biospecimen.events.CpWorkflowCfgDetail.WorkflowDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.FileDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.MergeCpDetail;
+import com.krishagni.catissueplus.core.biospecimen.events.WorkflowDetail;
 import com.krishagni.catissueplus.core.biospecimen.repository.CpListCriteria;
 import com.krishagni.catissueplus.core.biospecimen.services.CollectionProtocolService;
 import com.krishagni.catissueplus.core.common.errors.CommonErrorCode;
@@ -105,6 +105,9 @@ public class CollectionProtocolsController {
 			
 			@RequestParam(value = "repositoryName", required = false)
 			String repositoryName,
+
+			@RequestParam(value = "instituteId", required = false)
+			Long instituteId,
 			
 			@RequestParam(value = "startAt", required = false, defaultValue = "0") 
 			int startAt,
@@ -113,7 +116,10 @@ public class CollectionProtocolsController {
 			int maxResults,
 			
 			@RequestParam(value = "detailedList", required = false, defaultValue = "false") 
-			boolean detailedList) {
+			boolean detailedList,
+
+			@RequestParam(value = "orderByStarred", required = false, defaultValue = "false")
+			boolean orderByStarred) {
 		
 		CpListCriteria crit = new CpListCriteria()
 			.query(searchStr)
@@ -121,8 +127,10 @@ public class CollectionProtocolsController {
 			.irbId(irbId)
 			.piId(piId)
 			.repositoryName(repositoryName)
+			.instituteId(instituteId)
 			.includePi(detailedList)
 			.includeStat(detailedList)
+			.orderByStarred(orderByStarred)
 			.startAt(startAt)
 			.maxResults(maxResults);
 
@@ -148,14 +156,18 @@ public class CollectionProtocolsController {
 			Long piId,
 			
 			@RequestParam(value = "repositoryName", required = false)
-			String repositoryName) {
+			String repositoryName,
+
+			@RequestParam(value = "instituteId", required = false)
+			Long instituteId) {
 		
 		CpListCriteria crit = new CpListCriteria()
 			.query(searchStr)
 			.title(title)
 			.irbId(irbId)
 			.piId(piId)
-			.repositoryName(repositoryName);
+			.repositoryName(repositoryName)
+			.instituteId(instituteId);
 		
 		ResponseEvent<Long> resp = cpSvc.getProtocolsCount(request(crit));
 		resp.throwErrorIfUnsuccessful();
@@ -189,7 +201,14 @@ public class CollectionProtocolsController {
 	@RequestMapping(method = RequestMethod.GET, value = "/{id}/definition")
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody
-	public void getCpDefFile(@PathVariable("id") Long cpId, HttpServletResponse response) 
+	public void getCpDefFile(
+		@PathVariable("id")
+		Long cpId,
+
+		@RequestParam(value = "includeIds", required = false, defaultValue = "false")
+		boolean includeIds,
+
+		HttpServletResponse httpResp)
 	throws JsonProcessingException {
 		CpQueryCriteria crit = new CpQueryCriteria();
 		crit.setId(cpId);
@@ -202,18 +221,23 @@ public class CollectionProtocolsController {
 		cp.setSopDocumentName(null);
 		cp.setSopDocumentUrl(null);
 
+		SimpleFilterProvider filters = new SimpleFilterProvider();
+		if (includeIds) {
+			filters.addFilter("withoutId", SimpleBeanPropertyFilter.serializeAllExcept());
+		} else {
+			filters.addFilter("withoutId", SimpleBeanPropertyFilter.serializeAllExcept("id", "statementId"));
+		}
+
 		ObjectMapper mapper = new ObjectMapper();
-		FilterProvider filters = new SimpleFilterProvider()
-			.addFilter("withoutId", SimpleBeanPropertyFilter.serializeAllExcept("id", "statementId"));
 		String def = mapper.writer(filters).withDefaultPrettyPrinter().writeValueAsString(cp);
-		
-		response.setContentType("application/json");
-		response.setHeader("Content-Disposition", "attachment;filename=CpDef_" + cpId + ".json");
-			
+
+		httpResp.setContentType("application/json");
+		httpResp.setHeader("Content-Disposition", "attachment;filename=CpDef_" + cpId + ".json");
+
 		InputStream in = null;
 		try {
 			in = new ByteArrayInputStream(def.getBytes());
-			IoUtil.copy(in, response.getOutputStream());
+			IoUtil.copy(in, httpResp.getOutputStream());
 		} catch (IOException e) {
 			throw new RuntimeException("Error sending file", e);
 		} finally {
@@ -771,6 +795,20 @@ public class CollectionProtocolsController {
 		ResponseEvent<Integer> resp = cpSvc.getListSize(request(listReq));
 		resp.throwErrorIfUnsuccessful();
 		return Collections.singletonMap("size", resp.getPayload());
+	}
+
+	@RequestMapping(method = RequestMethod.POST, value = "/{id}/labels")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public Map<String, Boolean> addLabel(@PathVariable("id") Long cpId) {
+		return Collections.singletonMap("status", cpSvc.toggleStarredCp(cpId, true));
+	}
+
+	@RequestMapping(method = RequestMethod.DELETE, value = "/{id}/labels")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public Map<String, Boolean> removeLabel(@PathVariable("id") Long cpId) {
+		return Collections.singletonMap("status", cpSvc.toggleStarredCp(cpId, false));
 	}
 
 	private ConsentTierDetail performConsentTierOp(OP op, Long cpId, ConsentTierDetail consentTier) {

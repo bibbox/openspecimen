@@ -1,7 +1,9 @@
 package com.krishagni.catissueplus.core.administrative.repository.impl;
 
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang.StringUtils;
@@ -18,13 +20,19 @@ import com.krishagni.catissueplus.core.administrative.events.ListPvCriteria;
 import com.krishagni.catissueplus.core.administrative.repository.PermissibleValueDao;
 import com.krishagni.catissueplus.core.common.OrderBySubstringMatch;
 import com.krishagni.catissueplus.core.common.repository.AbstractDao;
+import com.krishagni.catissueplus.core.common.util.Status;
 
 
 public class PermissibleValueDaoImpl extends AbstractDao<PermissibleValue> implements PermissibleValueDao {
 
 	@Override
+	public Class<PermissibleValue> getType() {
+		return PermissibleValue.class;
+	}
+
+	@Override
 	public PermissibleValue getById(Long id) {
-		return (PermissibleValue) sessionFactory.getCurrentSession().get(PermissibleValue.class, id);
+		return getCurrentSession().get(PermissibleValue.class, id);
 	}
 	
 	@SuppressWarnings("unchecked")
@@ -88,19 +96,16 @@ public class PermissibleValueDaoImpl extends AbstractDao<PermissibleValue> imple
 
 	@SuppressWarnings("unchecked")
 	@Override
-	public List<String> getSpecimenClasses() {
-		return sessionFactory.getCurrentSession()
-				.getNamedQuery(GET_SPECIMEN_CLASSES)
-				.list();
+	public List<PermissibleValue> getSpecimenClasses() {
+		return getCurrentSession().getNamedQuery(GET_SPECIMEN_CLASSES).list();
 	}
 
 	@SuppressWarnings("unchecked")
 	@Override
 	public List<String> getSpecimenTypes(Collection<String> specimenClasses) {
-		return sessionFactory.getCurrentSession()
-				.getNamedQuery(GET_SPECIMEN_TYPES)
-				.setParameterList("specimenClasses", specimenClasses)
-				.list();
+		return getCurrentSession().getNamedQuery(GET_SPECIMEN_TYPES)
+			.setParameterList("specimenClasses", specimenClasses)
+			.list();
 	}
 
 	@SuppressWarnings("unchecked")
@@ -110,6 +115,48 @@ public class PermissibleValueDaoImpl extends AbstractDao<PermissibleValue> imple
 			.setString("type", type)
 			.list();
 		return classes.size() == 1 ? classes.get(0) : null;
+	}
+
+	@Override
+	public PermissibleValue getPv(String attribute, String value) {
+		return getPv(attribute, value, false);
+	}
+
+	@Override
+	public PermissibleValue getPv(String attribute, String value, boolean leafNode) {
+		List<PermissibleValue> pvs = getPvs(attribute, null, Collections.singleton(value), leafNode);
+		return pvs != null && pvs.size() > 0 ? pvs.iterator().next() : null;
+	}
+
+	@Override
+	public PermissibleValue getPv(String attribute, String parentValue, String value) {
+		List<PermissibleValue> pvs = getPvs(attribute, parentValue, Collections.singleton(value), false);
+		return pvs != null && pvs.size() > 0 ? pvs.iterator().next() : null;
+	}
+
+	@Override
+	public List<PermissibleValue> getPvs(String attribute, Collection<String> values) {
+		return getPvs(attribute, null, values, false);
+	}
+
+	@Override
+	public List<PermissibleValue> getPvs(String attribute, String parentValue, Collection<String> values, boolean leafNode) {
+		Criteria query = getCurrentSession().createCriteria(PermissibleValue.class, "pv")
+			.add(Restrictions.eq("pv.attribute", attribute))
+			.add(Restrictions.in("pv.value", values));
+
+		if (StringUtils.isNotBlank(parentValue)) {
+			query.createAlias("pv.parent", "ppv")
+				.add(Restrictions.eq("ppv.attribute", attribute))
+				.add(Restrictions.eq("ppv.value", parentValue));
+		}
+
+		if (leafNode) {
+			query.createAlias("children", "c", JoinType.LEFT_OUTER_JOIN)
+				.add(Restrictions.isNull("c.id"));
+		}
+
+		return query.list();
 	}
 
 	@Override
@@ -179,9 +226,12 @@ public class PermissibleValueDaoImpl extends AbstractDao<PermissibleValue> imple
 	}
 	
 	private Criteria getPvQuery(ListPvCriteria crit) {
-		Criteria query = sessionFactory.getCurrentSession().createCriteria(PermissibleValue.class);
+		Criteria query = getCurrentSession().createCriteria(PermissibleValue.class);
 		if (crit.values() != null) {
-			query.add(Restrictions.in("value", crit.values()));
+			List<String> values = crit.values().stream().filter(StringUtils::isNotBlank).collect(Collectors.toList());
+			if (!values.isEmpty()) {
+				query.add(Restrictions.in("value", values));
+			}
 		}
 
 		if (StringUtils.isNotBlank(crit.parentAttribute()) || StringUtils.isNotBlank(crit.parentValue())) {
@@ -202,7 +252,18 @@ public class PermissibleValueDaoImpl extends AbstractDao<PermissibleValue> imple
 			query.createAlias("children", "c", JoinType.LEFT_OUTER_JOIN)
 				.add(Restrictions.isNull("c.id"));			
 		}
-		
+
+		if (crit.includeOnlyRootValue()) {
+			query.createAlias("parent", "root", JoinType.LEFT_OUTER_JOIN)
+				.add(Restrictions.isNull("root.id"));
+		}
+
+		if (StringUtils.isBlank(crit.activityStatus())) {
+			query.add(Restrictions.eq("activityStatus", Status.ACTIVITY_STATUS_ACTIVE.getStatus()));
+		} else if (!crit.activityStatus().equalsIgnoreCase("all")) {
+			query.add(Restrictions.eq("activityStatus", crit.activityStatus()));
+		}
+
 		return query;
 	}
 

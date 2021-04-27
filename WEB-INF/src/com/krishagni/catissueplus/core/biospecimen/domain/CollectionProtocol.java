@@ -60,6 +60,11 @@ public class CollectionProtocol extends BaseExtensionEntity {
 		ALL_SPMNS
 	}
 
+	public enum LabelSequenceKey {
+		ID,
+		LABEL
+	};
+
 	public static final String EXTN = "CollectionProtocolExtension";
 
 	private static final String ENTITY_NAME = "collection_protocol";
@@ -128,6 +133,8 @@ public class CollectionProtocol extends BaseExtensionEntity {
 
 	private Boolean aliquotsInSameContainer;
 
+	private LabelSequenceKey labelSequenceKey = LabelSequenceKey.ID;
+
 	private VisitCollectionMode visitCollectionMode = VisitCollectionMode.ALL_SPMNS;
 
 	private VisitNamePrintMode visitNamePrintMode = VisitNamePrintMode.NONE;
@@ -153,6 +160,8 @@ public class CollectionProtocol extends BaseExtensionEntity {
 	private Set<CollectionProtocolRegistration> collectionProtocolRegistrations = new HashSet<>();
 
 	private Set<DistributionProtocol> distributionProtocols = new HashSet<>();
+
+	private Set<User> starred = new HashSet<>();
 
 	private Long catalogId;
 
@@ -206,6 +215,10 @@ public class CollectionProtocol extends BaseExtensionEntity {
 
 	public void setActivityStatus(String activityStatus) {
 		this.activityStatus = activityStatus;
+	}
+
+	public boolean isDeleted() {
+		return Status.isDisabledStatus(getActivityStatus());
 	}
 
 	public User getPrincipalInvestigator() {
@@ -429,6 +442,18 @@ public class CollectionProtocol extends BaseExtensionEntity {
 		this.aliquotsInSameContainer = aliquotsInSameContainer;
 	}
 
+	public LabelSequenceKey getLabelSequenceKey() {
+		return labelSequenceKey;
+	}
+
+	public void setLabelSequenceKey(LabelSequenceKey labelSequenceKey) {
+		this.labelSequenceKey = labelSequenceKey;
+	}
+
+	public boolean useLabelsAsSequenceKey() {
+		return getLabelSequenceKey() == LabelSequenceKey.LABEL;
+	}
+
 	public VisitCollectionMode getVisitCollectionMode() {
 		return visitCollectionMode == null ? VisitCollectionMode.ALL_SPMNS : visitCollectionMode;
 	}
@@ -568,6 +593,15 @@ public class CollectionProtocol extends BaseExtensionEntity {
 		this.distributionProtocols = distributionProtocols;
 	}
 
+	@NotAudited
+	public Set<User> getStarred() {
+		return starred;
+	}
+
+	public void setStarred(Set<User> starred) {
+		this.starred = starred;
+	}
+
 	public Long getCatalogId() {
 		return catalogId;
 	}
@@ -605,6 +639,7 @@ public class CollectionProtocol extends BaseExtensionEntity {
 		setCloseParentSpecimens(cp.isCloseParentSpecimens());
 		setContainerSelectionStrategy(cp.getContainerSelectionStrategy());
 		setAliquotsInSameContainer(cp.getAliquotsInSameContainer());
+		setLabelSequenceKey(cp.getLabelSequenceKey());
 		setVisitCollectionMode(cp.getVisitCollectionMode());
 		setVisitNamePrintMode(cp.getVisitNamePrintMode());
 		setVisitNamePrintCopies(cp.getVisitNamePrintCopies());
@@ -650,6 +685,7 @@ public class CollectionProtocol extends BaseExtensionEntity {
 		cp.setBulkPartRegEnabled(isBulkPartRegEnabled());
 		cp.setBarcodingEnabled(isBarcodingEnabled());
 		cp.setCloseParentSpecimens(isCloseParentSpecimens());
+		cp.setLabelSequenceKey(getLabelSequenceKey());
 		cp.setVisitCollectionMode(getVisitCollectionMode());
 		cp.setVisitNamePrintMode(getVisitNamePrintMode());
 		cp.setVisitNamePrintCopies(getVisitNamePrintCopies());
@@ -690,6 +726,10 @@ public class CollectionProtocol extends BaseExtensionEntity {
 	
 	public void copyEventsTo(CollectionProtocol cp) {
 		for (CollectionProtocolEvent cpe : getOrderedCpeList()) {
+			if (cpe.isClosed()) {
+				continue;
+			}
+
 			cp.addCpe(cpe.deepCopy());
 		}
 	}
@@ -803,6 +843,7 @@ public class CollectionProtocol extends BaseExtensionEntity {
 			throw OpenSpecimenException.userError(CpErrorCode.REF_ENTITY_FOUND);
 		}
 
+		getCollectionProtocolEvents().forEach(CollectionProtocolEvent::delete);
 		setTitle(Utility.getDisabledValue(getTitle(), 255));
 		setShortTitle(Utility.getDisabledValue(getShortTitle(), 50));
 		setCode(Utility.getDisabledValue(getCode(), 32));

@@ -73,6 +73,14 @@ public class ConfigParams {
 
 	public static final String ALIQUOT_QTY_REQ           = "mandatory_aliquot_qty";
 
+	public static final String VISIT_NAME_FMT            = "visit_name_format";
+
+	public static final String UNPLANNED_VISIT_NAME_FMT  = "unplanned_visit_name_format";
+
+	public static final String PDE_LINK_AGE              = "pde_link_age";
+
+	public static final String EXT_PARTICIPANT_SITES     = "ext_participant_sites";
+
 	public static String getConsentsDirPath() {
 		String path = ConfigUtil.getInstance().getStrSetting(MODULE, CONSENTS_DIR, null);
 		if (StringUtils.isBlank(path)) {

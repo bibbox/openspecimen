@@ -8,6 +8,7 @@ import java.util.Map;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
@@ -25,6 +26,13 @@ import com.krishagni.catissueplus.core.auth.services.UserAuthenticationService;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
 import com.krishagni.catissueplus.core.common.events.ResponseEvent;
 import com.krishagni.catissueplus.core.common.util.AuthUtil;
+import com.krishagni.catissueplus.core.common.util.Utility;
+
+import ua_parser.Client;
+import ua_parser.Device;
+import ua_parser.OS;
+import ua_parser.Parser;
+import ua_parser.UserAgent;
 
 @Controller
 @RequestMapping("/sessions")
@@ -40,9 +48,19 @@ public class AuthenticationController {
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody
 	public Map<String, Object> authenticate(@RequestBody LoginDetail loginDetail, HttpServletResponse httpResp) {
-		loginDetail.setIpAddress(httpReq.getRemoteAddr());
+		String ua = httpReq.getHeader("user-agent");
+		if (StringUtils.isNotBlank(ua)) {
+			Parser parser = new Parser();
+			Client client = parser.parse(ua);
+			if (client.device != Device.OTHER || client.os != OS.OTHER || client.userAgent != UserAgent.OTHER) {
+				loginDetail.setDeviceDetails(parser.parse(ua).toString());
+			}
+		}
+
+		loginDetail.setIpAddress(Utility.getRemoteAddress(httpReq));
 		loginDetail.setApiUrl(httpReq.getRequestURI());
 		loginDetail.setRequestMethod(RequestMethod.POST.name());
+
 		ResponseEvent<Map<String, Object>> resp = userAuthService.authenticateUser(new RequestEvent<>(loginDetail));
 		if (!resp.isSuccessful()) {
 			AuthUtil.clearTokenCookie(httpReq, httpResp);
@@ -70,15 +88,10 @@ public class AuthenticationController {
 	@ResponseBody
 	public Map<String, String> delete(HttpServletResponse httpResp) {
 		Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-		RequestEvent<String> req = new RequestEvent<>((String)auth.getCredentials());
-		ResponseEvent<String> resp = userAuthService.removeToken(req);
-
-		if (resp.isSuccessful()) {
-			AuthUtil.clearTokenCookie(httpReq, httpResp);
-			resp.throwErrorIfUnsuccessful();
-		}
-
-		return Collections.singletonMap("Status", resp.getPayload());
+		String token = (String) auth.getCredentials();
+		String status = ResponseEvent.unwrap(userAuthService.removeToken(RequestEvent.wrap(token)));
+		AuthUtil.clearTokenCookie(httpReq, httpResp);
+		return Collections.singletonMap("Status", status);
 	}
 
 	@RequestMapping(method=RequestMethod.POST, value="/refresh-cookie")

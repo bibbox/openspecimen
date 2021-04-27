@@ -7,6 +7,8 @@ import com.krishagni.catissueplus.core.administrative.domain.User;
 public class SpecimenCollectionReceiveDetail {
 	private Specimen specimen;
 
+	private Long collEventId;
+
 	private String collContainer;
 
 	private String collProcedure;
@@ -15,11 +17,17 @@ public class SpecimenCollectionReceiveDetail {
 
 	private Date collTime;
 
+	private String collComments;
+
+	private Long recvEventId;
+
 	private String recvQuality;
 
 	private User receiver;
 
 	private Date recvTime;
+
+	private String recvComments;
 
 	public Long getId() {
 		return specimen == null ? null : specimen.getId();
@@ -34,6 +42,14 @@ public class SpecimenCollectionReceiveDetail {
 
 	public void setSpecimen(Specimen specimen) {
 		this.specimen = specimen;
+	}
+
+	public Long getCollEventId() {
+		return collEventId;
+	}
+
+	public void setCollEventId(Long collEventId) {
+		this.collEventId = collEventId;
 	}
 
 	public String getCollContainer() {
@@ -68,6 +84,22 @@ public class SpecimenCollectionReceiveDetail {
 		this.collTime = collTime;
 	}
 
+	public String getCollComments() {
+		return collComments;
+	}
+
+	public void setCollComments(String collComments) {
+		this.collComments = collComments;
+	}
+
+	public Long getRecvEventId() {
+		return recvEventId;
+	}
+
+	public void setRecvEventId(Long recvEventId) {
+		this.recvEventId = recvEventId;
+	}
+
 	public String getRecvQuality() {
 		return recvQuality;
 	}
@@ -90,5 +122,13 @@ public class SpecimenCollectionReceiveDetail {
 
 	public void setRecvTime(Date recvTime) {
 		this.recvTime = recvTime;
+	}
+
+	public String getRecvComments() {
+		return recvComments;
+	}
+
+	public void setRecvComments(String recvComments) {
+		this.recvComments = recvComments;
 	}
 }

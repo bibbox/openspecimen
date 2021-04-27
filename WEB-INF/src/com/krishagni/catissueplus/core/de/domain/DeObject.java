@@ -14,6 +14,8 @@ import java.util.stream.Collectors;
 
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Configurable;
@@ -21,6 +23,7 @@ import org.springframework.dao.DataAccessException;
 
 import com.krishagni.catissueplus.core.administrative.domain.User;
 import com.krishagni.catissueplus.core.biospecimen.domain.BaseExtensionEntity;
+import com.krishagni.catissueplus.core.common.OpenSpecimenAppCtxProvider;
 import com.krishagni.catissueplus.core.common.errors.CommonErrorCode;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.util.AuthUtil;
@@ -45,7 +48,10 @@ import krishagni.catissueplus.beans.FormRecordEntryBean.Status;
 
 @Configurable
 public abstract class DeObject {
-	private static FormInfoCache formInfoCache = new FormInfoCache();
+	private static final Log logger = LogFactory.getLog(DeObject.class);
+
+	@Autowired
+	private FormInfoCache formInfoCache;
 
 	@Autowired
 	private FormDataManager formDataMgr;
@@ -110,6 +116,10 @@ public abstract class DeObject {
 		return form != null ? form.getCaption() : null;
 	}
 
+	public Long getFormContextId() {
+		return getFormContext();
+	}
+
 	public boolean saveOrUpdate() {
 		try {
 			Container form = getForm();
@@ -150,7 +160,7 @@ public abstract class DeObject {
 			return;
 		}
 
-		re.setActivityStatus(Status.CLOSED);
+		re.delete();
 		daoFactory.getFormDao().saveOrUpdateRecordEntry(re);
 	}
 	
@@ -194,13 +204,18 @@ public abstract class DeObject {
 	}
 
 	protected void loadRecordIfNotLoaded() {
-		Long recordId = getId();
-		if (recordLoaded || recordId == null) {
-			return;
-		}
+		try {
+			Long recordId = getId();
+			if (recordLoaded || recordId == null) {
+				return;
+			}
 
-		FormData formData = formDataMgr.getFormData(getForm(), recordId);
-		loadRecord(formData);
+			FormData formData = formDataMgr.getFormData(getForm(), recordId);
+			loadRecord(formData);
+		} catch (Exception e) {
+			logger.error("Error loading the form fields", e);
+			throw e;
+		}
 	}
 
 	protected void loadRecord(FormData formData) {
@@ -343,7 +358,7 @@ public abstract class DeObject {
 			valueMap.put(attrDetail.getName(), attrDetail.getValue());
 		}
 
-		FormData formData = FormData.getFormData(extension.getForm(), valueMap);
+		FormData formData = FormData.getFormData(extension.getForm(), valueMap, detail.isUseUdn(), null);
 		List<Attr> attrs = extension.getAttrs(formData);
 		for (Attr attr : attrs) {
 			existingAttrs.remove(attr.getName());
@@ -409,11 +424,13 @@ public abstract class DeObject {
 	}
 
 	public static Map<String, Object> getFormInfo(boolean cpBased, String entity, Long entityId) {
-		return formInfoCache.getFormInfo(cpBased, entity, entityId);
+		FormInfoCache cache = OpenSpecimenAppCtxProvider.getBean("formInfoCache");
+		return cache.getFormInfo(cpBased, entity, entityId);
 	}
 
 	public static Container getForm(String formName) {
-		return formInfoCache.getForm(formName);
+		FormInfoCache cache = OpenSpecimenAppCtxProvider.getBean("formInfoCache");
+		return cache.getForm(formName);
 	}
 
 	public static Long getFormContextId(boolean cpBased, String entity, Long entityId, String formName) {
@@ -598,6 +615,8 @@ public abstract class DeObject {
 
 		private String type;
 
+		private String codedValue;
+
 		public ControlValue getCtrlValue() {
 			return ctrlValue;
 		}
@@ -644,6 +663,14 @@ public abstract class DeObject {
 
 		public void setType(String type) {
 			this.type = type;
+		}
+
+		public String getCodedValue() {
+			return codedValue;
+		}
+
+		public void setCodedValue(String codedValue) {
+			this.codedValue = codedValue;
 		}
 
 		public String getDisplayValue() {
@@ -712,6 +739,7 @@ public abstract class DeObject {
 			}
 
 			attr.setValue(value);
+			attr.setCodedValue(cv.getCodedValue());
 			return attr;
 		}
 	}

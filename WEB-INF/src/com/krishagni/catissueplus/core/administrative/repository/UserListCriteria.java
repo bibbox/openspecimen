@@ -15,6 +15,8 @@ public class UserListCriteria extends AbstractListCriteria<UserListCriteria> {
 	private String activityStatus;
 	
 	private String instituteName;
+
+	private String group;
 	
 	private String domainName;
 	
@@ -35,6 +37,8 @@ public class UserListCriteria extends AbstractListCriteria<UserListCriteria> {
 	private String resourceName;
 
 	private List<String> opNames;
+
+	private boolean includeSysUser;
 	
 	@Override
 	public UserListCriteria self() {
@@ -79,7 +83,16 @@ public class UserListCriteria extends AbstractListCriteria<UserListCriteria> {
 	
 	public String instituteName() {
 		return instituteName;
-	}	
+	}
+
+	public UserListCriteria group(String group) {
+		this.group = group;
+		return self();
+	}
+
+	public String group() {
+		return group;
+	}
 	
 	public UserListCriteria domainName(String domainName) {
 		this.domainName = domainName;
@@ -168,6 +181,15 @@ public class UserListCriteria extends AbstractListCriteria<UserListCriteria> {
 
 	public UserListCriteria opNames(List<String> opNames) {
 		this.opNames = opNames;
+		return self();
+	}
+
+	public boolean includeSysUser() {
+		return includeSysUser;
+	}
+
+	public UserListCriteria includeSysUser(boolean includeSysUser) {
+		this.includeSysUser = includeSysUser;
 		return self();
 	}
 }

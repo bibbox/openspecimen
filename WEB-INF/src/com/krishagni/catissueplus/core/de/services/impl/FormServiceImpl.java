@@ -1,10 +1,15 @@
 package com.krishagni.catissueplus.core.de.services.impl;
 
+import java.io.ByteArrayInputStream;
+import java.io.File;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.Calendar;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -21,14 +26,20 @@ import org.springframework.beans.factory.InitializingBean;
 import org.springframework.dao.DataAccessException;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.krishagni.catissueplus.core.administrative.domain.FormDataSavedEvent;
+import com.krishagni.catissueplus.core.administrative.domain.Institute;
 import com.krishagni.catissueplus.core.administrative.domain.User;
+import com.krishagni.catissueplus.core.administrative.domain.factory.UserErrorCode;
 import com.krishagni.catissueplus.core.administrative.repository.FormListCriteria;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
+import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolGroup;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolRegistration;
 import com.krishagni.catissueplus.core.biospecimen.domain.Participant;
 import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
 import com.krishagni.catissueplus.core.biospecimen.domain.SpecimenSavedEvent;
 import com.krishagni.catissueplus.core.biospecimen.domain.Visit;
+import com.krishagni.catissueplus.core.biospecimen.domain.factory.CpErrorCode;
+import com.krishagni.catissueplus.core.biospecimen.domain.factory.CpGroupErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.CprErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.SpecimenErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.VisitErrorCode;
@@ -63,6 +74,7 @@ import com.krishagni.catissueplus.core.de.events.FormFieldSummary;
 import com.krishagni.catissueplus.core.de.events.FormRecordCriteria;
 import com.krishagni.catissueplus.core.de.events.FormRecordSummary;
 import com.krishagni.catissueplus.core.de.events.FormRecordsList;
+import com.krishagni.catissueplus.core.de.events.FormRevisionDetail;
 import com.krishagni.catissueplus.core.de.events.FormSummary;
 import com.krishagni.catissueplus.core.de.events.GetEntityFormRecordsOp;
 import com.krishagni.catissueplus.core.de.events.GetFileDetailOp;
@@ -70,6 +82,7 @@ import com.krishagni.catissueplus.core.de.events.GetFormFieldPvsOp;
 import com.krishagni.catissueplus.core.de.events.GetFormRecordsListOp;
 import com.krishagni.catissueplus.core.de.events.ListEntityFormsOp;
 import com.krishagni.catissueplus.core.de.events.ListFormFields;
+import com.krishagni.catissueplus.core.de.events.MoveFormRecordsOp;
 import com.krishagni.catissueplus.core.de.events.ObjectCpDetail;
 import com.krishagni.catissueplus.core.de.events.RemoveFormContextOp;
 import com.krishagni.catissueplus.core.de.repository.FormDao;
@@ -95,6 +108,8 @@ import edu.common.dynamicextensions.napi.FileControlValue;
 import edu.common.dynamicextensions.napi.FormData;
 import edu.common.dynamicextensions.napi.FormDataManager;
 import edu.common.dynamicextensions.napi.FormEventsNotifier;
+import edu.common.dynamicextensions.nutility.ContainerParser;
+import edu.common.dynamicextensions.nutility.ContainerPropsParser;
 import edu.common.dynamicextensions.nutility.FileUploadMgr;
 import krishagni.catissueplus.beans.FormContextBean;
 import krishagni.catissueplus.beans.FormRecordEntryBean;
@@ -119,7 +134,9 @@ public class FormServiceImpl implements FormService, InitializingBean {
 	
 	private static Map<String, String> customFieldEntities = new HashMap<>();
 
-	private static Map<String, Function<Long, Boolean>> entityAccessCheckers = new HashMap<>();
+	private Map<String, Function<Long, Boolean>> entityAccessCheckers = new HashMap<>();
+
+	private static Map<String, List<String>> editableEvents;
 
 	static {
 		staticExtendedForms.add(PARTICIPANT_FORM);
@@ -130,6 +147,14 @@ public class FormServiceImpl implements FormService, InitializingBean {
 		customFieldEntities.put(PARTICIPANT_FORM, Participant.EXTN);
 		customFieldEntities.put(SCG_FORM, Visit.EXTN);
 		customFieldEntities.put(SPECIMEN_FORM, Specimen.EXTN);
+
+		editableEvents = new HashMap<String, List<String>>() {
+			{
+				put("SpecimenDisposalEvent", Arrays.asList("reason", "user", "time", "comments"));
+				put("SpecimenTransferEvent", Arrays.asList("user", "time", "comments"));
+
+			}
+		};
 	}
 
 	private FormDao formDao;
@@ -137,6 +162,8 @@ public class FormServiceImpl implements FormService, InitializingBean {
 	private FormDataManager formDataMgr;
 
 	private DaoFactory daoFactory;
+
+	private com.krishagni.catissueplus.core.de.repository.DaoFactory deDaoFactory;
 
 	private ExportService exportSvc;
 	
@@ -154,6 +181,10 @@ public class FormServiceImpl implements FormService, InitializingBean {
 		this.daoFactory = daoFactory;
 	}
 
+	public void setDeDaoFactory(com.krishagni.catissueplus.core.de.repository.DaoFactory deDaoFactory) {
+		this.deDaoFactory = deDaoFactory;
+	}
+
 	public void setExportSvc(ExportService exportSvc) {
 		this.exportSvc = exportSvc;
 	}
@@ -161,30 +192,51 @@ public class FormServiceImpl implements FormService, InitializingBean {
 	public void setCtxtProcs(Map<String, List<FormContextProcessor>> ctxtProcs) {
 		this.ctxtProcs = ctxtProcs;
 	}
-	
+
 	@Override
 	public void afterPropertiesSet() throws Exception {
 		FormEventsNotifier.getInstance().addListener(new SystemFormUpdatePreventer(formDao));
 		exportSvc.registerObjectsGenerator("extensions", this::getFormRecordsGenerator);
+		exportSvc.registerObjectsGenerator("userExtensions", this::getFormRecordsGenerator);
+
+		entityAccessCheckers.put(
+			"User",
+			(entityId) -> {
+				if (AuthUtil.getCurrentUser().isAdmin()) {
+					return true;
+				}
+
+				Institute institute = AuthUtil.getCurrentUserInstitute();
+				return entityId != -1L &&
+					institute.getId().equals(entityId) &&
+					AuthUtil.getCurrentUser().isInstituteAdmin();
+			}
+		);
 	}
 
 	@Override
     @PlusTransactional
 	public ResponseEvent<List<FormSummary>> getForms(RequestEvent<FormListCriteria> req) {
 		FormListCriteria crit = req.getPayload();
-
-		String entityType = crit.getFormType();
-		if (StringUtils.isBlank(entityType) || entityType.equals("DataEntry")) {
+		if (crit.entityTypes() != null && crit.entityTypes().size() == 1 && crit.entityTypes().contains("Query")) {
+			return ResponseEvent.response(formDao.getQueryForms());
+		} else {
 			crit = addFormsListCriteria(crit);
 			if (crit == null) {
 				return ResponseEvent.response(Collections.emptyList());
 			}
 
-			return ResponseEvent.response(formDao.getAllFormsSummary(crit));
-		} else if (entityType.equalsIgnoreCase("Query")) {
-			return ResponseEvent.response(formDao.getQueryForms());
-		} else {
-			return ResponseEvent.response(formDao.getFormsByEntityType(entityType));
+			List<Form> forms = formDao.getForms(crit);
+			List<FormSummary> result = forms.stream().map(FormSummary::from).collect(Collectors.toList());
+			if (!result.isEmpty() && crit.includeStat()) {
+				Map<Long, FormSummary> formsMap = result.stream().collect(Collectors.toMap(FormSummary::getFormId, f -> f));
+				Map<Long, Integer> cpCounts = formDao.getCpCounts(formsMap.keySet());
+				for (FormSummary form : result) {
+					form.setCpCount(cpCounts.getOrDefault(form.getFormId(), 0));
+				}
+			}
+
+			return ResponseEvent.response(result);
 		}
 	}
 
@@ -196,7 +248,7 @@ public class FormServiceImpl implements FormService, InitializingBean {
 			return ResponseEvent.response(0L);
 		}
 
-		return ResponseEvent.response(formDao.getAllFormsCount(crit));
+		return ResponseEvent.response(formDao.getFormsCount(crit));
 	}
 
     @Override
@@ -204,6 +256,52 @@ public class FormServiceImpl implements FormService, InitializingBean {
 	public ResponseEvent<Container> getFormDefinition(RequestEvent<Long> req) {
 		Container form = getContainer(req.getPayload(), null);
 		return ResponseEvent.response(form);
+	}
+
+	@Override
+	@PlusTransactional
+	public ResponseEvent<FormSummary> importForm(RequestEvent<String> req) {
+		try {
+			AccessCtrlMgr.getInstance().ensureFormUpdateRights();
+
+			//
+			// The input directory layout
+			//   form-dir (created from zip)
+			//       |____ form1.xml
+			//       |____ pvs
+			//
+			File inputDir = new File(req.getPayload());
+			String formXml = Arrays.stream(inputDir.list((dir, name) -> name.endsWith(".xml")))
+				.sorted(Comparator.naturalOrder())
+				.findFirst().orElse(null);
+			if (StringUtils.isBlank(formXml)) {
+				return ResponseEvent.response(null);
+			}
+
+			String formXmlPath = new File(inputDir, formXml).getAbsolutePath();
+			String pvsDirPath = new File(inputDir, "pvs").getAbsolutePath();
+
+			Container parsedForm = new ContainerParser(formXmlPath, pvsDirPath).parse();
+			Long formId = Container.createContainer(getUserContext(), parsedForm, true);
+
+			FormSummary result = new FormSummary();
+			result.setFormId(formId);
+			result.setName(parsedForm.getName());
+			result.setCaption(parsedForm.getCaption());
+			return ResponseEvent.response(result);
+		} catch (OpenSpecimenException ose) {
+			return ResponseEvent.error(ose);
+		} catch (Exception e) {
+			return ResponseEvent.serverError(e);
+		}
+	}
+
+	@Override
+	@PlusTransactional
+	public ResponseEvent<Long> saveForm(RequestEvent<Map<String, Object>> req) {
+		AccessCtrlMgr.getInstance().ensureFormUpdateRights();
+		Container input = new ContainerPropsParser(req.getPayload()).parse();
+		return ResponseEvent.response(Container.createContainer(getUserContext(), input, true));
 	}
     
 	@Override
@@ -219,7 +317,7 @@ public class FormServiceImpl implements FormService, InitializingBean {
 				throw OpenSpecimenException.userError(FormErrorCode.NOT_FOUND, formIds, formIds.size());
 			}
 
-			formIds.forEach(Container::softDeleteContainer);
+			formIds.forEach(formId -> Container.softDeleteContainer(getUserContext(), formId));
 			formDao.deleteFormContexts(formIds);
 
 			return ResponseEvent.response(true);
@@ -237,42 +335,18 @@ public class FormServiceImpl implements FormService, InitializingBean {
 		Container form = getContainer(op.getFormId(), null);
 		
 		List<FormFieldSummary> fields = getFormFields(form);
-		Long cpId = op.getCpId();
 		if (!op.isExtendedFields()) {
 			return ResponseEvent.response(fields);
 		}
 
-		if (cpId == null || cpId < 0) {
-			cpId = -1L;
-		}
-		
-		String formName = form.getName();
-		String entityType = customFieldEntities.get(formName);
-		if (StringUtils.isNotBlank(entityType)) {
-			Map<String, Object> extnInfo = getExtensionInfo(cpId, entityType);
-			if (extnInfo == null && cpId != -1L) {
-				extnInfo = getExtensionInfo(-1L, entityType);
-			}
-
-			if (extnInfo != null) {
-				Long extnFormId = (Long)extnInfo.get("formId");
-				fields.add(getExtensionField("customFields", "Custom Fields", Arrays.asList(extnFormId)));
-			}
+		Long cpId = op.getCpId();
+		Long groupId = op.getCpGroupId();
+		if (groupId == null || groupId <= 0) {
+			fields.addAll(getCpFields(cpId, form));
+		} else {
+			fields.addAll(getCpGroupFields(groupId, form));
 		}
 
-		if (!staticExtendedForms.contains(formName)) {
-			return ResponseEvent.response(fields);
-		}
-		
-		List<Long> extendedFormIds = formDao.getFormIds(cpId, formName);
-		if (formName.equals(PARTICIPANT_FORM)) {
-			extendedFormIds.addAll(0, formDao.getFormIds(-1L, COMMON_PARTICIPANT));
-		} else if (formName.equals(SPECIMEN_FORM)) {
-			extendedFormIds.addAll(formDao.getFormIds(cpId, SPECIMEN_EVENT_FORM));
-		}
-
-		FormFieldSummary field = getExtensionField("extensions", "Extensions", extendedFormIds);
-		fields.add(field);
 		return ResponseEvent.response(fields);
 	}
     
@@ -286,10 +360,8 @@ public class FormServiceImpl implements FormService, InitializingBean {
 	@PlusTransactional
 	public ResponseEvent<List<FormContextDetail>> addFormContexts(RequestEvent<List<FormContextDetail>> req) { // TODO: check form is deleted
 		try {
-			// AccessCtrlMgr.getInstance().ensureFormUpdateRights();
 			List<FormContextDetail> formCtxts = req.getPayload();
-			for (FormContextDetail formCtxtDetail : formCtxts) {
-				Long formId = formCtxtDetail.getFormId();
+			for (FormContextDetail formCtxtDetail : req.getPayload()) {
 				Long cpId = formCtxtDetail.getCollectionProtocol().getId();
 				String entity = formCtxtDetail.getLevel();
 				Long entityId = formCtxtDetail.getEntityId();
@@ -304,23 +376,8 @@ public class FormServiceImpl implements FormService, InitializingBean {
 				} else if (cpId != -1L) {
 					AccessCtrlMgr.getInstance().ensureUpdateCpRights(cpId);
 				}
-				
 
-				FormContextBean formCtxt = formDao.getFormContext(entityId == null, entity, entityId == null ? cpId : entityId, formId);
-				if (formCtxt == null) {
-					formCtxt = new FormContextBean();
-					formCtxt.setContainerId(formId);
-					formCtxt.setCpId(entity.equals(SPECIMEN_EVENT_FORM) ? -1 : cpId);
-					formCtxt.setEntityType(entity);
-					formCtxt.setEntityId(entityId);
-					formCtxt.setMultiRecord(formCtxtDetail.isMultiRecord());
-				}
-				formCtxt.setSortOrder(formCtxtDetail.getSortOrder());
-
-				notifyContextSaved(formCtxt);
-
-				formDao.saveOrUpdate(formCtxt);
-				formCtxtDetail.setFormCtxtId(formCtxt.getIdentifier());
+				addFormContext(formCtxtDetail);
 			}
 			
 			return ResponseEvent.response(formCtxts);
@@ -384,7 +441,6 @@ public class FormServiceImpl implements FormService, InitializingBean {
 		result.setFormCaption(form.getCaption());
 		result.setFormCtxtId(opDetail.getFormCtxtId());
 		result.setRecords(formRecs);
-		
 		return ResponseEvent.response(result);
 	}
 	
@@ -505,6 +561,43 @@ public class FormServiceImpl implements FormService, InitializingBean {
 			return ResponseEvent.serverError(e);
 		}		
 	}
+
+	@Override
+	public ResponseEvent<FileDetail> uploadImage(RequestEvent<String> req) {
+		String dataUrl = req.getPayload();
+		if (StringUtils.isBlank(dataUrl)) {
+			return ResponseEvent.response(null);
+		}
+
+		String[] parts = dataUrl.split(",", 2);
+		if (parts.length == 1) {
+			throw OpenSpecimenException.userError(CommonErrorCode.INVALID_INPUT, "Invalid image data URL");
+		}
+
+		String header = parts[0];
+		String base64Img = parts[1];
+
+		String[] headerParts = header.split("[:/;]");
+		if (headerParts.length < 4) {
+			throw OpenSpecimenException.userError(CommonErrorCode.INVALID_INPUT, "Invalid image data URL");
+		}
+
+		String type = headerParts[2];
+		byte[] imgBinary = Base64.getDecoder().decode(base64Img);
+		ByteArrayInputStream bin = new ByteArrayInputStream(imgBinary);
+
+		try {
+			String fileId = FileUploadMgr.getInstance().saveFile(bin, type);
+
+			FileDetail result = new FileDetail();
+			result.setFileId(fileId);
+			result.setContentType("image/" + type);
+			result.setSize(imgBinary.length);
+			return ResponseEvent.response(result);
+		} catch (Exception e) {
+			return ResponseEvent.serverError(e);
+		}
+	}
 	
 	@Override
 	@PlusTransactional
@@ -515,9 +608,8 @@ public class FormServiceImpl implements FormService, InitializingBean {
 			if (recEntry == null) {
 				return ResponseEvent.userError(FormErrorCode.REC_NOT_FOUND);
 			}
-			
-			FormContextBean formCtxt = formDao.getById(recEntry.getFormCtxtId());
-			if (formCtxt.isSysForm()) {
+
+			if (recEntry.getFormCtxt().isSysForm()) {
 				return ResponseEvent.userError(FormErrorCode.SYS_REC_DEL_NOT_ALLOWED);
 			}
 			
@@ -531,7 +623,7 @@ public class FormServiceImpl implements FormService, InitializingBean {
 				ensureSpecimenUpdateRights(objectId, false);
 			}
 			
-			recEntry.setActivityStatus(Status.CLOSED);
+			recEntry.delete();
 			formDao.saveOrUpdateRecordEntry(recEntry);
 			return  ResponseEvent.response(crit.getRecordId());
 		} catch (OpenSpecimenException ose) {
@@ -654,6 +746,53 @@ public class FormServiceImpl implements FormService, InitializingBean {
 		}
 	}
 
+	@Override
+	@PlusTransactional
+	public ResponseEvent<Integer> moveRecords(RequestEvent<MoveFormRecordsOp> req) {
+		try {
+			if (!AuthUtil.isAdmin()) {
+				return ResponseEvent.userError(RbacErrorCode.ADMIN_RIGHTS_REQUIRED);
+			}
+
+			MoveFormRecordsOp op = req.getPayload();
+			if (StringUtils.isBlank(op.getEntity())) {
+				return ResponseEvent.userError(FormErrorCode.ENTITY_TYPE_REQUIRED);
+			} else if (isNotCpEntity(op.getEntity())) {
+				return ResponseEvent.userError(FormErrorCode.OP_NOT_ALLOWED);
+			}
+
+			Form form = formDao.getFormByName(op.getFormName());
+			if (form == null) {
+				return ResponseEvent.userError(FormErrorCode.NOT_FOUND, op.getFormName(), 1);
+			}
+
+			List<Long> srcCpIds = getCpIds(op.getSourceCp(), op.getSourceCpGroup());
+			List<Long> tgtCpIds = getCpIds(op.getTargetCp(), op.getTargetCpGroup());
+			if (srcCpIds.size() > 1 && tgtCpIds.size() > 1) {
+				return ResponseEvent.userError(FormErrorCode.OP_NOT_ALLOWED);
+			}
+
+			int result = 0;
+			for (Long srcCpId : srcCpIds) {
+				for (Long tgtCpId : tgtCpIds) {
+					result += moveRecords(form.getId(), op.getEntity(), srcCpId, tgtCpId);
+				}
+			}
+
+			return ResponseEvent.response(result);
+		} catch (OpenSpecimenException ose) {
+			return ResponseEvent.error(ose);
+		} catch (Exception e) {
+			return ResponseEvent.serverError(e);
+		}
+	}
+
+	@Override
+	@PlusTransactional
+	public ResponseEvent<List<FormRevisionDetail>> getFormRevisions(RequestEvent<Long> req) {
+		return ResponseEvent.response(formDao.getFormRevisions(req.getPayload()));
+	}
+
 	//
 	// Internal APIs
 	//
@@ -665,6 +804,11 @@ public class FormServiceImpl implements FormService, InitializingBean {
 	@Override
 	public FormData getRecord(Container form, Long recordId) {
 		return getRecord(form, null, null, null, recordId);
+	}
+
+	@Override
+	public List<FormData> getRecords(Container form, List<Long> recordIds) {
+		return formDataMgr.getFormData(form, recordIds);
 	}
 
 	@Override
@@ -702,21 +846,8 @@ public class FormServiceImpl implements FormService, InitializingBean {
 
 	@Override
 	public void addFormContextProc(String entity, FormContextProcessor proc) {
-		List<FormContextProcessor> procs = ctxtProcs.get(entity);
-		if (procs == null) {
-			procs = new ArrayList<>();
-			ctxtProcs.put(entity, procs);
-		}
-
-		boolean exists = false;
-		for (FormContextProcessor existing : procs) {
-			if (existing == proc) {
-				exists = true;
-				break;
-			}
-		}
-
-		if (!exists) {
+		List<FormContextProcessor> procs = ctxtProcs.computeIfAbsent(entity, k -> new ArrayList<>());
+		if (procs.stream().noneMatch(existing -> existing == proc)) {
 			procs.add(proc);
 		}
 	}
@@ -736,7 +867,10 @@ public class FormServiceImpl implements FormService, InitializingBean {
 	@Override
 	@PlusTransactional
 	public List<FormSummary> getEntityForms(Long cpId, String[] entityTypes) {
-		return formDao.getFormsByCpAndEntityType(cpId, entityTypes);
+		FormListCriteria crit = new FormListCriteria()
+			.cpIds(Arrays.asList(-1L, cpId))
+			.entityTypes(Arrays.asList(entityTypes));
+		return formDao.getEntityForms(crit);
 	}
 
 	//
@@ -750,7 +884,26 @@ public class FormServiceImpl implements FormService, InitializingBean {
 			throw OpenSpecimenException.userError(FormErrorCode.REC_NOT_FOUND);
 		}
 
-		formDataMgr.anonymize(null, form, recordId);
+		formDataMgr.anonymize(
+			new UserContext() {
+				@Override
+				public Long getUserId() {
+					return AuthUtil.getCurrentUser().getId();
+				}
+
+				@Override
+				public String getUserName() {
+					return AuthUtil.getCurrentUser().getLoginName();
+				}
+
+				@Override
+				public String getIpAddress() {
+					return AuthUtil.getRemoteAddr();
+				}
+			},
+			form,
+			recordId
+		);
 
 		recEntry.setUpdatedBy(AuthUtil.getCurrentUser().getId());
 		recEntry.setUpdatedTime(Calendar.getInstance().getTime());
@@ -767,6 +920,86 @@ public class FormServiceImpl implements FormService, InitializingBean {
 		}
 		
 		return crit;
+	}
+
+	private List<FormFieldSummary> getCpFields(Long cpId, Container form) {
+		List<FormFieldSummary> fields = new ArrayList<>();
+		if (cpId == null || cpId < 0) {
+			cpId = -1L;
+		}
+
+		String formName = form.getName();
+		String entityType = customFieldEntities.get(formName);
+		if (StringUtils.isNotBlank(entityType)) {
+			Map<String, Object> extnInfo = getExtensionInfo(cpId, entityType);
+			if (extnInfo == null && cpId != -1L) {
+				extnInfo = getExtensionInfo(-1L, entityType);
+			}
+
+			if (extnInfo != null) {
+				Long extnFormId = (Long)extnInfo.get("formId");
+				fields.add(getExtensionField("customFields", "Custom Fields", Collections.singletonList(extnFormId)));
+			}
+		}
+
+		if (!staticExtendedForms.contains(formName)) {
+			return fields;
+		}
+
+		List<Long> extendedFormIds = formDao.getFormIds(cpId, formName);
+		if (formName.equals(PARTICIPANT_FORM)) {
+			extendedFormIds.addAll(0, formDao.getFormIds(-1L, COMMON_PARTICIPANT));
+		} else if (formName.equals(SPECIMEN_FORM)) {
+			extendedFormIds.addAll(formDao.getFormIds(-1L, SPECIMEN_EVENT_FORM));
+		}
+
+		fields.add(getExtensionField("extensions", "Extensions", extendedFormIds));
+		return fields;
+	}
+
+	private List<FormFieldSummary> getCpGroupFields(Long groupId, Container form) {
+		if (groupId == null || groupId <= 0) {
+			return Collections.emptyList();
+		}
+
+		CollectionProtocolGroup group = null;
+		if (customFieldEntities.containsKey(form.getName()) || staticExtendedForms.contains(form.getName())) {
+			group = daoFactory.getCpGroupDao().getById(groupId);
+			if (group == null) {
+				throw OpenSpecimenException.userError(CpGroupErrorCode.NOT_FOUND, groupId);
+			}
+		}
+
+		if (group == null) {
+			return Collections.emptyList();
+		}
+
+		List<FormFieldSummary> fields = new ArrayList<>();
+
+		String entityType = customFieldEntities.get(form.getName());
+		if (StringUtils.isNotBlank(entityType)) {
+			List<Long> formIds = group.getForms(entityType).stream()
+				.map(f -> f.getForm().getId())
+				.collect(Collectors.toList());
+			fields.add(getExtensionField("customFields", "Custom Fields", formIds));
+		}
+
+		if (!staticExtendedForms.contains(form.getName())) {
+			return fields;
+		}
+
+		List<Long> extendedFormIds = group.getForms(form.getName()).stream()
+			.map(f -> f.getForm().getId())
+			.collect(Collectors.toList());
+
+		if (form.getName().equals(PARTICIPANT_FORM)) {
+			extendedFormIds.addAll(0, formDao.getFormIds(-1L, COMMON_PARTICIPANT));
+		} else if (form.getName().equals(SPECIMEN_FORM)) {
+			extendedFormIds.addAll(formDao.getFormIds(-1L, SPECIMEN_EVENT_FORM));
+		}
+
+		fields.add(getExtensionField("extensions", "Extensions", extendedFormIds));
+		return fields;
 	}
 
 	private FormFieldSummary getExtensionField(String name, String caption, List<Long> extendedFormIds ) {
@@ -792,49 +1025,89 @@ public class FormServiceImpl implements FormService, InitializingBean {
 		return field;
 	}
 
-	//
-	// The idea was to sort forms in the backend
-	// However, at present the workflows is fully UI concept.
-	// therefore junked this idea and sorted forms in UI.
-	// remove this code after 31/12/2017
-	//
-//	private List<FormCtxtSummary> sortForms(Long cpId, String entityType, List<FormCtxtSummary> forms) {
-//		CpWorkflowConfig cfg = daoFactory.getCollectionProtocolDao().getCpWorkflows(cpId);
-//		if (cfg == null) {
-//			return forms;
-//		}
-//
-//		Map<String, CpWorkflowConfig.Workflow> workflows = cfg.getWorkflows();
-//		if (workflows == null || workflows.isEmpty() || !workflows.containsKey("forms")) {
-//			return forms;
-//		}
-//
-//		CpWorkflowConfig.Workflow workflow = workflows.get("forms");
-//		if (workflow.getData() == null || workflow.getData().isEmpty() || workflow.getData().get(entityType) == null) {
-//			return forms;
-//		}
-//
-//		List<Map<String, Object>> order = (List<Map<String, Object>>)workflow.getData().get(entityType);
-//		List<Long> orderedFormIds = order.stream().map(f -> ((Number)f.get("id")).longValue()).collect(Collectors.toList());
-//
-//		Collections.sort(forms, (f1, f2) -> {
-//			int f1Idx = orderedFormIds.indexOf(f1.getFormId());
-//			int f2Idx = orderedFormIds.indexOf(f2.getFormId());
-//
-//			if (f1Idx == -1 && f2Idx == -1) {
-//				return 0;
-//			} else if (f1Idx == -1) {
-//				return 1;
-//			} else if (f2Idx == -1) {
-//				return -1;
-//			} else {
-//				return f1Idx - f2Idx;
-//			}
-//		});
-//
-//		return forms;
-//	}
-		
+	private FormContextBean addFormContext(FormContextDetail input) {
+		if (isNotCpEntity(input.getLevel())) {
+			return addFormContext0(input);
+		}
+
+		Long cpId = input.getCollectionProtocol() != null ? input.getCollectionProtocol().getId() : -1L;
+		FormContextBean fc = formDao.getAbsFormContext(input.getFormId(), cpId, input.getLevel());
+		if (fc != null && fc.getDeletedOn() == null) {
+			fc.setMultiRecord(input.isMultiRecord());
+			fc.setSortOrder(input.getSortOrder());
+			input.setFormCtxtId(fc.getIdentifier());
+			notifyContextSaved(fc);
+			return fc;
+		}
+
+		if (cpId == -1L) {
+			if (fc == null) {
+				fc = addFormContext0(input);
+			} else if (fc.getDeletedOn() != null) {
+				fc.setDeletedOn(null);
+				notifyContextSaved(fc);
+			} else {
+				throw OpenSpecimenException.userError(FormErrorCode.MULTIPLE_CTXS_NOT_ALLOWED);
+			}
+		} else {
+			FormContextBean allFc = formDao.getAbsFormContext(input.getFormId(), -1L, input.getLevel());
+			if (allFc != null && allFc.getDeletedOn() == null) {
+				throw OpenSpecimenException.userError(FormErrorCode.MULTIPLE_CTXS_NOT_ALLOWED);
+			}
+
+			if (fc == null) {
+				fc = addFormContext0(input);
+				if (allFc != null) {
+					moveRecords(cpId, input.getLevel(), allFc, fc);
+				}
+			} else if (fc.getDeletedOn() != null) {
+				fc.setDeletedOn(null);
+				if (allFc != null) {
+					moveRecords(cpId, input.getLevel(), allFc, fc);
+				}
+
+				notifyContextSaved(fc);
+			} else {
+				throw OpenSpecimenException.userError(FormErrorCode.MULTIPLE_CTXS_NOT_ALLOWED);
+			}
+		}
+
+		return fc;
+	}
+
+	private boolean isNotCpEntity(String entity) {
+		return !Arrays.asList(
+			"Participant", "ParticipantExtension",
+			"SpecimenCollectionGroup", "VisitExtension",
+			"Specimen", "SpecimenExtension"
+		).contains(entity);
+	}
+
+	private FormContextBean addFormContext0(FormContextDetail input) {
+		Long entityId = input.getEntityId();
+		Long cpId     = input.getCollectionProtocol().getId();
+		String entity = input.getLevel();
+		Long formId   = input.getFormId();
+
+		FormContextBean formCtxt = formDao.getFormContext(entityId == null, entity, entityId == null ? cpId : entityId, formId);
+		if (formCtxt == null) {
+			formCtxt = new FormContextBean();
+			formCtxt.setContainerId(formId);
+			formCtxt.setCpId(entity.equals(SPECIMEN_EVENT_FORM) ? -1 : cpId);
+			formCtxt.setEntityType(entity);
+			formCtxt.setEntityId(entityId);
+		}
+
+		formCtxt.setMultiRecord(input.isMultiRecord());
+		formCtxt.setSortOrder(input.getSortOrder());
+
+		notifyContextSaved(formCtxt);
+		formDao.saveOrUpdate(formCtxt, true);
+		input.setFormCtxtId(formCtxt.getIdentifier());
+		return formCtxt;
+	}
+
+
 	private FormData saveOrUpdateFormData(Long recordId, FormData formData, boolean isPartial) {
 		Map<String, Object> appData = formData.getAppData();
 		if (appData.get("formCtxtId") == null || appData.get("objectId") == null) {
@@ -852,11 +1125,29 @@ public class FormServiceImpl implements FormService, InitializingBean {
 
 		FormContextBean formContext = formContexts.get(0);
 		Container form = formData.getContainer();
-		if (formContext.isSysForm() && !isCollectionOrReceivedEvent(form)) {
-			throw OpenSpecimenException.userError(FormErrorCode.SYS_REC_EDIT_NOT_ALLOWED);
+		boolean isInsert = (recordId == null);
+		if (!isInsert && formContext.isSysForm()) {
+			if (isEditableEvent(form)) {
+				List<String> fields = getEditableFields(form);
+				isPartial = true;
+
+				FormData allowed = new FormData(form);
+				allowed.setRecordId(formData.getRecordId());
+				allowed.setParentRecordId(formData.getParentRecordId());
+				allowed.setAppData(formData.getAppData());
+				for (String field : fields) {
+					ControlValue cv = formData.getFieldValue(field);
+					if (cv != null) {
+						allowed.addFieldValue(cv);
+					}
+				}
+
+				formData = allowed;
+			} else if (!isCollectionOrReceivedEvent(form)) {
+				throw OpenSpecimenException.userError(FormErrorCode.SYS_REC_EDIT_NOT_ALLOWED);
+			}
 		}
 
-		boolean isInsert = (recordId == null);
 		if (!isInsert && isPartial) {
 			FormData existing = formDataMgr.getFormData(formData.getContainer(), formData.getRecordId());
 			formData = updateFormData(existing, formData);
@@ -864,23 +1155,27 @@ public class FormServiceImpl implements FormService, InitializingBean {
 		
 		formData.validate();
 
-		OpenSpecimenEvent<?> event = null;
+		OpenSpecimenEvent<?> collOrRecvEvent = null;
+		Object object = null;
+
 		String entityType = formContext.getEntityType();
 		if (entityType.equals("Participant")) {
 			CollectionProtocolRegistration cpr = daoFactory.getCprDao().getById(objectId);
 			if (cpr == null) {
-				throw OpenSpecimenException.userError(CprErrorCode.NOT_FOUND, objectId);
+				throw OpenSpecimenException.userError(CprErrorCode.M_NOT_FOUND, objectId, 1);
 			}
 
 			AccessCtrlMgr.getInstance().ensureUpdateCprRights(cpr);
+			object = cpr;
 		} else if (entityType.equals("CommonParticipant")) {
 			CollectionProtocolRegistration cpr = daoFactory.getCprDao().getById(objectId);
 			if (cpr == null) {
-				throw OpenSpecimenException.userError(CprErrorCode.NOT_FOUND, objectId);
+				throw OpenSpecimenException.userError(CprErrorCode.M_NOT_FOUND, objectId, 1);
 			}
 
 			AccessCtrlMgr.getInstance().ensureUpdateCprRights(cpr);
 			objectId = cpr.getParticipant().getId();
+			object = cpr;
 		} else if (entityType.equals("SpecimenCollectionGroup")) {
 			Visit visit = daoFactory.getVisitsDao().getById(objectId);
 			if (visit == null) {
@@ -888,12 +1183,22 @@ public class FormServiceImpl implements FormService, InitializingBean {
 			}
 
 			AccessCtrlMgr.getInstance().ensureCreateOrUpdateVisitRights(visit, form.hasPhiFields());
+			object = visit;
 		} else if (entityType.equals("Specimen") || entityType.equals("SpecimenEvent")) {
 			Specimen specimen = ensureSpecimenUpdateRights(objectId, form.hasPhiFields());
+			object = specimen;
 			if (isCollectionOrReceivedEvent(form)) {
 				specimen.setUpdated(true);
-				event = new SpecimenSavedEvent(specimen);
+				collOrRecvEvent = new SpecimenSavedEvent(specimen);
 			}
+		} else if (entityType.equals("User")) {
+			User user = daoFactory.getUserDao().getById(objectId);
+			if (user == null) {
+				throw OpenSpecimenException.userError(UserErrorCode.NOT_FOUND, objectId);
+			}
+
+			AccessCtrlMgr.getInstance().ensureUpdateUserRights(user);
+			object = user;
 		}
 
 		formData.setRecordId(recordId);
@@ -927,15 +1232,39 @@ public class FormServiceImpl implements FormService, InitializingBean {
 		formDao.saveOrUpdateRecordEntry(recordEntry);
 		formData.setRecordId(recordId);
 
-		if (event != null) {
-			EventPublisher.getInstance().publish(event);
+		if (collOrRecvEvent != null) {
+			EventPublisher.getInstance().publish(collOrRecvEvent);
+		} else if (object != null) {
+			EventPublisher.getInstance().publish(new FormDataSavedEvent(entityType, object, formData));
 		}
 
 		return formData;
 	}
 
 	private boolean isCollectionOrReceivedEvent(Container form) {
-		return form.getName().equals("SpecimenCollectionEvent") || form.getName().equals("SpecimenReceivedEvent");
+		return isCollectionOrReceivedEvent(form.getName());
+	}
+
+	private boolean isCollectionOrReceivedEvent(String name) {
+		return name.equals("SpecimenCollectionEvent") || name.equals("SpecimenReceivedEvent");
+	}
+
+	private boolean isEditableEvent(Container form) {
+		return isEditableEvent(form.getName());
+	}
+
+	private boolean isEditableEvent(String name) {
+		List<String> fields = editableEvents.get(name);
+		return fields != null && !fields.isEmpty();
+	}
+
+	private List<String> getEditableFields(Container form) {
+		return getEditableFields(form.getName());
+	}
+
+	private List<String> getEditableFields(String name) {
+		List<String> fields = editableEvents.get(name);
+		return fields != null ? fields : Collections.emptyList();
 	}
 
 	private UserContext getUserContext() {
@@ -960,7 +1289,11 @@ public class FormServiceImpl implements FormService, InitializingBean {
 	private List<FormFieldSummary> getFormFields(Container container) {
         List<FormFieldSummary> fields = new ArrayList<>();
 
-        for (Control control : container.getControls()) {        	
+        for (Control control : container.getControls()) {
+        	if (control.isHidden()) {
+        		continue;
+        	}
+
             FormFieldSummary field = new FormFieldSummary();
             field.setName(control.getUserDefinedName());
             field.setCaption(control.getCaption());
@@ -1010,9 +1343,10 @@ public class FormServiceImpl implements FormService, InitializingBean {
 			throw OpenSpecimenException.userError(FormErrorCode.REC_NOT_FOUND);
 		}
 
+		FormRecordEntryBean record = null;
 		if (objectId == null || entityType == null) {
-			FormRecordEntryBean record = formDao.getRecordEntry(formData.getContainer().getId(), formData.getRecordId());
-			objectId = record.getObjectId();
+			record     = formDao.getRecordEntry(formData.getContainer().getId(), formData.getRecordId());
+			objectId   = record.getObjectId();
 			formCtxtId = record.getFormCtxtId();
 			entityType = record.getEntityType();
 		}
@@ -1023,7 +1357,12 @@ public class FormServiceImpl implements FormService, InitializingBean {
 
 		Map<String, Object> appData = formData.getAppData();
 		appData.put("formCtxtId", formCtxtId);
-		appData.put("objectId", objectId);
+		appData.put("objectId",   objectId);
+		if (record != null) {
+			appData.put("sysForm",     record.isSysRecord());
+			appData.put("multiRecord", record.isMultiRecord());
+		}
+
 		return formData;
 	}
 
@@ -1037,6 +1376,8 @@ public class FormServiceImpl implements FormService, InitializingBean {
 			allowPhiAccess = AccessCtrlMgr.getInstance().ensureReadVisitRights(objectId, true);
 		} else if (entityType.equals(SPECIMEN_FORM) || entityType.equals(SPECIMEN_EVENT_FORM) || Specimen.EXTN.equals(entityType)) {
 			allowPhiAccess = AccessCtrlMgr.getInstance().ensureReadSpecimenRights(objectId, true);
+		} else {
+			allowPhiAccess = true;
 		}
 
 		return allowPhiAccess;
@@ -1133,6 +1474,79 @@ public class FormServiceImpl implements FormService, InitializingBean {
 		return specimen;
 	}
 
+	private int moveRecords(Long formId, String entity, long srcCpId, long tgtCpId) {
+		if (srcCpId == tgtCpId) {
+			// Don't need to do any work when source and target CPs are the same.
+			return 0;
+		}
+
+		Long cpId = srcCpId != -1L ? srcCpId : tgtCpId;
+		FormContextBean srcFc = formDao.getAbsFormContext(formId, srcCpId, entity);
+		FormContextBean tgtFc = formDao.getAbsFormContext(formId, tgtCpId, entity);
+		return moveRecords(cpId, entity, srcFc, tgtFc);
+	}
+
+	private int moveRecords(Long cpId, String entity, FormContextBean srcFc, FormContextBean tgtFc) {
+		Date prev = tgtFc.getDeletedOn();
+		tgtFc.setDeletedOn(prev == null ? Calendar.getInstance().getTime() : null);
+		formDao.saveOrUpdate(tgtFc, true);
+
+		int count = 0;
+		switch (entity) {
+			case "Participant":
+			case "ParticipantExtension":
+				count = formDao.moveRegistrationRecords(cpId, srcFc.getIdentifier(), tgtFc.getIdentifier());
+				break;
+
+			case "SpecimenCollectionGroup":
+			case "VisitExtension":
+				count = formDao.moveVisitRecords(cpId, srcFc.getIdentifier(), tgtFc.getIdentifier());
+				break;
+
+			case "Specimen":
+			case "SpecimenExtension":
+				count = formDao.moveSpecimenRecords(cpId, srcFc.getIdentifier(), tgtFc.getIdentifier());
+				break;
+		}
+
+		tgtFc.setDeletedOn(prev);
+		formDao.saveOrUpdate(tgtFc, true);
+		return count;
+	}
+
+	private List<Long> getCpIds(String cpShortTitle, String cpGroupName) {
+		if (StringUtils.isNotBlank(cpShortTitle)) {
+			return Collections.singletonList(getCp(cpShortTitle).getId());
+		} else if (StringUtils.isNotBlank(cpGroupName)) {
+			CollectionProtocolGroup grp = daoFactory.getCpGroupDao().getByName(cpGroupName);
+			if (grp == null) {
+				throw OpenSpecimenException.userError(CpGroupErrorCode.NOT_FOUND, cpGroupName);
+			}
+
+			return new ArrayList<>(grp.getCpIds());
+		} else {
+			return Collections.singletonList(-1L);
+		}
+	}
+
+	private CollectionProtocol getCp(String cpShortTitle) {
+		CollectionProtocol cp = daoFactory.getCollectionProtocolDao().getCpByShortTitle(cpShortTitle.trim());
+		if (cp == null) {
+			throw OpenSpecimenException.userError(CpErrorCode.NOT_FOUND, cpShortTitle);
+		}
+
+		return cp;
+	}
+
+	private FormContextBean getFormCtxt(Long formId, Long cpId, String entity) {
+		FormContextBean fc = formDao.getFormContext(formId, cpId, entity);
+		if (fc == null) {
+			throw OpenSpecimenException.userError(FormErrorCode.NO_ASSOCIATION, cpId, formId);
+		}
+
+		return fc;
+	}
+
 	private Function<ExportJob, List<? extends Object>> getFormRecordsGenerator() {
 		return new Function<ExportJob, List<? extends Object>>() {
 			private boolean endOfRecords = false;
@@ -1148,6 +1562,8 @@ public class FormServiceImpl implements FormService, InitializingBean {
 			private CollectionProtocol cp;
 
 			private Long cpId;
+
+			private Long entityId;
 
 			private Set<SiteCpPair> siteCps;
 
@@ -1179,6 +1595,8 @@ public class FormServiceImpl implements FormService, InitializingBean {
 					recordsFn = this::getVisitFormRecords;
 				} else if (entityType.equals("Specimen") || entityType.equals("SpecimenEvent")) {
 					recordsFn = this::getSpmnFormRecords;
+				} else if (entityType.equals("User")) {
+					recordsFn = this::getUserFormRecords;
 				}
 
 				List<Map<String, Object>> records = null;
@@ -1214,6 +1632,15 @@ public class FormServiceImpl implements FormService, InitializingBean {
 					}
 				}
 
+				String entityIdStr = params.get("entityId");
+				if (StringUtils.isNotBlank(entityIdStr)) {
+					try {
+						entityId = Long.parseLong(entityIdStr);
+					} catch (Exception e) {
+						logger.error("Invalid entity ID: " + entityIdStr, e);
+					}
+				}
+
 				boolean allowed = false;
 				if (entityType.equals("Participant") || entityType.equals("CommonParticipant")) {
 					if (cpId != null && cpId != -1L) {
@@ -1226,12 +1653,31 @@ public class FormServiceImpl implements FormService, InitializingBean {
 
 						allowed = (siteCps == null || !siteCps.isEmpty());
 					}
-				} else if (entityType.equals("SpecimenCollectionGroup") || entityType.equals("Specimen") || entityType.equals("SpecimenEvent")) {
+				} else if (entityType.equals("SpecimenCollectionGroup")) {
 					if (cpId != null && cpId != -1L) {
-						allowed = AccessCtrlMgr.getInstance().hasVisitSpecimenEximRights(cpId);
+						allowed = AccessCtrlMgr.getInstance().hasVisitEximRights(cpId);
 					} else {
-						siteCps = AccessCtrlMgr.getInstance().getSiteCps(Resource.VISIT_N_SPECIMEN, Operation.EXIM);
+						siteCps = AccessCtrlMgr.getInstance().getSiteCps(Resource.VISIT, Operation.EXIM);
 						allowed = (siteCps == null || !siteCps.isEmpty());
+					}
+				} else if (entityType.equals("Specimen") || entityType.equals("SpecimenEvent")) {
+					if (cpId != null && cpId != -1L) {
+						allowed = AccessCtrlMgr.getInstance().hasSpecimenEximRights(cpId);
+					} else {
+						siteCps = AccessCtrlMgr.getInstance().getSiteCps(Resource.SPECIMEN, Operation.EXIM);
+						allowed = (siteCps == null || !siteCps.isEmpty());
+					}
+				} else if (entityType.equals("User")) {
+					if (entityId != null && entityId != -1L) {
+						if (AuthUtil.isAdmin()) {
+							allowed = true;
+						} else if (AuthUtil.isInstituteAdmin() && AuthUtil.getCurrentUserInstitute().getId().equals(entityId)) {
+							allowed = true;
+						} else {
+							allowed = false;
+						}
+					} else {
+						allowed = AuthUtil.isAdmin();
 					}
 				}
 
@@ -1307,7 +1753,11 @@ public class FormServiceImpl implements FormService, InitializingBean {
 					(spmnLabels) -> formDao.getSpecimenRecords(cpId, siteCps, form.getId(), entityType, spmnLabels, startAt, 100),
 					"spmnId",
 					(specimenId) -> daoFactory.getSpecimenDao().getById(specimenId),
-					(specimen) -> AccessCtrlMgr.getInstance().ensureReadSpecimenRights((Specimen) specimen, true),
+					(specimen) -> {
+						AccessCtrlMgr.SpecimenAccessRights rights = AccessCtrlMgr.getInstance()
+							.ensureReadSpecimenRights((Specimen) specimen, true);
+						return rights.phiAccess;
+					},
 					(spmnFormValueMap) -> {
 						Specimen specimen = (Specimen) spmnFormValueMap.first();
 						Map<String, Object> valueMap = spmnFormValueMap.second();
@@ -1317,6 +1767,38 @@ public class FormServiceImpl implements FormService, InitializingBean {
 						formData.put("cpShortTitle", specimen.getCollectionProtocol().getShortTitle());
 						formData.put("specimenLabel", specimen.getLabel());
 						formData.put("barcode", specimen.getBarcode());
+						formData.put("formValueMap", valueMap);
+						return formData;
+					}
+				);
+			}
+
+			private List<Map<String, Object>> getUserFormRecords(ExportJob job) {
+				return getRecords(
+					job,
+					"emailIds",
+					(emailIds) -> daoFactory.getUserDao().getFormRecords(entityId, form.getId(), emailIds, startAt, 100),
+					"userId",
+					(userId) -> daoFactory.getUserDao().getById(userId),
+					(user) -> {
+						try {
+							AccessCtrlMgr.getInstance().ensureUpdateUserRights((User) user);
+							return true;
+						} catch (OpenSpecimenException ose) {
+							if (ose.containsError(RbacErrorCode.ACCESS_DENIED)) {
+								return false;
+							}
+
+							throw ose;
+						}
+					},
+					(userFormValueMap) -> {
+						User user = (User) userFormValueMap.first();
+						Map<String, Object> valueMap = userFormValueMap.second();
+
+						Map<String, Object> formData = new HashMap<>();
+						formData.put("recordId", valueMap.get("id"));
+						formData.put("emailAddress", user.getEmailAddress());
 						formData.put("formValueMap", valueMap);
 						return formData;
 					}

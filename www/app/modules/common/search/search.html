@@ -12,12 +12,25 @@
       <ui-select-choices ui-disable-choice="match.id < 0" repeat="match in ctx.matches"
         refresh="search($select.search, $select)" refresh-delay="750">
         <div class="row">
-          <div ng-class="{'true': 'col-xs-5', 'false': 'ng-hide'}[match.id > 0]">
+          <div ng-class="{'true': 'col-xs-6', 'false': 'ng-hide'}[match.id > 0]">
             <small>{{match.group}}</small>
           </div>
-          <div ng-class="{'true': 'col-xs-7', 'false': 'col-xs-12'}[match.id > 0]">
-            <span class="fa" ng-class="{'fa fa-graduation-cap': match.id == 0}"></span>
-            <span ng-bind-html="match.caption | highlight: $select.search"></span>
+          <div class="clearfix" ng-class="{'true': 'col-xs-6 os-no-left-padding', 'false': 'col-xs-12'}[match.id > 0]">
+            <span class="pull-left" style="width: calc(100% - 25px)">
+              <span class="fa fa-graduation-cap" ng-show="match.id == 0"></span>
+              <span ng-bind-html="match.caption | highlight: $select.search"></span>
+            </span>
+            <span class="pull-right" ng-show="match.id > 0" style="width: 25px; margin-right: -10px;">
+              <button style="background: transparent; border: none;" ng-click="openInNewTab($event, match)">
+                <span class="fa fa-external-link"></span>
+              </button>
+            </span>
+          </div>
+        </div>
+        <div class="row" ng-show="!!match.props">
+          <div class="col-xs-6">&nbsp;</div>
+          <div class="col-xs-6 os-no-left-padding">
+            <small>{{match.props}}</small>
           </div>
         </div>
       </ui-select-choices>

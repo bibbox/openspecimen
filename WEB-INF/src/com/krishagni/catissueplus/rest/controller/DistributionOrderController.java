@@ -74,6 +74,9 @@ public class DistributionOrderController {
 		
 		@RequestParam(value = "receivingInstitute", required = false, defaultValue = "")
 		String receivingInstitute,
+
+		@RequestParam(value = "status", required = false, defaultValue = "")
+		String status,
 		
 		@RequestParam(value = "startAt", required = false, defaultValue = "0") 
 		int startAt,
@@ -95,13 +98,12 @@ public class DistributionOrderController {
 			.executionDate(executionDate)
 			.receivingSite(receivingSite)
 			.receivingInstitute(receivingInstitute)
+			.status(status)
 			.startAt(startAt)
 			.maxResults(maxResults)
 			.includeStat(includeStats);
-			
-		ResponseEvent<List<DistributionOrderSummary>> resp = distributionService.getOrders(getRequest(listCrit));
-		resp.throwErrorIfUnsuccessful();
-		return resp.getPayload();
+
+		return ResponseEvent.unwrap(distributionService.getOrders(RequestEvent.wrap(listCrit)));
 	}
 
 	@RequestMapping(method = RequestMethod.GET, value = "/count")
@@ -134,7 +136,10 @@ public class DistributionOrderController {
 		String receivingSite,
 		
 		@RequestParam(value = "receivingInstitute", required = false, defaultValue = "")
-		String receivingInstitute) {
+		String receivingInstitute,
+
+		@RequestParam(value = "status", required = false, defaultValue = "")
+		String status) {
 		
 		
 		DistributionOrderListCriteria listCrit = new DistributionOrderListCriteria()
@@ -146,20 +151,18 @@ public class DistributionOrderController {
 			.requestId(requestId)
 			.executionDate(executionDate)
 			.receivingSite(receivingSite)
-			.receivingInstitute(receivingInstitute);
+			.receivingInstitute(receivingInstitute)
+			.status(status);
 			
-		ResponseEvent<Long> resp = distributionService.getOrdersCount(getRequest(listCrit));
-		resp.throwErrorIfUnsuccessful();
-		return Collections.singletonMap("count", resp.getPayload());
+		Long count = ResponseEvent.unwrap(distributionService.getOrdersCount(RequestEvent.wrap(listCrit)));
+		return Collections.singletonMap("count", count);
 	}
 
 	@RequestMapping(method = RequestMethod.GET, value="/{id}")
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody
 	public DistributionOrderDetail getDistribution(@PathVariable("id") Long id) {
-		ResponseEvent<DistributionOrderDetail> resp = distributionService.getOrder(getRequest(id));
-		resp.throwErrorIfUnsuccessful();
-		return resp.getPayload();
+		return ResponseEvent.unwrap(distributionService.getOrder(RequestEvent.wrap(id)));
 	}
 	
 	@RequestMapping(method = RequestMethod.POST)
@@ -167,9 +170,7 @@ public class DistributionOrderController {
 	@ResponseBody
 	public DistributionOrderDetail createDistribution(@RequestBody DistributionOrderDetail order) {
 		order.setId(null);
-		ResponseEvent<DistributionOrderDetail> resp = distributionService.createOrder(getRequest(order));
-		resp.throwErrorIfUnsuccessful();
-		return resp.getPayload();
+		return ResponseEvent.unwrap(distributionService.createOrder(RequestEvent.wrap(order)));
 	}
 	
 	@RequestMapping(method = RequestMethod.PUT, value="/{id}")
@@ -183,27 +184,21 @@ public class DistributionOrderController {
 		DistributionOrderDetail order) {
 		
 		order.setId(distributionId);
-		ResponseEvent<DistributionOrderDetail> resp = distributionService.updateOrder(getRequest(order));
-		resp.throwErrorIfUnsuccessful();
-		return resp.getPayload();
+		return ResponseEvent.unwrap(distributionService.updateOrder(RequestEvent.wrap(order)));
 	}
 
 	@RequestMapping(method = RequestMethod.DELETE, value = "/{id}")
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody
 	public DistributionOrderDetail deleteOrder(@PathVariable("id") Long orderId) {
-		ResponseEvent<DistributionOrderDetail> resp = distributionService.deleteOrder(getRequest(orderId));
-		resp.throwErrorIfUnsuccessful();
-		return resp.getPayload();
+		return ResponseEvent.unwrap(distributionService.deleteOrder(RequestEvent.wrap(orderId)));
 	}
 	
 	@RequestMapping(method = RequestMethod.GET, value="/{id}/report")
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody
 	public QueryDataExportResult exportDistributionReport(@PathVariable("id") Long orderId) {
-		ResponseEvent<QueryDataExportResult> resp = distributionService.exportReport(getRequest(orderId));
-		resp.throwErrorIfUnsuccessful();
-		return resp.getPayload();
+		return ResponseEvent.unwrap(distributionService.exportReport(RequestEvent.wrap(orderId)));
 	}
 
 	@RequestMapping(method = RequestMethod.GET, value = "/{id}/items")
@@ -221,15 +216,13 @@ public class DistributionOrderController {
 
 		@RequestParam(value = "maxResults", required = false, defaultValue = "100")
 		int maxResults) {
+
 		DistributionOrderItemListCriteria crit = new DistributionOrderItemListCriteria()
 			.orderId(orderId)
 			.storedInContainers(storedInDistributionContainer)
 			.startAt(startAt)
 			.maxResults(maxResults);
-
-		ResponseEvent<List<DistributionOrderItemDetail>> resp = distributionService.getOrderItems(getRequest(crit));
-		resp.throwErrorIfUnsuccessful();
-		return resp.getPayload();
+		return ResponseEvent.unwrap(distributionService.getOrderItems(RequestEvent.wrap(crit)));
 	}
 
 	@RequestMapping(method =  RequestMethod.POST, value = "/{id}/retrieve")
@@ -243,9 +236,8 @@ public class DistributionOrderController {
 		RetrieveSpecimensOp detail) {
 
 		detail.setListId(orderId);
-		ResponseEvent<Integer> resp = distributionService.retrieveSpecimens(getRequest(detail));
-		resp.throwErrorIfUnsuccessful();
-		return Collections.singletonMap("count", resp.getPayload());
+		Integer count = ResponseEvent.unwrap(distributionService.retrieveSpecimens(RequestEvent.wrap(detail)));
+		return Collections.singletonMap("count", count);
 	}
 
 	@RequestMapping(method = RequestMethod.GET, value="/specimens")
@@ -264,24 +256,15 @@ public class DistributionOrderController {
 
 		SpecimenListCriteria crit = new SpecimenListCriteria()
 			.labels(labels)
-			.barcodes(barcodes);
-
-		RequestEvent<SpecimenListCriteria> req = getRequest(crit);
-		ResponseEvent<List<DistributionOrderItemDetail>> resp = distributionService.getDistributedSpecimens(req);
-		resp.throwErrorIfUnsuccessful();
-		return resp.getPayload();
+			.barcodes(barcodes)
+			.exactMatch(true);
+		return ResponseEvent.unwrap(distributionService.getDistributedSpecimens(RequestEvent.wrap(crit)));
 	}
 
 	@RequestMapping(method = RequestMethod.POST, value = "/return-specimens")
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody
 	public List<SpecimenInfo> returnSpecimens(@RequestBody List<ReturnedSpecimenDetail> returnedSpecimens) {
-		ResponseEvent<List<SpecimenInfo>> resp = distributionService.returnSpecimens(getRequest(returnedSpecimens));
-		resp.throwErrorIfUnsuccessful();
-		return resp.getPayload();
-	}
-
-	private <T> RequestEvent<T> getRequest(T payload) {
-		return new RequestEvent<T>(payload);
+		return ResponseEvent.unwrap(distributionService.returnSpecimens(RequestEvent.wrap(returnedSpecimens)));
 	}
 }

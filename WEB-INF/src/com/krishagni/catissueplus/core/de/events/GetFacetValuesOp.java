@@ -3,7 +3,11 @@ package com.krishagni.catissueplus.core.de.events;
 import java.util.List;
 
 public class GetFacetValuesOp {
+	private String querySpace;
+
 	private Long cpId;
+
+	private Long cpGroupId;
 
 	private List<String> facets;
 
@@ -11,12 +15,30 @@ public class GetFacetValuesOp {
 
 	private String restriction;
 
+	private boolean disableAccessChecks;
+
+	public String getQuerySpace() {
+		return querySpace;
+	}
+
+	public void setQuerySpace(String querySpace) {
+		this.querySpace = querySpace;
+	}
+
 	public Long getCpId() {
 		return cpId;
 	}
 
 	public void setCpId(Long cpId) {
 		this.cpId = cpId;
+	}
+
+	public Long getCpGroupId() {
+		return cpGroupId;
+	}
+
+	public void setCpGroupId(Long cpGroupId) {
+		this.cpGroupId = cpGroupId;
 	}
 
 	public List<String> getFacets() {
@@ -41,5 +63,13 @@ public class GetFacetValuesOp {
 
 	public void setRestriction(String restriction) {
 		this.restriction = restriction;
+	}
+
+	public boolean isDisableAccessChecks() {
+		return disableAccessChecks;
+	}
+
+	public void setDisableAccessChecks(boolean disableAccessChecks) {
+		this.disableAccessChecks = disableAccessChecks;
 	}
 }
