@@ -54,7 +54,7 @@ Email: mailto:contact@openspecimen.org
 License
 --------
 OpenSpecimen is released under BSD 3 Style license. 
-https://github.com/krishagni/openspecimen/blob/trunk/LICENSE.md
+https://github.com/krishagni/openspecimen/blob/master/LICENSE.md
 
 Contact Information
 -------------------
