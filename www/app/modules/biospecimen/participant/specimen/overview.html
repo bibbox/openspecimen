@@ -16,7 +16,7 @@
 
       <span ng-if="!!specimen.id">
         <div ng-if="!specimen.reserved && specimen.activityStatus == 'Active' && specimen.status == 'Collected'"
-          show-if-allowed="specimenResource.updateOpts" dropdown class="os-inline-btn">
+          show-if-allowed="specimenResource.allUpdateOpts" dropdown class="os-inline-btn">
           <button class="btn btn-default dropdown-toggle default">
             <span class="fa fa-plus"></span>
             <span translate="common.buttons.create">Create</span>
@@ -111,10 +111,12 @@
         </div>
       </div>
 
-      <os-specimen-tree cp="cp" cpr="cpr" visit="visit" specimens="treeSpecimens"
-        allowed-ops="specimenAllowedOps" reload="reload()"
-        pending-spmns-disp-interval="pendingSpmnsDispInterval">
-      </os-specimen-tree>
+      <span show-if-allowed="specimenResource.allReadOpts" style="display: inline-block; width: 100%;">
+        <os-specimen-tree cp="cp" cpr="cpr" visit="visit" specimens="treeSpecimens"
+          allowed-ops="specimenAllowedOps" reload="reload()"
+          pending-spmns-disp-interval="pendingSpmnsDispInterval">
+        </os-specimen-tree>
+      </span>
     </div>
     <div class="os-col os-no-border" os-right-drawer open-width="34" style="position: static;">
       <div ng-if="!!specimen.id">
@@ -279,19 +281,14 @@
     <ul class="os-activity-list" ng-if="activities.length > 0">
       <li class="os-activity" ng-repeat="activity in activities">
         <div class="title" ng-switch on="activity.isEditable">
-          <a ng-switch-when="true" ui-sref="specimen-detail.extensions.addedit({recordId: activity.id,
-            formId: activity.formId, formCtxId: activity.formCtxtId, spe: true})">
-            <ng-include src="'modules/biospecimen/participant/specimen/activity-info.html'"></ng-include>
-          </a>
-          <a ng-switch-when="false" ui-sref="specimen-detail.event-overview({recordId: activity.id,
-            formId: activity.formId})">
+          <a ui-sref="specimen-detail.event-overview({recordId: activity.id, formId: activity.formId})">
             <ng-include src="'modules/biospecimen/participant/specimen/activity-info.html'"></ng-include>
           </a>
         </div>
         <div class="info">
           <span>
             {{activity.updatedBy | osUserDisplayName}} -
-            {{activity.updateTime | date: dateFmt}}
+            {{activity.updateTime | date: global.dateTimeFmt}}
           </span>
         </div>
       </li>

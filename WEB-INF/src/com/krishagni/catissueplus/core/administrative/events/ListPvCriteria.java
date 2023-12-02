@@ -6,6 +6,7 @@ import java.util.List;
 import com.krishagni.catissueplus.core.common.events.AbstractListCriteria;
 
 public class ListPvCriteria extends AbstractListCriteria<ListPvCriteria> {
+	private static final String ARCHIVED = "Archived";
 
 	private String attribute;
 
@@ -18,6 +19,10 @@ public class ListPvCriteria extends AbstractListCriteria<ListPvCriteria> {
 	private String parentAttribute;
 	
 	private boolean includeOnlyLeafValue;
+
+	private boolean includeOnlyRootValue;
+
+	private String activityStatus;
 	
 	public String attribute() {
 		return attribute;
@@ -72,7 +77,29 @@ public class ListPvCriteria extends AbstractListCriteria<ListPvCriteria> {
 		this.includeOnlyLeafValue = includeOnlyLeafValue;
 		return self();
 	}
-	
+
+	public boolean includeOnlyRootValue() {
+		return includeOnlyRootValue;
+	}
+
+	public ListPvCriteria includeOnlyRootValue(boolean includeOnlyRootValue) {
+		this.includeOnlyRootValue = includeOnlyRootValue;
+		return self();
+	}
+
+	public String activityStatus() {
+		return activityStatus;
+	}
+
+	public ListPvCriteria activityStatus(String activityStatus) {
+		if (ARCHIVED.equalsIgnoreCase(activityStatus)) {
+			activityStatus = "Closed";
+		}
+
+		this.activityStatus = activityStatus;
+		return self();
+	}
+
 	@Override
 	public ListPvCriteria self() {
 		return this;

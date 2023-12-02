@@ -651,7 +651,7 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 
 			List<SiteCpPair> siteCps = AccessCtrlMgr.getInstance().getReadAccessSpecimenSiteCps();
 			if (siteCps != null && siteCps.isEmpty()) {
-				return ResponseEvent.userError(RbacErrorCode.ACCESS_DENIED);
+				throw OpenSpecimenException.userError(RbacErrorCode.ACCESS_DENIED);
 			}
 
 			if (input.isCopyItemsFromExistingOrder()) {
@@ -761,9 +761,10 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 
 	private void ensureValidSpecimens(DistributionOrder order, List<SiteCpPair> siteCps, OpenSpecimenException ose) {
 		if (order.getSpecimenList() != null || order.isForAllReservedSpecimens()) {
-			int startAt = 0, maxSpmns = 100;
+			int maxSpmns = 100;
+			Long lastId = -1L;
 			Long orderId = order.getId();
-			Function<Integer, List<Specimen>> getSpecimens = getSpecimensFn(order, siteCps, maxSpmns);
+			Function<Long, List<Specimen>> getSpecimens = getSpecimensFn(order, siteCps, maxSpmns);
 
 			boolean endOfSpecimens = false;
 			while (!endOfSpecimens) {
@@ -772,8 +773,8 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 					getSpecimens = getSpecimensFn(order, siteCps, maxSpmns);
 				}
 
-				List<Specimen> specimens = getSpecimens.apply(startAt);
-				if (specimens.isEmpty() && startAt == 0) {
+				List<Specimen> specimens = getSpecimens.apply(lastId);
+				if (specimens.isEmpty() && lastId == null) {
 					if (order.getSpecimenList() != null) {
 						ose.addError(DistributionOrderErrorCode.NO_SPMNS_IN_LIST, order.getSpecimenList().getName());
 					} else {
@@ -783,8 +784,10 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 
 				ensureValidSpecimens(specimens, order.getDistributionProtocol(), siteCps, ose);
 
-				startAt += specimens.size();
 				endOfSpecimens = (specimens.size() < maxSpmns);
+				if (!specimens.isEmpty()) {
+					lastId = specimens.get(specimens.size() - 1).getId();
+				}
 
 				specimens.clear();
 				order = null;
@@ -796,22 +799,21 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 		}
 	}
 
-	private Function<Integer, List<Specimen>> getSpecimensFn(DistributionOrder order, List<SiteCpPair> siteCps, int maxSpmns) {
+	private Function<Long, List<Specimen>> getSpecimensFn(DistributionOrder order, List<SiteCpPair> siteCps, int maxSpmns) {
 		Long specimenListId = order.getSpecimenList() != null ? order.getSpecimenList().getId() : null;
 		Long reservedForDp  = specimenListId != null ? null : order.getDistributionProtocol().getId();
 
-		return (startAt) -> daoFactory.getSpecimenDao().getSpecimens(new SpecimenListCriteria()
+		return (lastId) -> daoFactory.getSpecimenDao().getSpecimens(new SpecimenListCriteria()
 			.specimenListId(specimenListId)
 			.reservedForDp(reservedForDp)
 			.siteCps(siteCps)
-			.startAt(startAt).maxResults(maxSpmns)
+			.lastId(lastId)
+			.startAt(0).maxResults(maxSpmns)
 			.limitItems(true)
 		);
 	}
 
-	private void ensureValidSpecimens(
-		List<Specimen> inputSpmns, DistributionProtocol dp, List<SiteCpPair> siteCps, OpenSpecimenException ose) {
-
+	private void ensureValidSpecimens(List<Specimen> inputSpmns, DistributionProtocol dp, List<SiteCpPair> siteCps, OpenSpecimenException ose) {
 		if (CollectionUtils.isEmpty(inputSpmns)) {
 			return;
 		}
@@ -847,7 +849,7 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 	}
 
 	private void ensureSpecimensAccessibility(List<Long> specimenIds, List<SiteCpPair> siteCps, OpenSpecimenException ose) {
-		SpecimenListCriteria crit = new SpecimenListCriteria().siteCps(siteCps).ids(specimenIds);
+		SpecimenListCriteria crit = new SpecimenListCriteria().ids(specimenIds).siteCps(siteCps);
 		String nonCompliantSpmnLabels = daoFactory.getSpecimenDao().getNonCompliantSpecimens(crit)
 			.stream().limit(10).collect(Collectors.joining(", "));
 		if (!nonCompliantSpmnLabels.isEmpty()) {
@@ -884,7 +886,7 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 		Map<Long, Specimen> specimenMap = spmnWithoutDps.stream().collect(Collectors.toMap(Specimen::getId, Function.identity()));
 		Map<Long, Set<SiteCpPair>> spmnSites = daoFactory.getSpecimenDao().getSpecimenSites(spmnWithoutDps.stream().map(Specimen::getId).collect(Collectors.toSet()));
 
-		String errorLabels = notAllowedSpecimenLabels(specimenMap, spmnSites, dp.getAllowedDistributingSites());
+		String errorLabels = notAllowedSpecimenLabels(specimenMap, spmnSites, dp.getAllowedDistributingSites(null));
 		if (StringUtils.isNotBlank(errorLabels)) {
 			ose.addError(DistributionOrderErrorCode.INVALID_SPECIMENS_FOR_DP, errorLabels, dp.getShortTitle());
 			return;
@@ -895,6 +897,7 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 		}
 
 		Set<SiteCpPair> allowedSites = AccessCtrlMgr.getInstance().getDistributionOrderAllowedSites(dp);
+		allowedSites.forEach(s -> s.setResource(null));
 		errorLabels = notAllowedSpecimenLabels(specimenMap, spmnSites, allowedSites);
 		if (StringUtils.isNotBlank(errorLabels)) {
 			ose.addError(DistributionOrderErrorCode.SPMNS_DENIED, errorLabels);
@@ -1036,10 +1039,7 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 		return criteria.siteCps(siteCps);
 	}
 
-	private int reserveSpecimens(
-		Collection<Specimen> specimens, DistributionProtocol dp, User user, Date time, String comments,
-		List<SiteCpPair> siteCps) {
-
+	private int reserveSpecimens(Collection<Specimen> specimens, DistributionProtocol dp, User user, Date time, String comments, List<SiteCpPair> siteCps) {
 		//
 		// Filter out the specimens that have been already reserved for the DP
 		//
@@ -1075,15 +1075,13 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 		return events.size();
 	}
 
-	private int cancelSpecimenReservation(
-		Collection<Specimen> specimens, DistributionProtocol dp, User user, Date time, String comments,
-		List<SiteCpPair> siteCps) {
-
+	private int cancelSpecimenReservation(Collection<Specimen> specimens, DistributionProtocol dp, User user, Date time, String comments, List<SiteCpPair> siteCps) {
 		//
 		// Ensure specimens are read accessible
 		//
 		OpenSpecimenException ose = new OpenSpecimenException(ErrorType.USER_ERROR);
-		ensureSpecimensAccessibility(specimens.stream().map(Specimen::getId).collect(Collectors.toList()), siteCps, ose);
+		List<Long> spmnIds = specimens.stream().map(Specimen::getId).collect(Collectors.toList());
+		ensureSpecimensAccessibility(spmnIds, siteCps, ose);
 		ose.checkAndThrow();
 
 		//
@@ -1154,11 +1152,12 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 		}
 
 		boolean endOfSpecimens = false;
-		int starAt = 0, maxSpmns = 100;
-		Function<Integer, List<Specimen>> getSpecimens = getSpecimensFn(order, siteCps, maxSpmns);
+		int maxSpmns = 100;
+		Long lastId = -1L;
+		Function<Long, List<Specimen>> getSpecimens = getSpecimensFn(order, siteCps, maxSpmns);
 		List<Specimen> specimens;
 		while (!endOfSpecimens) {
-			specimens = getSpecimens.apply(starAt);
+			specimens = getSpecimens.apply(lastId);
 
 			List<DistributionOrderItem> orderItems = new ArrayList<>();
 			for (Specimen specimen : specimens) {
@@ -1167,8 +1166,10 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 
 			printDistributionLabels(orderItems);
 
-			starAt += specimens.size();
 			endOfSpecimens = (specimens.size() < maxSpmns);
+			if (!specimens.isEmpty()) {
+				lastId = specimens.get(specimens.size() - 1).getId();
+			}
 
 			specimens.clear();
 			SessionUtil.getInstance().clearSession();
@@ -1296,7 +1297,7 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 			}
 		}
 
-		Object[] subjectParams = { order.getName(), newStatus.equals(Status.EXECUTED) ? 1 : 2 };
+		Object[] subjectParams = {order.getId(), order.getName(), newStatus.equals(Status.EXECUTED) ? 1 : 2};
 		if (!Boolean.TRUE.equals(order.getDistributionProtocol().getDisableEmailNotifs())) {
 			//
 			// Send email notification

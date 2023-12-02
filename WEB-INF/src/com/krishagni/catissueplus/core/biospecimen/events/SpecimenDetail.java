@@ -5,16 +5,14 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import org.codehaus.jackson.annotate.JsonIgnore;
-import org.codehaus.jackson.annotate.JsonProperty;
-import org.codehaus.jackson.map.annotate.JsonSerialize;
-
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.krishagni.catissueplus.core.administrative.domain.PermissibleValue;
 import com.krishagni.catissueplus.core.administrative.events.StorageLocationSummary;
 import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
 import com.krishagni.catissueplus.core.biospecimen.domain.SpecimenRequirement;
@@ -382,7 +380,6 @@ public class SpecimenDetail extends SpecimenInfo {
 					result.setSpecimensPool(getSpecimens(specimen.getVisit(), sr.getSpecimenPoolReqs(), specimen.getSpecimensPool(), partial, excludePhi, excludeChildren));
 				}
 				result.setPoolSpecimen(sr.isSpecimenPoolReq());
-
 				result.setChildren(getSpecimens(specimen.getVisit(), sr.getChildSpecimenRequirements(), specimen.getChildCollection(), partial, excludePhi, excludeChildren));
 			}
 
@@ -401,7 +398,7 @@ public class SpecimenDetail extends SpecimenInfo {
 		}
 
 		result.setReqCode(sr != null ? sr.getCode() : null);
-		result.setBiohazards(new HashSet<>(specimen.getBiohazards()));
+		result.setBiohazards(PermissibleValue.toValueSet(specimen.getBiohazards()));
 		result.setComments(specimen.getComment());
 		result.setReserved(specimen.isReserved());
 
@@ -427,15 +424,23 @@ public class SpecimenDetail extends SpecimenInfo {
 	}
 	
 	public static SpecimenDetail from(SpecimenRequirement anticipated) {
+		return SpecimenDetail.from(anticipated, false);
+	}
+
+	public static SpecimenDetail from(SpecimenRequirement anticipated, boolean excludeChildren) {
 		SpecimenDetail result = new SpecimenDetail();		
 		SpecimenInfo.fromTo(anticipated, result);
 		
 		if (anticipated.isPooledSpecimenReq()) {
-			result.setSpecimensPool(fromAnticipated(anticipated.getSpecimenPoolReqs()));
+			result.setSpecimensPool(fromAnticipated(anticipated.getSpecimenPoolReqs(), excludeChildren));
 		}
 		
 		result.setPoolSpecimen(anticipated.isSpecimenPoolReq());
-		result.setChildren(fromAnticipated(anticipated.getChildSpecimenRequirements()));
+
+		if (!excludeChildren) {
+			result.setChildren(fromAnticipated(anticipated.getChildSpecimenRequirements(), excludeChildren));
+		}
+
 		result.setLabelFmt(anticipated.getLabelTmpl());
 		if (anticipated.getLabelAutoPrintModeToUse() != null) {
 			result.setLabelAutoPrintMode(anticipated.getLabelAutoPrintModeToUse().name());
@@ -465,23 +470,25 @@ public class SpecimenDetail extends SpecimenInfo {
 			.map(s -> SpecimenDetail.from(s, partial, excludePhi, excludeChildren))
 			.collect(Collectors.toList());
 
-		merge(visit, anticipated, result, null, getReqSpecimenMap(result));
+		merge(visit, anticipated, result, null, getReqSpecimenMap(result), excludeChildren);
 		SpecimenDetail.sort(result);
 		return result;
 	}
 
 	private static Map<Long, SpecimenDetail> getReqSpecimenMap(List<SpecimenDetail> specimens) {
-		Map<Long, SpecimenDetail> reqSpecimenMap = new HashMap<Long, SpecimenDetail>();
+		Map<Long, SpecimenDetail> reqSpecimenMap = new HashMap<>();
 						
-		List<SpecimenDetail> remaining = new ArrayList<SpecimenDetail>();
+		List<SpecimenDetail> remaining = new ArrayList<>();
 		remaining.addAll(specimens);
 		
 		while (!remaining.isEmpty()) {
 			SpecimenDetail specimen = remaining.remove(0);
 			Long srId = (specimen.getReqId() == null) ? -1 : specimen.getReqId();
 			reqSpecimenMap.put(srId, specimen);
-			
-			remaining.addAll(specimen.getChildren());
+
+			if (specimen.getChildren() != null) {
+				remaining.addAll(specimen.getChildren());
+			}
 		}
 		
 		return reqSpecimenMap;
@@ -492,14 +499,19 @@ public class SpecimenDetail extends SpecimenInfo {
 			Collection<SpecimenRequirement> anticipatedSpecimens, 
 			List<SpecimenDetail> result, 
 			SpecimenDetail currentParent,
-			Map<Long, SpecimenDetail> reqSpecimenMap) {
+			Map<Long, SpecimenDetail> reqSpecimenMap,
+			boolean excludeChildren) {
 		
 		for (SpecimenRequirement anticipated : anticipatedSpecimens) {
 			SpecimenDetail specimen = reqSpecimenMap.get(anticipated.getId());
+			if (specimen != null && excludeChildren) {
+				continue;
+			}
+
 			if (specimen != null) {
-				merge(visit, anticipated.getChildSpecimenRequirements(), result, specimen, reqSpecimenMap);
+				merge(visit, anticipated.getChildSpecimenRequirements(), result, specimen, reqSpecimenMap, excludeChildren);
 			} else if (!anticipated.isClosed()) {
-				specimen = SpecimenDetail.from(anticipated);
+				specimen = SpecimenDetail.from(anticipated, excludeChildren);
 				setVisitDetails(visit, specimen);
 
 				if (currentParent == null) {
@@ -519,14 +531,16 @@ public class SpecimenDetail extends SpecimenInfo {
 
 		specimen.setVisitId(visit.getId());
 		specimen.setVisitName(visit.getName());
+		specimen.setVisitStatus(visit.getStatus());
 		specimen.setSprNo(visit.getSurgicalPathologyNumber());
 		specimen.setVisitDate(visit.getVisitDate());
 		Utility.nullSafeStream(specimen.getChildren()).forEach(child -> setVisitDetails(visit, child));
 	}
 
-	private static List<SpecimenDetail> fromAnticipated(Collection<SpecimenRequirement> anticipatedSpecimens) {
+	private static List<SpecimenDetail> fromAnticipated(Collection<SpecimenRequirement> anticipatedSpecimens, boolean excludeChildren) {
 		return Utility.nullSafeStream(anticipatedSpecimens)
 			.filter(anticipated -> !anticipated.isClosed())
-			.map(SpecimenDetail::from).collect(Collectors.toList());
+			.map(s -> SpecimenDetail.from(s, excludeChildren))
+			.collect(Collectors.toList());
 	}
 }

@@ -1,6 +1,6 @@
 
 angular.module('openspecimen')
-  .directive('osFileUpload', function($timeout, $q, $http, Alerts) {
+  .directive('osFileUpload', function($timeout, $q, $http, $cookieStore, Alerts) {
     return {
       restrict: 'A',
       replace: true,
@@ -20,6 +20,7 @@ angular.module('openspecimen')
         this.submit = function() {
           this.q = $q.defer();
           if (this.data) {
+            this.submitting = true;
             this.data.submit();
           } else {
             Alerts.error('common.no_file_selected');
@@ -30,10 +31,13 @@ angular.module('openspecimen')
         };
 
         this.done = function(resp) {
+          this.submitting = false;
           this.q.resolve(resp.result);
         };
 
         this.fail = function(resp) {
+          this.submitting = false;
+
           var xhr = resp.xhr('responseText');
           var status = Math.floor(xhr.status / 100);
 
@@ -72,6 +76,10 @@ angular.module('openspecimen')
             beforeSend: function(xhr) {
               if ($http.defaults.headers.common['X-OS-API-TOKEN']) {
                 xhr.setRequestHeader('X-OS-API-TOKEN', $http.defaults.headers.common['X-OS-API-TOKEN']);
+              }
+
+              if (ui.os.global.impersonate) {
+                xhr.setRequestHeader('X-OS-IMPERSONATE-USER', $cookieStore.get('osImpersonateUser'));
               }
             },
             add: function (e, data) {

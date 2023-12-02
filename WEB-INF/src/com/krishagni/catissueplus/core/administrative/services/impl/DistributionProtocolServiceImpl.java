@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
@@ -60,6 +61,7 @@ import com.krishagni.catissueplus.core.common.errors.ActivityStatusErrorCode;
 import com.krishagni.catissueplus.core.common.errors.ErrorType;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.BulkDeleteEntityOp;
+import com.krishagni.catissueplus.core.common.events.ConfigSettingDetail;
 import com.krishagni.catissueplus.core.common.events.DependentEntityDetail;
 import com.krishagni.catissueplus.core.common.events.EntityQueryCriteria;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
@@ -74,16 +76,22 @@ import com.krishagni.catissueplus.core.common.util.MessageUtil;
 import com.krishagni.catissueplus.core.common.util.NotifUtil;
 import com.krishagni.catissueplus.core.common.util.Status;
 import com.krishagni.catissueplus.core.common.util.Utility;
+import com.krishagni.catissueplus.core.de.domain.DeObject;
 import com.krishagni.catissueplus.core.de.domain.Form;
 import com.krishagni.catissueplus.core.de.events.FormContextDetail;
 import com.krishagni.catissueplus.core.de.events.RemoveFormContextOp;
 import com.krishagni.catissueplus.core.de.services.FormService;
+import com.krishagni.catissueplus.core.exporter.domain.ExportJob;
+import com.krishagni.catissueplus.core.exporter.services.ExportService;
 import com.krishagni.catissueplus.core.query.Column;
 import com.krishagni.catissueplus.core.query.ListConfig;
 import com.krishagni.catissueplus.core.query.ListService;
 import com.krishagni.catissueplus.core.query.ListUtil;
 import com.krishagni.rbac.common.errors.RbacErrorCode;
 
+import edu.common.dynamicextensions.domain.nui.Container;
+import edu.common.dynamicextensions.napi.FormEventsListener;
+import edu.common.dynamicextensions.napi.FormEventsNotifier;
 import krishagni.catissueplus.beans.FormContextBean;
 
 public class DistributionProtocolServiceImpl implements DistributionProtocolService, ObjectAccessor, InitializingBean {
@@ -111,6 +119,8 @@ public class DistributionProtocolServiceImpl implements DistributionProtocolServ
 	private ConfigurationService cfgSvc;
 
 	private ListService listSvc;
+
+	private ExportService exportSvc;
 
 	public void setDaoFactory(DaoFactory daoFactory) {
 		this.daoFactory = daoFactory;
@@ -146,6 +156,10 @@ public class DistributionProtocolServiceImpl implements DistributionProtocolServ
 
 	public void setListSvc(ListService listSvc) {
 		this.listSvc = listSvc;
+	}
+
+	public void setExportSvc(ExportService exportSvc) {
+		this.exportSvc = exportSvc;
 	}
 
 	@Override
@@ -309,8 +323,7 @@ public class DistributionProtocolServiceImpl implements DistributionProtocolServ
 	
 	@Override
 	@PlusTransactional
-	public ResponseEvent<List<DistributionOrderStat>> getOrderStats(
-			RequestEvent<DistributionOrderStatListCriteria> req) {
+	public ResponseEvent<List<DistributionOrderStat>> getOrderStats(RequestEvent<DistributionOrderStatListCriteria> req) {
 		try {
 			DistributionOrderStatListCriteria crit = req.getPayload();
 			List<DistributionOrderStat> stats = getOrderStats(crit);
@@ -587,6 +600,36 @@ public class DistributionProtocolServiceImpl implements DistributionProtocolServ
 	public void afterPropertiesSet()
 	throws Exception {
 		listSvc.registerListConfigurator(RESV_SPMNS_LIST_NAME, this::getReservedSpecimensConfig);
+		exportSvc.registerObjectsGenerator("distributionProtocol", this::getDpsGenerator);
+
+		FormEventsNotifier.getInstance().addListener(
+			new FormEventsListener() {
+				@Override
+				public void onCreate(Container container) { }
+
+				@Override
+				public void preUpdate(Container container) { }
+
+				@Override
+				public void onUpdate(Container container) { }
+
+				@Override
+				public void onDelete(Container container) {
+					daoFactory.getDistributionProtocolDao().unlinkCustomForm(container.getId());
+
+					Integer currentForm = cfgSvc.getIntSetting("administrative", SYS_CUSTOM_FIELDS_FORM, -1);
+					if (!currentForm.equals(container.getId().intValue())) {
+						return;
+					}
+
+					ConfigSettingDetail cfg = new ConfigSettingDetail();
+					cfg.setModule("administrative");
+					cfg.setName(SYS_CUSTOM_FIELDS_FORM);
+					cfg.setValue(null);
+					cfgSvc.saveSetting(new RequestEvent<>(cfg)).throwErrorIfUnsuccessful();
+				}
+			}
+		);
 	}
 
 	private DpListCriteria addDpListCriteria(DpListCriteria crit) {
@@ -629,15 +672,15 @@ public class DistributionProtocolServiceImpl implements DistributionProtocolServ
 	private void deleteDistributionProtocol(DistributionProtocol dp) {
 		DistributionProtocol deletedDp = new DistributionProtocol();
 		BeanUtils.copyProperties(dp, deletedDp);
-
-		removeContainerRestrictions(dp);
 		dp.delete();
 		notifyOnDpDelete(deletedDp);
 	}
 
 	private void ensureSpecimenPropertyPresent(DpRequirement dpr, OpenSpecimenException ose) {
-		if (StringUtils.isBlank(dpr.getSpecimenType()) && StringUtils.isBlank(dpr.getAnatomicSite()) &&
-			CollectionUtils.isEmpty(dpr.getPathologyStatuses()) && StringUtils.isBlank(dpr.getClinicalDiagnosis())) {
+		if (dpr.getSpecimenType() == null &&
+			dpr.getAnatomicSite() == null &&
+			CollectionUtils.isEmpty(dpr.getPathologyStatuses()) &&
+			dpr.getClinicalDiagnosis() == null) {
 			ose.addError(DpRequirementErrorCode.SPEC_PROPERTY_REQUIRED);
 		}
 	}
@@ -648,8 +691,7 @@ public class DistributionProtocolServiceImpl implements DistributionProtocolServ
 		}
 		
 		DistributionProtocol dp = newDpr.getDistributionProtocol();
-		if (dp.hasRequirement(newDpr.getSpecimenType(), newDpr.getAnatomicSite(), newDpr.getPathologyStatuses(),
-			newDpr.getClinicalDiagnosis())) {
+		if (dp.hasRequirement(newDpr)) {
 			ose.addError(DpRequirementErrorCode.ALREADY_EXISTS);
 		}
 	}
@@ -684,6 +726,12 @@ public class DistributionProtocolServiceImpl implements DistributionProtocolServ
 		try {
 			DistributionProtocolDetail reqDetail = req.getPayload();
 			DistributionProtocol existing = getDistributionProtocol(reqDetail.getId(), reqDetail.getShortTitle(), reqDetail.getTitle());
+			if (Status.isDisabledStatus(reqDetail.getActivityStatus())) {
+				AccessCtrlMgr.getInstance().ensureDeleteDpRights(existing);
+				deleteDistributionProtocol(existing);
+				return ResponseEvent.response(DistributionProtocolDetail.from(existing));
+			}
+
 			AccessCtrlMgr.getInstance().ensureCreateUpdateDpRights(existing);
 
 			reqDetail.setId(existing.getId());
@@ -1163,6 +1211,54 @@ public class DistributionProtocolServiceImpl implements DistributionProtocolServ
 
 	private DpRequirementDao getDprDao() {
 		return daoFactory.getDistributionProtocolRequirementDao();
+	}
+
+	private Function<ExportJob, List<? extends Object>> getDpsGenerator() {
+		return new Function<ExportJob, List<? extends Object>>() {
+			private boolean endOfDps;
+
+			private boolean paramsInited;
+
+			private int startAt;
+
+			private DpListCriteria crit;
+
+			@Override
+			public List<? extends Object> apply(ExportJob exportJob) {
+				initParams();
+
+				if (endOfDps) {
+					return Collections.emptyList();
+				}
+
+				if (CollectionUtils.isNotEmpty(exportJob.getRecordIds())) {
+					crit.ids(exportJob.getRecordIds());
+					crit.maxResults(exportJob.getRecordIds().size() + 1);
+					endOfDps = true;
+				}
+
+				List<DistributionProtocol> dps = daoFactory.getDistributionProtocolDao().getDistributionProtocols(crit.startAt(startAt));
+				DeObject.createExtensions(true, DistributionProtocol.EXTN, -1L, dps);
+				startAt += dps.size();
+				endOfDps = dps.size() < crit.maxResults();
+				return DistributionProtocolDetail.from(dps);
+			}
+
+			private void initParams() {
+				if (paramsInited) {
+					return;
+				}
+
+				Set<SiteCpPair> sites = AccessCtrlMgr.getInstance().getReadAccessDistributionProtocolSites();
+				if ((sites != null && sites.isEmpty()) || !AccessCtrlMgr.getInstance().hasDpEximRights()) {
+					endOfDps = true;
+					return;
+				}
+
+				crit = new DpListCriteria().sites(sites);
+				paramsInited = true;
+			}
+		};
 	}
 
 	private static final String ROLE_UPDATED_EMAIL_TMPL = "users_dp_role_updated";

@@ -28,6 +28,8 @@ public class SavedQuery {
 	private Long lastRunCount;
 	
 	private Long cpId;
+
+	private Long cpGroupId;
 	
 	private String drivingForm;
 
@@ -52,6 +54,8 @@ public class SavedQuery {
 	private String wideRowMode = "DEEP";
 
 	private boolean outputColumnExprs;
+
+	private boolean caseSensitive = true;
 
 	private Date deletedOn;
 
@@ -121,6 +125,18 @@ public class SavedQuery {
 		}
 
 		this.cpId = cpId;
+	}
+
+	public Long getCpGroupId() {
+		return cpGroupId;
+	}
+
+	public void setCpGroupId(Long cpGroupId) {
+		if (cpGroupId != null && cpGroupId == -1L) {
+			cpGroupId = null;
+		}
+
+		this.cpGroupId = cpGroupId;
 	}
 
 	public String getDrivingForm() {
@@ -226,6 +242,14 @@ public class SavedQuery {
 		this.outputColumnExprs = outputColumnExprs;
 	}
 
+	public boolean isCaseSensitive() {
+		return caseSensitive;
+	}
+
+	public void setCaseSensitive(boolean caseSensitive) {
+		this.caseSensitive = caseSensitive;
+	}
+
 	public Date getDeletedOn() {
 		return deletedOn;
 	}
@@ -246,6 +270,7 @@ public class SavedQuery {
 		}
 		
 		query.cpId = cpId;
+		query.cpGroupId = cpGroupId;
 		query.selectList = selectList;
 		query.filters = filters;
 		query.queryExpression = queryExpression;
@@ -255,6 +280,7 @@ public class SavedQuery {
 		query.reporting = reporting;
 		query.wideRowMode = wideRowMode;
 		query.outputColumnExprs = outputColumnExprs;
+		query.caseSensitive = caseSensitive;
 		
 		try {
 			return getWriteMapper().writeValueAsString(query);
@@ -278,6 +304,7 @@ public class SavedQuery {
 			this.title = query.title;
 		}
 		this.cpId = (query.cpId != null && query.cpId == -1L) ? null : query.cpId;
+		this.cpGroupId = (query.cpGroupId != null && query.cpGroupId == -1L) ? null : query.cpGroupId;
 		this.selectList = query.selectList;
 		this.filters = query.filters;
 		this.queryExpression = query.queryExpression;
@@ -286,23 +313,25 @@ public class SavedQuery {
 		this.reporting = query.reporting;
 		this.wideRowMode = query.wideRowMode;
 		this.outputColumnExprs = query.outputColumnExprs;
+		this.caseSensitive = query.caseSensitive;
 	}
 	
 	public String getAql() {
-		return AqlBuilder.getInstance().getQuery(selectList, filters, queryExpression, havingClause);
+		return AqlBuilder.getInstance().getQuery(selectList, filters, queryExpression, havingClause, reporting);
 	}
 	
 	public String getAql(Filter[] conjunctionFilters) {
-		return AqlBuilder.getInstance().getQuery(selectList, filters, conjunctionFilters, queryExpression, havingClause);
+		return AqlBuilder.getInstance().getQuery(selectList, filters, conjunctionFilters, queryExpression, havingClause, reporting);
 	}
 
 	public String getAql(String conjunction) {
-		return AqlBuilder.getInstance().getQuery(selectList, filters, conjunction, queryExpression, havingClause);
+		return AqlBuilder.getInstance().getQuery(selectList, filters, conjunction, queryExpression, havingClause, reporting);
 	}
 	
 	public void update(SavedQuery query) {
 		setTitle(query.getTitle());
 		setCpId(query.getCpId());
+		setCpGroupId(query.getCpGroupId());
 		setDrivingForm(query.getDrivingForm());
 		setLastUpdatedBy(query.getLastUpdatedBy());
 		setLastUpdated(query.getLastUpdated());
@@ -314,6 +343,7 @@ public class SavedQuery {
 		setReporting(query.getReporting());
 		setWideRowMode(query.getWideRowMode());
 		setOutputColumnExprs(query.isOutputColumnExprs());
+		setCaseSensitive(query.isCaseSensitive());
 	}
 	
 	@Override

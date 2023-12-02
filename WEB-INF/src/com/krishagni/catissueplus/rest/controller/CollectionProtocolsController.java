@@ -8,6 +8,7 @@ import java.io.InputStream;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -18,6 +19,7 @@ import javax.servlet.http.HttpServletResponse;
 
 import org.apache.commons.io.IOUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -46,10 +48,12 @@ import com.krishagni.catissueplus.core.biospecimen.events.CopyCpOpDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.CpQueryCriteria;
 import com.krishagni.catissueplus.core.biospecimen.events.CpReportSettingsDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.CpWorkflowCfgDetail;
-import com.krishagni.catissueplus.core.biospecimen.events.CpWorkflowCfgDetail.WorkflowDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.FileDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.MergeCpDetail;
+import com.krishagni.catissueplus.core.biospecimen.events.PdeTokenDetail;
+import com.krishagni.catissueplus.core.biospecimen.events.WorkflowDetail;
 import com.krishagni.catissueplus.core.biospecimen.repository.CpListCriteria;
+import com.krishagni.catissueplus.core.biospecimen.repository.PdeNotifListCriteria;
 import com.krishagni.catissueplus.core.biospecimen.services.CollectionProtocolService;
 import com.krishagni.catissueplus.core.common.errors.CommonErrorCode;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
@@ -105,6 +109,9 @@ public class CollectionProtocolsController {
 			
 			@RequestParam(value = "repositoryName", required = false)
 			String repositoryName,
+
+			@RequestParam(value = "instituteId", required = false)
+			Long instituteId,
 			
 			@RequestParam(value = "startAt", required = false, defaultValue = "0") 
 			int startAt,
@@ -121,6 +128,7 @@ public class CollectionProtocolsController {
 			.irbId(irbId)
 			.piId(piId)
 			.repositoryName(repositoryName)
+			.instituteId(instituteId)
 			.includePi(detailedList)
 			.includeStat(detailedList)
 			.startAt(startAt)
@@ -148,14 +156,18 @@ public class CollectionProtocolsController {
 			Long piId,
 			
 			@RequestParam(value = "repositoryName", required = false)
-			String repositoryName) {
+			String repositoryName,
+
+			@RequestParam(value = "instituteId", required = false)
+			Long instituteId) {
 		
 		CpListCriteria crit = new CpListCriteria()
 			.query(searchStr)
 			.title(title)
 			.irbId(irbId)
 			.piId(piId)
-			.repositoryName(repositoryName);
+			.repositoryName(repositoryName)
+			.instituteId(instituteId);
 		
 		ResponseEvent<Long> resp = cpSvc.getProtocolsCount(request(crit));
 		resp.throwErrorIfUnsuccessful();
@@ -446,6 +458,74 @@ public class CollectionProtocolsController {
 		ResponseEvent<Boolean> resp = cpSvc.isSpecimenBarcodingEnabled();
 		resp.throwErrorIfUnsuccessful();
 		return resp.getPayload();
+	}
+
+	@RequestMapping(method = RequestMethod.GET, value = "/{id}/pde-links")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public List<PdeTokenDetail> getPdeLinks(
+		@PathVariable("id")
+		Long cpId,
+
+		@RequestParam(value = "ppid", required = false)
+		String ppid,
+
+		@RequestParam(value = "status", required = false)
+		String status,
+
+		@RequestParam(value = "minCreationDate", required = false)
+		@DateTimeFormat(pattern = "yyyy-MM-dd")
+		Date minCreationDate,
+
+		@RequestParam(value = "maxCreationDate", required = false)
+		@DateTimeFormat(pattern = "yyyy-MM-dd")
+		Date maxCreationDate,
+
+		@RequestParam(value = "startAt", required = false, defaultValue = "0")
+		int startAt,
+
+		@RequestParam(value = "maxResults", required = false, defaultValue = "100")
+		int maxResults) {
+
+		PdeNotifListCriteria crit = new PdeNotifListCriteria()
+			.cpId(cpId)
+			.ppid(ppid)
+			.status(status)
+			.minCreationTime(minCreationDate)
+			.maxCreationTime(maxCreationDate)
+			.startAt(startAt)
+			.maxResults(maxResults);
+		return ResponseEvent.unwrap(cpSvc.getPdeLinks(RequestEvent.wrap(crit)));
+	}
+
+	@RequestMapping(method = RequestMethod.GET, value = "/{id}/pde-links-count")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public Map<String, Long> getPdeLinksCount(
+		@PathVariable("id")
+		Long cpId,
+
+		@RequestParam(value = "ppid", required = false)
+		String ppid,
+
+		@RequestParam(value = "status", required = false)
+		String status,
+
+		@RequestParam(value = "minCreationDate", required = false)
+		@DateTimeFormat(pattern = "yyyy-MM-dd")
+		Date minCreationDate,
+
+		@RequestParam(value = "maxCreationDate", required = false)
+		@DateTimeFormat(pattern = "yyyy-MM-dd")
+		Date maxCreationDate) {
+
+		PdeNotifListCriteria crit = new PdeNotifListCriteria()
+			.cpId(cpId)
+			.ppid(ppid)
+			.status(status)
+			.minCreationTime(minCreationDate)
+			.maxCreationTime(maxCreationDate);
+		return Collections.singletonMap("count", response(cpSvc.getPdeLinksCount(request(crit))));
 	}
 
 	@RequestMapping(method = RequestMethod.GET, value="/{id}/workflows")
@@ -771,6 +851,20 @@ public class CollectionProtocolsController {
 		ResponseEvent<Integer> resp = cpSvc.getListSize(request(listReq));
 		resp.throwErrorIfUnsuccessful();
 		return Collections.singletonMap("size", resp.getPayload());
+	}
+
+	@RequestMapping(method = RequestMethod.POST, value = "/{id}/labels")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public Map<String, Boolean> addLabel(@PathVariable("id") Long cpId) {
+		return Collections.singletonMap("status", cpSvc.toggleStarredCp(cpId, true));
+	}
+
+	@RequestMapping(method = RequestMethod.DELETE, value = "/{id}/labels")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public Map<String, Boolean> removeLabel(@PathVariable("id") Long cpId) {
+		return Collections.singletonMap("status", cpSvc.toggleStarredCp(cpId, false));
 	}
 
 	private ConsentTierDetail performConsentTierOp(OP op, Long cpId, ConsentTierDetail consentTier) {

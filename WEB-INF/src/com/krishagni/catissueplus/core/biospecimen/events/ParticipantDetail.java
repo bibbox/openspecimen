@@ -15,6 +15,7 @@ import org.apache.commons.collections.CollectionUtils;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.krishagni.catissueplus.core.administrative.domain.PermissibleValue;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolRegistration;
 import com.krishagni.catissueplus.core.biospecimen.domain.Participant;
 import com.krishagni.catissueplus.core.common.AttributeModifiedSupport;
@@ -35,6 +36,8 @@ public class ParticipantDetail extends AttributeModifiedSupport {
 	private String lastName;
 	
 	private String middleName;
+
+	private String emailAddress;
 
 	private Date birthDate;
 
@@ -124,6 +127,14 @@ public class ParticipantDetail extends AttributeModifiedSupport {
 
 	public void setMiddleName(String middleName) {
 		this.middleName = middleName;
+	}
+
+	public String getEmailAddress() {
+		return emailAddress;
+	}
+
+	public void setEmailAddress(String emailAddress) {
+		this.emailAddress = emailAddress;
 	}
 
 	public Date getBirthDate() {
@@ -321,17 +332,18 @@ public class ParticipantDetail extends AttributeModifiedSupport {
 		result.setFirstName(excludePhi ? "###" : participant.getFirstName());
 		result.setLastName(excludePhi ? "###" : participant.getLastName());
 		result.setMiddleName(excludePhi ? "###" : participant.getMiddleName());
+		result.setEmailAddress(excludePhi ? "###" : participant.getEmailAddress());
 		result.setActivityStatus(participant.getActivityStatus());
 		result.setBirthDate(excludePhi ? null : participant.getBirthDate());
 		result.setDeathDate(excludePhi ? null : participant.getDeathDate());
-		result.setEthnicities(new HashSet<>(participant.getEthnicities()));
-		result.setGender(participant.getGender());
+		result.setEthnicities(PermissibleValue.toValueSet(participant.getEthnicities()));
+		result.setGender(PermissibleValue.getValue(participant.getGender()));
 		result.setEmpi(excludePhi ? "###" : participant.getEmpi());
 		result.setPmis(PmiDetail.from(participant.getPmisOrderedById(), excludePhi));
-		result.setRaces(new HashSet<>(participant.getRaces()));
+		result.setRaces(PermissibleValue.toValueSet(participant.getRaces()));
 		result.setSexGenotype(participant.getSexGenotype());
 		result.setUid(excludePhi ? "###" : participant.getUid());
-		result.setVitalStatus(participant.getVitalStatus());
+		result.setVitalStatus(PermissibleValue.getValue(participant.getVitalStatus()));
 		result.setPhiAccess(!excludePhi);
 		result.setRegisteredCps(getCprSummaries(cprs));
 		result.setExtensionDetail(ExtensionDetail.from(participant.getExtension(), excludePhi));

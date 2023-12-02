@@ -1,32 +1,51 @@
 package com.krishagni.catissueplus.core.biospecimen.services.impl;
 
 import java.util.Calendar;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.BeanUtils;
 
+import com.krishagni.catissueplus.core.administrative.domain.PermissibleValue;
+import com.krishagni.catissueplus.core.biospecimen.domain.Participant;
 import com.krishagni.catissueplus.core.biospecimen.domain.StagedParticipant;
 import com.krishagni.catissueplus.core.biospecimen.domain.StagedParticipantMedicalIdentifier;
+import com.krishagni.catissueplus.core.biospecimen.domain.factory.ParticipantErrorCode;
+import com.krishagni.catissueplus.core.biospecimen.events.ParticipantDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.PmiDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.StagedParticipantDetail;
 import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
+import com.krishagni.catissueplus.core.biospecimen.services.ParticipantService;
 import com.krishagni.catissueplus.core.biospecimen.services.StagedParticipantService;
 import com.krishagni.catissueplus.core.common.PlusTransactional;
+import com.krishagni.catissueplus.core.common.PvAttributes;
+import com.krishagni.catissueplus.core.common.errors.ErrorCode;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
 import com.krishagni.catissueplus.core.common.events.ResponseEvent;
+import com.krishagni.catissueplus.core.common.util.Utility;
 
 public class StagedParticipantServiceImpl implements StagedParticipantService {
+	private static final Log logger = LogFactory.getLog(StagedParticipantServiceImpl.class);
 
 	private DaoFactory daoFactory;
 
+	private ParticipantService participantSvc;
+
 	public void setDaoFactory(DaoFactory daoFactory) {
 		this.daoFactory = daoFactory;
+	}
+
+	public void setparticipantSvc(ParticipantService participantSvc) {
+		this.participantSvc = participantSvc;
 	}
 
 	@Override
@@ -34,12 +53,78 @@ public class StagedParticipantServiceImpl implements StagedParticipantService {
 	public ResponseEvent<StagedParticipantDetail> saveOrUpdateParticipant(RequestEvent<StagedParticipantDetail> req) {
 		try {
 			StagedParticipantDetail detail = req.getPayload();
+			updateParticipantIfExists(detail);
 			StagedParticipant savedParticipant = saveOrUpdateParticipant(getMatchingParticipant(detail), detail);
 			return ResponseEvent.response(StagedParticipantDetail.from(savedParticipant));
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
 		} catch (Exception e) {
 			return ResponseEvent.serverError(e);
+		}
+	}
+
+	private void updateParticipantIfExists(StagedParticipantDetail input) {
+		Participant existing = daoFactory.getParticipantDao().getByEmpi(input.getEmpi());
+		if (existing == null) {
+			return;
+		}
+
+		ParticipantDetail detail = ParticipantDetail.from(existing, false);
+		if (input.isAttrModified("newEmpi")) {
+			detail.setEmpi(input.getNewEmpi());
+		}
+
+		if (input.isAttrModified("uid")) {
+			detail.setUid(input.getUid());
+		}
+
+		if (input.isAttrModified("ethnicities")) {
+			detail.setEthnicities(input.getEthnicities());
+		}
+
+		if (input.isAttrModified("gender")) {
+			detail.setGender(input.getGender());
+		}
+
+		if (input.isAttrModified("lastName")) {
+			detail.setLastName(input.getLastName());
+		}
+
+		if (input.isAttrModified("firstName")) {
+			detail.setFirstName(input.getFirstName());
+		}
+
+		if (input.isAttrModified("middleName")) {
+			detail.setMiddleName(input.getMiddleName());
+		}
+
+		if (input.isAttrModified("birthDate")) {
+			detail.setBirthDate(input.getBirthDate());
+		}
+
+		if (input.isAttrModified("deathDate")) {
+			detail.setDeathDate(input.getDeathDate());
+		}
+
+		if (input.isAttrModified("vitalStatus")) {
+			detail.setVitalStatus(input.getVitalStatus());
+		}
+
+		if (input.isAttrModified("races")) {
+			detail.setRaces(input.getRaces());
+		}
+
+		if (input.isAttrModified("pmis")) {
+			detail.setPmis(input.getPmis());
+		}
+
+		if (input.isAttrModified("source")) {
+			detail.setSource(input.getSource());
+		}
+
+		ResponseEvent<ParticipantDetail> resp = participantSvc.patchParticipant(new RequestEvent<>(detail));
+		if (resp.isSuccessful()) {
+			logger.info("Matching participant (eMPI: '" + detail.getEmpi() + "') found and updated!");
 		}
 	}
 
@@ -74,10 +159,13 @@ public class StagedParticipantServiceImpl implements StagedParticipantService {
 
 	private void setParticipantAtrrs(StagedParticipantDetail detail, StagedParticipant participant) {
 		participant.setFirstName(detail.getFirstName());
+		participant.setMiddleName(detail.getMiddleName());
 		participant.setLastName(detail.getLastName());
+		participant.setEmailAddress(detail.getEmailAddress());
 		participant.setBirthDate(detail.getBirthDate());
-		participant.setGender(detail.getGender());
-		participant.setVitalStatus(detail.getVitalStatus());
+		participant.setDeathDate(detail.getDeathDate());
+		participant.setGender(getPv(PvAttributes.GENDER, detail.getGender(), ParticipantErrorCode.INVALID_GENDER));
+		participant.setVitalStatus(getPv(PvAttributes.VITAL_STATUS, detail.getVitalStatus(), ParticipantErrorCode.INVALID_VITAL_STATUS));
 		participant.setUpdatedTime(Calendar.getInstance().getTime());
 
 		if (StringUtils.isNotBlank(detail.getSource())) {
@@ -95,12 +183,12 @@ public class StagedParticipantServiceImpl implements StagedParticipantService {
 
 		Set<String> races = detail.getRaces();
 		if (CollectionUtils.isNotEmpty(races)) {
-			participant.setRaces(races);
+			participant.setRaces(getPvs(PvAttributes.RACE, races, ParticipantErrorCode.INVALID_RACE));
 		}
 
 		Set<String> ethnicities = detail.getEthnicities();
 		if (CollectionUtils.isNotEmpty(ethnicities)) {
-			participant.setEthnicities(ethnicities);
+			participant.setEthnicities(getPvs(PvAttributes.ETHNICITY, ethnicities, ParticipantErrorCode.INVALID_ETHNICITY));
 		}
 	}
 
@@ -117,5 +205,31 @@ public class StagedParticipantServiceImpl implements StagedParticipantService {
 				return pmi;
 			}
 		).collect(Collectors.toSet());
+	}
+
+	public PermissibleValue getPv(String attr, String value, ErrorCode invErrorCode) {
+		if (StringUtils.isBlank(value)) {
+			return null;
+		}
+
+		PermissibleValue pv = daoFactory.getPermissibleValueDao().getPv(attr, value);
+		if (pv == null) {
+			throw OpenSpecimenException.userError(invErrorCode);
+		}
+
+		return pv;
+	}
+
+	public Set<PermissibleValue> getPvs(String attr, Collection<String> values, ErrorCode invErrorCode) {
+		if (CollectionUtils.isEmpty(values)) {
+			return new HashSet<>();
+		}
+
+		List<PermissibleValue> pvs = daoFactory.getPermissibleValueDao().getPvs(attr, values);
+		if (pvs.size() != values.size()) {
+			throw OpenSpecimenException.userError(invErrorCode);
+		}
+
+		return new HashSet<>(pvs);
 	}
 }

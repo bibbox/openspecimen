@@ -33,6 +33,7 @@ public class SessionUtil {
 			// log and move forward
 			//
 			logger.info("Error flushing the database session", e);
+			throw e;
 		} finally {
 			try {
 				sessionFactory.getCurrentSession().clear();
@@ -43,5 +44,9 @@ public class SessionUtil {
 				logger.error("Error cleaning the database session", e);
 			}
 		}
+	}
+
+	public void flush() {
+		sessionFactory.getCurrentSession().flush();
 	}
 }

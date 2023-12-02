@@ -9,6 +9,7 @@ import java.util.Map;
 import com.krishagni.catissueplus.core.administrative.events.SiteSummary;
 import com.krishagni.catissueplus.core.biospecimen.domain.AliquotSpecimensRequirement;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
+import com.krishagni.catissueplus.core.biospecimen.domain.CpWorkflowConfig;
 import com.krishagni.catissueplus.core.biospecimen.domain.DerivedSpecimenRequirement;
 import com.krishagni.catissueplus.core.biospecimen.events.CollectionProtocolDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.CollectionProtocolEventDetail;
@@ -23,11 +24,12 @@ import com.krishagni.catissueplus.core.biospecimen.events.CpWorkflowCfgDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.CprSummary;
 import com.krishagni.catissueplus.core.biospecimen.events.FileDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.MergeCpDetail;
+import com.krishagni.catissueplus.core.biospecimen.events.PdeTokenDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.SpecimenPoolRequirements;
 import com.krishagni.catissueplus.core.biospecimen.events.SpecimenRequirementDetail;
 import com.krishagni.catissueplus.core.biospecimen.repository.CpListCriteria;
 import com.krishagni.catissueplus.core.biospecimen.repository.CprListCriteria;
-import com.krishagni.catissueplus.core.common.Pair;
+import com.krishagni.catissueplus.core.biospecimen.repository.PdeNotifListCriteria;
 import com.krishagni.catissueplus.core.common.Tuple;
 import com.krishagni.catissueplus.core.common.events.BulkDeleteEntityOp;
 import com.krishagni.catissueplus.core.common.events.BulkDeleteEntityResp;
@@ -121,6 +123,12 @@ public interface CollectionProtocolService {
 	public ResponseEvent<Integer> getSrSpecimensCount(RequestEvent<Long> req);
 
 	//
+	// PDE email links
+	ResponseEvent<List<PdeTokenDetail>> getPdeLinks(RequestEvent<PdeNotifListCriteria> req);
+
+	ResponseEvent<Long> getPdeLinksCount(RequestEvent<PdeNotifListCriteria> req);
+
+	//
 	// CP reports API
 	//
 	public ResponseEvent<CpReportSettingsDetail> getReportSettings(RequestEvent<CpQueryCriteria> req);
@@ -139,6 +147,8 @@ public interface CollectionProtocolService {
 	public ResponseEvent<CpWorkflowCfgDetail> getWorkflows(RequestEvent<Long> req);
 
 	public ResponseEvent<CpWorkflowCfgDetail> saveWorkflows(RequestEvent<CpWorkflowCfgDetail> req);
+
+	public CpWorkflowConfig saveWorkflows(CollectionProtocol cp, CpWorkflowCfgDetail input);
 
 	//
 	// For UI work
@@ -179,6 +189,11 @@ public interface CollectionProtocolService {
 	public ResponseEvent<Integer> getListSize(RequestEvent<Map<String, Object>> req);
 
 	public ResponseEvent<Collection<Object>> getListExprValues(RequestEvent<Map<String, Object>> req);
+
+	//
+	// Labelling
+	//
+	boolean toggleStarredCp(Long cpId, boolean starred);
 
 	interface DataSource {
 		public Object getMetric(CollectionProtocol cp, Map<String, Object> input);

@@ -8,9 +8,9 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 import org.apache.commons.collections.CollectionUtils;
-import org.codehaus.jackson.annotate.JsonIgnore;
-import org.codehaus.jackson.annotate.JsonProperty;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.krishagni.catissueplus.core.de.domain.DeObject;
 import com.krishagni.catissueplus.core.de.domain.DeObject.Attr;
 
@@ -26,6 +26,8 @@ public class ExtensionDetail implements Serializable {
 	private List<AttrDetail> attrs = new ArrayList<>();
 
 	private Map<String, Object> attrsMap;
+
+	private boolean useUdn;
 	
 	public Long getId() {
 		return id;
@@ -90,7 +92,15 @@ public class ExtensionDetail implements Serializable {
 
 		return attrsMap;
 	}
-	
+
+	public boolean isUseUdn() {
+		return useUdn;
+	}
+
+	public void setUseUdn(boolean useUdn) {
+		this.useUdn = useUdn;
+	}
+
 	public static ExtensionDetail from(DeObject extension) {
 		return from(extension, true);
 	}

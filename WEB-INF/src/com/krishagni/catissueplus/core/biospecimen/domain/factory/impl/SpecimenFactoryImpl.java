@@ -2,18 +2,19 @@
 package com.krishagni.catissueplus.core.biospecimen.domain.factory.impl;
 
 import static com.krishagni.catissueplus.core.common.PvAttributes.*;
-import static com.krishagni.catissueplus.core.common.service.PvValidator.areValid;
-import static com.krishagni.catissueplus.core.common.service.PvValidator.isValid;
 
 import java.math.BigDecimal;
 import java.util.Calendar;
+import java.util.Collection;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 import org.apache.commons.collections.CollectionUtils;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 
 import com.krishagni.catissueplus.core.administrative.domain.DistributionProtocol;
+import com.krishagni.catissueplus.core.administrative.domain.PermissibleValue;
 import com.krishagni.catissueplus.core.administrative.domain.StorageContainer;
 import com.krishagni.catissueplus.core.administrative.domain.StorageContainerPosition;
 import com.krishagni.catissueplus.core.administrative.domain.User;
@@ -55,6 +56,7 @@ import com.krishagni.catissueplus.core.common.events.NameValuePair;
 import com.krishagni.catissueplus.core.common.events.UserSummary;
 import com.krishagni.catissueplus.core.common.util.ConfigUtil;
 import com.krishagni.catissueplus.core.common.util.NumUtil;
+import com.krishagni.catissueplus.core.common.util.SessionUtil;
 import com.krishagni.catissueplus.core.common.util.Status;
 import com.krishagni.catissueplus.core.de.domain.DeObject;
 import com.krishagni.catissueplus.core.importer.services.impl.ImporterContextHolder;
@@ -227,7 +229,9 @@ public class SpecimenFactoryImpl implements SpecimenFactory {
 	}
 	
 	private void setLabel(SpecimenDetail detail, Specimen specimen, OpenSpecimenException ose) {
-		specimen.setLabel(detail.getLabel());
+		if (StringUtils.isNotBlank(detail.getLabel())) {
+			specimen.setLabel(detail.getLabel());
+		}
 	}
 	
 	private void setLabel(SpecimenDetail detail, Specimen existing, Specimen specimen, OpenSpecimenException ose) {
@@ -472,23 +476,24 @@ public class SpecimenFactoryImpl implements SpecimenFactory {
 		boolean fromParent = shouldUseParentValue(specimen, anatomicSite, sr != null ? sr.getAnatomicSite() : null);
 		if (fromParent) {
 			if (specimen.getParentSpecimen() != null) {
-				String parentValue = specimen.getParentSpecimen().getTissueSite();
-				specimen.setTissueSite(parentValue);
+				specimen.setTissueSite(specimen.getParentSpecimen().getTissueSite());
 
+				String parentValue = PermissibleValue.getValue(specimen.getParentSpecimen().getTissueSite());
 				if (!isEmptyOrEquals(anatomicSite, parentValue)) {
 					ose.addError(SpecimenErrorCode.ANATOMIC_SITE_NOT_SAME_AS_PARENT, anatomicSite, parentValue);
 				}
 			}
 
 		} else if (isNotSpecified(anatomicSite)) {
-			specimen.setTissueSite(sr != null ? sr.getAnatomicSite() : Specimen.NOT_SPECIFIED);
+			specimen.setTissueSite(sr != null ? sr.getAnatomicSite() : getNotSpecified(SPECIMEN_ANATOMIC_SITE));
 		} else {
-			if (!isValid(SPECIMEN_ANATOMIC_SITE, anatomicSite, true)) {
+			PermissibleValue site = getPv(SPECIMEN_ANATOMIC_SITE, anatomicSite, true);
+			if (site == null) {
 				ose.addError(SpecimenErrorCode.INVALID_ANATOMIC_SITE, anatomicSite);
 				return;
 			}
 
-			specimen.setTissueSite(anatomicSite);
+			specimen.setTissueSite(site);
 		}
 	}
 	
@@ -507,22 +512,23 @@ public class SpecimenFactoryImpl implements SpecimenFactory {
 		boolean fromParent = shouldUseParentValue(specimen, laterality, sr != null ? sr.getLaterality() : null);
 		if (fromParent) {
 			if (specimen.getParentSpecimen() != null) {
-				String parentValue = specimen.getParentSpecimen().getTissueSide();
-				specimen.setTissueSide(parentValue);
+				specimen.setTissueSide(specimen.getParentSpecimen().getTissueSide());
 
+				String parentValue = PermissibleValue.getValue(specimen.getParentSpecimen().getTissueSide());
 				if (!isEmptyOrEquals(laterality, parentValue)) {
 					ose.addError(SpecimenErrorCode.LATERALITY_NOT_SAME_AS_PARENT, laterality, parentValue);
 				}
 			}
 		} else if (isNotSpecified(laterality)) {
-			specimen.setTissueSide(sr != null ? sr.getLaterality() : Specimen.NOT_SPECIFIED);
+			specimen.setTissueSide(sr != null ? sr.getLaterality() : getNotSpecified(SPECIMEN_LATERALITY));
 		} else {
-			if (!isValid(SPECIMEN_LATERALITY, laterality)) {
+			PermissibleValue pv = getPv(SPECIMEN_LATERALITY, laterality, false);
+			if (pv == null) {
 				ose.addError(SpecimenErrorCode.INVALID_LATERALITY, laterality);
 				return;
 			}
 
-			specimen.setTissueSide(laterality);
+			specimen.setTissueSide(pv);
 		}
 	}
 	
@@ -541,22 +547,23 @@ public class SpecimenFactoryImpl implements SpecimenFactory {
 		boolean fromParent = shouldUseParentValue(specimen, pathology, sr != null ? sr.getPathologyStatus() : null);
 		if (fromParent) {
 			if (specimen.getParentSpecimen() != null) {
-				String parentValue = specimen.getParentSpecimen().getPathologicalStatus();
+				PermissibleValue parentValue = specimen.getParentSpecimen().getPathologicalStatus();
 				specimen.setPathologicalStatus(parentValue);
 
-				if (!isEmptyOrEquals(pathology, parentValue)) {
+				if (!isEmptyOrEquals(pathology, PermissibleValue.getValue(parentValue))) {
 					ose.addError(SpecimenErrorCode.PATHOLOGY_NOT_SAME_AS_PARENT, pathology, parentValue);
 				}
 			}
 		} else if (isNotSpecified(pathology)) {
-			specimen.setPathologicalStatus(sr != null ? sr.getPathologyStatus() : Specimen.NOT_SPECIFIED);
+			specimen.setPathologicalStatus(sr != null ? sr.getPathologyStatus() : getNotSpecified(PATH_STATUS));
 		} else {
-			if (!isValid(PATH_STATUS, pathology)) {
+			PermissibleValue pv = getPv(PATH_STATUS, pathology, false);
+			if (pv == null) {
 				ose.addError(SpecimenErrorCode.INVALID_PATHOLOGY_STATUS, pathology);
 				return;
 			}
 
-			specimen.setPathologicalStatus(pathology);
+			specimen.setPathologicalStatus(pv);
 		}
 	}
 	
@@ -655,22 +662,30 @@ public class SpecimenFactoryImpl implements SpecimenFactory {
 		}
 				
 		String specimenClass = detail.getSpecimenClass();
+		PermissibleValue classPv = null;
 		if (StringUtils.isBlank(specimenClass)) {
 			if (specimen.getSpecimenRequirement() != null) {
-				specimenClass = specimen.getSpecimenRequirement().getSpecimenClass();
+				classPv = specimen.getSpecimenRequirement().getSpecimenClass();
 			} else if (StringUtils.isNotBlank(detail.getType())) {
-				specimenClass = daoFactory.getPermissibleValueDao().getSpecimenClass(detail.getType());
+				PermissibleValue typePv = getPv(SPECIMEN_CLASS, detail.getType(), false);
+				if (typePv != null) {
+					classPv = typePv.getParent();
+				}
 			}
 
-			detail.setSpecimenClass(specimenClass);
-			if (StringUtils.isBlank(specimenClass)) {
+			if (classPv == null) {
 				ose.addError(SpecimenErrorCode.SPECIMEN_CLASS_REQUIRED);
+			} else {
+				detail.setSpecimenClass(classPv.getValue());
 			}
-		} else if (!isValid(SPECIMEN_CLASS, specimenClass)) {
-			ose.addError(SpecimenErrorCode.INVALID_SPECIMEN_CLASS);
+		} else {
+			classPv = getPv(SPECIMEN_CLASS, specimenClass, false);
+			if (classPv == null) {
+				ose.addError(SpecimenErrorCode.INVALID_SPECIMEN_CLASS);
+			}
 		}
 		
-		specimen.setSpecimenClass(specimenClass);		
+		specimen.setSpecimenClass(classPv);
 	}
 	
 	private void setSpecimenClass(SpecimenDetail detail, Specimen existing, Specimen specimen, OpenSpecimenException ose) {
@@ -699,13 +714,14 @@ public class SpecimenFactoryImpl implements SpecimenFactory {
 			
 			return;
 		}
-		
-		if (!isValid(SPECIMEN_CLASS, detail.getSpecimenClass(), type)) {
+
+		PermissibleValue typePv = getPv(SPECIMEN_CLASS, detail.getSpecimenClass(), type);
+		if (typePv == null) {
 			ose.addError(SpecimenErrorCode.INVALID_SPECIMEN_TYPE);
 			return;
 		}
 		
-		specimen.setSpecimenType(type);		
+		specimen.setSpecimenType(typePv);
 	}
 	
 	private void setSpecimenType(SpecimenDetail detail, Specimen existing, Specimen specimen, OpenSpecimenException ose) {
@@ -756,7 +772,7 @@ public class SpecimenFactoryImpl implements SpecimenFactory {
 		
 		if (specimen.isAliquot()) {
 			if (parentSpecimen != null) {
-				specimen.setBiohazards(new HashSet<String>(parentSpecimen.getBiohazards()));
+				specimen.setBiohazards(new HashSet<>(parentSpecimen.getBiohazards()));
 			}
 			
 			return;
@@ -766,13 +782,14 @@ public class SpecimenFactoryImpl implements SpecimenFactory {
 		if (CollectionUtils.isEmpty(biohazards)) {
 			return;
 		}
-		
-		if (!areValid(BIOHAZARD, biohazards)) {
+
+		List<PermissibleValue> biohazardPvs = getPvs(BIOHAZARD, biohazards);
+		if (biohazardPvs.size() != biohazards.size()) {
 			ose.addError(SpecimenErrorCode.INVALID_BIOHAZARDS);
 			return;
 		}
 		
-		specimen.setBiohazards(detail.getBiohazards());
+		specimen.setBiohazards(new HashSet<>(biohazardPvs));
 	}
 	
 	private void setBiohazards(SpecimenDetail detail, Specimen existing, Specimen specimen, OpenSpecimenException ose) {
@@ -920,19 +937,22 @@ public class SpecimenFactoryImpl implements SpecimenFactory {
 
 		String collCont = collDetail.getContainer();
 		if (StringUtils.isNotBlank(collCont)) {
-			if (isValid(CONTAINER, collCont)) {
-				event.setContainer(collCont);				
+			PermissibleValue contPv = getPv(CONTAINER, collCont, false);
+			if (contPv != null) {
+				event.setContainer(contPv);
 			} else {
-				ose.addError(SpecimenErrorCode.INVALID_COLL_CONTAINER);
+				ose.addError(SpecimenErrorCode.INVALID_COLL_CONTAINER, collCont);
 			}
+
 		}
 			
 		String proc = collDetail.getProcedure();
 		if (StringUtils.isNotBlank(proc)) {
-			if (isValid(COLL_PROC, proc)) {
-				event.setProcedure(proc);
+			PermissibleValue procPv = getPv(COLL_PROC, proc, false);
+			if (procPv != null) {
+				event.setProcedure(procPv);
 			} else {
-				ose.addError(SpecimenErrorCode.INVALID_COLL_PROC);
+				ose.addError(SpecimenErrorCode.INVALID_COLL_PROC, proc);
 			}
 		}
 		
@@ -962,13 +982,14 @@ public class SpecimenFactoryImpl implements SpecimenFactory {
 		
 		String recvQuality = recvDetail.getReceivedQuality();
 		if (StringUtils.isNotBlank(recvQuality)) {
-			if (isValid(RECV_QUALITY, recvQuality)) {
-				event.setQuality(recvQuality);
+			PermissibleValue recvPv = getPv(RECV_QUALITY, recvQuality, false);
+			if (recvPv != null) {
+				event.setQuality(recvPv);
 			} else {
-				ose.addError(SpecimenErrorCode.INVALID_RECV_QUALITY);
+				ose.addError(SpecimenErrorCode.INVALID_RECV_QUALITY, recvQuality);
 			}
 		}
-		
+
 		specimen.setReceivedEvent(event);
 	}
 	
@@ -996,6 +1017,10 @@ public class SpecimenFactoryImpl implements SpecimenFactory {
 	}
 	
 	private void setExtension(SpecimenDetail detail, Specimen specimen, OpenSpecimenException ose) {
+		if (specimen.getCollectionProtocol() == null) {
+			return;
+		}
+
 		DeObject extension = DeObject.createExtension(detail.getExtensionDetail(), specimen);
 		specimen.setExtension(extension);
 	}
@@ -1085,12 +1110,12 @@ public class SpecimenFactoryImpl implements SpecimenFactory {
 		}
 	}
 
-	private boolean shouldUseParentValue(Specimen specimen, String value, String anticipatedValue) {
+	private boolean shouldUseParentValue(Specimen specimen, String value, PermissibleValue anticipatedValue) {
 		boolean fromParent = false;
 		if (specimen.isAliquot()) {
 			fromParent = true;
 		} else if (specimen.isDerivative()) {
-			if (isNotSpecified(value) && isNotSpecified(anticipatedValue)) {
+			if (isNotSpecified(value) && isNotSpecified(PermissibleValue.getValue(anticipatedValue))) {
 				fromParent = true;
 			}
 		}
@@ -1178,7 +1203,8 @@ public class SpecimenFactoryImpl implements SpecimenFactory {
 			} else {
 				position = container.getReservedPosition(posTwo, posOne, location.getReservationId());
 				if (position != null) {
-					container.getOccupiedPositions().remove(position);
+					container.removePosition(position);
+					SessionUtil.getInstance().flush(); // Ugly but need to ensure the database is consistent with in-memory
 					position = container.createPosition(posOne, posTwo);
 				} else if (container.canSpecimenOccupyPosition(specimen.getId(), posOne, posTwo)) {
 					position = container.createPosition(posOne, posTwo);
@@ -1250,5 +1276,21 @@ public class SpecimenFactoryImpl implements SpecimenFactory {
 		containerDetail.setTypeName(containerTypeName);
 		containerDetail.setStorageLocation(containerLocation);
 		return containerSvc.createStorageContainer(null, containerDetail);
+	}
+
+	private PermissibleValue getNotSpecified(String attribute) {
+		return getPv(attribute, Specimen.NOT_SPECIFIED, true);
+	}
+
+	private PermissibleValue getPv(String attribute, String value, boolean leafNode) {
+		return daoFactory.getPermissibleValueDao().getPv(attribute, value, leafNode);
+	}
+
+	private PermissibleValue getPv(String attribute, String parentValue, String value) {
+		return daoFactory.getPermissibleValueDao().getPv(attribute, parentValue, value);
+	}
+
+	private List<PermissibleValue> getPvs(String attribute, Collection<String> values) {
+		return daoFactory.getPermissibleValueDao().getPvs(attribute, values);
 	}
 }

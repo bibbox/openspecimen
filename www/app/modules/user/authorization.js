@@ -21,6 +21,8 @@ angular.module('openspecimen')
 
         return User.getCurrentUserRoles().then(
           function(userRoles) {
+            currentUser.roles = userRoles;
+
             userRights = [];
             angular.forEach(userRoles, function(userRole) {
               var site = userRole.site ? userRole.site.name : null;
@@ -44,9 +46,10 @@ angular.module('openspecimen')
           return true;
         }
 
+        var resources = opts.resources || [opts.resource];
         var allowed = false;
         for (var i = 0; i < userRights.length; i++) {
-          if (!opts.sites && !opts.cp && userRights[i].resource == opts.resource) {
+          if (!opts.sites && !opts.cp && resources.indexOf(userRights[i].resource) != -1) {
             //
             // For resources whose rights are independent of CP and Site
             //
@@ -54,7 +57,7 @@ angular.module('openspecimen')
 
           } else if ((!opts.sites || !userRights[i].site || opts.sites.indexOf(userRights[i].site) != -1) &&
                     (!opts.cp || !userRights[i].cp || userRights[i].cp == opts.cp) &&
-                    (userRights[i].resource == opts.resource)) {
+                    (resources.indexOf(userRights[i].resource) != -1)) {
             //
             // For resources whose rights are specified based on CP and/or Site
             //

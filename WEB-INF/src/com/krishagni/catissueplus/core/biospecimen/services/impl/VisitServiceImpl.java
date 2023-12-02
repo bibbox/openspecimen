@@ -4,6 +4,7 @@ package com.krishagni.catissueplus.core.biospecimen.services.impl;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -23,6 +24,7 @@ import com.krishagni.catissueplus.core.biospecimen.ConfigParams;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
 import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
 import com.krishagni.catissueplus.core.biospecimen.domain.Visit;
+import com.krishagni.catissueplus.core.biospecimen.domain.VisitPreSaveEvent;
 import com.krishagni.catissueplus.core.biospecimen.domain.VisitSavedEvent;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.CpErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.CpeErrorCode;
@@ -272,7 +274,7 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 			// 
 			// Step 3: Collect specimens
 			//
-			RequestEvent<List<SpecimenDetail>> collectSpecimensReq = new RequestEvent<List<SpecimenDetail>>(specimens);
+			RequestEvent<List<SpecimenDetail>> collectSpecimensReq = new RequestEvent<>(specimens);
 			ResponseEvent<List<SpecimenDetail>> collectSpecimensResp = specimenSvc.collectSpecimens(collectSpecimensReq);
 			collectSpecimensResp.throwErrorIfUnsuccessful();
 			
@@ -574,6 +576,7 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 
 	private Visit saveOrUpdateVisit(Visit visit, Visit existing) {
 		raiseErrorIfSpecimenCentric(visit);
+		EventPublisher.getInstance().publish(new VisitPreSaveEvent(existing, visit));
 
 		String prevVisitStatus = existing != null ? existing.getStatus() : null;
 		OpenSpecimenException ose = new OpenSpecimenException(ErrorType.USER_ERROR);
@@ -785,15 +788,21 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 	}
 
 	private List<Visit> getVisitsToPrint(PrintVisitNameDetail printDetail) {
+		List<Long> ids = printDetail.getVisitIds();
+		List<String> names = printDetail.getVisitNames();
+
 		List<Visit> visits = null;
 		Object key = null;
-
-		if (CollectionUtils.isNotEmpty(printDetail.getVisitIds())) {
-			visits = daoFactory.getVisitsDao().getByIds(printDetail.getVisitIds());
-			key = printDetail.getVisitIds();
-		} else if (CollectionUtils.isNotEmpty(printDetail.getVisitNames())) {
-			visits = daoFactory.getVisitsDao().getByName(printDetail.getVisitNames());
-			key = printDetail.getVisitNames();
+		if (CollectionUtils.isNotEmpty(ids)) {
+			key = ids;
+			visits = daoFactory.getVisitsDao().getByIds(ids).stream()
+				.sorted(Comparator.comparingInt((v) -> ids.indexOf(v.getId())))
+				.collect(Collectors.toList());
+		} else if (CollectionUtils.isNotEmpty(names)) {
+			key = names;
+			visits = daoFactory.getVisitsDao().getByName(names).stream()
+				.sorted(Comparator.comparingInt((v) -> names.indexOf(v.getName())))
+				.collect(Collectors.toList());
 		}
 
 		if (CollectionUtils.isEmpty(visits)) {
@@ -945,7 +954,7 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 				List<SiteCpPair> siteCps = AccessCtrlMgr.getInstance().getReadAccessSpecimenSiteCps(cpId, false);
 				if (siteCps != null && siteCps.isEmpty()) {
 					endOfVisits = true;
-				} else if (!AccessCtrlMgr.getInstance().hasVisitSpecimenEximRights(cpId)) {
+				} else if (!AccessCtrlMgr.getInstance().hasVisitEximRights(cpId)) {
 					endOfVisits = true;
 				} else {
 					crit = new VisitsListCriteria()

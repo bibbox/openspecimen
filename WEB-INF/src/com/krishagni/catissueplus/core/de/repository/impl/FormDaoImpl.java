@@ -15,11 +15,15 @@ import java.util.stream.Collectors;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.hibernate.Criteria;
+import org.hibernate.FlushMode;
 import org.hibernate.Query;
+import org.hibernate.criterion.DetachedCriteria;
+import org.hibernate.criterion.Junction;
+import org.hibernate.criterion.MatchMode;
 import org.hibernate.criterion.Projections;
 import org.hibernate.criterion.Restrictions;
-import org.hibernate.type.BooleanType;
-import org.hibernate.type.IntegerType;
+import org.hibernate.criterion.Subqueries;
+import org.hibernate.sql.JoinType;
 import org.hibernate.type.LongType;
 import org.hibernate.type.StringType;
 import org.hibernate.type.TimestampType;
@@ -28,6 +32,8 @@ import com.krishagni.catissueplus.core.administrative.repository.FormListCriteri
 import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
 import com.krishagni.catissueplus.core.biospecimen.domain.Visit;
 import com.krishagni.catissueplus.core.biospecimen.events.CollectionProtocolSummary;
+import com.krishagni.catissueplus.core.biospecimen.repository.impl.BiospecimenDaoHelper;
+import com.krishagni.catissueplus.core.common.OrderByNotNullProperty;
 import com.krishagni.catissueplus.core.common.Pair;
 import com.krishagni.catissueplus.core.common.access.AccessCtrlMgr;
 import com.krishagni.catissueplus.core.common.access.SiteCpPair;
@@ -84,13 +90,86 @@ public class FormDaoImpl extends AbstractDao<FormContextBean> implements FormDao
 
 	@SuppressWarnings("unchecked")
 	@Override
-	public List<FormSummary> getAllFormsSummary(FormListCriteria crit) {
-		return getForms(getAllFormsQuery(crit, false).list());
+	public List<Form> getFormsByName(Collection<String> formNames) {
+		return getCurrentSession().createCriteria(Form.class)
+			.add(Restrictions.in("name", formNames))
+			.add(Restrictions.isNull("deletedOn"))
+			.list();
+	}
+
+	@SuppressWarnings("unchecked")
+	@Override
+	public List<Form> getForms(FormListCriteria crit) {
+		return (List<Form>) getCurrentSession().createCriteria(Form.class, "form")
+			.add(Subqueries.propertyIn("form.id", getListFormIdsQuery(crit)))
+			.addOrder(OrderByNotNullProperty.desc("form.updateTime", "form.creationTime"))
+			.setFirstResult(crit.startAt())
+			.setMaxResults(crit.maxResults())
+			.list();
 	}
 
 	@Override
-	public Long getAllFormsCount(FormListCriteria crit) {
-		return ((Number) getAllFormsQuery(crit, true).uniqueResult()).longValue();
+	public Long getFormsCount(FormListCriteria crit) {
+		Number count = (Number) getListFormIdsQuery(crit).getExecutableCriteria(getCurrentSession())
+			.setProjection(Projections.rowCount())
+			.uniqueResult();
+		return count.longValue();
+	}
+
+	@Override
+	public List<FormSummary> getEntityForms(FormListCriteria crit) {
+		List<Object[]> rows = (List<Object[]>) getListFormsQuery(crit)
+			.setProjection(
+				Projections.projectionList()
+					.add(Projections.property("form.id"))
+					.add(Projections.property("form.name"))
+					.add(Projections.property("form.caption"))
+					.add(Projections.property("fc.entityType"))
+					.add(Projections.property("fc.sysForm"))
+					.add(Projections.property("fc.multiRecord"))
+					.add(Projections.property("fc.identifier"))
+			)
+			.getExecutableCriteria(getCurrentSession())
+			.list();
+
+		List<FormSummary> result = new ArrayList<>();
+		for (Object[] row : rows) {
+			int idx = -1;
+			FormSummary form = new FormSummary();
+			form.setFormId((Long) row[++idx]);
+			form.setName((String) row[++idx]);
+			form.setCaption((String) row[++idx]);
+			form.setEntityType((String) row[++idx]);
+
+			Boolean sysForms = (Boolean) row[++idx];
+			form.setSysForm(sysForms != null ? sysForms : false);
+
+			Boolean multiRecords = (Boolean) row[++idx];
+			form.setMultipleRecords(multiRecords != null ? multiRecords : false);
+			form.setFormCtxtId((Long) row[++idx]);
+			result.add(form);
+		}
+
+		return result;
+	}
+
+	@SuppressWarnings("unchecked")
+	@Override
+	public Map<Long, Integer> getCpCounts(Collection<Long> formIds) {
+		List<Object[]> rows = getCurrentSession().getNamedQuery(GET_CP_COUNTS)
+			.setParameterList("formIds", formIds)
+			.list();
+
+		Map<Long, Integer> formCpCounts = new HashMap<>();
+		for (Object[] row : rows) {
+			int idx = -1;
+			Long formId = (Long) row[++idx];
+			Integer allCp  = (Integer) row[++idx];
+			Integer cpsCnt = (Integer) row[++idx];
+			formCpCounts.put(formId, allCp != null && allCp < 0 ? -1 : cpsCnt);
+		}
+
+		return formCpCounts;
 	}
 
 	@SuppressWarnings("unchecked")
@@ -113,27 +192,6 @@ public class FormDaoImpl extends AbstractDao<FormContextBean> implements FormDao
 				.uniqueResult();
 	}
 
-	@SuppressWarnings("unchecked")
- 	@Override
-  	public List<FormSummary> getFormsByEntityType(String entityType) {
-		List<Object[]> rows = sessionFactory.getCurrentSession()
-				.getNamedQuery(GET_FORMS_BY_ENTITY_TYPE)
-				.setString("entityType", entityType)
-				.list();
-		return getForms(rows);
-    }
-
-	@SuppressWarnings("unchecked")
-	@Override
-	public List<FormSummary> getFormsByCpAndEntityType(Long cpId, String[] entityTypes) {
-		List<Object[]> rows = getCurrentSession()
-				.getNamedQuery(GET_FORMS_BY_CP_N_ENTITY_TYPE)
-				.setLong("cpId", cpId)
-				.setParameterList("entityTypes", entityTypes)
-				.list();
-		return getForms(rows, false, true);
-	}
-	
 	@SuppressWarnings("unchecked")
 	@Override
 	public List<FormSummary> getQueryForms() {
@@ -310,13 +368,17 @@ public class FormDaoImpl extends AbstractDao<FormContextBean> implements FormDao
 	@SuppressWarnings("unchecked")
 	@Override
 	public FormContextBean getFormContext(Long formId, Long cpId, String entity) {
-		Query query = sessionFactory.getCurrentSession().getNamedQuery(GET_FORM_CTXT);		
-		query.setLong("formId", formId);
-		query.setLong("cpId", cpId);		
-		query.setString("entityType", entity);
-		
-		List<FormContextBean> objs = query.list();
-		return objs != null && !objs.isEmpty() ? objs.iterator().next() : null;
+		return getFormContext(formId, cpId, Collections.singletonList(entity));
+	}
+
+	@Override
+	public FormContextBean getFormContext(Long formId, Long cpId, List<String> entities) {
+		List<FormContextBean> fcs = getCurrentSession().getNamedQuery(GET_FORM_CTXT)
+			.setParameter("formId", formId)
+			.setParameter("cpId", cpId)
+			.setParameterList("entityTypes", entities)
+			.list();
+		return fcs != null && !fcs.isEmpty() ? fcs.iterator().next() : null;
 	}
 
 	@Override
@@ -386,34 +448,37 @@ public class FormDaoImpl extends AbstractDao<FormContextBean> implements FormDao
 	@SuppressWarnings("unchecked")
 	@Override
 	public List<FormRecordEntryBean> getRecordEntries(Long formCtxtId, Long objectId) {
-		return sessionFactory.getCurrentSession()
-				.getNamedQuery(GET_RECORD_ENTRIES)
-				.setLong("formCtxtId", formCtxtId)
-				.setLong("objectId", objectId)
-				.list();
+		return getCurrentSession().getNamedQuery(GET_RECORD_ENTRIES)
+			.setParameter("formCtxtId", formCtxtId)
+			.setParameter("objectId", objectId)
+			.list();
+	}
+
+	@SuppressWarnings("unchecked")
+	@Override
+	public FormRecordEntryBean getRecordEntry(Long recordId) {
+		return (FormRecordEntryBean) getCurrentSession().getNamedQuery(GET_RE_BY_ID)
+			.setParameter("recordId", recordId)
+			.uniqueResult();
 	}
 
 	@SuppressWarnings("unchecked")
 	@Override
 	public FormRecordEntryBean getRecordEntry(Long formCtxtId, Long objectId, Long recordId) {
-		List<Object[]> rows = sessionFactory.getCurrentSession()
-				.getNamedQuery(GET_RECORD_ENTRY)
-				.setLong("formCtxtId", formCtxtId)
-				.setLong("objectId", objectId)
-				.setLong("recordId", recordId)
-				.list();
-		return CollectionUtils.isEmpty(rows) ? null : getFormRecordEntry(rows.iterator().next());
+		return (FormRecordEntryBean) getCurrentSession().getNamedQuery(GET_RECORD_ENTRY)
+			.setParameter("formCtxtId", formCtxtId)
+			.setParameter("objectId", objectId)
+			.setParameter("recordId", recordId)
+			.uniqueResult();
 	}
 	
 	@SuppressWarnings("unchecked")
 	@Override
 	public FormRecordEntryBean getRecordEntry(Long formId, Long recordId) {
-		List<Object[]> rows = sessionFactory.getCurrentSession()
-				.getNamedQuery(GET_REC_BY_FORM_N_REC_ID)
-				.setLong("formId", formId)
-				.setLong("recordId", recordId)
-				.list();
-		return CollectionUtils.isEmpty(rows) ? null : getFormRecordEntry(rows.iterator().next());
+		return (FormRecordEntryBean) getCurrentSession().getNamedQuery(GET_REC_BY_FORM_N_REC_ID)
+			.setParameter("formId", formId)
+			.setParameter("recordId", recordId)
+			.uniqueResult();
 	}
 
 	@SuppressWarnings("unchecked")
@@ -435,7 +500,7 @@ public class FormDaoImpl extends AbstractDao<FormContextBean> implements FormDao
 		Map<Long, FormCtxtSummary> formsMap = new LinkedHashMap<>();
 		
 		for (Object[] row : rows) {
-			Long cpId = (Long)row[3];
+			Long cpId = (Long)row[4];
 			Long formId = (Long)row[1];
 
 			FormCtxtSummary form = formsMap.get(formId);
@@ -446,20 +511,21 @@ public class FormDaoImpl extends AbstractDao<FormContextBean> implements FormDao
 			form = new FormCtxtSummary();
 			form.setFormCtxtId((Long)row[0]);
 			form.setFormId(formId);
-			form.setFormCaption((String)row[2]);
-			form.setEntityType((String)row[4]);
-			form.setCreationTime((Date)row[5]);
-			form.setModificationTime((Date)row[6]);
+			form.setFormName((String)row[2]);
+			form.setFormCaption((String)row[3]);
+			form.setEntityType((String)row[5]);
+			form.setCreationTime((Date)row[6]);
+			form.setModificationTime((Date)row[7]);
 			
 			UserSummary user = new UserSummary();
-			user.setId((Long)row[7]);
-			user.setFirstName((String)row[8]);
-			user.setLastName((String)row[9]);
+			user.setId((Long)row[8]);
+			user.setFirstName((String)row[9]);
+			user.setLastName((String)row[10]);
 			form.setCreatedBy(user);
 			
-			form.setMultiRecord((Boolean)row[10]);
-			form.setSysForm((Boolean)row[11]);
-			form.setNoOfRecords((Integer)row[12]);
+			form.setMultiRecord((Boolean)row[11]);
+			form.setSysForm((Boolean)row[12]);
+			form.setNoOfRecords((Integer)row[13]);
 			formsMap.put(formId, form);
 		}
 		
@@ -680,6 +746,24 @@ public class FormDaoImpl extends AbstractDao<FormContextBean> implements FormDao
 	}
 
 	@Override
+	public Map<String, List<Long>> getEntityFormRecordIds(Collection<String> entityTypes, Long objectId, Collection<String> formNames) {
+		getCurrentSession().setHibernateFlushMode(FlushMode.ALWAYS);
+		List<Object[]> rows = getCurrentSession().getNamedQuery(GET_ENTITY_FORM_RECORD_IDS)
+			.setParameterList("formNames", formNames)
+			.setParameterList("entityTypes", entityTypes)
+			.setParameter("objectId", objectId)
+			.list();
+
+		Map<String, List<Long>> result = new HashMap<>();
+		for (Object[] row : rows) {
+			List<Long> recordIds = result.computeIfAbsent((String) row[0], (k) -> new ArrayList<>());
+			recordIds.add((Long) row[1]);
+		}
+
+		return result;
+	}
+
+	@Override
 	public List<Map<String, Object>> getRegistrationRecords(Long cpId, Collection<SiteCpPair> siteCps, Long formId, List<String> ppids, int startAt, int maxResults) {
 		return getEntityRecords(
 			cpId, siteCps, formId, GET_REG_FORM_RECORDS,
@@ -751,78 +835,73 @@ public class FormDaoImpl extends AbstractDao<FormContextBean> implements FormDao
 			});
 	}
 
-	private Query getAllFormsQuery(FormListCriteria crit, boolean countReq) {
-		Query query = countReq ? getCountFormsQuery(crit) : getListFormsQuery(crit);
+	private DetachedCriteria getListFormIdsQuery(FormListCriteria crit) {
+		return getListFormsQuery(crit).setProjection(Projections.distinct(Projections.property("form.id")));
+	}
+
+	private DetachedCriteria getListFormsQuery(FormListCriteria crit) {
+		DetachedCriteria query = DetachedCriteria.forClass(Form.class, "form")
+			.createAlias("form.associations", "fc", JoinType.LEFT_OUTER_JOIN, Restrictions.isNull("fc.deletedOn"))
+			.add(Restrictions.isNull("form.deletedOn"));
 
 		if (StringUtils.isNotBlank(crit.query())) {
-			query.setParameter("caption", "%" + crit.query().toLowerCase() + "%");
+			query.add(Restrictions.ilike("form.caption", crit.query(), MatchMode.ANYWHERE));
 		}
-		
+
 		if (crit.userId() != null) {
-			query.setParameter("userId", crit.userId());
+			Junction userOrCp = Restrictions.disjunction();
+
+			query.createAlias("form.createdBy", "createdBy");
+			userOrCp.add(Restrictions.eq("createdBy.id", crit.userId()));
+
+			if (CollectionUtils.isNotEmpty(crit.siteCps())) {
+				userOrCp.add(
+					Subqueries.propertyIn(
+						"fc.cpId",
+						BiospecimenDaoHelper.getInstance().getCpIdsFilter(crit.siteCps())
+					)
+				);
+			}
+
+			query.add(userOrCp);
 		}
-		
+
+		if (CollectionUtils.isNotEmpty(crit.cpIds())) {
+			query.add(Restrictions.in("fc.cpId", crit.cpIds()));
+		}
+
+		if (CollectionUtils.isNotEmpty(crit.names())) {
+			query.add(Restrictions.in("form.name", crit.names()));
+		}
+
+		if (CollectionUtils.isEmpty(crit.entityTypes())) {
+			query.add(
+				Restrictions.or(
+					Restrictions.isNull("fc.entityType"), // when form is not yet associated
+					Restrictions.ne("fc.entityType", "Query")
+				)
+			);
+		} else {
+			query.add(Restrictions.in("fc.entityType", crit.entityTypes()));
+		}
+
 		if (crit.excludeSysForm() != null) {
-			query.setParameter("sysForm", !crit.excludeSysForm());
+			DetachedCriteria sysForms = DetachedCriteria.forClass(FormContextBean.class, "ifc")
+				.add(Restrictions.eq("ifc.sysForm", true))
+				.add(Restrictions.isNull("ifc.deletedOn"))
+				.setProjection(Projections.distinct(Projections.property("ifc.containerId")));
+			if (crit.excludeSysForm()) {
+				query.add(Subqueries.propertyNotIn("form.id", sysForms));
+			} else {
+				query.add(Subqueries.propertyIn("form.id", sysForms));
+			}
 		}
 
 		return query;
 	}
 
-	private Query getListFormsQuery(FormListCriteria crit) {
-		return getCurrentSession().createSQLQuery(getListFormsSql(crit, false))
-			.addScalar("formId", new LongType())
-			.addScalar("formName", new StringType())
-			.addScalar("formCaption", new StringType())
-			.addScalar("creationTime", new TimestampType())
-			.addScalar("modificationTime", new TimestampType())
-			.addScalar("cpCount", new IntegerType())
-			.addScalar("allCp", new IntegerType())
-			.addScalar("sysForm", new BooleanType())
-			.addScalar("userId", new LongType())
-			.addScalar("userFirstName", new StringType())
-			.addScalar("userLastName", new StringType())
-			.setFirstResult(crit.startAt())
-			.setMaxResults(crit.maxResults());
-	}
-
-	private Query getCountFormsQuery(FormListCriteria crit) {
-		return getCurrentSession().createSQLQuery(getListFormsSql(crit, true));
-	}
-
 	private String getCpIdsSql(Collection<SiteCpPair> siteCps) {
 		return AccessCtrlMgr.getInstance().getAllowedCpIdsSql(siteCps);
-	}
-
-	private String getListFormsSql(FormListCriteria crit, boolean countReq) {
-		boolean joinCps = CollectionUtils.isNotEmpty(crit.siteCps());
-		String cpFormsSql =  joinCps ? CP_FORMS_JOIN : "";
-		String proj = String.format(countReq ? GET_FORMS_COUNT_PROJ : GET_FORMS_LIST_PROJ, joinCps ? " distinct " : "");
-		String whereClause = "";
-		if (crit.excludeSysForm() != null) {
-			whereClause = crit.excludeSysForm() ? NON_SYS_FORM_COND : SYS_FORM_COND;
-		}
-
-		StringBuilder sqlBuilder = new StringBuilder(String.format(GET_ALL_FORMS, proj, whereClause, cpFormsSql));
-		if (StringUtils.isNotBlank(crit.query())) {
-			sqlBuilder.append(" and lower(c.caption) like :caption ");
-		}
-		
-		if (crit.userId() != null) {
-			sqlBuilder.append(" and (c.created_by = :userId ");
-			
-			if (joinCps) {
-				sqlBuilder.append(" or cp.identifier in (").append(getCpIdsSql(crit.siteCps())).append(")");
-			}
-
-			sqlBuilder.append(")");
-		}
-
-		if (!countReq) {
-			sqlBuilder.append(" order by modificationTime desc ");
-		}
-
-		return sqlBuilder.toString();
 	}
 
 	@SuppressWarnings("unchecked")
@@ -935,60 +1014,6 @@ public class FormDaoImpl extends AbstractDao<FormContextBean> implements FormDao
 		return objCp;
 	}
 	
-	private FormRecordEntryBean getFormRecordEntry(Object[] row) {
-		FormRecordEntryBean re = new FormRecordEntryBean();
-		re.setIdentifier((Long)row[0]);
-		re.setFormCtxtId((Long)row[1]);
-		re.setObjectId((Long)row[2]);
-		re.setRecordId((Long)row[3]);
-		re.setUpdatedBy((Long)row[4]);
-		re.setUpdatedTime((Date)row[5]);
-		re.setActivityStatusStr((String)row[6]);
-		re.setEntityType((String)row[7]);
-		return re;
-	}
-	
-	private List<FormSummary> getForms(List<Object[]> rows) {
-		return getForms(rows, true, false);
-	}
-
-	private List<FormSummary> getForms(List<Object[]> rows, boolean incCpCount, boolean incEntityType) {
-		List<FormSummary> forms = new ArrayList<>();
-
-		for (Object[] row : rows) {
-			int idx = 0;
-
-			FormSummary form = new FormSummary();
-			form.setFormId((Long)row[idx++]);
-			form.setName((String)row[idx++]);
-			form.setCaption((String)row[idx++]);
-			form.setCreationTime((Date)row[idx++]);
-			form.setModificationTime((Date)row[idx++]);
-
-			if (incCpCount) {
-				Integer cpCount = (Integer) row[idx++];
-				Integer allCps = (Integer) row[idx++];
-				form.setCpCount(allCps != null && allCps == -1 ? -1 : cpCount);
-			}
-
-			if (incEntityType) {
-				form.setEntityType((String)row[idx++]);
-			}
-
-			Boolean sysForm = (Boolean)row[idx++];
-			form.setSysForm(sysForm == null ? false : sysForm);
-
-			UserSummary user = new UserSummary();
-			user.setId((Long)row[idx++]);
-			user.setFirstName((String)row[idx++]);
-			user.setLastName((String)row[idx++]);
-			form.setCreatedBy(user);
-			forms.add(form);
-		}
-
-		return forms;
-	}
-
 	private List<DependentEntityDetail> getDependentEntities(List<Object[]> rows) {
 		List<DependentEntityDetail> dependentEntities = new ArrayList<DependentEntityDetail>();
 		
@@ -1044,11 +1069,9 @@ public class FormDaoImpl extends AbstractDao<FormContextBean> implements FormDao
 
 	private static final String FQN = FormContextBean.class.getName();
 	
-	private static final String GET_FORMS_BY_ENTITY_TYPE = FQN + ".getFormsByEntityType";
-
-	private static final String GET_FORMS_BY_CP_N_ENTITY_TYPE = FQN + ".getFormsByCpAndEntityType";
-	
 	private static final String GET_QUERY_FORMS = FQN + ".getQueryForms";
+
+	private static final String GET_CP_COUNTS = FQN + ".getCpCounts";
 	
 	private static final String GET_FORM_CTXTS = FQN + ".getFormContexts";
 	
@@ -1083,6 +1106,8 @@ public class FormDaoImpl extends AbstractDao<FormContextBean> implements FormDao
 	private static final String GET_FORM_UPDATE_TIME = FQN + ".getUpdateTime";
 
 	private static final String RE_FQN = FormRecordEntryBean.class.getName();
+
+	private static final String GET_RE_BY_ID = RE_FQN + ".getRecordEntryById";
 	
 	private static final String GET_RECORD_ENTRY = RE_FQN + ".getRecordEntry";
 	
@@ -1155,47 +1180,7 @@ public class FormDaoImpl extends AbstractDao<FormContextBean> implements FormDao
 
 	private static final String SOFT_DELETE_CP_FORMS = FQN + ".deleteCpEntityForms";
 
-	private static final String GET_ALL_FORMS =
-			"select %s " +
-			"from " +
-			"  dyextn_containers c " +
-			"  inner join catissue_user u on u.identifier = c.created_by " +
-			"  inner join ( " +
-			"    select " +
-			"      ic.identifier as formId, min(ctxt.cp_id) as allCp, count(distinct ctxt.cp_id) as cpCount, " +
-			"      max(ctxt.is_sys_form) as sysForm " +
-			"    from " +
-			"      dyextn_containers ic " +
-			"      left join catissue_form_context ctxt on ctxt.container_id = ic.identifier and ctxt.deleted_on is null " +
-			"      left join catissue_collection_protocol cp on ctxt.cp_id = cp.identifier and cp.activity_status != 'Disabled'" +
-			"    where " +
-			"      ic.deleted_on is null and " +
-			"      (ctxt.entity_type is null or ctxt.entity_type != 'Query') " +
-			"      %s " +
-			"    group by " +
-			"      ic.identifier " +
-			"  ) derived on derived.formId = c.identifier " +
-			"  %s " + // placeholder to join cp forms
-			"where " +
-			"  c.deleted_on is null ";
-
-	private static final String GET_FORMS_LIST_PROJ = "%s " + // placeholder to add distinct when joined with cp forms
-			"  c.identifier as formId, c.name as formName, c.caption as formCaption, c.create_time as creationTime, " +
-			"  case when c.last_modify_time is null then c.create_time else c.last_modify_time end as modificationTime, " +
-			"  derived.cpCount as cpCount, derived.allCp, derived.sysForm, " +
-			"  u.identifier as userId, u.first_name as userFirstName, u.last_name as userLastName ";
-
-	private static final String GET_FORMS_COUNT_PROJ = "count(%s c.identifier) ";
-
-	private static final String CP_FORMS_JOIN =
-			"left join catissue_form_context ctxt " +
-			"  on ctxt.container_id = c.identifier and ctxt.deleted_on is null " +
-			"left join catissue_collection_protocol cp " +
-			"  on ctxt.cp_id = cp.identifier and cp.activity_status != 'Disabled' ";
-
-	private static final String SYS_FORM_COND = " and ctxt.is_sys_form = :sysForm";
-
-	private static final String NON_SYS_FORM_COND = " and (ctxt.is_sys_form is null or ctxt.is_sys_form = :sysForm) ";
+	private static final String GET_ENTITY_FORM_RECORD_IDS = RE_FQN + ".getEntityFormRecordIds";
 
 	//
 	// used for form records export

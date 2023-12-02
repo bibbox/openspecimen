@@ -49,6 +49,7 @@ import com.krishagni.catissueplus.core.administrative.events.ContainerHierarchyD
 import com.krishagni.catissueplus.core.administrative.events.ContainerQueryCriteria;
 import com.krishagni.catissueplus.core.administrative.events.ContainerReplicationDetail;
 import com.krishagni.catissueplus.core.administrative.events.ContainerReplicationDetail.DestinationDetail;
+import com.krishagni.catissueplus.core.administrative.events.ContainerTransferEventDetail;
 import com.krishagni.catissueplus.core.administrative.events.PositionsDetail;
 import com.krishagni.catissueplus.core.administrative.events.PrintContainerLabelDetail;
 import com.krishagni.catissueplus.core.administrative.events.ReservePositionsOp;
@@ -560,6 +561,20 @@ public class StorageContainerServiceImpl implements StorageContainerService, Obj
 	}
 
 	@Override
+	@PlusTransactional
+	public ResponseEvent<List<ContainerTransferEventDetail>> getTransferEvents(RequestEvent<ContainerQueryCriteria> req) {
+		try {
+			StorageContainer container = getContainer(req.getPayload());
+			AccessCtrlMgr.getInstance().ensureReadContainerRights(container);
+			return ResponseEvent.response(ContainerTransferEventDetail.from(container.getTransferEvents()));
+		} catch (OpenSpecimenException ose) {
+			return ResponseEvent.error(ose);
+		} catch (Exception e) {
+			return ResponseEvent.serverError(e);
+		}
+	}
+
+	@Override
 	public ResponseEvent<List<LabelTokenDetail>> getPrintLabelTokens() {
 		return ResponseEvent.response(LabelTokenDetail.from("print_", labelPrinter.getTokens()));
 	}
@@ -1022,18 +1037,23 @@ public class StorageContainerServiceImpl implements StorageContainerService, Obj
 		taskManager.scheduleWithFixedDelay(
 			new Runnable() {
 				@Override
-				@PlusTransactional
 				public void run() {
 					try {
-						Calendar cal = Calendar.getInstance();
-						cal.add(Calendar.MINUTE, -5);
+						logger.debug("Woken up to clean the stale reserved container slots...");
+						run0();
+					} catch (Throwable e) {
+						logger.error("Error deleting stale reserved container slots", e);
+					}
+				}
 
-						int count = daoFactory.getStorageContainerDao().deleteReservedPositionsOlderThan(cal.getTime());
-						if (count > 0) {
-							logger.info(String.format("Cleaned up %d stale container slot reservations", count));
-						}
-					} catch (Exception e) {
-						logger.error("Error deleting older reserved container slots", e);
+				@PlusTransactional
+				private void run0() {
+					Calendar cal = Calendar.getInstance();
+					cal.add(Calendar.MINUTE, -5);
+
+					int count = daoFactory.getStorageContainerDao().deleteReservedPositionsOlderThan(cal.getTime());
+					if (count > 0) {
+						logger.info(String.format("Cleaned up %d stale container slot reservations", count));
 					}
 				}
 			}, 5
@@ -1849,7 +1869,7 @@ public class StorageContainerServiceImpl implements StorageContainerService, Obj
 		String fileId = null;
 		File rptFile = null;
 
-		Exception exception = null;
+		Throwable exception = null;
 		try {
 			AuthUtil.setCurrentUser(user);
 
@@ -1885,7 +1905,7 @@ public class StorageContainerServiceImpl implements StorageContainerService, Obj
 		}
 	}
 
-	private void sendDefragReport(User user, StorageContainer container, String fileId, Exception exception) {
+	private void sendDefragReport(User user, StorageContainer container, String fileId, Throwable exception) {
 		String error = null;
 		if (exception != null) {
 			Throwable rootCause = ExceptionUtils.getRootCause(exception);

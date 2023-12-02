@@ -50,7 +50,7 @@
     "warning": "Warning",
     "form_validation_error": "There are validation errors as highlighted below. Please correct them",
     "server_error": "Internal Server Error. Please report this problem to system administrator",
-    "ui_error": "UI Error. Please report this problem to system administrator",
+    "ui_error": "UI Error. Please refresh (Ctrl + F5, Mac: Cmd + Shift + R) the page and retry the operation. If the problem persists, report to the system administrator.",
     "server_connect_error": "Unable to connect server",
     "recent_activity": "Recent Activity",
     "no_file_selected": "No File Selected",
@@ -88,6 +88,12 @@
     "value": "Value",
     "total_rows": "Total Rows",
     "items_selected_info": "{{count}} {{count > 1 ? 'records' : 'record'}} selected",
+    "loading_list": "Loading records, please wait for a moment...",
+    "empty_list": "No records to show!",
+
+    "clear_field_values_q": "Clear Field Values?",
+    "confirm_clear_field_values": "One or more fields values are blank. Are you sure you want to proceed with clearing values of such fields?",
+    "select_field": "Select Field",
 
     "interval_units": {
       "DAYS": "Days",
@@ -138,6 +144,7 @@
       "search": "Search",
       "clear_filters": "Clear Filters",
       "close": "Close",
+      "reopen": "Reopen",
       "upload": "Upload",
       "reset_password": "Reset Password",
       "add_new": "Add New",
@@ -155,7 +162,9 @@
       "validate": "Validate",
       "copy_to_clipboard": "Copy to Clipboard",
       "show_activity": "Show Activity",
-      "hide_activity": "Hide Activity"
+      "hide_activity": "Hide Activity",
+      "patient_mode": "Patient Mode",
+      "refresh": "Refresh"
     }
   },
 
@@ -245,10 +254,19 @@
     "spmn_print_settings": "Specimen Print Settings",
     "when_to_print": "When to Print",
     "copies": "Copies",
-    "delete_cps":  "Are you sure you want to delete selected collection protocols?",
+    "delete_cps":  "Are you sure you want to delete the selected collection protocols?",
     "cps_deleted": "Collection protocols deleted successfully",
-    "cps_delete_pending": "Collection protocols deletion taking longer time than anticipated. You'll receive emails when it gets completed",
+    "cps_delete_pending": "Collection protocols deletion is taking longer time than anticipated. You'll receive emails when it gets completed",
+
+    "close_cp_q": "Close Collection Protocol?",
+    "confirm_close_cp_msg": "New participants cannot be registered to the closed collection protocols. Are you sure you want to proceed with closing the collection protocol?",
+    "closed": "Collection Protocol closed",
+    "reopened": "Collection Protocol reopened",
+
     "delete_consent_tier": "{{entityType}} {{entityName}} of {{entity.cpShortTitle}} will be deleted forever. Are you sure you want to proceed?",
+
+    "loading_list": "Loading collection protocols, please wait for a moment...",
+    "empty_list": "No collection protocols to show!",
 
     "consents_waived": "Consent waived?",
     "consents_waived_updated": "Participant consent {{waived ? 'waived' : 'enabled'}} successfully.",
@@ -266,6 +284,7 @@
     "copy_cpe": "Copy",
     "remove_cpe": "Delete",
     "close_cpe": "Close",
+    "reopen_cpe": "Reopen",
     "no_cpes": "There are no collection protocol events to show. Please create an event by clicking on Add Event...",
     "add_cpe": "Add Event...",
     "cpe_list": "Events",
@@ -276,7 +295,7 @@
     "deleting_event": "Deleting Event...",
     "confirm_delete_event": "Event '{{eventLabel}}' and its specimen requirements will be deleted. Are you sure you want to proceed?",
     "closing_event": "Closing Event...",
-    "confirm_close_event": "Event '{{eventLabel}}' and its specimen requirements will be closed. Closed events and requirements cannot be reopened. Are you sure you want to proceed?",
+    "confirm_close_event": "Event '{{eventLabel}}' and its specimen requirements will be closed. Are you sure you want to proceed?",
 
     "bulk_import": "Biospecimen Data",
     "bulk_import_biospecimen_obj_jobs": "Import Biospecimen Objects Job List",
@@ -297,6 +316,7 @@
 
     "menu_options": {
       "clone": "Clone",
+      "close": "Close",
       "delete": "Delete",
       "export": "Export"
     },
@@ -405,15 +425,54 @@
       "data_cfg_help": "JSON configuration of custom data source to use for creating file attached to CP report email",
       "metrics_help": "JSON configuration of metrics to be displayed in email report",
       "email_tmpl_help": "Template HTML markup to be used for composing CP report email",
-      "none": "Custom report settings not created for the CP. Create by clicking on \"Customise Report\" button.",
+      "none": "No custom report settings created for the CP.",
       "malformed_metrics": "Metrics Configuration JSON syntax is incorrect.",
       "malformed_data_cfg": "Data Configuration JSON is incorrect."
     },
 
     "import_workflows": "Import Workflows",
     "export_workflows": "Export Workflows",
-    "workflows_file": "Workflows JSON file",
-    "workflows_imported": "Workflows imported."
+    "workflows_file": "Workflows JSON File",
+    "workflows_imported": "Workflows Imported."
+  },
+
+  "cp_groups": {
+    "list": "Collection Protocol Groups",
+    "name": "Name",
+    "cp": "Collection Protocol",
+    "cps": "Collection Protocols",
+    "create_group": "Create Group",
+    "no_cp_specified": "Group has no collection protocols. Add at least one collection protocol to the group.",
+
+    "empty_list": "No collection protocol groups to show!",
+    "loading_list": "Loading collection protocol groups, please wait for a moment...",
+
+    "delete_group_q": "Delete Collection Protocol Group?",
+    "confirm_delete_group": "Are you sure you want to delete the collection protocol group - {{name}}?",
+    "group_deleted": "Collection protocol group, {{name}}, deleted.",
+
+    "participant": "Participant",
+    "visit": "Visit",
+    "specimen": "Specimen",
+    "custom_fields": "Custom Fields",
+    "forms": "Forms",
+    "no_forms": "No Forms",
+    "add_form": "Add Form",
+    "select_form": "Select Form",
+    "multiple_recs_allowed": "Multiple records allowed",
+    "remove_forms": "Remove {{forms.length > 1 ? 'forms' : 'form'}}",
+    "remove_forms_q": "You will lose data if you remove the selected {{forms.length > 1 ? 'forms' : 'form'}}. Do you want to continue?",
+
+    "workflows": "Workflows",
+    "export_workflows": "Export Workflows",
+    "import_workflows": "Import Workflows",
+    "workflows_file": "Workflows JSON File",
+    "workflows_imported": "Workflows Imported.",
+
+    "menu": {
+      "overview": "Overview",
+      "forms": "Forms"
+    }
   },
 
   "participant": {
@@ -431,6 +490,7 @@
     "first_name": "First Name",
     "last_name": "Last Name",
     "middle_name": "Middle Name",
+    "email_address": "Email Address",
     "birth_date": "Birth Date",
     "uid": "National ID",
     "mpi": "Master Patient Index",
@@ -469,11 +529,20 @@
     "ppids": "Participant Protocol IDs",
     "ppids_csv": "Comma separated list of participant protocol IDs",
 
+    "loading_list": "Loading participants, please wait for a moment...",
+    "empty_list": "No participants to show!",
+
     "bulk_registration": "Bulk Participant Registration",
     "num_of_participants": "Number of Participants",
     "collection_site": "Collection Site",
     "participant_registered": "{{numOfParticipants}} participants registered successfully.",
     "spmn_kit_created": "Successfully created specimen kit for {{numOfParticipants}} newly registered participants.",
+    "bulk_update": "Bulk Edit Participants",
+    "bulk_edit_ee": "Bulk edit of participant records is available only in the enterprise edition of the software. For more details, email us at support@krishagni.com",
+
+    "delete_participants":  "Are you sure you want to delete the selected participants?",
+    "participants_deleted": "Participants deleted successfully",
+    "participants_delete_pending": "Participants deletion is taking longer time than anticipated. You'll receive emails when it gets completed",
 
     "consent": {
       "signed_form": "Signed Consent Form",
@@ -508,6 +577,7 @@
     "buttons": {
       "register": "Add Participant",
       "register_n_collect": "Proceed to Collection",
+      "register_n_consent": "Proceed to Consents",
       "lookup_add_part": "Lookup and Add Participant",
       "update_registration": "Update",
       "register_selected_participant": "Register Selected Participant",
@@ -586,6 +656,7 @@
 
     "add": "Add",
     "update": "Update",
+    "add_n_collect": "Proceed to Collection",
 
     "names_print_job_created": "Visit names print job {{jobId}} created successfully",
 
@@ -679,6 +750,7 @@
     "concentration": "Concentration",
     "freeze_thaw_cycles": "Freeze/Thaw Cycles",
     "increment_parent_freeze_thaw": "Increment parent specimen's Freeze/Thaw cycles?",
+    "increment_freeze_thaw": "Increment Freeze/Thaw cycles?",
     "external_id": "External ID",
     "external_ids": "External IDs",
     "comments": "Comments",
@@ -701,6 +773,7 @@
     "manual_selection": "Manual allocation",
     "reallocate": "Rerun auto allocation",
     "clear_positions": "Clear positions",
+    "clear_positions_incl_boxes": "Clear container names and positions",
     "copy_first_to_all": "Copy first to all",
     "row": "Row",
     "column": "Column",
@@ -716,6 +789,7 @@
     "ops": "Actions",
     "auto": "Auto",
     "aliquot_specs": "Aliquots Specifications",
+    "derivative_specs": "Derivative Specifications",
     "review_locations": "Review Locations",
     "assign_locations": "Choose Locations",
     "labels": "Labels",
@@ -729,6 +803,11 @@
     "scan_aliquot_barcodes": "Paste or input aliquot barcodes separated by comma, tab, or newline",
     "warn_large_no_aliquots": "The page is not designed for creation of such large number of aliquots. You might notice slowness in page rendering. In such a scenario, we recommend you to use bulk import option.",
     "warn_large_no_derivatives": "The UI is not designed for creation of such large number of derived specimens. You might notice slowness in page rendering. In such a scenario, we recommend you to use bulk import option.",
+    "no_read_access": "You do not have rights to view specimens of the CP: {{cp.shortTitle}}",
+    "aliquots_count_req_auto_alloc": "Aliquots count is required for auto-allocation!",
+
+    "loading_list": "Loading specimens, please wait for a moment...",
+    "empty_list": "No specimens to show!",
 
     "hide_events": "Hide Events",
     "show_events": "Show Events",
@@ -740,6 +819,8 @@
     "no_events": "No events to show",
     "sys_event": "System",
     "sys_event_help": "System events cannot be edited or deleted!",
+    "processed_by": "Processed By",
+    "processing_time": "Processing Date",
 
     "no_specimens_for_collection": "Please select at least one anticipated specimen for collection",
     "no_specimens_for_print": "Please select at least one existing specimen for label printing",
@@ -776,7 +857,7 @@
     "specimens_hierarchy_deleted": "Selected specimens and their children are deleted successfully",
     "specimens_deleted": "Selected specimens are deleted successfully",
     "delete_specimens_heirarchy": "Are you sure you want to delete the selected specimens and all its children ?",
-    "delete_specimens":  "Are you sure you want to delete selected specimens ?",
+    "delete_specimens":  "Are you sure you want to delete the selected specimens?",
     "close": "Close Specimen",
     "specimens_closed": "Selected specimens are closed successfully",
     "specimen_closed": "Specimen is closed successfully",
@@ -859,7 +940,7 @@
       "select_same_visit_spmns": "Please select specimens of same visit"
     },
 
-    "bulk_update": "Bulk Update Specimens",
+    "bulk_update": "Bulk Edit Specimens",
 
     "bulk_events": {
       "add_edit": "Bulk Events",
@@ -879,12 +960,14 @@
       "copy_first_to_all": "Copy First To All",
       "events_saved": "Events saved successfully",
       "no_events": "None of the selected specimens have <b>{{caption}}</b> records to edit. Automatically switching to <b>add</b> action.",
-      "no_events_for": "Following specimens will not be edited, as they do not have <b>{{caption}}</b> records to edit: <i>{{labels}}</i>."
+      "no_events_for": "Following specimens will not be edited, as they do not have <b>{{caption}}</b> records to edit: <i>{{labels}}</i>.",
+      "save_n_more": "Save and Add More"
     },
     "bulk_transfer": {
       "title": "Bulk Transfer Specimens",
       "current_location": "Current Location",
       "new_location": "New Location",
+      "time": "Transfer Time",
       "comments": "Comments",
       "success": "Successfully updated locations of {{spmnsCount}} specimens"
     },
@@ -895,9 +978,9 @@
       "distributed": "Distributed",
       "returned": "Returned",
       "reserved": "Reserved",
-      "virtual": "Not Stored",
-      "unplanned": "Unplanned Collection",
-      "collected": "Planned Collection",
+      "virtual": "Collected, Not Stored",
+      "unplanned": "Unplanned Collection, Stored",
+      "collected": "Planned Collection, Stored",
       "missed": "Missed Collection",
       "not-collected": "Not Collected",
       "pending": "Pending"
@@ -943,7 +1026,7 @@
     "deleting_sr": "Deleting Requirement...",
     "confirm_delete_sr": "Selected requirement and all its children will be deleted. Are you sure you want to proceed?",
     "closing_sr": "Closing Requirement...",
-    "confirm_close_sr": "Selected requirement and all its children will be closed. Closed requirements cannot be reopened. Are you sure you want to proceed?",
+    "confirm_close_sr": "Selected requirement and all its children will be closed. Are you sure you want to proceed?",
     "lbl_fmt_required_for_auto_print": "Pre-printing requires specimen label format to be specified either at CP level or requirement level",
     "ctx_menu": {
       "view": "View",
@@ -953,7 +1036,8 @@
       "create_derivatives": "Create Derivatives",
       "create_pool_spmn": "Create Pool Specimen",
       "delete": "Delete",
-      "close": "Close"
+      "close": "Close",
+      "reopen": "Reopen"
     },
  
     "buttons": {
@@ -981,8 +1065,10 @@
     "update_institute": "Update Institute",
     "name": "Name",
     "users_count": "Users",
-    "delete_institutes":  "Are you sure you want to delete selected institutes?",
+    "delete_institutes":  "Are you sure you want to delete the selected institutes?",
     "institutes_deleted": "Institutes deleted successfully",
+    "loading_list": "Loading institutes, please wait for a moment...",
+    "empty_list": "No institutes to show!",
 
     "bulk_import": "Import Institutes",
     "bulk_import_jobs": "Import Institutes Job List",
@@ -1022,8 +1108,10 @@
     "address": "Address",
     "cp_count": "Collection Protocols",
     "all_sites": "All current and future sites",
-    "delete_sites":  "Are you sure you want to delete selected sites?",
+    "delete_sites":  "Are you sure you want to delete the selected sites?",
     "sites_deleted": "Sites deleted successfully",
+    "empty_list": "No sites to show!",
+    "loading_list": "Loading sites, please wait for a moment...",
 
     "bulk_import": "Import Sites",
     "bulk_import_jobs": "Import Sites Job List",
@@ -1077,7 +1165,7 @@
     "closed": "Closed",
     "confirm_close_title": "Closing {{shortTitle}} confirmation",
     "confirm_close": "Are you sure you want to close the distribution protocol {{shortTitle}} ?",
-    "delete_dps":  "Are you sure you want to delete selected distribution protocols?",
+    "delete_dps":  "Are you sure you want to delete the selected distribution protocols?",
     "dps_deleted": "Distribution protocols deleted successfully",
     "add_requirement": "Add Specimen Requirement",
     "dist_spmns_count": "Distributed Specimens",
@@ -1087,11 +1175,19 @@
     "delete_consent_tier": "{{entityType}} {{entityName}} of {{entity.dpShortTitle}} will be deleted forever. Are you sure you want to proceed?",
     "select_dist_site": "Please select at least one distributing site",
     "reserved_spmns": "Reserved Specimens",
+    "reserved_by": "Reserved By",
+    "reserved_date": "Reservation Date",
+    "cancelled_by": "Cancelled By",
+    "cancellation_date": "Cancellation Date",
+    "comments": "Comments",
     "distribute": "Distribute",
     "distribute_all": "Distribute All",
     "cancel_reservation": "Cancel Reservation",
     "dist_inst_pre_selected": "Distributing institute {{institute}} already selected in row {{rowNo}}",
     "label_fmt": "Label Format",
+    "empty_list": "No distribution protocols to show!",
+    "loading_list": "Loading distribution protocols, please wait for a moment...",
+    "empty_reqs_list": "No distribution requirements to show!",
 
     "bulk_import": "Import Distribution Protocols",
     "req_bulk_import": "Import Requirements",
@@ -1184,14 +1280,14 @@
     "user_request_approved": "User request approved",
     "activity_status": "Activity Status",
     "confirm_reject": "Rejecting the User {{entityName}} will delete this user from the database. Are you sure you want to go ahead?",
-    "locked": "User {{firstName}} {{lastName}} has been locked. Unlock?",
+    "locked": "User account has been locked.",
     "unlock_user": "Unlock User",
     "unlock_users": "Unlock",
     "user_unlocked": "User unlocked",
     "users_unlocked": "{{count}} {{count == 1 ? 'user' : 'users'}} unlocked",
     "users_approved": "{{count}} {{count == 1 ? 'user' : 'users'}} sign-up request approved",
     "user_since": "User Since",
-    "delete_users":  "Are you sure you want to delete selected users?",
+    "delete_users":  "Are you sure you want to delete the selected users?",
     "users_deleted": "Users deleted",
     "admin_access_req": "Super administrator rights required to delete admin users: {{adminUsers}}.",
     "lock_users": "Lock",
@@ -1201,9 +1297,18 @@
     "users_archived": "{{count}} {{count == 1 ? 'user' : 'users'}} archived",
     "user_reactivated": "User reactivated",
     "users_reactivated": "{{count}} {{count == 1 ? 'user' : 'users'}} reactivated",
+    "expired": "User account password has expired. Reset the password.",
+    "time_zone": "Time Zone",
+    "empty_list": "No users to show!",
+    "loading_list": "Loading users, please wait for a moment...",
+    "disable_notifs": "Disable Notifications?",
 
     "confirm_institute_update_title": "Update Institute?",
     "confirm_institute_update_q": "Changing the institute will remove all the site specific roles assigned to the {{count > 1 ? 'users' : 'user'}}. Are you sure you want to proceed?",
+
+    "impersonate": "Impersonate",
+    "impersonate_warning": "You are now viewing {{user | osUserDisplayName}}'s account.",
+    "return_back_to_account": "Return back to your account.",
 
     "user_roles": "User Roles",
     "bulk_import_users": "Import Users",
@@ -1289,7 +1394,9 @@
     },
     
     "proceed_sign_up": "Proceed to Sign Up",
-    "welcome_title": "OpenSpecimen Introduction in One Minute"
+    "welcome_title": "OpenSpecimen Introduction in One Minute",
+    "got_it": "Ok, Got It",
+    "watch_later": "Watch Later"
   },
 
   "forgot_password": {
@@ -1359,6 +1466,8 @@
     "no_container_selected": "Please select a container",
     "cannot_hold_specimen": "Selected container cannot hold specimen for which the position is selected",
     "stores_specimens": "Store Specimens?",
+    "empty_list": "No containers to show!",
+    "loading_list": "Loading containers, please wait for a moment...",
     "confirm_delete": "{{entityType}} {{entityName}} and its child containers will be deleted forever. Are you sure you want to proceed?",
     "assign_positions": "Assign Positions",
     "vacate_positions": "Vacate existing specimens",
@@ -1367,12 +1476,17 @@
     "paste_specimen_labels": "Paste or input specimen labels or barcodes separated by comma, tab, or newline",
     "no_free_locs": "Container does not have enough free locations to accommodate input specimen labels",
     "dup_labels": "Duplicate {{barcodes ? 'barcodes' : 'labels'}} entered: {{dups}}",
+    "transfer": "Transfer",
+    "transfer_container": "Transfer {{name}} to...",
+    "transferred_by": "Transferred By",
+    "transfer_time": "Date & Time",
+    "transfer_reason": "Reasons",
     "transfer_spmns": "Transfer Specimens",
     "transfer_spmns_warn": "{{storedSpmns.length > 1 ? 'Specimens' : 'Specimen'}} {{storedSpmns.join(', ')}} {{storedSpmns.length > 1 ? 'are' : 'is'}} already stored in a container. Do you really want to move {{storedSpmns.length > 1 ? 'them' : 'it'}} to a new location?",
     "replicated_successfully": "Container {{name}} replicated successfully",
     "multiple_containers_created": "Successfully created {{count}} containers",
     "search": "Type storage container name to filter containers",
-    "delete_containers":  "Are you sure you want to delete selected containers?",
+    "delete_containers":  "Are you sure you want to delete the selected containers?",
     "containers_deleted": "Containers deleted successfully",
     "no_containers_match_search": "No containers match search criteria to store specimen/s",
     "created_by": "Created By",
@@ -1430,6 +1544,15 @@
     "replicate": "Replicate",
     "add_another": "Add Another",
 
+    "event_id": "Event ID",
+    "event_from_site": "From Site",
+    "event_from_location": "From Location",
+    "event_to_site": "To Site",
+    "event_to_location": "To Location",
+    "event_user": "User",
+    "event_time": "Time",
+    "no_transfer_events": "No transfer events to show!",
+
     "alloc_strategies": {
       "least_empty": "Least Empty Container",
       "recently_used": "Recently Used Container"
@@ -1455,6 +1578,42 @@
       "will_be_emailed": "Defragmentation report generation is taking more time. Link to download the report will be sent to you by email."
     },
 
+    "maintenance": {
+      "tasks": "Tasks",
+      "scheduled_activities": "Scheduled Activities",
+      "activities_log": "Activities Log",
+      "name": "Name",
+      "activity": "Activity",
+      "task": "Task",
+      "cycle_interval": "Cycle Interval",
+      "start_date": "Start Date",
+      "rem_interval": "Remind Before",
+      "assigned_users": "Assigned Users",
+      "performed_by": "Performed By",
+      "activity_date": "Activity Date",
+      "time_taken": "Time Taken",
+      "time_taken_mins": "Time Taken (mins)",
+      "minutes": "minutes",
+      "comments": "Comments",
+      "confirm_archive_sched_activity_title": "Archive Scheduled Activity",
+      "confirm_archive_sched_activity_q": "Are you sure you want to archive the scheduled activity: <b>{{name}}</b>?",
+      "create_sched_activity": "Schedule an Activity",
+      "update_sched_activity": "Update Activity Schedule",
+      "type": "Type",
+      "ad_hoc": "Ad hoc",
+      "scheduled": "Scheduled",
+      "activity": "Activity",
+      "log_activity": "Log an Activity",
+      "update_activity_log": "Update Activity Log",
+      "confirm_archive_activity_title": "Archive Activity",
+      "confirm_archive_activity_q": "Are you sure you want to archive the activity: <b>#{{id}} {{taskName}}</b>?",
+
+      "empty_sched_activities_list": "No scheduled activities to show!",
+      "loading_sched_activities_list": "Loading scheduled activities, please wait for a moment...",
+      "empty_activities_log": "No activities to show!",
+      "loading_activities_log": "Loading activities log, please wait for a moment..."
+    },
+
     "tooltip": {
       "view_details": "Click to view Container details",
       "add": "Click to add new Container",
@@ -1468,7 +1627,9 @@
     "menu": {
       "overview": "Overview",
       "locations": "Locations",
-      "specimens": "Specimens"
+      "specimens": "Specimens",
+      "transfer_events": "Transfer Events",
+      "maintenance": "Maintenance"
     },
 
     "filter": {
@@ -1492,8 +1653,11 @@
     "can_hold": "Can Hold",
     "bulk_import": "Import Container Types",
     "bulk_import_jobs": "Import Container Types Jobs List",
-    "delete_types":  "Are you sure you want to delete selected container types?",
+    "delete_types":  "Are you sure you want to delete the selected container types?",
     "types_deleted": "Container types deleted",
+
+    "loading_list": "Loading container types, please wait for a moment...",
+    "empty_list": "No container types to show!",
 
     "tooltip": {
       "add": "Click to add new Container Type",
@@ -1510,6 +1674,17 @@
     "filter": {
       "title": "Filters"
     }
+  },
+
+  "container_task": {
+    "list": "Container Tasks",
+    "name": "Name",
+    "description": "Description",
+    "create_task": "Create Task",
+    "confirm_archive_title": "Confirm Archive Task",
+    "confirm_archive_q": "Are you sure you want to archive the container maintenance task: <b>{{name}}</b>?",
+    "loading_list": "Loading container tasks, please wait for a moment...",
+    "empty_list": "No container tasks to show!"
   },
 
   "role": {
@@ -1535,13 +1710,17 @@
       "Order": "Orders",
       "ParticipantPhi": "Participants (PHI)",
       "ParticipantDeid": "Participants (DeId)",
-      "VisitAndSpecimen": "Visits and Specimens",
+      "Visit": "Visits",
+      "Specimen": "Specimens",
+      "PrimarySpecimen": "Primary Specimens",
       "SurgicalPathologyReport": "Path Report",
       "StorageContainer": "Storage Containers",
       "User": "Users",
       "ScheduledJob": "Jobs",
       "ShippingAndTracking": "Shipping and Tracking",
-      "DistributionProtocol": "Distribution Protocols"
+      "DistributionProtocol": "Distribution Protocols",
+      "Query": "Query",
+      "Consent": "Consents"
     },
 
     "menu": {
@@ -1562,29 +1741,30 @@
     "created_by": "Created By",
     "last_updated": "Last Updated",
     "cp_count": "CP Count",
-    "not_used": "Not used in any collection protocols",
-    "used_in": "Used in following collection protocols",
+    "not_used": "This form is not used for data entry at any level. Start by selecting the level.",
+    "na": "Not Applicable",
     "multiple_records": "Multiple Records",
+    "single_record": "Single Record",
     "collection_protocol": "Collection Protocol",
     "level": "Level",
     "multiple_records_allowed": "Multiple records allowed",
-    "use_in_cps": "Use form in following collection protocols",
-    "spe_attached_to_all_cps": "Specimen Event forms always attached to all collection protocols.",
     "all_cps": "All Present and Future Collection Protocols",
     "select_cps": "Select One or More Collection Protocols",
     "select_level": "Select Level",
     "attach_form": "Attach Form",
-    "attached": "Form Successfully Attached",
+    "attached": "Form successfully attached!",
     "record_count": "Record Count",
     "record_stats": "Following table shows {{caption}} form record counts",
     "deleting_form": "Deleting {{caption}} form confirmation",
     "confirm_delete": "{{caption}} form will be deleted forever. Are you sure you want to proceed?",
     "confirm_delete_with_data": "You will lose data if you delete the {{caption}} form. Do you want to continue?",
     "form_deleted": "{{caption}} form deleted successfully",
-    "confirm_delete_association": "Are you sure you want to delete this form at <b>{{level.caption}}</b> level from <b>{{!collectionProtocol.id ? 'All Protocols' : collectionProtocol.shortTitle}}</b>? \n Please note you will no longer be able to access data for this form",
-    "association_deleted": "Successfully deleted form at {{level.caption}} level from {{!collectionProtocol.id ? 'All Protocols' : collectionProtocol.shortTitle}}",
+    "confirm_delete_association": "Are you sure you want to delete this form association (<b>{{level.caption}}{{!collectionProtocol.id ? '' : '/' + collectionProtocol.shortTitle}})</b>? Please note that you will no longer be able to access data for this form association.",
+    "association_deleted": "Successfully deleted the form association at <b>{{level.caption}}{{!collectionProtocol.id ? '' : '/' + collectionProtocol.shortTitle}}</b>",
     "delete_forms":  "You will lose data if you delete the selected forms. Do you want to continue?",
     "forms_deleted": "Forms deleted successfully",
+    "loading_list": "Loading forms, please wait for a moment...",
+    "empty_list": "No forms to show!",
 
     "tooltip": {
       "add": "Click to add new Form",
@@ -1601,10 +1781,14 @@
   },
 
   "extensions": {
-    "no_extensions": "No forms to show",
+    "no_extensions": "No forms to show!",
     "list": "Forms",
     "sys_form": "System Form",
     "sys_form_help": "System form records cannot be added or edited or deleted!",
+
+    "switch_to_patient_mode_q": "Switch to Patient Mode?",
+    "confirm_switch_to_patient_mode": "You will be signed out of the system. Do you really wish to switch to the patient data entry mode?",
+    "thank_you_patient": "Thank you for taking the time to answer the questions.",
 
     "name": "Name",
     "updated_by": "Updated By",
@@ -1674,6 +1858,7 @@
     "remove_query_from_folder": "Remove query from folder",
     "share_folder_with_all": "Share folder with all current and future users",
     "share_folder_with_users": "Share folder with following users",
+    "shared_with": "Shared with",
     "users": "Users",
     "delete_query": "Delete Query",
     "confirm_delete_query": "Are you sure you want to delete query '{{title}}'?",
@@ -1684,7 +1869,8 @@
     "select_query_def_file": "Select Query File",
     "new_query": "New Query",
     "select_cp": "Select a Collection Protocol",
-    "invalid_cp": "Invalid collection protocol: {{cpId}}",
+    "invalid_cp": "Invalid Collection Protocol: {{cpId}}",
+    "invalid_cp_group": "Invalid Collection Protocol Group: {{cpGroupId}}",
     "add_filter": "Add Filter",
     "edit_filter": "Edit Filter",
     "search_field": "Search Field",
@@ -1714,8 +1900,9 @@
     "specimens": "Specimens",
     "waiting_for_count": "Please wait for a moment while we count Participants and Specimens matching your criteria",
     "waiting_for_records": "Loading records, please wait for a moment...",
-    "export_to_get_all": "Export records to get all records",
-    "know_why_export_has_more_data": "Click here to know why exported file has more records",
+    "no_data": "No records match the search criteria!",
+    "export_to_get_all": "Export to view {{type == 'crosstab' ? 'accurate counts' : 'all records'}}.",
+    "know_why_export_has_more_data": "Click here to know why the exported file has {{type == 'crosstab' ? 'accurate counts' : 'more records'}}.",
     "error": "Error occurred. Please contact system administrator for further resolution",
     "export_initiated": "Query results export has been initiated. Export file download should start in few moments...",
     "invalid_form_or_field": "Invalid form or field <b>{{field}}</b>. <a href=\"https://openspecimen.atlassian.net/wiki/x/MQD7BQ\" target=\"_blank\">Click here</a> for more details",
@@ -1740,7 +1927,8 @@
 
     "enable_wide_rows": "Enable Wide Rows",
     "no_fields_selected": "No fields selected. Please select at least one field",
-    "display_field_exprs": "Display Field Expressions",
+    "display_field_exprs": "Display Field Names",
+    "case_sensitive": "Case Sensitive Search",
 
     "selected_fields": "Selected Fields",
     "agg_fns": "Aggregate Functions",
@@ -2091,7 +2279,9 @@
     "enter_specimen_label": "Enter specimen labels or barcodes separated by a comma, tab or newline",
     "report_gen_initiated": "Generating cart specimens report...",
     "downloading_report": "Downloading cart specimens report...",
-    "report_will_be_emailed": "Generating cart specimens report is taking more time than anticipated. Link to download report will be sent to you by email"
+    "report_will_be_emailed": "Generating cart specimens report is taking more time than anticipated. Link to download report will be sent to you by email",
+    "loading_list": "Loading carts, please wait for a moment...",
+    "empty_list": "No carts to show!"
   },
 
   "orders": {
@@ -2104,10 +2294,12 @@
     "site": "Site",
     "dp": "Distribution Protocol",
     "date": "Date",
+    "date_time": "Date and Time",
     "status": "Status",
     "dispose": "Dispose",
     "print_labels": "Print labels",
     "specimens": "Specimens",
+    "specimens_with_count": "Specimens{{order.orderItems.length > 0 || spmnsCount > 0 ? ' (' + (order.orderItems.length || spmnsCount) + ')' : ''}}",
     "distributor": "Distributor",
     "dist_date": "Distribution Date",
     "creation_date": "Creation Date",
@@ -2123,11 +2315,14 @@
     "holding_location": "Holding Location",
     "no_specimens_in_list": "No specimens in the order list to distribute. Add at least one specimen.",
     "enter_specimen_label": "To add specimens to distribution list, enter labels or barcodes separated by a comma, tab or newline and click add",
-    "more_specimens_than_limit": "The order list has more specimens than the allowed limit ({{limit}}) for editing details using UI. Please consider using bulk import option if you like to specify additional details (quantity, cost etc) of the specimens to be distributed. The UI limit of {{limit}} can be modified from the settings page: Settings -> Order Specimens UI Limit.",
+    "more_specimens_than_limit": "The order list has more specimens ({{spmnsCount}}) than the allowed limit ({{limit}}) for editing details using UI. Please consider using bulk import option if you like to specify additional details (quantity, cost etc) of the specimens to be distributed. The UI limit of {{limit}} can be modified from the settings page: Settings -> Order Specimens UI Limit.",
     "more_specimens_warning": "{{allowed == 0 ? 'No more specimens can be added' : 'You can add only ' +  allowed + ' more specimens using UI'}}. If you want to distribute more than {{limit}} specimens then consider using either bulk import option or specimens cart. The UI limit of {{limit}} can be modified from the settings page: Settings -> Order Specimens UI Limit.",
     "loading_items": "Loading order items. Please wait for a moment...",
     "more_time": "Saving distribution order is taking more time than anticipated. An email notification will be sent to you on successful distribution of specimens",
     "holding_loc_draft_not_allowed": "Cannot save draft, as one or more specimens are assigned holding locations.",
+
+    "loading_list": "Loading orders, please wait for a moment...",
+    "empty_list": "No orders to show!",
 
     "report_gen_initiated": "Generating distribution order report...",
     "downloading_report": "Downloading distribution order report...",
@@ -2149,6 +2344,9 @@
     "freeze_thaw_on_return": "Freeze/Thaw",
     "user": "User",
     "comments": "Comments",
+    "returned_by": "Returned By",
+    "return_location": "Return Location",
+    "return_date": "Return Date",
     "select_dp": "Select Distribution Protocol",
     "creation_success": "Distribution Order {{name}} successfully created",
 
@@ -2247,6 +2445,8 @@
     "multi_site_specimens": "Can't ship specimens from multiple storage sites",
     "loading_specimens": "Loading shipment specimens. Please wait for a moment...",
     "loading_containers": "Loading shipment containers. Please wait for a moment...",
+    "loading_list": "Loading shipments, please wait for a moment...",
+    "empty_list": "No shipments to show!",
 
     "filters": "Filters",
     "report_gen_initiated": "Generating shipment report...",
@@ -2327,6 +2527,8 @@
     "schedule": "Schedule",
     "created_by": "Created By",
     "last_run_on": "Last Run On",
+    "loading_list": "Loading jobs, please wait for a moment...",
+    "empty_list": "No jobs to show!",
 
     "confirm_delete_title": "Confirm Delete",
     "confirm_delete": "Are you sure you want to delete the job '{{name}}'?",
@@ -2338,6 +2540,8 @@
     "query": "Query",
     "notify_users": "Notify Users",
     "run_as_user": "Run as User",
+    "shared_with": "Shared with following users",
+    "update_not_allowed": "You do not have rights to edit the job details!",
 
     "repeat_schedule": "Repeat Interval",
     "repeat_schedules": {
@@ -2418,12 +2622,15 @@
 
     "run_logs": "Run Logs",
     "seconds": "seconds",
+    "empty_runs_list": "No job run logs to show!",
+    "loading_runs_list": "Loading job run logs, please wait for a moment...",
 
-    "no_runs": "No run logs to show",
     "run_by": "Run By",
     "started_at": "Started At",
     "time_taken": "Time Taken",
     "status": "Status",
+    "start_date": "Start Date",
+    "end_date": "End Date",
 
     "tooltip": {
       "create_job": "Create new scheduled job",
@@ -2463,6 +2670,9 @@
     "code": "Code",
     "statement": "Statement",
 
+    "empty_list": "No consents to show!",
+    "loading_list": "Loading consent statements, please wait for a moment...",
+
     "tooltip": {
       "add": "Click to add new Consent",
       "search": "Click to search Consent"
@@ -2499,8 +2709,10 @@
         "verify_token_ip_address_desc": "Check whether requests are made from the same IP address to which the login token was issued.",
         "saml_enable": "SAML Authentication",
         "saml_enable_desc": "Enable single sign on using SAML based identity provider.",
+        "single_logout": "Single Logout",
+        "single_logout_desc": "Enable single logout using SAML based identity provider.",
         "password_expiry_days": "Password Age",
-        "password_expiry_days_desc": "Number of days before passwords expire.",
+        "password_expiry_days_desc": "Number of days during which a password is valid.",
         "passwords_to_examine": "Password History",
         "passwords_to_examine_desc": "Number of unique passwords before an old password can be reused.",
         "password_pattern": "Password Complexity",
@@ -2628,7 +2840,13 @@
         "aliquot_label_format": "Aliquot Label Format",
         "aliquot_label_format_desc": "The system-level format for aliquot labels.",
         "mandatory_aliquot_qty": "Mandatory Aliquot Quantity",
-        "mandatory_aliquot_qty_desc": "Enable to make aliquots quantity a mandatory field."
+        "mandatory_aliquot_qty_desc": "Enable to make aliquots quantity a mandatory field.",
+        "visit_name_format": "Visit Name Format",
+        "visit_name_format_desc": "The system-level format for the planned visit names.",
+        "unplanned_visit_name_format": "Unplanned Visit Name Format",
+        "unplanned_visit_name_format_desc": "The system-level format for the unplanned visit names.",
+        "pde_link_age": "Survey Link Age",
+        "pde_link_age_desc": "Number of days during which a survey link is valid."
       },
 
       "common": {
@@ -2676,11 +2894,17 @@
         "max_eapp_msg_retries": "Failed Messages Retry Limit",
         "max_eapp_msg_retries_desc": "Maximum number of retries to process failed external application messages.",
         "eapp_msg_retention_period": "Message Retention Period",
-        "eapp_msg_retention_period_desc": "Number of days to retain the external application messages in the database before deleting them",
+        "eapp_msg_retention_period_desc": "Number of days to retain the external application messages in the database before deleting them.",
         "search_delay": "Search Delay",
         "search_delay_desc": "Time in milliseconds to wait between users input before executing the search action.",
         "de_form_html_markup": "HTML Markup",
-        "de_form_html_markup_desc": "Enable to allow HTML decorated custom field labels"
+        "de_form_html_markup_desc": "Enable to allow HTML decorated custom field labels.",
+        "allowed_file_types": "Allowed File Types",
+        "allowed_file_types_desc": "Comma-separated list of file types that can be uploaded by the end-users.",
+        "allowed_req_origins": "Allowed Request Origins",
+        "allowed_req_origins_desc": "Comma-separated list of allowed request origin servers.",
+        "hosting_institute": "Hosting Institute",
+        "hosting_institute_desc": "Name of the institute hosting OpenSpecimen and the biobank services"
       },
 
       "email": {
@@ -2824,7 +3048,7 @@
     },
 
     "new_stuff": {
-      "title": "New stuff!",
+      "title": "What's new?",
       "announcements": "Announcements",
       "read_more": "Read more...",
       "loading_notes": "Loading... Please wait for a moment."

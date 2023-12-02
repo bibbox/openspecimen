@@ -13,6 +13,8 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.hibernate.Criteria;
+import org.hibernate.criterion.Junction;
+import org.hibernate.criterion.MatchMode;
 import org.hibernate.criterion.Order;
 import org.hibernate.criterion.Projections;
 import org.hibernate.criterion.Restrictions;
@@ -221,12 +223,21 @@ public class AuditDaoImpl extends AbstractDao<UserApiCallLog> implements AuditDa
 			query.add(Restrictions.le("r.revtstmp", criteria.endDate()));
 		}
 
-		if (criteria.userId() != null) {
-			query.add(Restrictions.eq("u.id", criteria.userId()));
+		if (CollectionUtils.isNotEmpty(criteria.userIds())) {
+			query.add(Restrictions.in("u.id", criteria.userIds()));
 		}
 
 		if (criteria.lastId() != null) {
 			query.add(Restrictions.lt("re.id", criteria.lastId()));
+		}
+
+		if (CollectionUtils.isNotEmpty(criteria.entities())) {
+			Junction orCond = Restrictions.disjunction();
+			for (String entity : criteria.entities()) {
+				orCond.add(Restrictions.like("re.entityName", entity, MatchMode.END));
+			}
+
+			query.add(orCond);
 		}
 
 		return query;
@@ -270,7 +281,7 @@ public class AuditDaoImpl extends AbstractDao<UserApiCallLog> implements AuditDa
 	}
 
 	private Query buildFormDataRevisionsQuery(RevisionsListCriteria criteria) {
-		String sql = String.format(GET_FORM_DATA_AUD_EVENTS_SQL, buildBaseFormDataRevisionsQuery(criteria));
+		String sql = String.format(GET_FORM_DATA_AUD_EVENTS_SQL, buildBaseFormDataRevisionsQuery(criteria), buildQueryRestrictions(criteria));
 		Query query = getCurrentSession().createSQLQuery(sql)
 			.addScalar("identifier", LongType.INSTANCE)
 			.addScalar("event_timestamp", TimestampType.INSTANCE)
@@ -284,8 +295,8 @@ public class AuditDaoImpl extends AbstractDao<UserApiCallLog> implements AuditDa
 			.addScalar("last_name", StringType.INSTANCE)
 			.addScalar("email_address", StringType.INSTANCE);
 
-		if (criteria.userId() != null) {
-			query.setParameter("userId", criteria.userId());
+		if (CollectionUtils.isNotEmpty(criteria.userIds())) {
+			query.setParameterList("userIds", criteria.userIds());
 		}
 
 		if (criteria.startDate() != null) {
@@ -300,14 +311,18 @@ public class AuditDaoImpl extends AbstractDao<UserApiCallLog> implements AuditDa
 			query.setParameter("lastId", criteria.lastId());
 		}
 
+		if (CollectionUtils.isNotEmpty(criteria.entities())) {
+			query.setParameterList("entities", criteria.entities());
+		}
+
 		return query;
 	}
 
 	private String buildBaseFormDataRevisionsQuery(RevisionsListCriteria criteria) {
 		List<String> whereClauses = new ArrayList<>();
 
-		if (criteria.userId() != null) {
-			whereClauses.add("e.user_id = :userId");
+		if (CollectionUtils.isNotEmpty(criteria.userIds())) {
+			whereClauses.add("e.user_id in (:userIds)");
 		}
 
 		if (criteria.startDate() != null) {
@@ -331,6 +346,13 @@ public class AuditDaoImpl extends AbstractDao<UserApiCallLog> implements AuditDa
 		return getLimitSql(result, criteria.startAt(), criteria.maxResults(), DbSettingsFactory.isOracle());
 	}
 
+	private String buildQueryRestrictions(RevisionsListCriteria criteria) {
+		if (CollectionUtils.isEmpty(criteria.entities())) {
+			return StringUtils.EMPTY;
+		}
+
+		return "where fc.entity_type in :entities";
+	}
 
 	private void loadModifiedProps(RevisionDetail revision, Map<String, List<RevisionEntityRecordDetail>> entitiesMap) {
 		for (Map.Entry<String, List<RevisionEntityRecordDetail>> entity : entitiesMap.entrySet()) {
@@ -456,6 +478,7 @@ public class AuditDaoImpl extends AbstractDao<UserApiCallLog> implements AuditDa
 		"  inner join catissue_form_context fc on fc.container_id = f.identifier " +
 		"  inner join catissue_form_record_entry fre on fre.record_id = t.record_id and fre.form_ctxt_id = fc.identifier " +
 		"  inner join catissue_user u on u.identifier = t.user_id " +
+		"%s " +
 		"order by " +
 		" t.identifier desc";
 

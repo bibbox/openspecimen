@@ -9,6 +9,9 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import javax.servlet.FilterChain;
 import javax.servlet.ServletException;
@@ -18,6 +21,8 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.ws.rs.core.HttpHeaders;
 
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.InitializingBean;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.codec.Base64;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
@@ -35,32 +40,35 @@ import com.krishagni.catissueplus.core.auth.events.TokenDetail;
 import com.krishagni.catissueplus.core.auth.services.UserAuthenticationService;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
 import com.krishagni.catissueplus.core.common.events.ResponseEvent;
+import com.krishagni.catissueplus.core.common.service.ConfigChangeListener;
+import com.krishagni.catissueplus.core.common.service.ConfigurationService;
 import com.krishagni.catissueplus.core.common.util.AuthUtil;
+import com.krishagni.catissueplus.core.common.util.ConfigUtil;
 import com.krishagni.catissueplus.rest.RestErrorController;
 
-public class AuthTokenFilter extends GenericFilterBean {
+public class AuthTokenFilter extends GenericFilterBean implements InitializingBean {
 	private static final String OS_CLIENT_HDR = "X-OS-API-CLIENT";
-	
+
 	private static final String BASIC_AUTH = "Basic ";
 	
-	private static final String DEFAULT_AUTH_DOMAIN = "openspecimen";
+	private Set<String> allowedOrigins;
 	
 	private UserAuthenticationService authService;
 	
 	private Map<String, List<String>> excludeUrls = new HashMap<>();
+
+	private Map<String, List<String>> pdeUrls = new HashMap<>();
 	
 	private AuditService auditService;
-	
-	public UserAuthenticationService getAuthService() {
-		return authService;
-	}
+
+	private ConfigurationService cfgSvc;
 
 	public void setAuthService(UserAuthenticationService authService) {
 		this.authService = authService;
 	}
 
-	public Map<String, List<String>> getExcludeUrls() {
-		return excludeUrls;
+	public void setCfgSvc(ConfigurationService cfgSvc) {
+		this.cfgSvc = cfgSvc;
 	}
 
 	public void setExcludeUrls(Map<String, List<String>> excludeUrls) {
@@ -68,10 +76,15 @@ public class AuthTokenFilter extends GenericFilterBean {
 	}
 
 	public void addExcludeUrl(String method, String resourceUrl) {
-		List<String> urls = excludeUrls.computeIfAbsent(method, (key) -> new ArrayList<>());
-		if (urls.indexOf(resourceUrl) == -1) {
-			urls.add(resourceUrl);
-		}
+		addUrl(excludeUrls, method, resourceUrl);
+	}
+
+	public void setPdeUrls(Map<String, List<String>> pdeUrls) {
+		this.pdeUrls = pdeUrls;
+	}
+
+	public void addPdeUrl(String method, String resourceUrl) {
+		addUrl(pdeUrls, method, resourceUrl);
 	}
 
 	public void setAuditService(AuditService auditService) {
@@ -91,15 +104,42 @@ public class AuthTokenFilter extends GenericFilterBean {
 		}
 	}
 
+	@Override
+	public void afterPropertiesSet()
+	throws ServletException {
+		super.afterPropertiesSet();
+		cfgSvc.registerChangeListener("common", new ConfigChangeListener() {
+			@Override
+			public void onConfigChange(String name, String value) {
+				if (!"allowed_req_origins".equals(name)) {
+					return;
+				}
+
+				allowedOrigins = getAllowedOrigins(value);
+			}
+		});
+	}
+
 	private void doFilter0(ServletRequest req, ServletResponse resp, FilterChain chain)
 	throws IOException, ServletException {
 		HttpServletRequest httpReq = (HttpServletRequest)req;
 		HttpServletResponse httpResp = (HttpServletResponse)resp;
-		
-		httpResp.setHeader("Access-Control-Allow-Origin", "http://localhost:9000");
+
+		String origin = httpReq.getHeader("Origin");
+		if (!isOriginAllowed(origin)) {
+			httpResp.sendError(
+				HttpServletResponse.SC_METHOD_NOT_ALLOWED,
+				"Requests from the origin server "  + origin + " not allowed");
+			return;
+		}
+
+		if (StringUtils.isNotBlank(origin)) {
+			httpResp.setHeader("Access-Control-Allow-Origin", origin);
+		}
+
 		httpResp.setHeader("Access-Control-Allow-Credentials", "true");
 		httpResp.setHeader("Access-Control-Allow-Methods", "POST, GET, PUT, DELETE, PATCH, OPTIONS");
-		httpResp.setHeader("Access-Control-Allow-Headers", "Origin, Accept, Content-Type, X-OS-API-TOKEN, X-OS-API-CLIENT");
+		httpResp.setHeader("Access-Control-Allow-Headers", "Origin, Accept, Content-Type, X-OS-API-TOKEN, X-OS-API-CLIENT, X-OS-IMPERSONATE-USER, X-OS-CLIENT-TZ, X-OS-FDE-TOKEN");
 		httpResp.setHeader("Access-Control-Expose-Headers", "Content-Disposition, Content-Length, Content-Type");
 
 		httpResp.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
@@ -128,8 +168,19 @@ public class AuthTokenFilter extends GenericFilterBean {
 				user = atResp.getPayload().getUser();
 				loginAuditLog = atResp.getPayload().getLoginAuditLog();
 			}
-		} else if(httpReq.getHeader(HttpHeaders.AUTHORIZATION) != null) {
-			user = doBasicAuthentication(httpReq, httpResp);
+		} else if (httpReq.getHeader(HttpHeaders.AUTHORIZATION) != null) {
+			AuthToken token = doBasicAuthentication(httpReq, httpResp);
+			if (token != null) {
+				user = token.getUser();
+				loginAuditLog = token.getLoginAuditLog();
+			}
+		}
+
+		if (user == null && isPdeUrl(httpReq)) {
+			String fdeToken = AuthUtil.getFdeTokenFromHeader(httpReq);
+			if (StringUtils.isNotBlank(fdeToken) && authService.isValidFdeToken(fdeToken)) {
+				user = getSystemUser();
+			}
 		}
 		
 		if (user == null) {
@@ -154,7 +205,22 @@ public class AuthTokenFilter extends GenericFilterBean {
 			return;
 		}
 
-		AuthUtil.setCurrentUser(user, authToken, httpReq);
+		User impersonatedUser = null;
+		if (user.isAdmin() && !user.isSysUser()) {
+			String impUserStr = AuthUtil.getImpersonateUser(httpReq);
+			if (StringUtils.isNotBlank(impUserStr)) {
+				impersonatedUser = getUser(impUserStr);
+				if (impersonatedUser == null) {
+					httpResp.sendError(HttpServletResponse.SC_BAD_REQUEST, "User " + impUserStr + " does not exist!");
+					return;
+				} else if (!impersonatedUser.isActive()) {
+					httpResp.sendError(HttpServletResponse.SC_BAD_REQUEST, "User " + impUserStr + " is not active!");
+					return;
+				}
+			}
+		}
+
+		AuthUtil.setCurrentUser(impersonatedUser != null ? impersonatedUser : user, authToken, httpReq);
 		Date callStartTime = Calendar.getInstance().getTime();
 		chain.doFilter(req, resp);
 		AuthUtil.clearCurrentUser();
@@ -162,6 +228,7 @@ public class AuthTokenFilter extends GenericFilterBean {
 		if (isRecordableApi(httpReq)) {
 			UserApiCallLog userAuditLog = new UserApiCallLog();
 			userAuditLog.setUser(user);
+			userAuditLog.setImpersonatedUser(impersonatedUser);
 			userAuditLog.setUrl(httpReq.getRequestURI());
 			userAuditLog.setMethod(httpReq.getMethod());
 			userAuditLog.setCallStartTime(callStartTime);
@@ -172,7 +239,7 @@ public class AuthTokenFilter extends GenericFilterBean {
 		}
 	}
 
-	private User doBasicAuthentication(HttpServletRequest httpReq, HttpServletResponse httpResp) throws UnsupportedEncodingException {
+	private AuthToken doBasicAuthentication(HttpServletRequest httpReq, HttpServletResponse httpResp) throws UnsupportedEncodingException {
 		String header = httpReq.getHeader(HttpHeaders.AUTHORIZATION);
 		if (header == null || !header.startsWith(BASIC_AUTH)) {
 			return null;
@@ -188,13 +255,13 @@ public class AuthTokenFilter extends GenericFilterBean {
 		detail.setLoginName(parts[0]);
 		detail.setPassword(parts[1]);
 		detail.setIpAddress(httpReq.getRemoteAddr());
-		detail.setDomainName(DEFAULT_AUTH_DOMAIN);
+		detail.setDomainName(User.DEFAULT_AUTH_DOMAIN);
 		detail.setDoNotGenerateToken(true);
 
 		RequestEvent<LoginDetail> req = new RequestEvent<LoginDetail>(detail);
 		ResponseEvent<Map<String, Object>> resp = authService.authenticateUser(req);
 		if (resp.isSuccessful()) {
-			return (User)resp.getPayload().get("user");
+			return (AuthToken) resp.getPayload().get("tokenObj");
 		}
 
 		return null;
@@ -223,23 +290,38 @@ public class AuthTokenFilter extends GenericFilterBean {
 		}
 	}
 
+	private void addUrl(Map<String, List<String>> urlsMap, String method, String resourceUrl) {
+		List<String> urls = urlsMap.computeIfAbsent(method, (key) -> new ArrayList<>());
+		if (urls.indexOf(resourceUrl) == -1) {
+			urls.add(resourceUrl);
+		}
+	}
+
 	private boolean requiresSignIn(ServletRequest req) {
+		return !matchesUrl(req, excludeUrls);
+	}
+
+	private boolean isPdeUrl(ServletRequest req) {
+		return matchesUrl(req, pdeUrls);
+	}
+
+	private boolean matchesUrl(ServletRequest req, Map<String, List<String>> inputUrls) {
 		HttpServletRequest httpReq = (HttpServletRequest)req;
 
-		List<String> urls = excludeUrls.get(httpReq.getMethod());
+		List<String> urls = inputUrls.get(httpReq.getMethod());
 		if (urls == null) {
 			urls = Collections.emptyList();
 		}
 
-		boolean requiresSignIn = true;
+		boolean result = false;
 		for (String url : urls) {
 			if (matches(httpReq, url)) {
-				requiresSignIn = false;
+				result = true;
 				break;
 			}
 		}
 
-		return requiresSignIn;
+		return result;
 	}
 
 	private boolean isRecordableApi(HttpServletRequest httpReq) {
@@ -286,5 +368,49 @@ public class AuthTokenFilter extends GenericFilterBean {
 			e.printStackTrace();
 			return unknownError;
 		}
+	}
+
+	private User getUser(String userString) {
+		String[] parts = userString.split("/", 2);
+
+		String domain = "openspecimen";
+		String loginName = null;
+		if (parts.length == 2) {
+			domain = parts[0];
+			loginName = parts[1];
+		} else {
+			loginName = parts[0];
+		}
+
+		return authService.getUser(domain, loginName);
+	}
+
+	private boolean isOriginAllowed(String origin) {
+		if (StringUtils.isBlank(origin)) {
+			return true;
+		}
+
+		return getAllowedOrigins().isEmpty() || getAllowedOrigins().contains("*") || getAllowedOrigins().contains(origin.trim());
+	}
+
+	private Set<String> getAllowedOrigins() {
+		if (allowedOrigins == null) {
+			String setting = ConfigUtil.getInstance().getStrSetting("common", "allowed_req_origins", "");
+			allowedOrigins = getAllowedOrigins(setting);
+		}
+
+		return allowedOrigins;
+	}
+
+	private Set<String> getAllowedOrigins(String setting) {
+		if (StringUtils.isBlank(setting)) {
+			return Collections.emptySet();
+		}
+
+		return Stream.of(setting.split(",")).map(String::trim).collect(Collectors.toSet());
+	}
+
+	private User getSystemUser() {
+		return authService.getUser(User.DEFAULT_AUTH_DOMAIN, User.SYS_USER);
 	}
 }

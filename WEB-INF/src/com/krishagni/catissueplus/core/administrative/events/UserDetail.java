@@ -11,6 +11,7 @@ import org.codehaus.jackson.map.annotate.JsonSerialize;
 import com.krishagni.catissueplus.core.administrative.domain.User;
 import com.krishagni.catissueplus.core.common.AttributeModifiedSupport;
 import com.krishagni.catissueplus.core.common.ListenAttributeChanges;
+import com.krishagni.catissueplus.core.common.util.MessageUtil;
 
 @JsonSerialize(include = JsonSerialize.Inclusion.NON_NULL)
 @ListenAttributeChanges
@@ -18,6 +19,8 @@ public class UserDetail extends AttributeModifiedSupport {
 	private static final String ARCHIVED = "Archived";
 
 	private static final String CLOSED = "Closed";
+
+	private static String regularType;
 
 	private Long id;
 
@@ -31,6 +34,8 @@ public class UserDetail extends AttributeModifiedSupport {
 
 	private String loginName;
 
+	private Long instituteId;
+
 	private String instituteName;
 
 	private String primarySite;
@@ -41,7 +46,11 @@ public class UserDetail extends AttributeModifiedSupport {
 
 	private boolean manageForms;
 
+	private boolean dnd;
+
 	private String address;
+
+	private String timeZone;
 
 	private Date creationDate;
 
@@ -95,6 +104,14 @@ public class UserDetail extends AttributeModifiedSupport {
 		this.loginName = loginName;
 	}
 
+	public Long getInstituteId() {
+		return instituteId;
+	}
+
+	public void setInstituteId(Long instituteId) {
+		this.instituteId = instituteId;
+	}
+
 	public String getInstituteName() {
 		return instituteName;
 	}
@@ -117,6 +134,9 @@ public class UserDetail extends AttributeModifiedSupport {
 
 	public void setType(String type) {
 		this.type = type;
+		if (getRegularType().equalsIgnoreCase(getType())) {
+			this.type = User.Type.NONE.name();
+		}
 	}
 
 	public String getPhoneNumber() {
@@ -135,12 +155,28 @@ public class UserDetail extends AttributeModifiedSupport {
 		this.manageForms = manageForms;
 	}
 
+	public Boolean getDnd() {
+		return dnd;
+	}
+
+	public void setDnd(Boolean dnd) {
+		this.dnd = dnd;
+	}
+
 	public String getAddress() {
 		return address;
 	}
 
 	public void setAddress(String address) {
 		this.address = address;
+	}
+
+	public String getTimeZone() {
+		return timeZone;
+	}
+
+	public void setTimeZone(String timeZone) {
+		this.timeZone = timeZone;
 	}
 
 	public Date getCreationDate() {
@@ -171,11 +207,14 @@ public class UserDetail extends AttributeModifiedSupport {
 		detail.setEmailAddress(user.getEmailAddress());
 		detail.setDomainName(user.getAuthDomain().getName());
 		detail.setLoginName(user.getLoginName());
+		detail.setInstituteId(user.getInstitute() != null ? user.getInstitute().getId() : null);
 		detail.setInstituteName(user.getInstitute() != null ? user.getInstitute().getName() : null);
 		detail.setPrimarySite(user.getPrimarySite() != null ? user.getPrimarySite().getName() : null);
 		detail.setType(user.getType() != null ? user.getType().name() : null);
 		detail.setPhoneNumber(user.getPhoneNumber());
 		detail.setManageForms(user.getManageForms());
+		detail.setDnd(user.getDnd());
+		detail.setTimeZone(user.getTimeZone());
 		detail.setAddress(user.getAddress());
 		detail.setCreationDate(user.getCreationDate());
 		detail.setActivityStatus(user.getActivityStatus());
@@ -184,5 +223,13 @@ public class UserDetail extends AttributeModifiedSupport {
 	
 	public static List<UserDetail> from(Collection<User> users) {
 		return users.stream().map(UserDetail::from).collect(Collectors.toList());
+	}
+
+	private static String getRegularType() {
+		if (regularType == null) {
+			regularType = MessageUtil.getInstance().getMessage("user_type_regular");
+		}
+
+		return regularType;
 	}
 }

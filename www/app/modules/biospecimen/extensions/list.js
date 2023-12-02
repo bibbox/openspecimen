@@ -1,6 +1,6 @@
 
 angular.module('os.biospecimen.extensions.list', ['os.biospecimen.models', 'os.biospecimen.extensions.util'])
-  .controller('FormsListCtrl', function($scope, $state, $stateParams, forms, ExtensionsUtil) {
+  .controller('FormsListCtrl', function($scope, $state, $stateParams, forms, Form, ExtensionsUtil, AuthService, Util) {
     function init() {
       $scope.forms   = forms;
       $scope.fctx = {
@@ -31,6 +31,11 @@ angular.module('os.biospecimen.extensions.list', ['os.biospecimen.models', 'os.b
                 }
               }
 
+              var hasSkipLogic = (record.fields || []).some(function(r) { return !!r.showWhen; });
+              if (hasSkipLogic) {
+                evaluateSkipLogic(record.fields);
+              }
+
               angular.extend($scope.fctx, {record: record, selectedRec: selectedRec, inited: true});
             }
           );
@@ -42,6 +47,52 @@ angular.module('os.biospecimen.extensions.list', ['os.biospecimen.models', 'os.b
           $scope.fctx.inited = true;
         }
       }
+    }
+
+    function evaluateSkipLogic(fields) {
+      var fvMap = getFieldValueMap(fields);
+      var form = { skipLogicFieldValue: function(field) { return fvMap[field]; } }
+      angular.forEach(fields,
+        function(field) {
+          if (!field.showWhen) {
+            return;
+          }
+
+          var sl = new edu.common.de.SkipLogic(form, {}, field);
+          field.$$osSlHide = !sl.evaluateRule(sl.parseRule(field.showWhen))
+        }
+      );
+    }
+
+    function getFieldValueMap(fields) {
+      var result = {};
+      angular.forEach(fields,
+        function(field) {
+          var value = field.value;
+
+          if (field.type == 'datePicker') {
+            if (field.value) {
+              var dt = new Date(+field.value);
+              dt.setHours(0); dt.setMinutes(0); dt.setSeconds(0); dt.setMilliseconds(0);
+              value = dt;
+            }
+          } else if (field.type == 'fileUpload') {
+            if (field.value) {
+              value = field.value.filename;
+            }
+          } else if (field.type == 'subForm') {
+            if (field.value instanceof Array) {
+              value = field.value.map(function(el) { return getFieldValueMap(el.fields); });
+            } else if (typeof field.value == 'object') {
+              value = getFieldValueMap(field.value.fields);
+            }
+          }
+
+          result[field.udn] = value;
+        }
+      );
+
+      return result;
     }
 
     $scope.showRecord = function(record) {
@@ -63,6 +114,21 @@ angular.module('os.biospecimen.extensions.list', ['os.biospecimen.models', 'os.b
           }
         }
       ); 
+    }
+
+    $scope.switchToPatientMode = function(form) {
+      Util.showConfirm({
+        title: 'extensions.switch_to_patient_mode_q',
+        confirmMsg: 'extensions.confirm_switch_to_patient_mode',
+        ok: function() {
+          Form.createDataEntryToken(form.formCtxtId, $scope.object.id).then(
+            function(token) {
+              AuthService.logout();
+              $state.go('patient-data-entry', {token: token.token});
+            }
+          );
+        }
+      });
     }
 
     init();

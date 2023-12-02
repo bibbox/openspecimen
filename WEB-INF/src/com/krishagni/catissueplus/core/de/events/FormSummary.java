@@ -1,10 +1,14 @@
 package com.krishagni.catissueplus.core.de.events;
 
+import java.util.Collection;
 import java.util.Date;
+import java.util.List;
+import java.util.stream.Collectors;
 
 import org.codehaus.jackson.map.annotate.JsonSerialize;
 
 import com.krishagni.catissueplus.core.common.events.UserSummary;
+import com.krishagni.catissueplus.core.common.util.Utility;
 import com.krishagni.catissueplus.core.de.domain.Form;
 
 @JsonSerialize(include= JsonSerialize.Inclusion.NON_NULL)
@@ -26,6 +30,10 @@ public class FormSummary {
 	private boolean sysForm;
 
 	private String entityType;
+
+	private boolean multipleRecords;
+
+	private Long formCtxtId;
 
 	public Long getFormId() {
 		return formId;
@@ -99,6 +107,22 @@ public class FormSummary {
 		this.entityType = entityType;
 	}
 
+	public boolean isMultipleRecords() {
+		return multipleRecords;
+	}
+
+	public void setMultipleRecords(boolean multipleRecords) {
+		this.multipleRecords = multipleRecords;
+	}
+
+	public Long getFormCtxtId() {
+		return formCtxtId;
+	}
+
+	public void setFormCtxtId(Long formCtxtId) {
+		this.formCtxtId = formCtxtId;
+	}
+
 	public static FormSummary from(Form form) {
 		FormSummary result = new FormSummary();
 		result.setFormId(form.getId());
@@ -108,5 +132,9 @@ public class FormSummary {
 		result.setCreationTime(form.getCreationTime());
 		result.setModificationTime(form.getUpdateTime());
 		return result;
+	}
+
+	public static List<FormSummary> from(Collection<Form> forms) {
+		return Utility.nullSafeStream(forms).map(FormSummary::from).collect(Collectors.toList());
 	}
 }

@@ -40,18 +40,25 @@ import com.krishagni.catissueplus.core.common.util.EmailUtil;
 import com.krishagni.catissueplus.core.common.util.MessageUtil;
 import com.krishagni.catissueplus.core.common.util.NotifUtil;
 import com.krishagni.catissueplus.core.common.util.Status;
+import com.krishagni.catissueplus.core.de.domain.FormDataEntryToken;
 
 public class UserAuthenticationServiceImpl implements UserAuthenticationService {
 	private static final String ACCOUNT_LOCKED_NOTIF_TMPL = "account_locked_notification";
 
 	private DaoFactory daoFactory;
+
+	private com.krishagni.catissueplus.core.de.repository.DaoFactory deDaoFactory;
 	
 	private AuditService auditService;
 
 	public void setDaoFactory(DaoFactory daoFactory) {
 		this.daoFactory = daoFactory;
 	}
-	
+
+	public void setDeDaoFactory(com.krishagni.catissueplus.core.de.repository.DaoFactory deDaoFactory) {
+		this.deDaoFactory = deDaoFactory;
+	}
+
 	public void setAuditService(AuditService auditService) {
 		this.auditService = auditService;
 	}
@@ -96,10 +103,11 @@ public class UserAuthenticationServiceImpl implements UserAuthenticationService 
 
 			Map<String, Object> authDetail = new HashMap<>();
 			authDetail.put("user", user);
-			
-			String authToken = generateToken(user, loginDetail);
-			if (authToken != null) {
-				authDetail.put("token", authToken);
+
+			AuthToken token = createToken(user, loginDetail);
+			if (token != null) {
+				authDetail.put("token", AuthUtil.encodeToken(token.getToken()));
+				authDetail.put("tokenObj", token);
 			}
 			
 			return ResponseEvent.response(authDetail);
@@ -171,41 +179,59 @@ public class UserAuthenticationServiceImpl implements UserAuthenticationService 
 			loginAuditLog.setLogoutTime(Calendar.getInstance().getTime());
 			
 			daoFactory.getAuthDao().deleteAuthToken(token);
+			daoFactory.getAuthDao().deleteCredentials(token.getToken());
 			return ResponseEvent.response("Success");
 		} catch (Exception e) {	
 			return ResponseEvent.serverError(e);
 		}
 	}
-	
+
+	@Override
+	@PlusTransactional
+	public User getUser(String domainName, String loginName) {
+		return daoFactory.getUserDao().getUser(loginName, domainName);
+	}
+
+	@Override
+	@PlusTransactional
+	public boolean isValidFdeToken(String token) {
+		FormDataEntryToken fdeToken = deDaoFactory.getFormDataEntryTokenDao().getByToken(token);
+		return fdeToken != null && fdeToken.isValid();
+	}
+
 	@Scheduled(cron="0 0 12 ? * *")
 	@PlusTransactional
 	public void deleteInactiveAuthTokens() {
 		Calendar cal = Calendar.getInstance();
 		cal.add(Calendar.MINUTE, -AuthConfig.getInstance().getTokenInactiveIntervalInMinutes());
 		daoFactory.getAuthDao().deleteInactiveAuthTokens(cal.getTime());
+		daoFactory.getAuthDao().deleteDanglingCredentials();
 	}
 	
 	public String generateToken(User user, LoginDetail loginDetail) {
+		AuthToken token = createToken(user, loginDetail);
+		return token != null ? AuthUtil.encodeToken(token.getToken()) : null;
+	}
+
+	private AuthToken createToken(User user, LoginDetail loginDetail) {
 		LoginAuditLog loginAuditLog = insertLoginAudit(user, loginDetail.getIpAddress(), true);
 
+		AuthToken authToken = new AuthToken();
+		authToken.setIpAddress(loginDetail.getIpAddress());
+		authToken.setUser(user);
+		authToken.setLoginAuditLog(loginAuditLog);
+
 		if (loginDetail.isDoNotGenerateToken()) {
-			return null;
+			return authToken;
 		}
 
 		String token = UUID.randomUUID().toString();
-		AuthToken authToken = new AuthToken();
-		authToken.setIpAddress(loginDetail.getIpAddress());
 		authToken.setToken(token);
-		authToken.setUser(user);
-		authToken.setLoginAuditLog(loginAuditLog);
 		daoFactory.getAuthDao().saveAuthToken(authToken);
-
 		insertApiCallLog(loginDetail, user, loginAuditLog);
-		return AuthUtil.encodeToken(token);
+		return authToken;
 	}
 
-
-	
 	private LoginAuditLog insertLoginAudit(User user, String ipAddress, boolean loginSuccessful) {
 		LoginAuditLog loginAuditLog = new LoginAuditLog();
 		loginAuditLog.setUser(user);
@@ -261,6 +287,7 @@ public class UserAuthenticationServiceImpl implements UserAuthenticationService 
 		emailProps.put("failedLoginAttempts", failedLoginAttempts);
 		emailProps.put("$subject", subjParams);
 		emailProps.put("ccAdmin", false);
+		emailProps.put("ignoreDnd", true);
 
 		List<User> rcpts = daoFactory.getUserDao().getSuperAndInstituteAdmins(lockedUser.getInstitute().getName());
 		if (!rcpts.contains(lockedUser)) {

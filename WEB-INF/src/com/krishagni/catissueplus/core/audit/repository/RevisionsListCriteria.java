@@ -1,6 +1,8 @@
 package com.krishagni.catissueplus.core.audit.repository;
 
+import java.util.Collections;
 import java.util.Date;
+import java.util.List;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.krishagni.catissueplus.core.common.events.AbstractListCriteria;
@@ -13,7 +15,11 @@ public class RevisionsListCriteria extends AbstractListCriteria<RevisionsListCri
 
 	private Long userId;
 
+	private List<Long> userIds;
+
 	private boolean includeModifiedProps;
+
+	private List<String> entities;
 
 	@Override
 	public RevisionsListCriteria self() {
@@ -40,13 +46,24 @@ public class RevisionsListCriteria extends AbstractListCriteria<RevisionsListCri
 		return self();
 	}
 
-	public Long userId() {
-		return userId;
-	}
-
 	@JsonProperty("userId")
 	public RevisionsListCriteria userId(Long userId) {
-		this.userId = userId;
+		if (userId != null) {
+			userIds(Collections.singletonList(userId));
+		} else {
+			userIds(null);
+		}
+
+		return self();
+	}
+
+	public List<Long> userIds() {
+		return userIds;
+	}
+
+	@JsonProperty("userIds")
+	public RevisionsListCriteria userIds(List<Long> userIds) {
+		this.userIds = userIds;
 		return self();
 	}
 
@@ -60,11 +77,21 @@ public class RevisionsListCriteria extends AbstractListCriteria<RevisionsListCri
 		return self();
 	}
 
+	public List<String> entities() {
+		return entities;
+	}
+
+	@JsonProperty("entities")
+	public RevisionsListCriteria entities(List<String> entities) {
+		this.entities = entities;
+		return self();
+	}
+
 	public String toString() {
 		return new StringBuilder().append(super.toString()).append(", ")
 			.append("start date = ").append(startDate()).append(", ")
 			.append("end date = ").append(endDate()).append(", ")
-			.append("user = ").append(userId()).append(", ")
+			.append("users = ").append(userIds()).append(", ")
 			.append("include modified props = ").append(includeModifiedProps())
 			.toString();
 	}

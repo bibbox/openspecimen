@@ -163,6 +163,7 @@ angular.module('os.biospecimen.participant.collect-specimens', ['os.biospecimen.
         data.opts.hierarchical =  true;
       }
 
+      data.opts.defReceiveQuality = wfData.defReceiveQuality;
       $state.go('participant-detail.collect-specimens.' + state, params);
     }
 
@@ -294,6 +295,10 @@ angular.module('os.biospecimen.participant.collect-specimens', ['os.biospecimen.
         return data.opts.showCollVisitDetails !== false;
       },
 
+      defReceiveQuality: function() {
+        return data.opts.defReceiveQuality;
+      },
+
       navigateTo: function(scope, visit, gotoVisit) {
         ParticipantSpecimensViewState.specimensUpdated(scope);
 
@@ -315,9 +320,10 @@ angular.module('os.biospecimen.participant.collect-specimens', ['os.biospecimen.
   .controller('CollectSpecimensCtrl', 
     function(
       $scope, $translate, $state, $document, $q, $parse, $injector, $modal,
-      cp, cpr, visit, latestVisit, cpDict, spmnCollFields, mrnAccessRestriction,
+      cp, cpr, visit, latestVisit, cpDict, spmnCollFields,
+      barcodingEnabled, spmnBarcodesAutoGen, mrnAccessRestriction,
       Visit, Specimen, PvManager, CollectSpecimensSvc, Container, ExtensionsUtil,
-      CpConfigSvc, Alerts, Util, SpecimenUtil) {
+      CpConfigSvc, Alerts, Util, SpecimenUtil, AuthorizationService) {
 
       var ignoreQtyWarning = false;
 
@@ -325,6 +331,10 @@ angular.module('os.biospecimen.participant.collect-specimens', ['os.biospecimen.
         ignoreQtyWarning = CollectSpecimensSvc.ignoreQtyWarning();
         $scope.showCollVisitDetails = CollectSpecimensSvc.showCollVisitDetails();
         $scope.mrnAccessRestriction = mrnAccessRestriction;
+
+        var sites = cp.cpSites.map(function(cpSite) { return cpSite.siteName; });
+        $scope.storeSpmnsAllowed = AuthorizationService.isAllowed(
+          {sites: sites, resource: 'StorageContainer', operations: ['Read']});
 
         var printSettings = {};
         angular.forEach(cp.spmnLabelPrintSettings,
@@ -335,7 +345,7 @@ angular.module('os.biospecimen.participant.collect-specimens', ['os.biospecimen.
 
         $scope.specimens = CollectSpecimensSvc.getSpecimens().map(
           function(specimen) {
-            specimen.existingStatus = specimen.status;
+            specimen.existingStatus = specimen.status || 'Pending';
             specimen.isVirtual = specimen.showVirtual();
             specimen.initialQty = Util.getNumberInScientificNotation(specimen.initialQty);
             if (specimen.status != 'Collected') {
@@ -343,7 +353,7 @@ angular.module('os.biospecimen.participant.collect-specimens', ['os.biospecimen.
               specimen.printLabel = printLabel(printSettings, specimen);
             }
 
-            if (specimen.children && specimen.children.some(function(s) { return s.selected; })) {
+            if (specimen.children && specimen.children.some(function(s) { return isPending(s) && s.selected; })) {
               specimen.closeAfterChildrenCreation = cp.closeParentSpecimens;
             }
 
@@ -360,7 +370,7 @@ angular.module('os.biospecimen.participant.collect-specimens', ['os.biospecimen.
         if ($scope.showCollVisitDetails) {
           $scope.showCollVisitDetails = ($scope.specimens || []).some(
             function(specimen) {
-              return specimen.lineage == 'New'  && specimen.existingStatus != 'Collected';
+              return specimen.lineage == 'New'  && specimen.existingStatus == 'Pending';
             }
           );
         }
@@ -392,7 +402,8 @@ angular.module('os.biospecimen.participant.collect-specimens', ['os.biospecimen.
           collector: undefined,
           collectionDate: new Date(),
           receiver: undefined,
-          receiveDate: new Date()
+          receiveDate: new Date(),
+          receiveQuality: CollectSpecimensSvc.defReceiveQuality()
         };
 
         loadPvs();
@@ -400,6 +411,14 @@ angular.module('os.biospecimen.participant.collect-specimens', ['os.biospecimen.
         initAliquotGrps($scope.specimens);
         $scope.$on('$destroy', function() { CollectSpecimensSvc.cancelReservation($scope.specimens); });
       };
+
+      function isPending(spmn) {
+        return !spmn.status || spmn.status == 'Pending';
+      }
+
+      function isCollectedOrPending(spmn) {
+        return spmn.status == 'Collected' || spmn.status == 'Pending';
+      }
 
       function printLabel(cpPrintSettings, specimen) {
         return (specimen.labelAutoPrintMode == 'ON_COLLECTION') ||
@@ -456,7 +475,7 @@ angular.module('os.biospecimen.participant.collect-specimens', ['os.biospecimen.
         var aliquotGrp = [];
         var grpLeader = undefined;
         angular.forEach(specimen.children, function(child) {
-          if (child.lineage == 'Aliquot' && child.selected && child.existingStatus != 'Collected') {
+          if (child.lineage == 'Aliquot' && child.selected && child.existingStatus == 'Pending') {
             aliquotGrp.push(child);
 
             if (!grpLeader) {
@@ -470,6 +489,7 @@ angular.module('os.biospecimen.participant.collect-specimens', ['os.biospecimen.
         });
 
         if (grpLeader) {
+          grpLeader.$$collectedOrPending = aliquotGrp.some(isCollectedOrPending);
           grpLeader.aliquotGrp = aliquotGrp;
           listenContainerChanges(grpLeader);
         }
@@ -605,6 +625,11 @@ angular.module('os.biospecimen.participant.collect-specimens', ['os.biospecimen.
         var grp = grpLeader.aliquotGrp;
         for (var i = grp.length - 1; i >= 0 && count >= 1; --i, --count) {
           $scope.remove(grp[i]);
+        }
+
+        if (!grpLeader.expanded) {
+          grpLeader.aliquotLabels = getAliquotGrpInputs(grpLeader, 'label');
+          grpLeader.aliquotBarcodes = getAliquotGrpInputs(grpLeader, 'barcode');
         }
       }
 
@@ -775,6 +800,7 @@ angular.module('os.biospecimen.participant.collect-specimens', ['os.biospecimen.
         newLeader.aliquotGrp = members;
         newLeader.expanded = true;
         newLeader.grpLeader = null;
+        newLeader.$$collectedOrPending = specimen.$$collectedOrPending;
         angular.forEach(members, function(member) {
           if (member != newLeader) {
             member.grpLeader = newLeader;
@@ -809,29 +835,7 @@ angular.module('os.biospecimen.participant.collect-specimens', ['os.biospecimen.
         }
       }  
 
-      $scope.statusChanged = function(specimen) {
-        if (!specimen) {
-          return;
-        }
-
-        setDescendentStatus(specimen); 
-
-        if (specimen.status == 'Collected') {
-          var curr = specimen.parent;
-          while (curr) {
-            curr.status = specimen.status;
-            curr = curr.parent;
-          }
-        }
-        
-        handleSpecimensPoolStatus(specimen);
-
-        if (!specimen.expanded) {
-          angular.forEach(specimen.aliquotGrp, function(sibling) {
-            sibling.status = specimen.status;
-          });
-        }
-      };
+      $scope.statusChanged = statusChanged;
 
       $scope.updateCollDate = function() {
         $scope.collDetail.collectionDate = $scope.visit.visitDate;
@@ -898,7 +902,11 @@ angular.module('os.biospecimen.participant.collect-specimens', ['os.biospecimen.
         return count;
       };
 
-      function setDescendentStatus(specimen) {
+      function statusChanged(specimen) {
+        if (!specimen) {
+          return;
+        }
+
         angular.forEach(specimen.specimensPool, 
           function(poolSpmn) {
             poolSpmn.status = specimen.status;
@@ -908,10 +916,32 @@ angular.module('os.biospecimen.participant.collect-specimens', ['os.biospecimen.
         angular.forEach(specimen.children,
           function(child) {
             child.status = specimen.status;
-            setDescendentStatus(child);
+            statusChanged(child);
           }
         );
-      };
+
+        if (specimen.status == 'Collected') {
+          var curr = specimen.parent;
+          while (curr) {
+            curr.status = specimen.status;
+            curr = curr.parent;
+          }
+        }
+
+        handleSpecimensPoolStatus(specimen);
+
+        if (!specimen.expanded && specimen.aliquotGrp) {
+          angular.forEach(specimen.aliquotGrp, function(sibling) {
+            sibling.status = specimen.status;
+          });
+
+          specimen.$$collectedOrPending = isCollectedOrPending(specimen);
+        } else if (specimen.aliquotGrp) {
+          specimen.$$collectedOrPending = specimen.aliquotGrp.some(isCollectedOrPending);
+        } else if (specimen.grpLeader && specimen.grpLeader.aliquotGrp) {
+          specimen.grpLeader.$$collectedOrPending = specimen.grpLeader.aliquotGrp.some(isCollectedOrPending);
+        }
+      }
 
       function areDupInputsPresent(input, prop) {
         var values = [];
@@ -939,13 +969,12 @@ angular.module('os.biospecimen.participant.collect-specimens', ['os.biospecimen.
             }
 
             visited.push(uiSpecimen);
+            if (uiSpecimen.lineage == 'Aliquot') {
+              if (barcodingEnabled && !spmnBarcodesAutoGen && !uiSpecimen.barcode) {
+                return;
+              }
 
-            if ((cp.manualSpecLabelEnabled || !uiSpecimen.labelFmt) && !uiSpecimen.label) {
-              if (!uiSpecimen.grpLeader.expanded) {
-                //
-                // Specimen label is not specified when expected but aliquot group is
-                // in collapsed state. Therefore ignore the specimen or do not save
-                //
+              if (!barcodingEnabled && (cp.manualSpecLabelEnabled || !uiSpecimen.labelFmt) && !uiSpecimen.label) {
                 return;
               }
             }
@@ -992,8 +1021,15 @@ angular.module('os.biospecimen.participant.collect-specimens', ['os.biospecimen.
 
           if ($scope.showCollVisitDetails) {
             var collDetail = $scope.collDetail;
-            angular.extend(collEvent, {user: collDetail.collector, time: collDetail.collectionDate});
-            angular.extend(recvEvent, {user: collDetail.receiver,  time: collDetail.receiveDate});
+            angular.extend(collEvent, {
+              user: collDetail.collector,
+              time: collDetail.collectionDate
+            });
+            angular.extend(recvEvent, {
+              user: collDetail.receiver,
+              time: collDetail.receiveDate,
+              receivedQuality: collDetail.receiveQuality
+            });
           }
         }
 
@@ -1073,7 +1109,7 @@ angular.module('os.biospecimen.participant.collect-specimens', ['os.biospecimen.
       }
 
       function assignInputs(aliquot, inputs, prop) {
-        var inputs = Util.splitStr(inputs, /,|\t|\n/);
+        var inputs = Util.splitStr(inputs, /,|\t|\n/, true);
         var newSpmnsCnt = inputs.length - aliquot.aliquotGrp.length;
         if (newSpmnsCnt > 0) {
           addAliquotsToGrp(aliquot, newSpmnsCnt);
@@ -1178,7 +1214,12 @@ angular.module('os.biospecimen.participant.collect-specimens', ['os.biospecimen.
           .then(reassignSelectedStatus, reassignSelectedStatus);
       }
 
-      $scope.selectPositionsManually = function(clearPositions) {
+      //
+      // action = 0 -> cancel reservation
+      // action = 1 -> cancel reservation and clear positions
+      // action = 2 -> cancel reservation, clear container names and positions
+      //
+      $scope.selectPositionsManually = function(action) {
         $q.when(CollectSpecimensSvc.cancelReservation($scope.specimens)).then(
           function() {
             $scope.autoPosAllocate = false;
@@ -1190,8 +1231,10 @@ angular.module('os.biospecimen.participant.collect-specimens', ['os.biospecimen.
                 }
 
                 delete loc.reservationId;
-                if (clearPositions) {
+                if (action == 1) {
                   loc.positionX = loc.positionY = loc.position = undefined;
+                } else if (action == 2) {
+                  spmn.storageLocation = {};
                 }
               }
             );
@@ -1222,6 +1265,10 @@ angular.module('os.biospecimen.participant.collect-specimens', ['os.biospecimen.
         }
       };
 
+      $scope.cancel = function() {
+        CollectSpecimensSvc.navigateTo($scope, visit);
+      }
+
       init();
     })
 
@@ -1244,13 +1291,19 @@ angular.module('os.biospecimen.participant.collect-specimens', ['os.biospecimen.
             }
 
             spmn.externalIds = spmn.externalIds || [];
-            ExtensionsUtil.createExtensionFieldMap(spmn);
+            ExtensionsUtil.createExtensionFieldMap(spmn, true);
           }
         );
 
         CollectSpecimensSvc.cleanupSpecimens(specimens);
 
-        var opts = $scope.opts = {viewCtx: $scope, onValueChange: onValueChangeCb};
+        var opts = $scope.opts = {
+          viewCtx: $scope,
+          onValueChange: onValueChangeCb,
+          static: false,
+          allowBulkUpload: false,
+          hideFooterActions: true
+        };
         var groups = $scope.customFieldGroups = SpecimenUtil.sdeGroupSpecimens(
           cpDict, spmnCollFields.fieldGroups || [], specimens, {cpr: cpr, visit: visit}, opts);
 
@@ -1273,7 +1326,7 @@ angular.module('os.biospecimen.participant.collect-specimens', ['os.biospecimen.
           var showVisitFields = CollectSpecimensSvc.showCollVisitDetails();
           if (visitFieldsGrp && showVisitFields) {
             groups.unshift(visitFieldsGrp);
-            ExtensionsUtil.createExtensionFieldMap(visit)
+            ExtensionsUtil.createExtensionFieldMap(visit, true)
           }
         }
 
@@ -1338,14 +1391,29 @@ angular.module('os.biospecimen.participant.collect-specimens', ['os.biospecimen.
         var visitToSave = angular.copy(visit);
 
         var events = {};
+        var uids = [];
         angular.forEach($scope.customFieldGroups,
           function(group) {
-            if (group.noMatch || group.visitFields) {
+            if (group.visitFields) {
+              return;
+            }
+
+            if (group.noMatch) {
+              angular.forEach(group.input,
+                function(sample) {
+                  if (sample.specimen) {
+                    uids.push(sample.specimen.uid);
+                  }
+                }
+              );
+
               return;
             }
 
             angular.forEach(group.input,
               function(sample) {
+                uids.push(sample.specimen.uid);
+
                 if (events[sample.specimen.uid]) {
                   angular.extend(events[sample.specimen.uid], sample.events);
                 } else {
@@ -1356,7 +1424,11 @@ angular.module('os.biospecimen.participant.collect-specimens', ['os.biospecimen.
           }
         );
 
-        var samples = specimens.map(
+        var samples = specimens.filter(
+          function(spmn) {
+            return uids.indexOf(spmn.uid) > -1
+          }
+        ).map(
           function(spmn) {
             return {specimen: spmn, events: events[spmn.uid]};
           }

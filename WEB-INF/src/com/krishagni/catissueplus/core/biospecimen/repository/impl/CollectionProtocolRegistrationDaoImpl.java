@@ -33,6 +33,7 @@ import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolRegistration;
 import com.krishagni.catissueplus.core.biospecimen.events.CprSummary;
 import com.krishagni.catissueplus.core.biospecimen.events.ParticipantSummary;
+import com.krishagni.catissueplus.core.biospecimen.events.PmiDetail;
 import com.krishagni.catissueplus.core.biospecimen.repository.CollectionProtocolRegistrationDao;
 import com.krishagni.catissueplus.core.biospecimen.repository.CprListCriteria;
 import com.krishagni.catissueplus.core.common.access.SiteCpPair;
@@ -50,7 +51,7 @@ public class CollectionProtocolRegistrationDaoImpl extends AbstractDao<Collectio
 	@Override
 	public List<CprSummary> getCprList(CprListCriteria crit) {
 		Criteria query = getCprListQuery(crit)
-			.addOrder(Order.asc("id"))
+			.addOrder(Order.desc("registrationDate"))
 			.setFirstResult(crit.startAt())
 			.setMaxResults(crit.maxResults())
 			.setProjection(getCprSummaryFields(crit));
@@ -172,6 +173,47 @@ public class CollectionProtocolRegistrationDaoImpl extends AbstractDao<Collectio
 	}
 
 	@Override
+	public List<CollectionProtocolRegistration> getCprsByCpShortTitleAndPmis(String cpShortTitle, List<PmiDetail> pmis) {
+		Criteria query = getByCpShortTitleAndPmisQuery(cpShortTitle, pmis);
+		if (query == null) {
+			return Collections.emptyList();
+		}
+
+		return query.list();
+	}
+
+	private Criteria getByCpShortTitleAndPmisQuery(String cpShortTitle, List<PmiDetail> pmis) {
+		Criteria query = getCurrentSession().createCriteria(CollectionProtocolRegistration.class, "cpr")
+			.createAlias("cpr.participant", "p")
+			.createAlias("cpr.collectionProtocol", "cp")
+			.createAlias("p.pmis", "pmi")
+			.createAlias("pmi.site", "site");
+
+		boolean added = false;
+		Disjunction disjunction = Restrictions.disjunction();
+		for (PmiDetail pmi : pmis) {
+			if (StringUtils.isBlank(pmi.getSiteName()) || StringUtils.isBlank(pmi.getMrn())) {
+				continue;
+			}
+
+			disjunction.add(
+				Restrictions.and(
+					Restrictions.eq("site.name", pmi.getSiteName()),
+					Restrictions.eq("pmi.medicalRecordNumber", pmi.getMrn())
+				)
+			);
+
+			added = true;
+		}
+
+		if (!added) {
+			return null;
+		}
+
+		return query.add(disjunction).add(Restrictions.eq("cp.shortTitle", cpShortTitle));
+	}
+
+	@Override
 	@SuppressWarnings("unchecked")
 	public CollectionProtocolRegistration getCprByParticipantId(Long cpId, Long participantId) {
 		List<CollectionProtocolRegistration> result =  sessionFactory.getCurrentSession()
@@ -216,6 +258,14 @@ public class CollectionProtocolRegistrationDaoImpl extends AbstractDao<Collectio
 		return rows.stream().collect(Collectors.toMap(row -> (String)row[0], row -> ((Number)row[1]).intValue()));
 	}
 
+	@Override
+	public List<CollectionProtocolRegistration> getByPpids(String cpShortTitle, List<String> ppids) {
+		return getCurrentSession().getNamedQuery(GET_BY_PPIDS)
+			.setParameter("cpShortTitle", cpShortTitle)
+			.setParameterList("ppids", ppids)
+			.list();
+	}
+
 	private Criteria getCprListQuery(CprListCriteria cprCrit) {
 		Criteria query = getSessionFactory().getCurrentSession()
 			.createCriteria(CollectionProtocolRegistration.class)
@@ -232,6 +282,8 @@ public class CollectionProtocolRegistrationDaoImpl extends AbstractDao<Collectio
 		addDobCondition(query, cprCrit);
 		addSpecimenCondition(query, cprCrit);
 		addSiteCpsCond(query, cprCrit);
+		addPpidsCond(query, cprCrit);
+		addIdsCond(query, cprCrit);
 		return query;		
 	}
 
@@ -323,6 +375,18 @@ public class CollectionProtocolRegistrationDaoImpl extends AbstractDao<Collectio
 					.add(Restrictions.ilike("specimen.barcode", crit.specimen(), MatchMode.ANYWHERE)))
 			.add(Restrictions.ne("specimen.activityStatus", "Disabled"))
 			.add(Restrictions.ne("visit.activityStatus", "Disabled"));
+	}
+
+	private void addPpidsCond(Criteria query, CprListCriteria crit) {
+		if (CollectionUtils.isNotEmpty(crit.ppids())) {
+			query.add(Restrictions.in("ppid", crit.ppids()));
+		}
+	}
+
+	private void addIdsCond(Criteria query, CprListCriteria crit) {
+		if (CollectionUtils.isNotEmpty(crit.ids())) {
+			applyIdsFilter(query, "id", crit.ids());
+		}
 	}
 
 	private void addSiteCpsCond(Criteria query, CprListCriteria crit) {
@@ -434,8 +498,10 @@ public class CollectionProtocolRegistrationDaoImpl extends AbstractDao<Collectio
 			projs.add(Projections.property("participant.firstName"))
 				.add(Projections.property("participant.lastName"))
 				.add(Projections.property("participant.empi"))
-				.add(Projections.property("participant.uid"));
+				.add(Projections.property("participant.uid"))
+				.add(Projections.property("participant.emailAddress"));
 		}
+
 		return Projections.distinct(projs);
 	}
 	
@@ -457,6 +523,7 @@ public class CollectionProtocolRegistrationDaoImpl extends AbstractDao<Collectio
 			participant.setLastName((String) row[idx++]);
 			participant.setEmpi((String) row[idx++]);
 			participant.setUid((String) row[idx++]);
+			participant.setEmailAddress((String) row[idx++]);
 		}
 		
 		return cpr;
@@ -510,7 +577,7 @@ public class CollectionProtocolRegistrationDaoImpl extends AbstractDao<Collectio
 		}
 
 		if (CollectionUtils.isNotEmpty(crit.siteCps())) {
-			BiospecimenDaoHelper.getInstance().addSiteCpsCond(query, crit.siteCps(), crit.useMrnSites(), startAlias);
+			BiospecimenDaoHelper.getInstance().addSiteCpsCond(query, crit.siteCps(), crit.useMrnSites(), startAlias, false);
 		}
 
 		return detachedCriteria;
@@ -536,10 +603,12 @@ public class CollectionProtocolRegistrationDaoImpl extends AbstractDao<Collectio
 	private static final String GET_BY_CP_SHORT_TITLE_AND_PPID = FQN + ".getCprByCpShortTitleAndPpid";
 
 	private static final String GET_BY_CP_SHORT_TITLE_AND_EMPI = FQN + ".getCprByCpShortTitleAndEmpi";
-	
+
 	private static final String GET_BY_CP_ID_AND_PID = FQN + ".getCprByCpIdAndPid";
 
 	private static final String GET_BY_CP_ID = FQN + ".getCprsByCpId";
 
 	private static final String GET_COUNTS_BY_SITE = FQN + ".getParticipantsCountBySite";
+
+	private static final String GET_BY_PPIDS = FQN + ".getByPpids";
 }
