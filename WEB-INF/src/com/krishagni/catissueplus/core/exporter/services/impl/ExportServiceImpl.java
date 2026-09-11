@@ -2,15 +2,23 @@ package com.krishagni.catissueplus.core.exporter.services.impl;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.charset.Charset;
+import java.nio.file.Files;
 import java.text.SimpleDateFormat;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.TimeZone;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Future;
@@ -22,15 +30,16 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.apache.commons.beanutils.BeanUtilsBean2;
-import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
-import org.apache.commons.lang.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.springframework.beans.factory.InitializingBean;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
+import com.krishagni.catissueplus.core.administrative.domain.User;
+import com.krishagni.catissueplus.core.audit.repository.RevisionsListCriteria;
+import com.krishagni.catissueplus.core.audit.services.AuditService;
 import com.krishagni.catissueplus.core.common.Pair;
 import com.krishagni.catissueplus.core.common.PlusTransactional;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
@@ -43,12 +52,15 @@ import com.krishagni.catissueplus.core.common.util.CsvFileWriter;
 import com.krishagni.catissueplus.core.common.util.CsvReader;
 import com.krishagni.catissueplus.core.common.util.CsvWriter;
 import com.krishagni.catissueplus.core.common.util.EmailUtil;
+import com.krishagni.catissueplus.core.common.util.LogUtil;
 import com.krishagni.catissueplus.core.common.util.MessageUtil;
+import com.krishagni.catissueplus.core.common.util.Utility;
 import com.krishagni.catissueplus.core.exporter.domain.ExportErrorCode;
 import com.krishagni.catissueplus.core.exporter.domain.ExportJob;
 import com.krishagni.catissueplus.core.exporter.events.ExportDetail;
 import com.krishagni.catissueplus.core.exporter.events.ExportJobDetail;
 import com.krishagni.catissueplus.core.exporter.repository.ExportJobDao;
+import com.krishagni.catissueplus.core.exporter.repository.ExportJobsListCriteria;
 import com.krishagni.catissueplus.core.exporter.services.ExportService;
 import com.krishagni.catissueplus.core.importer.domain.ObjectSchema;
 import com.krishagni.catissueplus.core.importer.services.ObjectSchemaFactory;
@@ -56,9 +68,10 @@ import com.krishagni.rbac.common.errors.RbacErrorCode;
 
 import edu.common.dynamicextensions.nutility.DeConfiguration;
 import edu.common.dynamicextensions.nutility.IoUtil;
+import liquibase.util.ObjectUtil;
 
-public class ExportServiceImpl implements ExportService {
-	private final static Log logger = LogFactory.getLog(ExportServiceImpl.class);
+public class ExportServiceImpl implements ExportService, InitializingBean {
+	private static final LogUtil logger = LogUtil.getLogger(ExportServiceImpl.class);
 
 	private Map<String, Supplier<Function<ExportJob, List<? extends Object>>>> genFactories = new HashMap<>();
 
@@ -67,6 +80,8 @@ public class ExportServiceImpl implements ExportService {
 	private ObjectSchemaFactory schemaFactory;
 
 	private ThreadPoolTaskExecutor taskExecutor;
+
+	private AuditService auditService;
 
 	private int ONLINE_EXPORT_TIMEOUT_SECS = 30;
 
@@ -80,6 +95,10 @@ public class ExportServiceImpl implements ExportService {
 
 	public void setExportJobDao(ExportJobDao exportJobDao) {
 		this.exportJobDao = exportJobDao;
+	}
+
+	public void setAuditService(AuditService auditService) {
+		this.auditService = auditService;
 	}
 
 	@Override
@@ -119,8 +138,32 @@ public class ExportServiceImpl implements ExportService {
 	}
 
 	@Override
-	public void registerObjectsGenerator(String type, Supplier<Function<ExportJob, List<? extends Object>>> genFactory) {
+	public void registerObjectsGenerator(String type, Supplier<Function<ExportJob, List<?>>> genFactory) {
 		genFactories.put(type, genFactory);
+	}
+
+	@Override
+	@PlusTransactional
+	public void saveJob(String entityName, Date startTime, Map<String, String> params) {
+		ExportJob job = new ExportJob();
+		job.setName(entityName);
+		job.setStatus(ExportJob.Status.COMPLETED);
+		job.setTotalRecords(1L);
+		job.setCreatedBy(AuthUtil.getCurrentUser());
+		job.setCreationTime(startTime);
+		job.setEndTime(Calendar.getInstance().getTime());
+		job.setIpAddress(AuthUtil.getRemoteAddr());
+		job.param("noReport", Boolean.TRUE.toString());
+		if (params != null) {
+			job.getParams().putAll(params);
+		}
+
+		exportJobDao.saveOrUpdate(job, true);
+	}
+
+	@Override
+	public void afterPropertiesSet() throws Exception {
+		auditService.registerExporter(this::exportJobsReport);
 	}
 
 	private Pair<ExportJob, Future<Integer>> exportObjects(ExportDetail detail) {
@@ -129,7 +172,12 @@ public class ExportServiceImpl implements ExportService {
 
 		Future<Integer> result;
 		if (detail.isSynchronous()) {
-			result = CompletableFuture.completedFuture(task.call());
+			User currentUser = AuthUtil.getCurrentUser();
+			try {
+				result = CompletableFuture.completedFuture(task.call());
+			} finally {
+				AuthUtil.setCurrentUser(currentUser);
+			}
 		} else {
 			result = taskExecutor.submit(task);
 		}
@@ -149,17 +197,164 @@ public class ExportServiceImpl implements ExportService {
 			throw  OpenSpecimenException.userError(ExportErrorCode.NO_GEN_FOR_OBJECT_TYPE, detail.getObjectType());
 		}
 
+		TimeZone tz = AuthUtil.getUserTimeZone();
 		ExportJob job = new ExportJob();
 		job.setName(detail.getObjectType());
 		job.setCreatedBy(AuthUtil.getCurrentUser());
 		job.setCreationTime(Calendar.getInstance().getTime());
-		job.setParams(detail.getParams());
+		job.setParams(getParams(detail.getParams()));
 		job.setSchema(schema);
 		job.setRecordIds(detail.getRecordIds());
 		job.setDisableNotifs(detail.isDisableNotifs());
+		job.param("timeZone", tz != null ? tz.getID() : null);
+		job.setIpAddress(AuthUtil.getRemoteAddr());
 		exportJobDao.saveOrUpdate(job.markInProgress(), true);
 		return job;
 	}
+
+	private Map<String, String> getParams(Map<String, String> params) {
+		Map<String, String> result = new HashMap<>();
+		if (params != null) {
+			result.putAll(params);
+		}
+
+		return result;
+	}
+
+	private File exportJobsReport(String baseDir, User exportedBy, Date exportedOn, List<User> users, RevisionsListCriteria crit) {
+		if (!crit.includeReport("query_exim")) {
+			return null;
+		}
+
+		File auditDir = new File(ConfigUtil.getInstance().getDataDir(), "audit");
+		File result = new File(auditDir, baseDir);
+		if (!result.exists()) {
+			result.mkdirs();
+		}
+
+		String ts = new SimpleDateFormat("yyyyMMdd_HHmm").format(exportedOn);
+		File outputFile = new File(result, "os_export_jobs_" + ts + ".csv");
+		return exportJobsReport(exportedBy, exportedOn, users, crit, outputFile);
+	}
+
+	private File exportJobsReport(User exportedBy, Date exportedOn, List<User> users, RevisionsListCriteria crit, File outputFile) {
+		ExportJobsListCriteria jobsListCriteria = new ExportJobsListCriteria()
+			.fromDate(crit.startDate())
+			.toDate(crit.endDate())
+			.userIds(Utility.nullSafeStream(users).map(User::getId).collect(Collectors.toList()));
+
+		OutputStream fout = null;
+		CsvWriter csvWriter = null;
+
+		try {
+			fout      = Files.newOutputStream(outputFile.toPath());
+			csvWriter = CsvFileWriter.createCsvFileWriter(fout);
+
+			Map<String, String> headers = new LinkedHashMap<String, String>() {{
+				put(msg("common_server_url"), ConfigUtil.getInstance().getAppUrl());
+				put(msg("common_server_env"), ConfigUtil.getInstance().getDeployEnv());
+				put(msg("audit_rev_exported_by"), exportedBy.formattedName(true));
+				put(msg("audit_rev_exported_on"), Utility.getDateTimeString(exportedOn));
+
+				if (CollectionUtils.isNotEmpty(users)) {
+					String userNames = users.stream().map(u -> u.formattedName(true)).collect(Collectors.joining(", "));
+					put(msg("audit_rev_audited_users"), userNames);
+				}
+
+				if (jobsListCriteria.fromDate() != null) {
+					put(msg("audit_rev_start_date"), Utility.getDateTimeString(jobsListCriteria.fromDate()));
+				}
+
+				if (jobsListCriteria.toDate() != null) {
+					put(msg("audit_rev_end_date"),   Utility.getDateTimeString(jobsListCriteria.toDate()));
+				}
+
+				put("", "");
+			}};
+
+			Utility.writeKeyValuesToCsv(fout, headers);
+
+			jobsListCriteria.startAt(0).maxResults(100);
+			writeJobDetailToCsv(jobsListCriteria, csvWriter);
+
+			return outputFile;
+		} catch (Exception e) {
+			throw OpenSpecimenException.serverError(e);
+		} finally {
+			IOUtils.closeQuietly(csvWriter);
+			IOUtils.closeQuietly(fout);
+		}
+	}
+
+	private void writeJobDetailToCsv(ExportJobsListCriteria crit, CsvWriter csvWriter) {
+		csvWriter.writeNext(new String[1]);
+		csvWriter.writeNext(getAuditLogReportHeaders());
+
+		int count = 0;
+		boolean endOfRecords = false;
+		while (!endOfRecords) {
+			List<ExportJob> jobs = exportJobDao.getExportJobs(crit);
+			crit.startAt(crit.startAt() + jobs.size());
+			endOfRecords = jobs.size() < 100;
+
+			for (ExportJob job : jobs) {
+				csvWriter.writeNext(getAuditLogReportData(job));
+				++count;
+
+				if (count % 25 == 0) {
+					csvWriter.flush();
+				}
+			}
+		}
+
+		csvWriter.flush();
+	}
+
+	private String[] getAuditLogReportHeaders() {
+		return new String[] {
+			msg("audit_rev_id"),
+			msg("audit_rev_tstmp"),
+			msg("audit_rev_user"),
+			msg("audit_rev_user_email"),
+			msg("audit_rev_domain"),
+			msg("audit_rev_user_login"),
+			msg("audit_rev_institute"),
+			msg("audit_rev_ip_address"),
+			msg("audit_rev_entity_name"),
+			msg("audit_rev_exec_time"),
+			msg("audit_rev_total_records"),
+			msg("audit_rev_other_params")
+		};
+	}
+
+	private String[] getAuditLogReportData(ExportJob job) {
+		String timeToFinish = "";
+		if (job.getEndTime() != null) {
+			timeToFinish = String.valueOf((job.getEndTime().getTime()  - job.getCreationTime().getTime()) / 1000);
+		}
+
+		User user = job.getCreatedBy();
+		return new String[] {
+			job.getId().toString(),
+			Utility.getDateTimeString(job.getCreationTime()),
+			user.formattedName(),
+			user.getEmailAddress(),
+			user.getAuthDomain().getName(),
+			user.getLoginName(),
+			user.getInstitute() != null ? user.getInstitute().getName() : "",
+			job.getIpAddress() != null ? job.getIpAddress() : "",
+			job.getEntityName(),
+			timeToFinish,
+			job.getTotalRecords() != null ? job.getTotalRecords().toString() : "",
+			Utility.mapToJson(job.getParams(), true)
+		};
+	}
+
+
+	private String msg(String key) {
+		return MessageUtil.getInstance().getMessage(key);
+	}
+
 
 	private class ExportTask implements Callable<Integer> {
 		private ExportJob job;
@@ -178,17 +373,30 @@ public class ExportServiceImpl implements ExportService {
 
 		private long filesCount = 0;
 
-		private SimpleDateFormat df;
+		private SimpleDateFormat dateOnlyFormatter;
 
-		private SimpleDateFormat tf;
+		private SimpleDateFormat dateFormatter;
+
+		private SimpleDateFormat dateTimeFormatter;
 
 		ExportTask(ExportJob inputJob) {
 			job = inputJob;
 			generator = genFactories.get(job.getName()).get();
 
+			String timeZoneStr = inputJob.param("timeZone");
 			String dateFmt = ConfigUtil.getInstance().getDeDateFmt();
-			df = new SimpleDateFormat(dateFmt);
-			tf = new SimpleDateFormat(dateFmt + " " + ConfigUtil.getInstance().getTimeFmt());
+			dateOnlyFormatter = new SimpleDateFormat(dateFmt);
+			dateFormatter = new SimpleDateFormat(dateFmt);
+			dateTimeFormatter = new SimpleDateFormat(dateFmt + " " + ConfigUtil.getInstance().getTimeFmt());
+			if (StringUtils.isNotBlank(timeZoneStr)) {
+				try {
+					TimeZone tz = TimeZone.getTimeZone(timeZoneStr);
+					dateFormatter.setTimeZone(tz);
+					dateTimeFormatter.setTimeZone(tz);
+				} catch (Exception e) {
+					logger.error("Error using the timezone: " + timeZoneStr, e);
+				}
+			}
 		}
 
 
@@ -208,9 +416,9 @@ public class ExportServiceImpl implements ExportService {
 				generateOutputZip(job);
 				completed();
 				return 0;
-			} catch (Exception e) {
+			} catch (Throwable t) {
 				failed();
-				logger.error("Error exporting records", e);
+				logger.error("Error exporting records", t);
 				return -1;
 			} finally {
 				ExporterContextHolder.getInstance().clearContext();
@@ -272,7 +480,8 @@ public class ExportServiceImpl implements ExportService {
 					updateFieldCount(namePrefix + field.getAttribute(), count);
 				} else {
 					String value = getString(object, field);
-					if (("file".equals(field.getType()) || "defile".equals(field.getType())) && StringUtils.isNotBlank(value)) {
+					if (StringUtils.isNotBlank(value) &&
+						("file".equals(field.getType()) || "defile".equals(field.getType()) || "signature".equals(field.getType()))) {
 						value = ++filesCount + "_" + value;
 						writeFileData(object, field, value);
 					}
@@ -331,12 +540,15 @@ public class ExportServiceImpl implements ExportService {
 					Map<String, String> fcv = (Map<String, String>) getObject(object, field.getAttribute());
 					String fileId = fcv.get("fileId");
 					srcFile = new File(DeConfiguration.getInstance().fileUploadDir(), fileId);
+				} else if (field.getType().equals("signature")) {
+					String fileId = (String) getObject(object, field.getAttribute());
+					srcFile = new File(DeConfiguration.getInstance().fileUploadDir(), fileId);
 				}
 
 				if (srcFile != null && srcFile.exists()) {
 					FileUtils.copyFile(srcFile, destFile);
 				} else {
-					FileUtils.write(destFile, "File does not exists");
+					FileUtils.write(destFile, "File does not exists", Charset.defaultCharset());
 				}
 			} catch (IOException ioe) {
 				throw new RuntimeException("Error writing to file", ioe);
@@ -378,8 +590,7 @@ public class ExportServiceImpl implements ExportService {
 
 		private List<String> getHeaderNames(String namePrefix, String captionPrefix, Object recField) {
 			List<String> names = new ArrayList<>();
-			if (recField instanceof ObjectSchema.Field) {
-				ObjectSchema.Field field = (ObjectSchema.Field) recField;
+			if (recField instanceof ObjectSchema.Field field) {
 				String caption = captionPrefix + field.getCaption();
 				if (field.isMultiple()) {
 					int count = getFieldCount(namePrefix + field.getAttribute());
@@ -389,8 +600,7 @@ public class ExportServiceImpl implements ExportService {
 				} else {
 					names.add(caption);
 				}
-			} else if (recField instanceof ObjectSchema.Record) {
-				ObjectSchema.Record subRecord = (ObjectSchema.Record) recField;
+			} else if (recField instanceof ObjectSchema.Record subRecord) {
 				String srName = namePrefix + subRecord.getAttribute();
 				String srCaption = captionPrefix;
 				if (StringUtils.isNotBlank(subRecord.getCaption())) {
@@ -509,19 +719,23 @@ public class ExportServiceImpl implements ExportService {
 				String result;
 
 				Object value = getObject(object, field.getAttribute());
-				if ("date".equals(field.getType())) {
+				if ("dateOnly".equals(field.getType())) {
+					result = getDateOnlyString(value);
+				} else if ("date".equals(field.getType())) {
 					result = getDateString(value);
 				} else if ("datetime".equals(field.getType())) {
 					result = getDateTimeString(value);
 				} else if ("defile".equals(field.getType()) && value instanceof Map) {
-					Map<String, String> fcv = (Map<String, String>)value;
+					Map<String, String> fcv = (Map<String, String>) value;
 					result = fcv.get("filename");
+				} else if ("boolean".equals(field.getType()) && value instanceof Boolean) {
+					result = MessageUtil.getInstance().getBooleanMsg((Boolean) value);
 				} else {
-					result = ObjectUtils.toString(value);
+					result = Objects.toString(value, "");
 				}
 
 				return result;
-			} catch (Exception e) {
+			} catch (Throwable e) {
 				throw new IllegalArgumentException("Error obtaining value of property: " + field.getAttribute(), e);
 			}
 		}
@@ -529,9 +743,17 @@ public class ExportServiceImpl implements ExportService {
 		private Object getObject(Object object, String propertyName) {
 			try {
 				return BeanUtilsBean2.getInstance().getPropertyUtils().getProperty(object, propertyName);
-			} catch (Exception e) {
-				throw new IllegalArgumentException("Error obtaining value of property: " + propertyName, e);
+			} catch (Throwable e) {
+				try {
+					return getPropertyValue(object, propertyName);
+				} catch (Throwable e1) {
+					throw new IllegalArgumentException("Error obtaining value of property: " + propertyName, e);
+				}
 			}
+		}
+
+		private Object getPropertyValue(Object object, String propertyName) {
+			return ObjectUtil.getProperty(object, propertyName);
 		}
 
 		private Collection<Object> getCollection(Object object, String propertyName) {
@@ -552,21 +774,35 @@ public class ExportServiceImpl implements ExportService {
 			}
 		}
 
+		private String getDateOnlyString(Object input) {
+			return getFormattedDateTimeString(dateOnlyFormatter, input);
+		}
+
 		private String getDateString(Object input) {
-			return getFormattedDateTimeString(df, input);
+			return getFormattedDateTimeString(dateFormatter, input);
 		}
 
 		private String getDateTimeString(Object input) {
-			return getFormattedDateTimeString(tf, input);
+			return getFormattedDateTimeString(dateTimeFormatter, input);
 		}
 
 		private String getFormattedDateTimeString(SimpleDateFormat formatter, Object input) {
 			Date dateObj = null;
-			if (input instanceof String) {
-				try {
-					dateObj = new Date(Long.parseLong((String) input));
-				} catch (Exception e) {
-					return (String) input;
+			if (input instanceof String inputStr) {
+				if (StringUtils.isNumeric(inputStr)) {
+					try {
+						dateObj = new Date(Long.parseLong(inputStr));
+					} catch (Exception e) {
+						logger.error("Error converting the input string (numeric) " + inputStr + " to date object!", e);
+						return inputStr;
+					}
+				} else {
+					try {
+						dateObj = Date.from(LocalDate.parse(inputStr).atStartOfDay(ZoneId.systemDefault()).toInstant());
+					} catch (Exception e) {
+						logger.error("Error converting the input string " + inputStr + " to date object!", e);
+						return inputStr;
+					}
 				}
 			} else if (input instanceof Number) {
 				dateObj = new Date(((Number) input).longValue());
@@ -601,7 +837,7 @@ public class ExportServiceImpl implements ExportService {
 
 		@PlusTransactional
 		private void saveJob() {
-			exportJobDao.saveOrUpdate(job);
+			exportJobDao.merge(job);
 		}
 	}
 
@@ -644,38 +880,19 @@ public class ExportServiceImpl implements ExportService {
 			return;
 		}
 
-		String entityName = getEntityName(job);
-
+		String entityName = MessageUtil.getInstance().getMessage(job.getEntityName(), job.getEntityName(), new Object[0]);
 		String [] subjParams = {job.getId().toString(), entityName};
 
 		Map<String, Object> props = new HashMap<>();
 		props.put("job", job);
 		props.put("entityName", entityName);
-		props.put("status", getMsg("export_statuses_" + job.getStatus().name().toLowerCase()));
+		props.put("status", msg("export_statuses_" + job.getStatus().name().toLowerCase()));
 		props.put("$subject", subjParams);
 		props.put("timeTaken", TimeUnit.MILLISECONDS.toMinutes(job.getEndTime().getTime() - job.getCreationTime().getTime()));
 
 		String[] rcpts = {job.getCreatedBy().getEmailAddress()};
 		EmailUtil.getInstance().sendEmail(JOB_STATUS_EMAIL_TMPL, rcpts, null, props);
 	}
-
-	private String getEntityName(ExportJob job) {
-		String entityName;
-
-		if (job.getName().equals(EXTENSIONS)) {
-			entityName = job.getParams().get("formName") + " (" + job.getParams().get("entityType") + ")";
-		} else {
-			entityName = getMsg("export_entities_" + job.getName());
-		}
-
-		return entityName;
-	}
-
-
-	private String getMsg(String key, Object ... params) {
-		return MessageUtil.getInstance().getMessage(key, params);
-	}
-
 
 	private String getJobDir(ExportJob job) {
 		File dataDir = new File(ConfigUtil.getInstance().getDataDir());

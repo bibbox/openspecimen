@@ -39,6 +39,8 @@ public enum SavedQueryErrorCode implements ErrorCode {
 
 	CYCLES_IN_QUERY,
 
+	EXPORT_DATA_IN_PROGRESS,
+
 	EXPORT_DATA_FILE_NOT_FOUND,
 
 	TOO_BUSY,
@@ -49,7 +51,13 @@ public enum SavedQueryErrorCode implements ErrorCode {
 
 	AUDIT_LOG_NOT_FOUND,
 
-	DEPS_FOUND;
+	INVALID_GROUPS_LIST,
+
+	DEPS_FOUND,
+
+	TIMEOUT,
+
+	REJECTED;
 	
 	@Override
 	public String code() {

@@ -11,17 +11,6 @@ angular.module('openspecimen')
           ctx.notesLink = notesLink.value;
         }
       );
-
-      loadReleaseNotes();
-    }
-
-    function loadReleaseNotes() {
-      $http.get(ApiUrls.getBaseUrl() + '/release-notes/latest-summary').then(
-        function(resp) {
-          ctx.notes = $sce.trustAsHtml(resp.data.notes);
-          ctx.loading = false;
-        }
-      );
     }
 
     function hidePopover() {
@@ -36,8 +25,7 @@ angular.module('openspecimen')
     }
 
     $scope.close = function() {
-      loginCtx.state.notesRead = ui.os.global.appProps.build_commit_revision;
-      User.saveUiState(loginCtx.state).then(
+      User.saveUiState({notesRead: ui.os.global.appProps.build_commit_revision}).then(
         function(savedState) {
           angular.extend(loginCtx, {state: savedState, showNewStuff: false});
           hidePopover();

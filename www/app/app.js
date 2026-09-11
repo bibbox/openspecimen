@@ -20,14 +20,17 @@ var osApp = angular.module('openspecimen', [
   'mgcrea.ngStrap.popover',
   'angular-loading-bar',
   'pascalprecht.translate',
-  'chart.js'
+  'chart.js',
+  'ui.tinymce'
   ]);
 
 osApp.config(function(
     $stateProvider, $urlRouterProvider, $httpProvider, $controllerProvider,
-    $compileProvider, $filterProvider, $provide,
+    $compileProvider, $filterProvider, $provide, $locationProvider,
     $translateProvider, $translatePartialLoaderProvider,
     uiSelectConfig, ApiUrlsProvider) {
+
+    $locationProvider.hashPrefix('');
 
     osApp.providers = {
       controller : $controllerProvider.register,
@@ -54,10 +57,24 @@ osApp.config(function(
         }
       })
       .state('alert-msg', {
-        url: '/alert?redirectTo&type&msg',
-        controller: function($state, $stateParams, Alerts) {
-          Alerts.add($stateParams.msg, $stateParams.type);
-          $state.go($stateParams.redirectTo || 'home');
+        url: '/alert?type&msg',
+        views: {
+          'nav-buttons': {
+            template: '<div></div>',
+            controller: function() { }
+          },
+
+          'app-body': {
+            template: '<div class="os-center-box" style="margin-top: 100px;">' +
+                      '  <div class="alert alert-{{actx.type}}">{{actx.msg}}</div>' +
+                      '  <button type="submit" class="btn btn-block btn-primary" ui-sref="login">' +
+                      '    <span translate="user.sign_in">Sign in</span>' +
+                      '  </button>' +
+                      '</div>',
+            controller: function($scope, $stateParams) {
+              $scope.actx = {type: $stateParams.type, msg: $stateParams.msg};
+            }
+          }
         },
         parent: 'default'
       })
@@ -73,14 +90,96 @@ osApp.config(function(
           },
           authInit: function(currentUser, AuthorizationService) {
             return AuthorizationService.initializeUserRights(currentUser);
+          },
+          videoSettings : function (Setting) {
+            return Setting.getWelcomeVideoSetting();
+          },
+          authToken: function(userUiState, AuthService) {
+            if (userUiState.authToken) {
+              AuthService.saveToken(userUiState.authToken);
+            }
+          },
+          translationsReady: function($translate) {
+            return $translate.onReady().then(
+              function() {
+                return $translate.isReady();
+              }
+            );
           }
         },
         controller: 'SignedInCtrl'
       })
+      .state('headless-view', {
+        url: '?token',
+        abstract: true,
+        templateUrl: 'modules/common/headless-view.html',
+        controller: function($scope, Alerts) {
+          $scope.alerts = Alerts.messages;
+        },
+        resolve: {
+          initToken: function($stateParams, $http, $window, AuthService) {
+            if ($stateParams.token) {
+              $http.defaults.headers.common['X-OS-API-TOKEN'] =
+                $window.localStorage['osAuthToken'] =
+                  $stateParams.token;
+              return AuthService.refreshCookie();
+            }
+
+            return null;
+          },
+
+          currentUser: function(initToken, User) {
+            if (initToken) {
+              return User.getCurrentUser();
+            }
+
+            return null;
+          },
+
+          authInit: function(currentUser, AuthorizationService) {
+            return AuthorizationService.initializeUserRights(currentUser);
+          },
+
+          userUiState: function(initToken, User) {
+            if (initToken) {
+              return User.getUiState();
+            }
+
+            return null;
+          },
+
+          authToken: function(userUiState, AuthService) {
+            if (userUiState && userUiState.authToken) {
+              AuthService.saveToken(userUiState.authToken);
+            }
+          }
+        }
+      })
       .state('home', {
         url: '/home',
-        templateUrl: 'modules/common/home.html',
-        controller: function() {
+        template: '<div></div>',
+        controller: function(VueApp) { VueApp.setVueView('home'); },
+        parent: 'signed-in'
+      })
+      .state('resolve-req-state', {
+        url: '/resolve-req-state',
+        template: '<div></div>',
+        controller: function($state, $window) {
+          var reqState = $window.localStorage.osReqState;
+          delete $window.localStorage.osReqState;
+
+          try {
+            if (reqState) {
+              var state = JSON.parse(reqState);
+              $state.go(state.name, state.params);
+            } else {
+              $state.go('home');
+            }
+          } catch(e) {
+            console.log('Error navigating to requested state: ' + reqState);
+            console.error(e);
+            $state.go('home');
+          }
         },
         parent: 'signed-in'
       })
@@ -90,6 +189,23 @@ osApp.config(function(
         resolve: {
           isAdmin: function(currentUser, Util) {
             return Util.booleanPromise(currentUser.admin);
+          }
+        },
+        parent: 'signed-in'
+      })
+      .state('vue-view', {
+        url: '/vue-view?url&relative',
+        template: '<div ui-view></div>',
+        controller: function($state, $stateParams, $sce, $rootScope, authInit, translationsReady, VueApp) {
+          if (!$stateParams.url) {
+            $state.go('home');
+          } else {
+            var url = $stateParams.url;
+            if ($stateParams.relative == 'true') {
+              url = VueApp.getVueViewUrl(url);
+            }
+
+            window.location.href = $rootScope.vueUrl = $sce.trustAsResourceUrl(url);
           }
         },
         parent: 'signed-in'
@@ -113,7 +229,7 @@ osApp.config(function(
     }
   })
   .factory('httpRespInterceptor', function(
-    $rootScope, $q, $injector, $window, $templateCache,
+    $rootScope, $q, $injector, $location, $window, $templateCache, $timeout, VueApp,
     Alerts, LocationChangeListener) {
 
     var qp = '?_buildVersion=' + ui.os.appProps.build_version + '&_buildDate=' + ui.os.appProps.build_date;
@@ -134,6 +250,8 @@ osApp.config(function(
     var listeners = [];
 
     var timerId = undefined;
+
+    var fourNotOneTimer = undefined;
 
     function notifyListeners() {
       if (timerId) {
@@ -219,7 +337,21 @@ osApp.config(function(
 
           delete $window.localStorage['osAuthToken'];
           delete $injector.get("$http").defaults.headers.common['X-OS-API-TOKEN'];
-          $injector.get('$state').go('login'); // using injector to get rid of circular dependencies
+
+          if (fourNotOneTimer) {
+            clearTimeout(fourNotOneTimer);
+          }
+
+          fourNotOneTimer = setTimeout(
+            function() {
+              // $injector.get('$state').go('login'); // using injector to get rid of circular dependencies
+              VueApp.setVueView('login');
+            }, 1000);
+
+          // $timeout(function() { $window.location.reload(); }, 1000);
+
+          // $location.path('/');
+          // $timeout(function() { $window.location.reload(); }, 1000);
         } else if (rejection.status / 100 == 5) {
           if (rejection.data instanceof Array) {
             displayErrMsgs(rejection.data);
@@ -307,9 +439,63 @@ osApp.config(function(
       };
     }
   })
+  .factory('VueApp', function($sce, $rootScope, $window) {
+    var baseUrl = 'ui-app/#/';
+    // var baseUrl = 'http://localhost:8081/#/';
+
+    function getVueViewUrl(state, params) {
+      var url = baseUrl + state;
+      var query = '';
+      angular.forEach(params,
+        function(value, key) {
+          if (value) {
+            if (query) {
+              query += '&';
+            }
+
+            query += key + '=' + value;
+          }
+        }
+      );
+
+      if (baseUrl.indexOf('http') == 0) {
+        if (query) {
+          query += '&';
+        }
+
+        if ($window.localStorage['osAuthToken']) {
+          query += 'token=' + $window.localStorage['osAuthToken'];
+        }
+      }
+
+      if (query) {
+        if (url.indexOf('?') == -1) {
+          url += '?';
+        } else {
+          url += '&';
+        }
+
+        url += query;
+      }
+
+      return url;
+    }
+
+    function setVueView(state, params) {
+      var url = getVueViewUrl(state, params);
+      window.location.href = $rootScope.vueUrl = $sce.trustAsResourceUrl(url);
+    }
+
+    return {
+      getVueViewUrl: getVueViewUrl,
+
+      setVueView: setVueView
+    }
+  })
   .run(function(
-    $rootScope, $window, $document, $http, $cookies, $q,  $state, $translate, $translatePartialLoader,
-    AuthService, LocationChangeListener, ApiUtil, Setting, PluginReg, Util) {
+    $rootScope, $window, $document, $http, $cookies, $q,  $state, $translate, $translatePartialLoader, $sce, $timeout,
+    AuthService, AuthorizationService, HomePageSvc, LocationChangeListener,
+    ApiUtil, Setting, PluginReg, Util, ItemsHolder, VueApp) {
 
     function isRedirectAllowed(st) {
       return !st.data || st.data.redirect !== false;
@@ -330,6 +516,7 @@ osApp.config(function(
     });
 
     $http.defaults.headers.common['X-OS-API-CLIENT'] = "webui";
+    $http.defaults.headers.common['X-OS-CLIENT-TZ'] = Intl.DateTimeFormat().resolvedOptions().timeZone;
     $http.defaults.withCredentials = true;
 
     if ($window.localStorage['osAuthToken']) {
@@ -341,6 +528,12 @@ osApp.config(function(
       $http.defaults.headers.common['X-OS-API-TOKEN'] = $cookies['osAuthToken'];
       $rootScope.loggedIn = true;
     }
+
+    ui.os.global = $rootScope.global = {
+      defaultDomain: 'openspecimen',
+      filterWaitInterval: ui.os.appProps.searchDelay,
+      appProps: ui.os.appProps
+    };
 
     $rootScope.$on('$stateChangeSuccess',
       function(event, toState, toParams, fromState, fromParams) {
@@ -375,9 +568,9 @@ osApp.config(function(
       
     $rootScope.$on('$stateChangeError',
       function(event, toState, toParams, fromState, fromParams) {
-        if (fromState.name == "") {
+        if ($rootScope.currentUser && !fromState.name) {
           $state.go('home');
-        } else {
+        } else if (fromState.name) {
           $state.go(fromState.name);
         }
       });
@@ -387,28 +580,29 @@ osApp.config(function(
     }
 
     $rootScope.back = LocationChangeListener.back;
+    var loadLocale = $rootScope.loadLocale = function() {
+      return Setting.getLocale().then(
+        function(localeSettings) {
+          angular.extend(
+            $rootScope.global,
+            {
+              dateFmt: localeSettings.dateFmt,
+              shortDateFmt: localeSettings.deBeDateFmt,
+              timeFmt: localeSettings.timeFmt,
+              queryDateFmt: {format: localeSettings.deFeDateFmt},
+              dateTimeFmt: localeSettings.dateFmt + ' ' + localeSettings.timeFmt,
+              locale: localeSettings.locale,
+              utcOffset: localeSettings.utcOffset
+            }
+          );
 
-    ui.os.global = $rootScope.global = {
-      defaultDomain: 'openspecimen',	
-      filterWaitInterval: ui.os.appProps.searchDelay,
-      appProps: ui.os.appProps
-    };
+          return localeSettings;
+        }
+      );
+    }
 
-    Setting.getLocale().then(
+    loadLocale().then(
       function(localeSettings) {
-        angular.extend(
-          $rootScope.global,
-          {
-            dateFmt: localeSettings.dateFmt,
-            shortDateFmt: localeSettings.deBeDateFmt,
-            timeFmt: localeSettings.timeFmt,
-            queryDateFmt: {format: localeSettings.deFeDateFmt},
-            dateTimeFmt: localeSettings.dateFmt + ' ' + localeSettings.timeFmt,
-            locale: localeSettings.locale,
-            utcOffset: localeSettings.utcOffset
-          }
-        );
-
         var plugins = ui.os.appProps.plugins;
         PluginReg.usePlugins(plugins);
         angular.forEach(plugins, function(plugin) {
@@ -440,4 +634,17 @@ osApp.config(function(
         $rootScope.global.siteAssets = resp;
       }
     );
+
+    var mediaQuery = $window.matchMedia(
+      'only screen and ' +
+      '(min-device-width: 375px) and ' +
+      '(max-device-width: 812px)'
+    );
+
+    function setScreenType(query) {
+      $rootScope.mobileScreen = query.matches ? true : false;
+    }
+
+    setScreenType(mediaQuery);
+    mediaQuery.addEventListener('change', function() { $timeout(function() { setScreenType(mediaQuery); }, 0); });
   });

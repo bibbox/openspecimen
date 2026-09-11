@@ -11,6 +11,7 @@ import java.util.stream.Collectors;
 import org.apache.commons.lang3.StringUtils;
 
 import com.krishagni.catissueplus.core.common.util.CsvMapReader;
+import com.krishagni.catissueplus.core.common.util.Utility;
 
 import liquibase.change.custom.CustomTaskChange;
 import liquibase.database.Database;
@@ -74,7 +75,7 @@ public class MoveAbbreviationsToPvProps implements CustomTaskChange {
 			if (rs.next()) {
 				String result = rs.getString("value");
 				if (StringUtils.isNotBlank(result)) {
-					filePath = result;
+					filePath = Utility.cleanPath(result);
 				}
 			}
 

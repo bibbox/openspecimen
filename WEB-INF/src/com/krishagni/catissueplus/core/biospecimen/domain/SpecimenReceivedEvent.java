@@ -1,93 +1,33 @@
 package com.krishagni.catissueplus.core.biospecimen.domain;
 
-import java.util.Calendar;
-import java.util.Collections;
 import java.util.Date;
-import java.util.List;
-import java.util.Map;
 
-import org.apache.commons.collections.CollectionUtils;
+import com.krishagni.catissueplus.core.administrative.domain.PermissibleValue;
+import com.krishagni.catissueplus.core.administrative.domain.User;
 
-import com.krishagni.catissueplus.core.common.util.AuthUtil;
-
-public class SpecimenReceivedEvent extends SpecimenEvent {
-	private String quality;
+//
+// Added purely for backward compatibility w.r.t labels generation and printing
+//
+public class SpecimenReceivedEvent {
+	private Specimen specimen;
 
 	public SpecimenReceivedEvent(Specimen specimen) {
-		super(specimen);
-	}
-	
-	public String getQuality() {
-		loadRecordIfNotLoaded();
-		return quality;
+		this.specimen = specimen;
 	}
 
-	public void setQuality(String quality) {
-		loadRecordIfNotLoaded();
-		this.quality = quality;
+	public PermissibleValue getQuality() {
+		return specimen.getReceivedQuality();
 	}
 
-	@Override
-	public String getFormName() {
-		return "SpecimenReceivedEvent";
-	}
-	
-	@Override
-	public Map<String, Object> getEventAttrs() {		
-		return Collections.<String, Object>singletonMap("quality", quality);
+	public User getUser() {
+		return specimen.getReceivedUser();
 	}
 
-	@Override
-	public void setEventAttrs(Map<String, Object> attrValues) {
-		this.quality = (String)attrValues.get("quality");
+	public Date getTime() {
+		return specimen.getReceivedTime();
 	}
-	
-	@Override
-	public void update(SpecimenEvent other) {
-		update((SpecimenReceivedEvent)other);
-	}
-	
-	public static SpecimenReceivedEvent getFor(Specimen specimen) {
-		if (specimen.getId() == null) {
-			return createFromSr(specimen);
-		}
 
-		List<Long> recIds = new SpecimenReceivedEvent(specimen).getRecordIds();		
-		if (CollectionUtils.isEmpty(recIds)) {
-			return createFromSr(specimen);
-		}
-		
-		SpecimenReceivedEvent event = new SpecimenReceivedEvent(specimen);
-		event.setId(recIds.iterator().next());
-		return event;		
-	}
-	
-	public static SpecimenReceivedEvent createFromSr(Specimen specimen) {
-		SpecimenReceivedEvent event = new SpecimenReceivedEvent(specimen);
-		event.setQuality(Specimen.ACCEPTABLE);
-		
-		SpecimenRequirement sr = specimen.getSpecimenRequirement();
-		if (sr != null) {
-			event.setUser(sr.getReceiver());
-		}
-
-		Date receivedTime;
-		if (specimen.getVisit() != null && specimen.getVisit().getVisitDate() != null) {
-			receivedTime = specimen.getVisit().getVisitDate();
-		} else {
-			receivedTime = Calendar.getInstance().getTime();
-		}
-
-		event.setTime(receivedTime);
-		if (event.getUser() == null) {
-			event.setUser(AuthUtil.getCurrentUser());
-		}		
-		
-		return event;
-	}	
-	
-	private void update(SpecimenReceivedEvent other) {
-		super.update(other);
-		setQuality(other.getQuality());
+	public String getComments() {
+		return specimen.getReceivedComments();
 	}
 }

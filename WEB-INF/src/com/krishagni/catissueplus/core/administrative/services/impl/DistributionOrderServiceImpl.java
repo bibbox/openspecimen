@@ -1,6 +1,8 @@
 package com.krishagni.catissueplus.core.administrative.services.impl;
 
+import java.io.File;
 import java.io.OutputStream;
+import java.io.UnsupportedEncodingException;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -13,6 +15,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Future;
@@ -21,10 +24,10 @@ import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-import org.apache.commons.collections.CollectionUtils;
+import jakarta.mail.internet.MimeUtility;
+
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.core.task.AsyncTaskExecutor;
 
@@ -32,6 +35,7 @@ import com.krishagni.catissueplus.core.administrative.domain.DistributionOrder;
 import com.krishagni.catissueplus.core.administrative.domain.DistributionOrder.Status;
 import com.krishagni.catissueplus.core.administrative.domain.DistributionOrderItem;
 import com.krishagni.catissueplus.core.administrative.domain.DistributionProtocol;
+import com.krishagni.catissueplus.core.administrative.domain.OrderSavedEvent;
 import com.krishagni.catissueplus.core.administrative.domain.SpecimenRequest;
 import com.krishagni.catissueplus.core.administrative.domain.SpecimenReservedEvent;
 import com.krishagni.catissueplus.core.administrative.domain.StorageContainer;
@@ -80,9 +84,13 @@ import com.krishagni.catissueplus.core.common.events.ResponseEvent;
 import com.krishagni.catissueplus.core.common.events.UserSummary;
 import com.krishagni.catissueplus.core.common.service.EmailService;
 import com.krishagni.catissueplus.core.common.service.LabelPrinter;
+import com.krishagni.catissueplus.core.common.service.ManifestGenerator;
+import com.krishagni.catissueplus.core.common.service.ManifestGeneratorFactory;
 import com.krishagni.catissueplus.core.common.service.ObjectAccessor;
+import com.krishagni.catissueplus.core.common.service.impl.EventPublisher;
 import com.krishagni.catissueplus.core.common.util.AuthUtil;
 import com.krishagni.catissueplus.core.common.util.ConfigUtil;
+import com.krishagni.catissueplus.core.common.util.LogUtil;
 import com.krishagni.catissueplus.core.common.util.MessageUtil;
 import com.krishagni.catissueplus.core.common.util.NotifUtil;
 import com.krishagni.catissueplus.core.common.util.NumUtil;
@@ -104,9 +112,11 @@ import com.krishagni.rbac.common.errors.RbacErrorCode;
 import edu.common.dynamicextensions.query.WideRowMode;
 
 public class DistributionOrderServiceImpl implements DistributionOrderService, ObjectAccessor, InitializingBean {
-	private static final Log logger = LogFactory.getLog(DistributionOrderServiceImpl.class);
+	private static final LogUtil logger = LogUtil.getLogger(DistributionOrderServiceImpl.class);
 
 	private static final long ASYNC_CALL_TIMEOUT = 5000L;
+
+	private static final String ORDER_MANIFEST = "order_manifest";
 
 	private DaoFactory daoFactory;
 
@@ -127,6 +137,8 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 	private LabelPrinter<DistributionOrderItem> labelPrinter;
 
 	private ListService listSvc;
+
+	private ManifestGeneratorFactory manifestGeneratorFactory;
 
 	public void setDaoFactory(DaoFactory daoFactory) {
 		this.daoFactory = daoFactory;
@@ -174,6 +186,10 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 
 	public void setListSvc(ListService listSvc) {
 		this.listSvc = listSvc;
+	}
+
+	public void setManifestGeneratorFactory(ManifestGeneratorFactory manifestGeneratorFactory) {
+		this.manifestGeneratorFactory = manifestGeneratorFactory;
 	}
 
 	@Override
@@ -233,10 +249,25 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 	@PlusTransactional
 	public ResponseEvent<DistributionOrderDetail> deleteOrder(RequestEvent<Long> req) {
 		try {
-			DistributionOrder order = getOrder(req.getPayload(), null);
-			AccessCtrlMgr.getInstance().ensureDeleteDistributionOrderRights(order);
-			order.delete();
-			return ResponseEvent.response(DistributionOrderDetail.from(order));
+			User currentUser = AuthUtil.getCurrentUser();
+			Future<ResponseEvent<DistributionOrderDetail>> result = taskExecutor.submit(
+				() -> {
+					long t1 = System.currentTimeMillis();
+					try {
+						AuthUtil.setCurrentUser(currentUser);
+						ResponseEvent<DistributionOrderDetail> resp = deleteOrder(req.getPayload());
+						if (!resp.isSuccessful()) {
+							notifyFailedOrderDelete(req.getPayload(), resp.getError().getMessage());
+						}
+
+						return resp;
+					} finally {
+						AuthUtil.clearCurrentUser();
+					}
+				}
+			);
+
+			return unwrap(result, ASYNC_CALL_TIMEOUT);
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
 		} catch (Exception e) {
@@ -261,7 +292,7 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 				return ResponseEvent.userError(DistributionOrderErrorCode.RPT_TMPL_NOT_CONFIGURED, order.getDistributionProtocol().getShortTitle());
 			}
 			
-			return new ResponseEvent<>(exportReport(order, query));
+			return new ResponseEvent<>(exportReport(order, query, false));
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
 		} catch (Exception e) {
@@ -286,7 +317,27 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 			return ResponseEvent.serverError(e);
 		}
 	}
-	
+
+	@Override
+	@PlusTransactional
+	public ResponseEvent<Integer> deleteOrderItems(Long orderId, String orderName, List<Long> itemIds) {
+		try {
+			DistributionOrder order = getOrder(orderId, orderName);
+			AccessCtrlMgr.getInstance().ensureUpdateDistributionOrderRights(order);
+			if (CollectionUtils.isEmpty(itemIds)) {
+				return ResponseEvent.response(0);
+			}
+
+			List<DistributionOrderItem> deletedItems = order.deleteItems(itemIds);
+			notifyOrderItemsDeleted(order, deletedItems);
+			return ResponseEvent.response(deletedItems.size());
+		} catch (OpenSpecimenException ose) {
+			return ResponseEvent.error(ose);
+		} catch (Exception e) {
+			return ResponseEvent.serverError(e);
+		}
+	}
+
 	@Override
 	@PlusTransactional
 	public ResponseEvent<List<DistributionOrderItemDetail>> getDistributedSpecimens(RequestEvent<SpecimenListCriteria> req) {
@@ -489,16 +540,45 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 			DistributionOrder order = getOrder(input.getOrderId(), input.getOrderName());
 			AccessCtrlMgr.getInstance().ensureReadDistributionOrderRights(order);
 
-			List<DistributionOrderItem> orderItems = daoFactory.getDistributionOrderDao()
-				.getOrderItems(new DistributionOrderItemListCriteria().orderId(order.getId()).ids(input.getItemIds()));
+			List<LabelPrintJob> printJobs = new ArrayList<>();
+			boolean endOfItems = false;
+			List<Long> itemIds = input.getItemIds();
+			int startAt = 0;
+			while (!endOfItems) {
+				DistributionOrderItemListCriteria crit = new DistributionOrderItemListCriteria().orderId(order.getId());
+				if (CollectionUtils.isNotEmpty(itemIds)) {
+					if (itemIds.size() > crit.maxResults()) {
+						crit.ids(itemIds.subList(0, crit.maxResults()));
+						itemIds = itemIds.subList(crit.maxResults(), itemIds.size());
+					} else {
+						crit.ids(itemIds);
+						itemIds = null;
+					}
+				} else {
+					crit.startAt(startAt);
+				}
 
-			LabelPrintJob job = printDistributionLabels(orderItems, input.getCopies());
-			if (job == null) {
+				List<DistributionOrderItem> orderItems = daoFactory.getDistributionOrderDao().getOrderItems(crit);
+				LabelPrintJob job = printDistributionLabels(orderItems, input.getCopies());
+				if (job != null) {
+					printJobs.add(job);
+				}
+
+				startAt += orderItems.size();
+				endOfItems = CollectionUtils.isNotEmpty(crit.ids()) ? CollectionUtils.isEmpty(itemIds) : orderItems.size() < crit.maxResults();
+			}
+
+			if (printJobs.isEmpty()) {
 				return ResponseEvent.userError(DistributionOrderErrorCode.NO_ITEMS_PRINTED);
 			}
 
-			job.generateLabelsDataFile();
-			return ResponseEvent.response(LabelPrintJobSummary.from(job));
+			if (printJobs.size() == 1) {
+				LabelPrintJob job = printJobs.iterator().next();
+				job.generateLabelsDataFile();
+				return ResponseEvent.response(LabelPrintJobSummary.from(job));
+			}
+
+			return ResponseEvent.response(null);
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
 		} catch (Exception e) {
@@ -615,9 +695,10 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 
 			DistributionOrder savedOrder = daoFactory.getDistributionOrderDao().getById(order.getId());
 			savedOrder.addOrUpdateExtension();
+
+			EventPublisher.getInstance().publish(new OrderSavedEvent(savedOrder));
 			DistributionOrderDetail output = DistributionOrderDetail.from(savedOrder);
 			listeners.forEach(listener -> listener.onSave(input, output, savedOrder));
-
 			notifySaveOrUpdateOrder(savedOrder, null, t1);
 			return ResponseEvent.response(output);
 		} catch (OpenSpecimenException ose) {
@@ -636,8 +717,10 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 			DistributionOrder existingOrder = getOrder(input.getId(), input.getName());
 			input.setId(existingOrder.getId());
 
-			if (existingOrder.isOrderExecuted()) {
-				return ResponseEvent.userError(DistributionOrderErrorCode.CANT_UPDATE_EXEC_ORDER, existingOrder.getName());
+			boolean isDistributed = existingOrder.isOrderExecuted();
+			if (isDistributed) {
+				input.setCopyItemsFromExistingOrder(true);
+				input.setSpecimenList(null);
 			}
 
 			AccessCtrlMgr.getInstance().ensureUpdateDistributionOrderRights(existingOrder);
@@ -651,10 +734,12 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 
 			List<SiteCpPair> siteCps = AccessCtrlMgr.getInstance().getReadAccessSpecimenSiteCps();
 			if (siteCps != null && siteCps.isEmpty()) {
-				return ResponseEvent.userError(RbacErrorCode.ACCESS_DENIED);
+				throw OpenSpecimenException.userError(RbacErrorCode.ACCESS_DENIED);
 			}
 
-			if (input.isCopyItemsFromExistingOrder()) {
+			if (isDistributed) {
+				newOrder.setDistributionProtocol(existingOrder.getDistributionProtocol());
+			} else if (input.isCopyItemsFromExistingOrder()) {
 				newOrder.setOrderItems(existingOrder.getOrderItems());
 			}
 
@@ -663,19 +748,20 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 			daoFactory.getDistributionOrderDao().saveOrUpdate(existingOrder, true);
 			existingOrder.addOrUpdateExtension();
 
+			if (!isDistributed) {
+				ensureValidSpecimens(existingOrder, siteCps, ose);
+				ose.checkAndThrow();
 
-			ensureValidSpecimens(existingOrder, siteCps, ose);
-			ose.checkAndThrow();
+				existingOrder = daoFactory.getDistributionOrderDao().getById(existingOrder.getId());
+				addRates(existingOrder, existingOrder.getOrderItems());
+				distributeOrder(existingOrder, siteCps, newOrder.getStatus());
+				existingOrder = daoFactory.getDistributionOrderDao().getById(existingOrder.getId());
+			}
 
-			existingOrder = daoFactory.getDistributionOrderDao().getById(existingOrder.getId());
-			addRates(existingOrder, existingOrder.getOrderItems());
-			distributeOrder(existingOrder, siteCps, newOrder.getStatus());
-
-			DistributionOrder savedOrder = daoFactory.getDistributionOrderDao().getById(existingOrder.getId());
-			DistributionOrderDetail output = DistributionOrderDetail.from(savedOrder);
-			listeners.forEach(listener -> listener.onSave(input, output, savedOrder));
-
-			notifySaveOrUpdateOrder(savedOrder, oldStatus, t1);
+			EventPublisher.getInstance().publish(new OrderSavedEvent(existingOrder));
+			DistributionOrderDetail output = DistributionOrderDetail.from(existingOrder);
+			notifyOrderListeners(input, output, existingOrder);
+			notifySaveOrUpdateOrder(existingOrder, oldStatus, t1);
 			return ResponseEvent.response(output);
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
@@ -712,6 +798,29 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 		);
 
 		return unwrap(result, timeout);
+	}
+
+	@PlusTransactional
+	private ResponseEvent<DistributionOrderDetail> deleteOrder(Long orderId) {
+		try {
+			DistributionOrder order = getOrder(orderId, null);
+			AccessCtrlMgr.getInstance().ensureDeleteDistributionOrderRights(order);
+
+			String name = order.getName();
+			order.delete();
+
+			DistributionOrderDetail result = DistributionOrderDetail.from(order);
+			notifyOrderDeleted(name, order);
+			return ResponseEvent.response(result);
+		} catch (OpenSpecimenException ose) {
+			return ResponseEvent.error(ose);
+		} catch (Exception e) {
+			return ResponseEvent.serverError(e);
+		}
+	}
+
+	private void notifyOrderListeners(DistributionOrderDetail input, DistributionOrderDetail output, DistributionOrder order) {
+		listeners.forEach(listener -> listener.onSave(input, output, order));
 	}
 
 	private ResponseEvent<DistributionOrderDetail> unwrap(Future<ResponseEvent<DistributionOrderDetail>> result, long timeout) {
@@ -761,9 +870,10 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 
 	private void ensureValidSpecimens(DistributionOrder order, List<SiteCpPair> siteCps, OpenSpecimenException ose) {
 		if (order.getSpecimenList() != null || order.isForAllReservedSpecimens()) {
-			int startAt = 0, maxSpmns = 100;
+			int maxSpmns = 100;
+			Long lastId = -1L;
 			Long orderId = order.getId();
-			Function<Integer, List<Specimen>> getSpecimens = getSpecimensFn(order, siteCps, maxSpmns);
+			Function<Long, List<Specimen>> getSpecimens = getSpecimensFn(order, siteCps, maxSpmns);
 
 			boolean endOfSpecimens = false;
 			while (!endOfSpecimens) {
@@ -772,8 +882,8 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 					getSpecimens = getSpecimensFn(order, siteCps, maxSpmns);
 				}
 
-				List<Specimen> specimens = getSpecimens.apply(startAt);
-				if (specimens.isEmpty() && startAt == 0) {
+				List<Specimen> specimens = getSpecimens.apply(lastId);
+				if (specimens.isEmpty() && lastId == null) {
 					if (order.getSpecimenList() != null) {
 						ose.addError(DistributionOrderErrorCode.NO_SPMNS_IN_LIST, order.getSpecimenList().getName());
 					} else {
@@ -783,8 +893,10 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 
 				ensureValidSpecimens(specimens, order.getDistributionProtocol(), siteCps, ose);
 
-				startAt += specimens.size();
 				endOfSpecimens = (specimens.size() < maxSpmns);
+				if (!specimens.isEmpty()) {
+					lastId = specimens.get(specimens.size() - 1).getId();
+				}
 
 				specimens.clear();
 				order = null;
@@ -796,22 +908,21 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 		}
 	}
 
-	private Function<Integer, List<Specimen>> getSpecimensFn(DistributionOrder order, List<SiteCpPair> siteCps, int maxSpmns) {
+	private Function<Long, List<Specimen>> getSpecimensFn(DistributionOrder order, List<SiteCpPair> siteCps, int maxSpmns) {
 		Long specimenListId = order.getSpecimenList() != null ? order.getSpecimenList().getId() : null;
 		Long reservedForDp  = specimenListId != null ? null : order.getDistributionProtocol().getId();
 
-		return (startAt) -> daoFactory.getSpecimenDao().getSpecimens(new SpecimenListCriteria()
+		return (lastId) -> daoFactory.getSpecimenDao().getSpecimens(new SpecimenListCriteria()
 			.specimenListId(specimenListId)
 			.reservedForDp(reservedForDp)
 			.siteCps(siteCps)
-			.startAt(startAt).maxResults(maxSpmns)
+			.lastId(lastId)
+			.startAt(0).maxResults(maxSpmns)
 			.limitItems(true)
 		);
 	}
 
-	private void ensureValidSpecimens(
-		List<Specimen> inputSpmns, DistributionProtocol dp, List<SiteCpPair> siteCps, OpenSpecimenException ose) {
-
+	private void ensureValidSpecimens(List<Specimen> inputSpmns, DistributionProtocol dp, List<SiteCpPair> siteCps, OpenSpecimenException ose) {
 		if (CollectionUtils.isEmpty(inputSpmns)) {
 			return;
 		}
@@ -822,9 +933,9 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 		List<String> closedSpmns = inputSpmns.stream()
 			.filter(spmn -> !spmn.isActive()).map(Specimen::getLabel)
 			.limit(10)
-			.collect(Collectors.toList());
+			.toList();
 		if (!closedSpmns.isEmpty()) {
-			ose.addError(DistributionOrderErrorCode.CLOSED_SPECIMENS, closedSpmns);
+			ose.addError(DistributionOrderErrorCode.CLOSED_SPECIMENS, closedSpmns.size(), StringUtils.join(closedSpmns, ", "));
 			return;
 		}
 
@@ -847,7 +958,7 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 	}
 
 	private void ensureSpecimensAccessibility(List<Long> specimenIds, List<SiteCpPair> siteCps, OpenSpecimenException ose) {
-		SpecimenListCriteria crit = new SpecimenListCriteria().siteCps(siteCps).ids(specimenIds);
+		SpecimenListCriteria crit = new SpecimenListCriteria().ids(specimenIds).siteCps(siteCps);
 		String nonCompliantSpmnLabels = daoFactory.getSpecimenDao().getNonCompliantSpecimens(crit)
 			.stream().limit(10).collect(Collectors.joining(", "));
 		if (!nonCompliantSpmnLabels.isEmpty()) {
@@ -884,7 +995,7 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 		Map<Long, Specimen> specimenMap = spmnWithoutDps.stream().collect(Collectors.toMap(Specimen::getId, Function.identity()));
 		Map<Long, Set<SiteCpPair>> spmnSites = daoFactory.getSpecimenDao().getSpecimenSites(spmnWithoutDps.stream().map(Specimen::getId).collect(Collectors.toSet()));
 
-		String errorLabels = notAllowedSpecimenLabels(specimenMap, spmnSites, dp.getAllowedDistributingSites());
+		String errorLabels = notAllowedSpecimenLabels(specimenMap, spmnSites, dp.getAllowedDistributingSites(null));
 		if (StringUtils.isNotBlank(errorLabels)) {
 			ose.addError(DistributionOrderErrorCode.INVALID_SPECIMENS_FOR_DP, errorLabels, dp.getShortTitle());
 			return;
@@ -895,6 +1006,7 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 		}
 
 		Set<SiteCpPair> allowedSites = AccessCtrlMgr.getInstance().getDistributionOrderAllowedSites(dp);
+		allowedSites.forEach(s -> s.setResource(null));
 		errorLabels = notAllowedSpecimenLabels(specimenMap, spmnSites, allowedSites);
 		if (StringUtils.isNotBlank(errorLabels)) {
 			ose.addError(DistributionOrderErrorCode.SPMNS_DENIED, errorLabels);
@@ -1036,10 +1148,7 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 		return criteria.siteCps(siteCps);
 	}
 
-	private int reserveSpecimens(
-		Collection<Specimen> specimens, DistributionProtocol dp, User user, Date time, String comments,
-		List<SiteCpPair> siteCps) {
-
+	private int reserveSpecimens(Collection<Specimen> specimens, DistributionProtocol dp, User user, Date time, String comments, List<SiteCpPair> siteCps) {
 		//
 		// Filter out the specimens that have been already reserved for the DP
 		//
@@ -1063,6 +1172,7 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 			event.setComments(comments);
 
 			spmn.setReservedEvent(event);
+			spmn.setAvailabilityStatus(Specimen.RESERVED);
 			return event;
 		}).collect(Collectors.toList());
 		daoFactory.getDistributionProtocolDao().saveReservedEvents(events);
@@ -1075,15 +1185,13 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 		return events.size();
 	}
 
-	private int cancelSpecimenReservation(
-		Collection<Specimen> specimens, DistributionProtocol dp, User user, Date time, String comments,
-		List<SiteCpPair> siteCps) {
-
+	private int cancelSpecimenReservation(Collection<Specimen> specimens, DistributionProtocol dp, User user, Date time, String comments, List<SiteCpPair> siteCps) {
 		//
 		// Ensure specimens are read accessible
 		//
 		OpenSpecimenException ose = new OpenSpecimenException(ErrorType.USER_ERROR);
-		ensureSpecimensAccessibility(specimens.stream().map(Specimen::getId).collect(Collectors.toList()), siteCps, ose);
+		List<Long> spmnIds = specimens.stream().map(Specimen::getId).collect(Collectors.toList());
+		ensureSpecimensAccessibility(spmnIds, siteCps, ose);
 		ose.checkAndThrow();
 
 		//
@@ -1114,7 +1222,7 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 			event.setComments(comments);
 			events.add(event);
 
-			specimen.setReservedEvent(null);
+			specimen.cancelReservation();
 		}
 
 		daoFactory.getDistributionProtocolDao().saveReservedEvents(events);
@@ -1150,15 +1258,17 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 		daoFactory.getDistributionOrderDao().saveOrUpdate(order);
 		if (order.getSpecimenList() == null && !order.isForAllReservedSpecimens()) {
 			printDistributionLabels(order.getOrderItems());
+			clearList(order);
 			return;
 		}
 
 		boolean endOfSpecimens = false;
-		int starAt = 0, maxSpmns = 100;
-		Function<Integer, List<Specimen>> getSpecimens = getSpecimensFn(order, siteCps, maxSpmns);
+		int maxSpmns = 100;
+		Long lastId = -1L;
+		Function<Long, List<Specimen>> getSpecimens = getSpecimensFn(order, siteCps, maxSpmns);
 		List<Specimen> specimens;
 		while (!endOfSpecimens) {
-			specimens = getSpecimens.apply(starAt);
+			specimens = getSpecimens.apply(lastId);
 
 			List<DistributionOrderItem> orderItems = new ArrayList<>();
 			for (Specimen specimen : specimens) {
@@ -1167,12 +1277,16 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 
 			printDistributionLabels(orderItems);
 
-			starAt += specimens.size();
 			endOfSpecimens = (specimens.size() < maxSpmns);
+			if (!specimens.isEmpty()) {
+				lastId = specimens.get(specimens.size() - 1).getId();
+			}
 
 			specimens.clear();
 			SessionUtil.getInstance().clearSession();
 		}
+
+		clearList(order);
 	}
 
 	private DistributionOrderItem distributeSpecimen(DistributionOrder order, Specimen specimen) {
@@ -1198,6 +1312,37 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 		return labelPrinter.print(PrintItem.make(orderItems, copies));
 	}
 
+	private void clearList(DistributionOrder order) {
+		if (order.getClearListId() == null ||
+			order.getClearListMode() == null ||
+			order.getClearListMode() == DistributionOrder.ClearListMode.NONE) {
+			return;
+		}
+
+		if (order.getClearListMode() == DistributionOrder.ClearListMode.ALL) {
+			daoFactory.getSpecimenListDao().clearList(order.getClearListId());
+		} else if (order.getClearListMode() == DistributionOrder.ClearListMode.DISTRIBUTED) {
+			List<Long> specimenIds = new ArrayList<>();
+			for (DistributionOrderItem item : order.getOrderItems()) {
+				specimenIds.add(item.getSpecimen().getId());
+				if (specimenIds.size() == 963) {
+					clearList(order.getClearListId(), specimenIds);
+				}
+			}
+
+			clearList(order.getClearListId(), specimenIds);
+		}
+	}
+
+	private void clearList(Long listId, List<Long> specimenIds) {
+		if (specimenIds.isEmpty()) {
+			return;
+		}
+
+		daoFactory.getSpecimenListDao().deleteListItems(listId, specimenIds);
+		specimenIds.clear();
+	}
+
 	private SavedQuery getReportQuery(DistributionOrder order) {
 		SavedQuery query = order.getDistributionProtocol().getReport();
 		if (query != null) {
@@ -1212,21 +1357,24 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 		return deDaoFactory.getSavedQueryDao().getQuery(queryId.longValue());
 	}
 
-	private QueryDataExportResult exportReport(final DistributionOrder order, SavedQuery report) {
+	private QueryDataExportResult exportReport(final DistributionOrder order, SavedQuery report, boolean waitForCompletion) {
 		Filter filter = new Filter();
 		filter.setField("Specimen.specimenOrders.id");
 		filter.setOp(Op.EQ);
 		filter.setValues(new String[] { order.getId().toString() });
 		
-		ExecuteQueryEventOp execReportOp = new ExecuteQueryEventOp();
-		execReportOp.setDrivingForm("Participant");
-		execReportOp.setAql(report.getAql(new Filter[] { filter }));			
-		execReportOp.setWideRowMode(WideRowMode.DEEP.name());
-		execReportOp.setRunType("Export");
-		return querySvc.exportQueryData(execReportOp, new QueryService.ExportProcessor() {
+		ExecuteQueryEventOp queryOp = new ExecuteQueryEventOp();
+		queryOp.setDrivingForm("Participant");
+		queryOp.setAql(report.getAql(new Filter[] { filter }));
+		queryOp.setWideRowMode(WideRowMode.DEEP.name());
+		queryOp.setRunType("Export");
+		queryOp.setSynchronous(waitForCompletion);
+		queryOp.setSavedQueryId(report.getId());
+		queryOp.setReportName(MessageUtil.getInstance().getMessage("dist_order_report", new String[] { order.getName() }));
+		return querySvc.exportQueryData(queryOp, new QueryService.ExportProcessor() {
 			@Override
 			public String filename() {
-				return "order_" + order.getId() + "_" + UUID.randomUUID().toString();
+				return "order_" + order.getId() + "_" + UUID.randomUUID();
 			}
 
 			@Override
@@ -1243,9 +1391,10 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 					put(msg("dist_requested_date"), Utility.getDateTimeString(order.getExecutionDate()));
 					put(msg("dist_receiving_site"), order.getSite() == null ? notSpecified : order.getSite().getName());
 					put(msg("dist_tracking_url"),   StringUtils.isBlank(order.getTrackingUrl()) ? notSpecified : order.getTrackingUrl());
+					put(msg("dist_checkout_specimens"), Boolean.TRUE.equals(order.getCheckoutSpecimens()) ? msg("common_yes") : msg("common_no"));
 					put(msg("dist_comments"),       StringUtils.isBlank(order.getComments()) ? notSpecified : order.getComments());
 					put(msg("dp_irb_id"),           StringUtils.isBlank(dp.getIrbId()) ? notSpecified : dp.getIrbId());
-					put(msg("dist_exported_by"),    AuthUtil.getCurrentUser().formattedName());
+					put(msg("dist_exported_by"),    Objects.requireNonNull(AuthUtil.getCurrentUser()).formattedName());
 					put(msg("dist_exported_on"),    Utility.getDateTimeString(Calendar.getInstance().getTime()));
 
 					User pi = dp.getPrincipalInvestigator();
@@ -1267,6 +1416,9 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 				}};
 
 				Utility.writeKeyValuesToCsv(out, headers);
+				if (order.getExtension() != null) {
+					order.getExtension().writeSubForms(out);
+				}
 			}
 		});
 	}
@@ -1275,7 +1427,8 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 		return MessageUtil.getInstance().getMessage(code);
 	}
 	
-	private void notifySaveOrUpdateOrder(DistributionOrder order, Status oldStatus, Long startTime) {
+	private void notifySaveOrUpdateOrder(DistributionOrder order, Status oldStatus, Long startTime)
+	throws UnsupportedEncodingException {
 		long timeTaken = (System.currentTimeMillis() - startTime) + 500;
 
 		Status newStatus = order.getStatus();
@@ -1296,17 +1449,28 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 			}
 		}
 
-		Object[] subjectParams = { order.getName(), newStatus.equals(Status.EXECUTED) ? 1 : 2 };
-		if (!Boolean.TRUE.equals(order.getDistributionProtocol().getDisableEmailNotifs())) {
-			//
-			// Send email notification
-			//
+		Object[] subjectParams = {order.getId(), order.getName(), newStatus.equals(Status.EXECUTED) ? 1 : 2};
+		if (!order.getDistributionProtocol().areEmailNotifsDisabled()) {
 			Map<String, Object> emailProps = new HashMap<>();
 			emailProps.put("$subject", subjectParams);
 			emailProps.put("order", order);
+
+			Pair<String, File> attachment = null;
+			if (newStatus.equals(Status.EXECUTED)) {
+				attachment = getOrderReportAttachment(order);
+
+				String name = (attachment != null) ? attachment.second().getName() : null;
+				String extn = (attachment != null) ? "." + attachment.first() : "";
+				emailProps.put("$attachments", Collections.singletonMap(name, Utility.sanitizeFilename(order.getName()) + extn));
+			}
+
+			//
+			// Send email notification
+			//
+			File[] attachments = attachment != null ? new File[] { attachment.second() } : null;
 			for (User rcpt : rcpts) {
 				emailProps.put("rcpt", rcpt);
-				emailService.sendEmail(ORDER_DISTRIBUTED_EMAIL_TMPL, new String[] { rcpt.getEmailAddress() }, null, emailProps);
+				emailService.sendEmail(ORDER_DISTRIBUTED_EMAIL_TMPL, new String[] { rcpt.getEmailAddress() }, attachments, emailProps);
 			}
 		}
 
@@ -1320,6 +1484,97 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 		notif.setCreationTime(Calendar.getInstance().getTime());
 		notif.setMessage(msg);
 		NotifUtil.getInstance().notify(notif, Collections.singletonMap("order-overview", rcpts));
+	}
+
+	private Pair<String, File> getOrderReportAttachment(DistributionOrder order)
+	throws UnsupportedEncodingException {
+		DistributionProtocol.NotifAttachmentType attachType = order.getDistributionProtocol().getAttachmentType();
+		if (attachType == null) {
+			String attachTypeStr = ConfigUtil.getInstance().getStrSetting("administrative", "order_attachment_type", "none");
+			attachType = DistributionProtocol.NotifAttachmentType.valueOf(attachTypeStr.toUpperCase());
+		}
+
+		if (attachType == DistributionProtocol.NotifAttachmentType.NONE) {
+			return null;
+		}
+
+		String filename = Utility.sanitizeFilename(order.getName());
+		switch (attachType) {
+			case CSV_REPORT -> {
+				File dataFile = getCsvReport(order);
+				if (dataFile == null) {
+					return null;
+				}
+
+				return Pair.make("zip", dataFile);
+			}
+			case MANIFEST -> {
+				File manifest = getManifest(order);
+				if (manifest == null) {
+					return null;
+				}
+				if (isFileLargerThan1MB(manifest)) {
+					String name = MimeUtility.encodeText(filename + ".pdf");
+					return Pair.make("zip", zipFile(name, manifest));
+				} else {
+					return Pair.make("pdf", manifest);
+				}
+			}
+			case BOTH -> {
+				List<Pair<String, String>> inputFiles = new ArrayList<>();
+				String zipPath = null;
+				File dataFile = getCsvReport(order);
+				if (dataFile != null) {
+					String name = MimeUtility.encodeText(filename + ".zip");
+					inputFiles.add(Pair.make(dataFile.getAbsolutePath(), name));
+					zipPath = dataFile.getParent();
+				}
+				File pdfFile = getManifest(order);
+				if (pdfFile != null) {
+					String name = MimeUtility.encodeText(filename + ".pdf");
+					inputFiles.add(Pair.make(pdfFile.getAbsolutePath(), name));
+					zipPath = pdfFile.getParent();
+				}
+				if (!inputFiles.isEmpty()) {
+					zipPath = new File(zipPath, filename + ".zip").getAbsolutePath();
+					return Pair.make("zip", Utility.zipFilesWithNames(inputFiles, zipPath));
+				}
+			}
+		}
+
+		return null;
+	}
+
+	private File getCsvReport(DistributionOrder order) {
+		SavedQuery query = getReportQuery(order);
+		if (query == null) {
+			return null;
+		}
+
+		QueryDataExportResult result = exportReport(order, query, true);
+		if (!result.isCompleted() || StringUtils.isBlank(result.getDataFile())) {
+			return null;
+		}
+
+		return result.getDataFileHandle();
+	}
+
+	private File getManifest(DistributionOrder order) {
+		ManifestGenerator<DistributionOrder> generator = manifestGeneratorFactory.getGenerator(ORDER_MANIFEST);
+		if (generator == null) {
+			return null;
+		}
+
+		return generator.generateManifest(order);
+	}
+
+	private boolean isFileLargerThan1MB(File file) {
+		return file.length() > 1024 * 1024;
+	}
+
+	private File zipFile(String name, File dataFile) {
+		String zipPath = new File(dataFile.getParentFile(), dataFile.getName() + ".zip").getAbsolutePath();
+		return Utility.zipFilesWithNames(Collections.singletonList(Pair.make(dataFile.getAbsolutePath(), name)), zipPath);
 	}
 
 	private void notifyFailedOrder(ResponseEvent<?> resp) {
@@ -1338,6 +1593,72 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 		emailProps.put("errorMsg", resp.getError().getMessage());
 		emailProps.put("rcpt", currentUser.formattedName());
 		emailService.sendEmail(ORDER_FAILED_EMAIL_TMPL, new String[] { currentUser.getEmailAddress() }, null, emailProps);
+	}
+
+	private void notifyOrderDeleted(String name, DistributionOrder order) {
+		if (order.getDistributionProtocol().areEmailNotifsDisabled()) {
+			return;
+		}
+
+		Set<User> rcpts = new HashSet<>();
+		rcpts.add(AuthUtil.getCurrentUser());
+		rcpts.add(order.getDistributor());
+		rcpts.add(order.getRequester());
+		rcpts.add(order.getDistributionProtocol().getPrincipalInvestigator());
+		rcpts.addAll(order.getDistributionProtocol().getCoordinators());
+		if (order.getSite() != null && CollectionUtils.isNotEmpty(order.getSite().getCoordinators())) {
+			rcpts.addAll(order.getSite().getCoordinators());
+		}
+
+		Map<String, Object> emailProps = new HashMap<>();
+		emailProps.put("$subject", new Object[] { order.getId(), name });
+		emailProps.put("order", order);
+		emailProps.put("orderName", name);
+		emailProps.put("deletedBy", AuthUtil.getCurrentUser());
+		for (User rcpt : rcpts) {
+			emailProps.put("rcpt", rcpt);
+			emailService.sendEmail(ORDER_DELETED_EMAIL_TMPL, new String[] { rcpt.getEmailAddress() }, null, emailProps);
+		}
+	}
+
+	private void notifyFailedOrderDelete(Long orderId, String errorMessage) {
+		User currentUser = AuthUtil.getCurrentUser();
+		if (currentUser == null || StringUtils.isBlank(currentUser.getEmailAddress())) {
+			return;
+		}
+
+		Map<String, Object> emailProps = new HashMap<>();
+		emailProps.put("$subject", new Object[] { orderId });
+		emailProps.put("errorMsg", errorMessage);
+		emailProps.put("orderId", orderId);
+		emailProps.put("rcpt", currentUser);
+		emailService.sendEmail(ORDER_DELETE_FAILED_EMAIL_TMPL, new String[] { currentUser.getEmailAddress() }, null, emailProps);
+	}
+
+	private void notifyOrderItemsDeleted(DistributionOrder order, List<DistributionOrderItem> deletedItems) {
+		if (order.getDistributionProtocol().areEmailNotifsDisabled()) {
+			return;
+		}
+
+		Set<User> rcpts = new HashSet<>();
+		rcpts.add(AuthUtil.getCurrentUser());
+		rcpts.add(order.getDistributor());
+		rcpts.add(order.getRequester());
+		rcpts.add(order.getDistributionProtocol().getPrincipalInvestigator());
+		rcpts.addAll(order.getDistributionProtocol().getCoordinators());
+		if (order.getSite() != null && CollectionUtils.isNotEmpty(order.getSite().getCoordinators())) {
+			rcpts.addAll(order.getSite().getCoordinators());
+		}
+
+		Map<String, Object> emailProps = new HashMap<>();
+		emailProps.put("$subject", new Object[] { order.getId(), order.getName() });
+		emailProps.put("order", order);
+		emailProps.put("deletedItems", deletedItems);
+		emailProps.put("deletedBy", AuthUtil.getCurrentUser());
+		for (User rcpt : rcpts) {
+			emailProps.put("rcpt", rcpt);
+			emailService.sendEmail(ORDER_ITEMS_DELETED_EMAIL_TMPL, new String[] { rcpt.getEmailAddress() }, null, emailProps);
+		}
 	}
 
 	private DistributionOrder getOrder(Long orderId, String orderName) {
@@ -1385,7 +1706,7 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 			ordersMap.put(order.getName(), order);
 		}
 
-		DistributionOrderItem item = order.getItemBySpecimen(label);
+		DistributionOrderItem item = daoFactory.getDistributionOrderDao().getOrderItem(order.getId(), label);
 		if (item == null) {
 			throw OpenSpecimenException.userError(DistributionOrderErrorCode.SPMN_NOT_FOUND, label, orderName);
 		}
@@ -1413,12 +1734,14 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 	}
 
 	private void setItemReturnedQty(DistributionOrderItem item, BigDecimal returnQty) {
-		if (returnQty == null && item.getQuantity() != null) {
+		BigDecimal distQty = item.getQuantity();
+		if (returnQty == null && distQty != null) {
 			throw OpenSpecimenException.userError(DistributionOrderErrorCode.RETURN_QTY_REQ, item.getSpecimen().getLabel());
 		}
 
-
-		if (NumUtil.lessThanEqualsZero(returnQty) || NumUtil.lessThan(item.getQuantity(), returnQty)) {
+		if (NumUtil.lessThanZero(returnQty) || // returnQty < 0
+			NumUtil.lessThan(distQty, returnQty) || // distQty < returnQty
+			(NumUtil.greaterThanZero(distQty) && NumUtil.isZero(returnQty))) { // distQty > 0 && returnQty == 0
 			raiseError(DistributionOrderErrorCode.INVALID_RETURN_QUANTITY, item.getSpecimen().getLabel(), returnQty);
 		}
 
@@ -1591,4 +1914,10 @@ public class DistributionOrderServiceImpl implements DistributionOrderService, O
 	private static final String ORDER_DISTRIBUTED_EMAIL_TMPL = "order_distributed";
 
 	private static final String ORDER_FAILED_EMAIL_TMPL = "order_failed";
+
+	private static final String ORDER_DELETED_EMAIL_TMPL = "order_deleted";
+
+	private static final String ORDER_ITEMS_DELETED_EMAIL_TMPL = "order_items_deleted";
+
+	private static final String ORDER_DELETE_FAILED_EMAIL_TMPL = "order_delete_failed";
 }

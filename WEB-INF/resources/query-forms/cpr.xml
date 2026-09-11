@@ -5,7 +5,7 @@
   <view>
     <name>Participant</name>
     <caption>#getMessage("participant")</caption>
-    <table>CPR_VIEW</table>
+    <table>OS_CPR_RECS</table>
     <primaryKey>CPR_ID</primaryKey>
     <activeCondition>ACTIVITY_STATUS != 'Disabled'</activeCondition>  
     <row>
@@ -42,12 +42,54 @@
       </textField>
     </row>
     <row>
+      <textField>
+        <name>emailAddress</name>
+        <udn>emailAddress</udn>
+        <caption>#getMessage("participant_email_address")</caption>
+        <column>EMAIL_ADDRESS</column>
+        <phi>true</phi>
+      </textField>
+    </row>
+    <row>
+      <booleanCheckBox>
+        <name>emailOptIn</name>
+        <udn>emailOptIn</udn>
+        <caption>#getMessage("participant_email_opt_in")</caption>
+        <column>EMAIL_OPT_IN</column>
+      </booleanCheckBox>
+    </row>
+    <row>
+      <textField>
+        <name>phoneNumber</name>
+        <udn>phoneNumber</udn>
+        <caption>#getMessage("participant_phone_number")</caption>
+        <column>PHONE_NUMBER</column>
+        <phi>true</phi>
+      </textField>
+    </row>
+    <row>
+      <booleanCheckBox>
+        <name>textOptIn</name>
+        <udn>textOptIn</udn>
+        <caption>#getMessage("participant_text_opt_in")</caption>
+        <column>TEXT_OPT_IN</column>
+      </booleanCheckBox>
+    </row>
+    <row>
+      <booleanCheckBox>
+        <name>textOptInConsent</name>
+        <udn>textOptInConsent</udn>
+        <caption>#getMessage("participant_text_opt_in_consent")</caption>
+        <column>TEXT_OPT_IN_CONSENT</column>
+      </booleanCheckBox>
+    </row>
+    <row>
       <datePicker>
         <name>dateOfBirth</name>
         <udn>dateOfBirth</udn>
         <caption>#getMessage("participant_dob")</caption>
         <column>DOB</column>
-        <format>MM-dd-yyyy</format>
+        <format>MM-dd-yyyy/dateOnly</format>
         <phi>true</phi>
       </datePicker>
     </row>
@@ -57,7 +99,7 @@
         <udn>deathDate</udn>
         <caption>#getMessage("participant_death_date")</caption>
         <column>DEATH_DATE</column>
-        <format>MM-dd-yyyy</format>
+        <format>MM-dd-yyyy/dateOnly</format>
         <phi>true</phi>
       </datePicker>
     </row>
@@ -80,15 +122,13 @@
       </textField>
     </row>
     <row>
-      <dropDown>
+      <pvField>
         <name>vitalStatus</name>
         <udn>vitalStatus</udn>
         <caption>#getMessage("participant_vital_status")</caption>
-        <column>VITAL_STATUS</column>
-        <options>
-          <sql>select value from catissue_permissible_value where public_id = 'vital_status' order by value</sql>
-        </options>
-      </dropDown>
+        <column>VITAL_STATUS_ID</column>
+        <attribute>vital_status</attribute>
+      </pvField>
     </row>
     <row>
       <dropDown>
@@ -103,45 +143,51 @@
       </dropDown>
     </row>
     <row>
-      <radioButton>
+      <dropDown>
+        <name>dataEntryStatus</name>
+        <udn>dataEntryStatus</udn>
+        <caption>#getMessage("common_data_entry_status")</caption>
+        <column>DATA_ENTRY_STATUS</column>
+        <options>
+          <option><value>COMPLETE</value></option>
+          <option><value>DRAFT</value></option>
+        </options>
+      </dropDown>
+    </row>
+    <row>
+      <pvField>
         <name>gender</name>
         <udn>gender</udn>
         <caption>#getMessage("participant_gender")</caption>
-        <column>GENDER</column>
-        <options>
-          <sql>select value from catissue_permissible_value where public_id = 'gender' order by value</sql>
-        </options>
-      </radioButton>
+        <column>GENDER_ID</column>
+        <attribute>gender</attribute>
+      </pvField>
     </row>
     <row>
-      <checkBox>
+      <pvField>
         <name>race</name>
         <udn>race</udn>
         <caption>#getMessage("participant_race")</caption>
-        <multiSelect>true</multiSelect>
-        <table>CATISSUE_RACE</table>
-        <column>RACE_NAME</column>
-        <foreignKey>PARTICIPANT_ID</foreignKey>
+        <multiple>true</multiple>
         <parentKey>PARTICIPANT_ID</parentKey>
-        <options>
-          <sql>select value from catissue_permissible_value where public_id = 'race' order by sortorder</sql>
-        </options>
-      </checkBox>
+        <collectionTable>CATISSUE_RACE</collectionTable>
+        <collectionKey>PARTICIPANT_ID</collectionKey>
+        <column>RACE_ID</column>
+        <attribute>race</attribute>
+      </pvField>
     </row>
     <row>
-      <checkBox>
+      <pvField>
         <name>ethnicity</name>
         <udn>ethnicity</udn>
         <caption>#getMessage("participant_ethnicity")</caption>
-        <multiSelect>true</multiSelect>
-        <table>OS_PARTICIPANT_ETHNICITIES</table>
-        <column>ETHNICITY</column>
-        <foreignKey>PARTICIPANT_ID</foreignKey>
+        <multiple>true</multiple>
         <parentKey>PARTICIPANT_ID</parentKey>
-        <options>
-          <sql>select value from catissue_permissible_value where public_id = 'ethnicity' order by value</sql>
-        </options>
-      </checkBox>
+        <collectionTable>OS_PARTICIPANT_ETHNICITIES</collectionTable>
+        <collectionKey>PARTICIPANT_ID</collectionKey>
+        <column>ETHNICITY_ID</column>
+        <attribute>ethnicity</attribute>
+      </pvField>
     </row>
     <row>
       <subForm>
@@ -157,14 +203,14 @@
             <udn>mrnSiteId</udn>
             <caption>#getMessage("participant_mrn_site_id")</caption>
             <column>SITE_ID</column>
-            <recordUrl>#/object-state-params-resolver?stateName=site-detail.overview&amp;objectName=site&amp;key=id&amp;value={{$value}}</recordUrl>
+            <recordUrl>#/object-state-params-resolver?stateName=SitesListItemDetail.Overview&amp;objectName=site&amp;key=id&amp;value={{$value}}</recordUrl>
           </numberField>
           <siteField>
             <name>mrnSiteName</name>
             <udn>mrnSiteName</udn>
             <caption>#getMessage("participant_mrn_site")</caption>
             <column>SITE_ID</column>
-            <recordUrl>#/object-state-params-resolver?stateName=site-detail.overview&amp;objectName=site&amp;key=name&amp;value={{$value}}</recordUrl>
+            <recordUrl>#/object-state-params-resolver?stateName=SitesListItemDetail.Overview&amp;objectName=site&amp;key=name&amp;value={{$value}}</recordUrl>
           </siteField>
           <textField>
             <name>medicalRecordNumber</name>
@@ -190,7 +236,7 @@
         <udn>id</udn>
         <caption>#getMessage("cpr_id")</caption>
         <column>CPR_ID</column>
-        <recordUrl>#/object-state-params-resolver?stateName=participant-detail.overview&amp;objectName=collection_protocol_registration&amp;key=id&amp;value={{$value}}</recordUrl>
+        <recordUrl>#/object-state-params-resolver?stateName=ParticipantsListItemDetail.Overview&amp;objectName=collection_protocol_registration&amp;key=id&amp;value={{$value}}</recordUrl>
       </numberField>
     </row>
     <row>
@@ -199,7 +245,7 @@
         <udn>regDate</udn>
         <caption>#getMessage("participant_registration_date")</caption>
         <column>REGISTRATION_DATE</column>
-        <format>MM-dd-yyyy</format>
+        <format>MM-dd-yyyy/dateOnly</format>
       </datePicker>
     </row>
     <row>
@@ -208,7 +254,7 @@
         <udn>ppid</udn>
         <caption>#getMessage("participant_ppid")</caption>
         <column>PPID</column>
-        <recordUrl>#/object-state-params-resolver?stateName=participant-detail.overview&amp;objectName=collection_protocol_registration&amp;key=id&amp;value={{$cprId}}</recordUrl>
+        <recordUrl>#/object-state-params-resolver?stateName=ParticipantsListItemDetail.Overview&amp;objectName=collection_protocol_registration&amp;key=id&amp;value={{$cprId}}</recordUrl>
       </textField>
     </row>
     <row>
@@ -217,7 +263,7 @@
         <udn>site</udn>
         <caption>#getMessage("participant_reg_site")</caption>
         <column>SITE_ID</column>
-        <recordUrl>#/object-state-params-resolver?stateName=site-detail.overview&amp;objectName=site&amp;key=name&amp;value={{$value}}</recordUrl>
+        <recordUrl>#/object-state-params-resolver?stateName=SitesListItemDetail.Overview&amp;objectName=site&amp;key=name&amp;value={{$value}}</recordUrl>
       </siteField>
     </row>
     <row>
@@ -226,7 +272,7 @@
         <udn>externalSubjectId</udn>
         <caption>#getMessage("participant_external_id")</caption>
         <column>EXTERNAL_SUBJECT_ID</column>
-        <recordUrl>#/object-state-params-resolver?stateName=participant-detail.overview&amp;objectName=collection_protocol_registration&amp;key=id&amp;value={{$cprId}}</recordUrl>
+        <recordUrl>#/object-state-params-resolver?stateName=ParticipantsListItemDetail.Overview&amp;objectName=collection_protocol_registration&amp;key=id&amp;value={{$cprId}}</recordUrl>
       </textField>
     </row>
     <row>
@@ -235,6 +281,7 @@
         <udn>creationTime</udn>
         <caption>#getMessage("common_creation_time")</caption>
         <column>CREATION_TIME</column>
+        <format>MM-dd-yyyy HH:mm</format>
       </datePicker>
     </row>
     <row>
@@ -251,6 +298,7 @@
         <udn>updateTime</udn>
         <caption>#getMessage("common_update_time")</caption>
         <column>UPDATE_TIME</column>
+        <format>MM-dd-yyyy HH:mm</format>
       </datePicker>
     </row>
     <row>
@@ -371,17 +419,23 @@
             <column>CODE</column>
           </textField>
 
-          <dropDown>
+          <pvField>
             <name>consentResponseStatement</name>
             <udn>consentResponseStatement</udn>
             <caption>#getMessage("participant_consent_tier_response")</caption>
-            <column>RESPONSE</column>
-            <options>
-              <sql>select value from catissue_permissible_value where public_id = 'consent_response' order by sortorder</sql>
-            </options>
-          </dropDown>
+            <column>RESPONSE_ID</column>
+            <attribute>consent_response</attribute>
+          </pvField>
         </row>
       </subForm>
+    </row>
+    <row>
+      <textField>
+        <name>consentDocumentName</name>
+        <udn>consentDocumentName</udn>
+        <caption>#getMessage("participant_consent_doc_name")</caption>
+        <column>CONSENT_DOCUMENT_NAME</column>
+      </textField>
     </row>
     <row>
       <datePicker>
@@ -413,9 +467,9 @@
         <name>customFields</name>
         <udn>customFields</udn>
         <caption>#getMessage("participant_field_extensions")</caption>
-        <table>OS_PART_CUST_FIELD_EXTNS_VIEW</table>
-        <foreignKey>PID</foreignKey>
-        <parentKey>PARTICIPANT_ID</parentKey>
+        <table>OS_CPR_CUST_FIELDS</table>
+        <foreignKey>CPR_ID</foreignKey>
+        <parentKey>CPR_ID</parentKey>
         <pathLink>true</pathLink>
         <extnFkCol>RECORD_ID</extnFkCol>
       </subForm>
@@ -425,7 +479,7 @@
         <name>extensions</name>
         <udn>extensions</udn>
         <caption>#getMessage("participant_extensions")</caption>
-        <table>CPR_EXTENSION_RECORDS_VIEW</table>
+        <table>OS_CPR_EXTN_RECS_VIEW</table>
         <foreignKey>CPR_ID</foreignKey>
         <parentKey>CPR_ID</parentKey>
         <pathLink>true</pathLink>
@@ -476,7 +530,7 @@
         <name>specimenCount</name>
         <udn>specimenCount</udn>
         <caption>#getMessage("cpr_specimen_count")</caption>
-        <table>OS_CPR_SPMN_STATS_VIEW</table>
+        <table>OS_CPR_SPMN_STATS</table>
         <foreignKey>IDENTIFIER</foreignKey>
         <parentKey>CPR_ID</parentKey>
         <row>
@@ -549,25 +603,21 @@
             <column>EVENT_DATE</column>
           </datePicker>
 
-          <dropDown>
-            <name>clinicalDiagnosis</name>
-            <udn>clinicalDiagnosis</udn>
-            <caption>#getMessage("cpr_as_clinical_diagnosis")</caption>
-            <column>CLINICAL_DIAGNOSIS</column>
-            <options>
-              <sql>select distinct clinical_diagnosis from catissue_coll_prot_event order by clinical_diagnosis</sql>
-            </options>
-          </dropDown>
-
-          <dropDown>
+          <pvField>
             <name>clinicalStatus</name>
             <udn>clinicalStatus</udn>
             <caption>#getMessage("cpr_as_clinical_status")</caption>
-            <column>CLINICAL_STATUS</column>
-            <options>
-              <sql>select value from catissue_permissible_value where public_id = 'clinical_status' order by value</sql>
-            </options>
-          </dropDown>
+            <column>CLINICAL_STATUS_ID</column>
+            <attribute>clinical_status</attribute>
+          </pvField>
+
+          <pvField>
+            <name>clinicalDiagnosis</name>
+            <udn>clinicalDiagnosis</udn>
+            <caption>#getMessage("cpr_as_clinical_diagnosis")</caption>
+            <column>CLINICAL_DIAGNOSIS_ID</column>
+            <attribute>clinical_diagnosis</attribute>
+          </pvField>
 
           <textField>
             <name>reqCode</name>
@@ -595,45 +645,40 @@
             </options>
           </dropDown>
 
-          <dropDown>
+          <pvField>
             <name>specimenClass</name>
             <udn>specimenClass</udn>
             <caption>#getMessage("cpr_as_class")</caption>
-            <column>SPECIMEN_CLASS</column>
-            <options>
-              <sql>select value from catissue_permissible_value where public_id = 'specimen_type' and parent_identifier is null order by value</sql>
-            </options>
-          </dropDown>
+            <column>SPECIMEN_CLASS_ID</column>
+            <attribute>specimen_type</attribute>
+            <rootValue>true</rootValue>
+          </pvField>
 
-          <dropDown>
+          <pvField>
             <name>specimenType</name>
             <udn>specimenType</udn>
             <caption>#getMessage("cpr_as_type")</caption>
-            <column>SPECIMEN_TYPE</column>
-            <options>
-              <sql>select value from catissue_permissible_value where public_id = 'specimen_type' and parent_identifier is not null order by value</sql>
-            </options>
-          </dropDown>
+            <column>SPECIMEN_TYPE_ID</column>
+            <attribute>specimen_type</attribute>
+            <leafValue>true</leafValue>
+          </pvField>
 
-          <dropDown>
+          <pvField>
             <name>anatomicSite</name>
             <udn>anatomicSite</udn>
             <caption>#getMessage("cpr_as_anatomic_site")</caption>
-            <column>ANATOMIC_SITE</column>
-            <options>
-              <sql>select value from catissue_permissible_value where public_id = 'anatomic_site' order by value</sql>
-            </options>
-          </dropDown>
+            <column>ANATOMIC_SITE_ID</column>
+            <attribute>anatomic_site</attribute>
+            <leafValue>true</leafValue>
+          </pvField>
 
-          <dropDown>
+          <pvField>
             <name>laterality</name>
             <udn>laterality</udn>
             <caption>#getMessage("cpr_as_laterality")</caption>
-            <column>LATERALITY</column>
-            <options>
-              <sql>select value from catissue_permissible_value where public_id = 'laterality' order by value</sql>
-            </options>
-          </dropDown>
+            <column>LATERALITY_ID</column>
+            <attribute>laterality</attribute>
+          </pvField>
 
           <numberField>
             <name>quantity</name>
@@ -651,35 +696,29 @@
             <noOfDigitsAfterDecimal>#getPrecision()</noOfDigitsAfterDecimal>
           </numberField>
 
-          <dropDown>
+          <pvField>
             <name>pathStatus</name>
             <udn>pathStatus</udn>
             <caption>#getMessage("cpr_as_path_status")</caption>
-            <column>PATH_STATUS</column>
-            <options>
-              <sql>select value from catissue_permissible_value where public_id = 'pathology_status' order by value</sql>
-            </options>
-          </dropDown>
+            <column>PATH_STATUS_ID</column>
+            <attribute>pathology_status</attribute>
+          </pvField>
 
-          <dropDown>
+          <pvField>
             <name>collectionContainer</name>
             <udn>collectionContainer</udn>
             <caption>#getMessage("cpr_as_coll_container")</caption>
-            <column>COLLECTION_CONTAINER</column>
-            <options>
-              <sql>select value from catissue_permissible_value where public_id = 'collection_container' order by value</sql>
-            </options>
-          </dropDown>
+            <column>COLLECTION_CONTAINER_ID</column>
+            <attribute>collection_container</attribute>
+          </pvField>
 
-          <dropDown>
+          <pvField>
             <name>collectionProcedure</name>
             <udn>collectionProcedure</udn>
             <caption>#getMessage("cpr_as_coll_procedure")</caption>
-            <column>COLLECTION_PROCEDURE</column>
-            <options>
-              <sql>select value from catissue_permissible_value where public_id = 'collection_procedure' order by value</sql>
-            </options>
-          </dropDown>
+            <column>COLLECTION_PROCEDURE_ID</column>
+            <attribute>collection_procedure</attribute>
+          </pvField>
         </row>
       </subForm>
     </row>

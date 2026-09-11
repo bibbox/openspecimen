@@ -1,22 +1,22 @@
 package com.krishagni.rbac.service.impl;
 
 import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.Calendar;
-import java.util.Collections;
 import java.util.stream.Collectors;
 
-import org.springframework.beans.BeanUtils;
-import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.hibernate.Session;
+import org.springframework.beans.BeanUtils;
 
-import com.krishagni.catissueplus.core.administrative.domain.Institute;
 import com.krishagni.catissueplus.core.administrative.domain.Site;
 import com.krishagni.catissueplus.core.administrative.domain.User;
 import com.krishagni.catissueplus.core.administrative.domain.factory.SiteErrorCode;
@@ -25,11 +25,11 @@ import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.CpErrorCode;
 import com.krishagni.catissueplus.core.common.PlusTransactional;
 import com.krishagni.catissueplus.core.common.access.AccessCtrlMgr;
+import com.krishagni.catissueplus.core.common.domain.Notification;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
 import com.krishagni.catissueplus.core.common.events.ResponseEvent;
 import com.krishagni.catissueplus.core.common.repository.AbstractDao;
-import com.krishagni.catissueplus.core.common.domain.Notification;
 import com.krishagni.catissueplus.core.common.util.AuthUtil;
 import com.krishagni.catissueplus.core.common.util.EmailUtil;
 import com.krishagni.catissueplus.core.common.util.MessageUtil;
@@ -301,6 +301,16 @@ public class RbacServiceImpl implements RbacService {
 			return ResponseEvent.serverError(e);
 		}
 	}
+
+	@Override
+	@PlusTransactional
+	public ResponseEvent<Long> getRolesCount(RequestEvent<RoleListCriteria> req) {
+		try {
+			return ResponseEvent.response(daoFactory.getRoleDao().getRolesCount(req.getPayload()));
+		} catch (Exception e) {
+			return ResponseEvent.serverError(e);
+		}
+	}
 	
 	@Override
 	@PlusTransactional
@@ -322,16 +332,9 @@ public class RbacServiceImpl implements RbacService {
 	public ResponseEvent<RoleDetail> saveRole(RequestEvent<RoleDetail> req) {
 		try {
 			AccessCtrlMgr.getInstance().ensureUserIsAdmin();
-			
-			RoleDetail detail = req.getPayload();
-			Role role = createRole(detail);
+			Role role = createRole(req.getPayload());
 			ensureUniqueName(role, null);
-			checkCycles(role);
-			for (Role childRole : role.getChildRoles()) {
-				childRole.setParentRole(role);
-			}
-			
-			daoFactory.getRoleDao().saveOrUpdate(role);
+			daoFactory.getRoleDao().saveOrUpdate(role, true);
 			return ResponseEvent.response(RoleDetail.from(role));
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
@@ -347,7 +350,6 @@ public class RbacServiceImpl implements RbacService {
 			AccessCtrlMgr.getInstance().ensureUserIsAdmin();
 			
 			RoleDetail detail = request.getPayload();
-		
 			Role existing = daoFactory.getRoleDao().getById(detail.getId());
 			if (existing == null) {
 				return ResponseEvent.userError(RbacErrorCode.ROLE_NOT_FOUND);
@@ -355,10 +357,8 @@ public class RbacServiceImpl implements RbacService {
 		
 			Role newRole = createRole(detail);
 			ensureUniqueName(newRole, existing);
-			checkCycles(newRole);
-				
 			existing.updateRole(newRole);
-			daoFactory.getRoleDao().saveOrUpdate(existing);
+			daoFactory.getRoleDao().saveOrUpdate(existing, true);
 			return ResponseEvent.response(RoleDetail.from(existing));
 		} catch(OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
@@ -378,8 +378,7 @@ public class RbacServiceImpl implements RbacService {
 			if (role == null) {
 				return ResponseEvent.userError(RbacErrorCode.ROLE_NOT_FOUND);
 			}
-			
-			adjustParentChildRelationForRoleDeletion(role);
+
 			daoFactory.getRoleDao().delete(role);
 			return ResponseEvent.response(RoleDetail.from(role));
 		} catch (Exception e) {
@@ -422,29 +421,26 @@ public class RbacServiceImpl implements RbacService {
 			Map<String,Object> oldSrDetails = new HashMap<>();
 			SubjectRole sr = null;
 			switch (subjectRoleOp.getOp()) {
-				case ADD:
-					sr = createSubjectRole(subjectRoleOp.getSubjectRole());
-					AccessCtrlMgr.getInstance().ensureCreateUpdateUserRolesRights(user, sr.getSite());
+				case ADD -> {
+					sr = createSubjectRole(subject, subjectRoleOp.getSubjectRole());
+					AccessCtrlMgr.getInstance().ensureCreateUpdateUserRolesRights(user, sr.getSite(), sr.getCollectionProtocol());
 					resp = subject.addRole(sr);
-					break;
-				
-				case UPDATE:
+				}
+				case UPDATE -> {
 					SubjectRole oldSr = subject.getRole(subjectRoleOp.getSubjectRole().getId());
-					AccessCtrlMgr.getInstance().ensureCreateUpdateUserRolesRights(user, oldSr.getSite());
+					AccessCtrlMgr.getInstance().ensureCreateUpdateUserRolesRights(user, oldSr.getSite(), oldSr.getCollectionProtocol());
 					oldSrDetails.put("site", oldSr.getSite());
 					oldSrDetails.put("collectionProtocol", oldSr.getCollectionProtocol());
 					oldSrDetails.put("role", oldSr.getRole());
-					
-					sr = createSubjectRole(subjectRoleOp.getSubjectRole());
-					AccessCtrlMgr.getInstance().ensureCreateUpdateUserRolesRights(user, sr.getSite());
+					sr = createSubjectRole(subject, subjectRoleOp.getSubjectRole());
+					AccessCtrlMgr.getInstance().ensureCreateUpdateUserRolesRights(user, sr.getSite(), sr.getCollectionProtocol());
 					resp = subject.updateRole(sr);
-					break;
-				
-				case REMOVE:
+				}
+				case REMOVE -> {
 					SubjectRole role = subject.getRole(subjectRoleOp.getSubjectRole().getId());
-					AccessCtrlMgr.getInstance().ensureCreateUpdateUserRolesRights(user, role.getSite());
+					AccessCtrlMgr.getInstance().ensureCreateUpdateUserRolesRights(user, role.getSite(), role.getCollectionProtocol());
 					resp = subject.removeSubjectRole(role);
-					break;
+				}
 			}
 			
 			if (resp != null) {
@@ -511,17 +507,13 @@ public class RbacServiceImpl implements RbacService {
 		ArrayList<SubjectRole> subjectRoles = new ArrayList<>();
 		for (String role : roleNames) {
 			SubjectRole sr = createSubjectRole(site, cp, role, systemRole);
-			AccessCtrlMgr.getInstance().ensureCreateUpdateUserRolesRights(user, sr.getSite());
-			SubjectRole resp = null;
-			switch (op) {
-				case ADD:
-					resp = subject.addRole(sr);
-					break;
-				case REMOVE:
-					resp = subject.removeSubjectRole(sr);
-					break;
-			}
-			
+			AccessCtrlMgr.getInstance().ensureCreateUpdateUserRolesRights(user, sr.getSite(), sr.getCollectionProtocol());
+			SubjectRole resp = switch (op) {
+				case ADD -> subject.addRole(sr);
+				case REMOVE -> subject.removeSubjectRole(sr);
+				default -> null;
+			};
+
 			if (resp != null) {
 				subjectRoles.add(resp);
 			}
@@ -636,13 +628,15 @@ public class RbacServiceImpl implements RbacService {
 			
 			Subject subject = daoFactory.getSubjectDao().getById(user.getId());
 			subject.removeAllSubjectRoles();
-			
-			for (SubjectRolesList.Role srd : rolesList.getRoles()) {
-				SubjectRole sr = createSubjectRole(srd);
-				AccessCtrlMgr.getInstance().ensureCreateUpdateUserRolesRights(user, sr.getSite());
-				subject.addRole(sr);
+
+			if (CollectionUtils.isNotEmpty(rolesList.getRoles())) {
+				for (SubjectRolesList.Role srd : rolesList.getRoles()) {
+					SubjectRole sr = createSubjectRole(srd);
+					AccessCtrlMgr.getInstance().ensureCreateUpdateUserRolesRights(user, sr.getSite(), sr.getCollectionProtocol());
+					subject.addRole(sr);
+				}
 			}
-			
+
 			daoFactory.getSubjectDao().saveOrUpdate(subject);
 			return ResponseEvent.response(
 					SubjectRolesList.from(
@@ -679,11 +673,6 @@ public class RbacServiceImpl implements RbacService {
 		setName(detail, role);
 		role.setDescription(detail.getDescription());
 		role.setAcl(getAcl(detail, role));
-		role.setParentRole(getRole(detail.getParentRoleName()));
-		
-		for (String childRole : detail.getChildRoles()) {
-			role.getChildRoles().add(getRole(childRole));
-		}
 		return role;
 	}
 	
@@ -693,24 +682,7 @@ public class RbacServiceImpl implements RbacService {
 		}
 		role.setName(detail.getName());
 	}
-	
-	private void checkCycles(Role role) {
-		if (role.equals(role.getParentRole()) || role.getChildRoles().contains(role)) {
-			throw OpenSpecimenException.userError(RbacErrorCode.CYCLE_DETECTED_IN_HIERARCHY);
-		}
-		
-		Role parentRole = role.getParentRole();
-		if (parentRole == null) {
-			return;
-		}
-		
-		for (Role childRole : role.getChildRoles()) {
-			if (parentRole.isDescendentOf(childRole)) {
-				throw OpenSpecimenException.userError(RbacErrorCode.CYCLE_DETECTED_IN_HIERARCHY);
-			}
-		}
-	}
-	
+
 	private Role getRole(String roleName) {
 		if (roleName == null) {
 			return null;
@@ -726,51 +698,39 @@ public class RbacServiceImpl implements RbacService {
 	}
 	
 	private Set<RoleAccessControl> getAcl(RoleDetail detail, Role role) {
-		Set<RoleAccessControl> result = new HashSet<RoleAccessControl>();
-		Map<Long, RoleAccessControl> racMap = new HashMap<Long, RoleAccessControl>();
-		
-		if (detail.getId() != null) {
-			Role existingRole  = daoFactory.getRoleDao().getById(detail.getId());
-			for (RoleAccessControl rac : existingRole.getAcl()) {
-				racMap.put(rac.getId(), rac);
-			}
-		}
-		
-		for (RoleAccessControlDetails rd : detail.getAcl()) {
-			RoleAccessControl rac = racMap.get(rd.getId());
-			
-			if(rac == null) {
-				rac = new RoleAccessControl();
-				rac.setRole(role);
-			}
-			
-			Resource resource = daoFactory.getResourceDao().getResourceByName(rd.getResourceName());
+		Map<Resource, RoleAccessControl> aclMap = new LinkedHashMap<>();
+
+		for (RoleAccessControlDetails inputAcl : detail.getAcl()) {
+			RoleAccessControl acl = new RoleAccessControl();
+			acl.setRole(role);
+
+			Resource resource = daoFactory.getResourceDao().getResourceByName(inputAcl.getResourceName());
+			acl.setResource(resource);
 			if (resource == null) {
-				throw OpenSpecimenException.userError(RbacErrorCode.RESOURCE_NOT_FOUND);
+				throw OpenSpecimenException.userError(RbacErrorCode.RESOURCE_NOT_FOUND, inputAcl.getResourceName());
 			}
-			rac.setResource(resource);
-			rac.getOperations().clear(); 
-			for (ResourceInstanceOpDetails riod  : rd.getOperations()) {
-				Operation operation = daoFactory.getOperationDao().getOperationByName(riod.getOperationName());
+
+			Map<Operation, ResourceInstanceOp> opsMap = new LinkedHashMap<>();
+			for (ResourceInstanceOpDetails inputOp  : inputAcl.getOperations()) {
+				Operation operation = daoFactory.getOperationDao().getOperationByName(inputOp.getOperationName());
 				if (operation == null) {
-					throw OpenSpecimenException.userError(RbacErrorCode.OPERATION_NOT_FOUND);
+					throw OpenSpecimenException.userError(RbacErrorCode.OPERATION_NOT_FOUND, inputOp.getOperationName());
 				}
 				
 				ResourceInstanceOp op = new ResourceInstanceOp();
-				op.setRoleAccessControl(rac);
-				op.setResourceInstanceId(riod.getResourceInstanceId());
 				op.setOperation(operation);
-								
-				rac.getOperations().add(op);
+				op.setAccessControl(acl);
+				opsMap.put(op.getOperation(), op);
 			}
-			
-			result.add(rac);
+
+			acl.setOperations(new LinkedHashSet<>(opsMap.values()));
+			aclMap.put(acl.getResource(), acl);
 		}
 		
-		return result;
+		return new LinkedHashSet<>(aclMap.values());
 	}
 	
-	private SubjectRole createSubjectRole(SubjectRoleDetail srd) {
+	private SubjectRole createSubjectRole(Subject subject, SubjectRoleDetail srd) {
 		RoleDetail detail = srd.getRole();
 		if (detail == null || StringUtils.isEmpty(detail.getName())) {
 			throw OpenSpecimenException.userError(RbacErrorCode.ROLE_NAME_REQUIRED);
@@ -780,13 +740,38 @@ public class RbacServiceImpl implements RbacService {
 		if (role == null) {
 			throw OpenSpecimenException.userError(RbacErrorCode.ROLE_NOT_FOUND);
 		}
-		
+
+		CollectionProtocol cp = getCollectionProtocol(srd);
+		Site site = getSite(srd);
+
 		SubjectRole sr = new SubjectRole();
 		sr.setId(srd.getId());
-		sr.setCollectionProtocol(getCollectionProtocol(srd));
-		sr.setSite(getSite(srd));
+		sr.setCollectionProtocol(cp);
+		sr.setSite(site);
 		sr.setRole(role);
 		sr.setSystemRole(srd.getSystemRole());
+		sr.setSubject(subject);
+
+		if (site == null) {
+			if (cp != null) {
+				boolean valid = daoFactory.getCollectionProtocolDao().isCpAffiliatedToUserInstitute(cp.getId(), subject.getId());
+				if (!valid) {
+					throw OpenSpecimenException.userError(RbacErrorCode.INV_CP_USER, cp.getShortTitle());
+				}
+			}
+		} else {
+			if (!daoFactory.getSiteDao().isAffiliatedToUserInstitute(site.getId(), subject.getId())) {
+				throw OpenSpecimenException.userError(RbacErrorCode.INV_SITE_USER, site.getName());
+			}
+
+			if (cp != null) {
+				boolean valid = cp.getRepositories().stream().anyMatch(cpSite -> cpSite.equals(site));
+				if (!valid) {
+					throw OpenSpecimenException.userError(RbacErrorCode.INV_CP_SITE, site.getName(), cp.getShortTitle());
+				}
+			}
+		}
+
 		return sr;
 	}
 
@@ -859,6 +844,10 @@ public class RbacServiceImpl implements RbacService {
 		
 		
 		String cpShortTitle = srd.getCpShortTitle();
+		if (SubjectRolesList.ALL_CURRENT_AND_FUTURE.equalsIgnoreCase(cpShortTitle)) {
+			cpShortTitle = null;
+		}
+
 		if (StringUtils.isNotBlank(cpShortTitle)) {
 			CollectionProtocol cp = daoFactory.getCollectionProtocolDao().getCpByShortTitle(cpShortTitle);
 			if (cp == null) {
@@ -868,6 +857,10 @@ public class RbacServiceImpl implements RbacService {
 		}
 		
 		String siteName = srd.getSiteName();
+		if (SubjectRolesList.ALL_CURRENT_AND_FUTURE.equalsIgnoreCase(siteName)) {
+			siteName = null;
+		}
+
 		if (StringUtils.isNotBlank(siteName)) {
 			Site site = daoFactory.getSiteDao().getSiteByName(siteName);
 			if (site == null) {
@@ -878,27 +871,6 @@ public class RbacServiceImpl implements RbacService {
 		
 		return sr;
 	}
-	
-
-	private void adjustParentChildRelationForRoleDeletion(Role role) {
-		Role parent = role.getParentRole();
-		Set<Role> childRoles = role.getChildRoles();
-		
-		for (Role childRole : childRoles) {
-			childRole.setParentRole(parent);
-		}
-		
-		if (parent != null) {
-			parent.getChildRoles().remove(role);
-			parent.getChildRoles().addAll(childRoles);
-			daoFactory.getRoleDao().saveOrUpdate(parent);
-		} else {
-			for (Role childRole : childRoles) {
-				daoFactory.getRoleDao().saveOrUpdate(childRole);
-			}
-		}
-	}
-	
 	
 	private GroupRole createGroupRole(GroupRoleDetail gd) {
 		RoleDetail detail = gd.getRoleDetails();

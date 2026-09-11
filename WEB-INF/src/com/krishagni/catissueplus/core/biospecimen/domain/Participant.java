@@ -5,17 +5,16 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang3.ObjectUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.hibernate.envers.Audited;
 import org.hibernate.envers.NotAudited;
 
+import com.krishagni.catissueplus.core.administrative.domain.PermissibleValue;
 import com.krishagni.catissueplus.core.administrative.domain.Site;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.ParticipantErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.ParticipantUtil;
@@ -24,10 +23,11 @@ import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.service.MpiGenerator;
 import com.krishagni.catissueplus.core.common.util.Status;
 import com.krishagni.catissueplus.core.common.util.Utility;
+import com.krishagni.catissueplus.core.de.domain.DeObject;
 import com.krishagni.catissueplus.core.de.services.impl.FormUtil;
 
 @Audited
-public class Participant extends BaseExtensionEntity {
+public class Participant extends BaseEntity {
 	private static final String ENTITY_NAME = "participant";
 
 	public static final String DEF_SOURCE = "OpenSpecimen";
@@ -44,13 +44,23 @@ public class Participant extends BaseExtensionEntity {
 
 	private Date birthDate;
 
-	private String gender;
+	private String emailAddress;
+
+	private Boolean emailOptIn;
+
+	private String phoneNumber;
+
+	private Boolean textOptIn;
+
+	private Boolean textOptInConsent;
+
+	private PermissibleValue gender;
 
 	private String sexGenotype;
 
-	private Set<String> races = new HashSet<>();
+	private Set<PermissibleValue> races = new HashSet<>();
 
-	private Set<String> ethnicities = new HashSet<>();
+	private Set<PermissibleValue> ethnicities = new HashSet<>();
 
 	private String uid;
 
@@ -58,19 +68,21 @@ public class Participant extends BaseExtensionEntity {
 
 	private Date deathDate;
 
-	private String vitalStatus;
+	private PermissibleValue vitalStatus;
 	
 	private String empi;
-	
+
 	private Set<ParticipantMedicalIdentifier> pmis = new HashSet<>();
 
 	private Set<CollectionProtocolRegistration> cprs = new HashSet<>();
 
-	private transient Long cpId = -1L;
-
 	private transient Set<Long> oldCprIds;
 
 	private transient Set<Long> newCprIds;
+
+	private transient Set<Long> kwAddedCprIds;
+
+	private transient CollectionProtocolRegistration cpr;
 
 	public String getSource() {
 		return StringUtils.isBlank(source) ? DEF_SOURCE : source;
@@ -112,11 +124,59 @@ public class Participant extends BaseExtensionEntity {
 		this.birthDate = birthDate;
 	}
 
-	public String getGender() {
+	public String getEmailAddress() {
+		return emailAddress;
+	}
+
+	public void setEmailAddress(String emailAddress) {
+		if (StringUtils.isBlank(emailAddress)) {
+			//
+			// this is done to avoid UQ violation because of ''
+			// For more details, refer to OPSMN-5344
+			//
+			this.emailAddress = null;
+		} else {
+			this.emailAddress = emailAddress;
+		}
+	}
+
+	public boolean isEmailOptIn() {
+		return Boolean.TRUE.equals(emailOptIn);
+	}
+
+	public void setEmailOptIn(Boolean emailOptIn) {
+		this.emailOptIn = emailOptIn;
+	}
+
+	public String getPhoneNumber() {
+		return phoneNumber;
+	}
+
+	public void setPhoneNumber(String phoneNumber) {
+		this.phoneNumber = phoneNumber;
+	}
+
+	public boolean isTextOptIn() {
+		return Boolean.TRUE.equals(textOptIn);
+	}
+
+	public void setTextOptIn(Boolean textOptIn) {
+		this.textOptIn = textOptIn;
+	}
+
+	public Boolean getTextOptInConsent() {
+		return textOptInConsent;
+	}
+
+	public void setTextOptInConsent(Boolean textOptInConsent) {
+		this.textOptInConsent = textOptInConsent;
+	}
+
+	public PermissibleValue getGender() {
 		return gender;
 	}
 
-	public void setGender(String gender) {
+	public void setGender(PermissibleValue gender) {
 		this.gender = gender;
 	}
 
@@ -128,19 +188,19 @@ public class Participant extends BaseExtensionEntity {
 		this.sexGenotype = sexGenotype;
 	}
 
-	public Set<String> getRaces() {
+	public Set<PermissibleValue> getRaces() {
 		return races;
 	}
 
-	public void setRaces(Set<String> races) {
+	public void setRaces(Set<PermissibleValue> races) {
 		this.races = races;
 	}
 
-	public Set<String> getEthnicities() {
+	public Set<PermissibleValue> getEthnicities() {
 		return ethnicities;
 	}
 
-	public void setEthnicities(Set<String> ethnicities) {
+	public void setEthnicities(Set<PermissibleValue> ethnicities) {
 		this.ethnicities = ethnicities;
 	}
 
@@ -180,11 +240,11 @@ public class Participant extends BaseExtensionEntity {
 		this.deathDate = deathDate;
 	}
 
-	public String getVitalStatus() {
+	public PermissibleValue getVitalStatus() {
 		return vitalStatus;
 	}
 
-	public void setVitalStatus(String vitalStatus) {
+	public void setVitalStatus(PermissibleValue vitalStatus) {
 		this.vitalStatus = vitalStatus;
 	}
 
@@ -229,22 +289,59 @@ public class Participant extends BaseExtensionEntity {
 		this.newCprIds = newCprIds;
 	}
 
+	public Set<Long> getKwAddedCprIds() {
+		return kwAddedCprIds;
+	}
+
+	public void setKwAddedCprIds(Set<Long> kwAddedCprIds) {
+		this.kwAddedCprIds = kwAddedCprIds;
+	}
+
+	public void addKwAddedCprId(Long cprId) {
+		if (kwAddedCprIds == null) {
+			kwAddedCprIds = new HashSet<>();
+		}
+
+		kwAddedCprIds.add(cprId);
+	}
+
+	public CollectionProtocolRegistration getCpr() {
+		return cpr;
+	}
+
+	public void setCpr(CollectionProtocolRegistration cpr) {
+		this.cpr = cpr;
+	}
+
+	public DeObject getExtension() {
+		return cpr != null ? cpr.getExtension() : null;
+	}
+
 	public void update(Participant participant) {
 		setFirstName(participant.getFirstName());
 		setLastName(participant.getLastName());
 		setMiddleName(participant.getMiddleName());
 		setUid(participant.getUid());
 		setEmpi(participant.getEmpi());
+		setEmailAddress(participant.getEmailAddress());
+		setEmailOptIn(participant.isEmailOptIn());
+		setPhoneNumber(participant.getPhoneNumber());
+		setTextOptIn(participant.isTextOptIn());
 		setActivityStatus(participant.getActivityStatus());
 		setSexGenotype(participant.getSexGenotype());
 		setVitalStatus(participant.getVitalStatus());
 		setGender(participant.getGender());
 		setBirthDate(participant.getBirthDate());
 		setDeathDate(participant.getDeathDate());
-		setExtension(participant.getExtension());
 		CollectionUpdater.update(getEthnicities(), participant.getEthnicities());
 		CollectionUpdater.update(getRaces(), participant.getRaces());
 		updatePmis(participant);
+
+		if (Boolean.FALSE.equals(getTextOptInConsent())) {
+			if (isTextOptIn()) {
+				throw OpenSpecimenException.userError(ParticipantErrorCode.TEXT_OPT_OUT);
+			}
+		}
 	}
 
 	public void updateActivityStatus(String activityStatus) {
@@ -269,6 +366,7 @@ public class Participant extends BaseExtensionEntity {
 		disableMrns();		
 		setUid(Utility.getDisabledValue(getUid(), 50));
 		setEmpi(Utility.getDisabledValue(getEmpi(), 50));
+		setEmailAddress(Utility.getDisabledValue(getEmailAddress(), 255));
 		activityStatus = Status.ACTIVITY_STATUS_DISABLED.getStatus();
 		FormUtil.getInstance().deleteRecords(-1L, Collections.singletonList("CommonParticipant"), getId());
 	}
@@ -284,12 +382,7 @@ public class Participant extends BaseExtensionEntity {
 	}
 	
 	public Set<Site> getMrnSites() {
-		Set<Site> result = new HashSet<Site>();
-		for (ParticipantMedicalIdentifier pmi : getPmis()) {
-			result.add(pmi.getSite());
-		}
-		
-		return result;
+		return getPmis().stream().map(ParticipantMedicalIdentifier::getSite).collect(Collectors.toSet());
 	}
 	
 	public void setEmpiIfEmpty() {
@@ -305,20 +398,6 @@ public class Participant extends BaseExtensionEntity {
 		setEmpi(generator.generateMpi());
 	}
 
-	@Override
-	public String getEntityType() {
-		return EXTN;
-	}
-
-	public void setCpId(Long cpId) {
-		this.cpId = cpId;
-	}
-
-	@Override
-	public Long getCpId() {
-		return cpId;
-	}
-
 	public List<ParticipantMedicalIdentifier> getPmisOrderedById() {
 		return getPmis().stream()
 			.sorted((p1, p2) -> ObjectUtils.compare(p1.getId(), p2.getId()))
@@ -327,6 +406,23 @@ public class Participant extends BaseExtensionEntity {
 	
 	public CollectionProtocolRegistration getCpr(CollectionProtocol cp) {
 		return getCprs().stream().filter(cpr -> cpr.getCollectionProtocol().equals(cp)).findFirst().orElse(null);
+	}
+
+	public String formattedName() {
+		StringBuilder name = new StringBuilder();
+		if (StringUtils.isNotBlank(firstName)) {
+			name.append(firstName);
+		}
+
+		if (StringUtils.isNotBlank(lastName)) {
+			if (name.length() > 0) {
+				name.append(" ");
+			}
+
+			name.append(lastName);
+		}
+
+		return name.toString();
 	}
 
 	public static String getEntityName() {

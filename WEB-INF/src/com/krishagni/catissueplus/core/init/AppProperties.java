@@ -10,13 +10,14 @@ import javax.naming.NamingException;
 
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.factory.FactoryBean;
 import org.springframework.jndi.JndiTemplate;
 
+
+import com.krishagni.catissueplus.core.common.util.LogUtil;
+
 public class AppProperties implements FactoryBean<Properties> {
-	private static final Log logger = LogFactory.getLog(AppProperties.class);
+	private static final LogUtil logger         = LogUtil.getLogger(AppProperties.class);
 
 	private static final String JNDI_PREFIX     = "java:/comp/env/";
 
@@ -42,9 +43,11 @@ public class AppProperties implements FactoryBean<Properties> {
 
 	private static final String ORA_TYPE        = "oracle";
 
-	private static final String ORA_DIALECT     = "org.hibernate.dialect.Oracle10gDialect";
+	private static final String ORA_DIALECT     = "org.hibernate.dialect.OracleDialect";
 
 	private static final String DEF_CFG_LOC     = "%s" + File.separator + "conf" + File.separator + "%s.properties";
+
+	private static final String NODE_NAME_PROP  = "node.name";
 
 	private static AppProperties instance;
 
@@ -74,6 +77,10 @@ public class AppProperties implements FactoryBean<Properties> {
 
 	public String getBuildRevision() {
 		return props.getProperty(REVISION_PROP);
+	}
+
+	public String getNodeName() {
+		return props.getProperty(NODE_NAME_PROP, "none");
 	}
 
 	@Override
@@ -110,7 +117,7 @@ public class AppProperties implements FactoryBean<Properties> {
 
 		String ds = properties.getProperty(DS_JNDI_PROP);
 		if (StringUtils.isBlank(ds)) {
-			logger.fatal("Data source is not specified. Application will be non-functional");
+			logger.error("Data source is not specified. Application will be non-functional");
 		} else if (!ds.startsWith(JNDI_PREFIX)) {
 			logger.info("Data source JNDI name is not fully qualified: " + ds);
 			ds = ds.trim();
@@ -133,7 +140,7 @@ public class AppProperties implements FactoryBean<Properties> {
 			logger.info("Recognised as using Oracle data source. Initialising the dialect to " + ORA_DIALECT);
 			properties.put(DS_DIALECT_PROP, ORA_DIALECT);
 		} else {
-			logger.fatal("Data source type is not specified. Application will be non-functional");
+			logger.error("Data source type is not specified. Application will be non-functional");
 		}
 
 		return properties;
@@ -150,7 +157,6 @@ public class AppProperties implements FactoryBean<Properties> {
 			return props;
 		} catch (Exception e) {
 			logger.error("Error loading build properties", e);
-			e.printStackTrace();
 			throw new RuntimeException(e);
 		} finally {
 			IOUtils.closeQuietly(in);
@@ -175,7 +181,6 @@ public class AppProperties implements FactoryBean<Properties> {
 			return props;
 		} catch (Exception e) {
 			logger.error("Error loading external config properties for " + contextName, e);
-			e.printStackTrace();
 			throw new RuntimeException(e);
 		} finally {
 			IOUtils.closeQuietly(in);
@@ -189,7 +194,6 @@ public class AppProperties implements FactoryBean<Properties> {
 		} catch (NameNotFoundException nfe) {
 			externalConfigPath = String.format(DEF_CFG_LOC, tomcatDir, contextName);
 		} catch (NamingException e) {
-			e.printStackTrace();
 			throw new RuntimeException("Error doing config property resource lookup", e);
 		}
 

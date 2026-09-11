@@ -17,10 +17,19 @@ public interface AuditDao extends Dao<UserApiCallLog> {
 
 	List<RevisionDetail> getRevisions(RevisionsListCriteria criteria);
 
+	List<String> getRevisionEntityNames();
+
 	List<FormDataRevisionDetail> getFormDataRevisions(RevisionsListCriteria criteria);
+
+	List<FormDataRevisionDetail> getFormRevisions(RevisionsListCriteria criteria);
 
 	Date getLatestApiCallTime(Long userId, String token);
 
-	void saveOrUpdate(DeleteLog log);
-}
+	void saveDeleteLog(DeleteLog log);
 
+	List<UserApiCallLog> getApiCallLogs(RevisionsListCriteria crit);
+
+	int deleteApiCallLogs(int olderThanDays, int maxRows);
+
+	int updateApiCallLog(Long callLogId, Date endTime, String statusCode);
+}

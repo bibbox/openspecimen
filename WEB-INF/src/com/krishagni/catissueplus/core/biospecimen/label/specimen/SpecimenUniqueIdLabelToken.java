@@ -13,10 +13,11 @@ public class SpecimenUniqueIdLabelToken extends AbstractUniqueIdToken<Specimen> 
 			
 	public SpecimenUniqueIdLabelToken() {
 		this.name = "SYS_UID";
+		this.useSysGenFastSetting = true;
 	}
 
 	@Override
 	public Number getUniqueId(Specimen specimen, String... args) {
-		return daoFactory.getUniqueIdGenerator().getUniqueId("Specimen", getName());
+		return daoFactory.getUniqueIdGenerator().getUniqueId("Specimen", getTypeKey());
 	}
 }

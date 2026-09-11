@@ -11,24 +11,23 @@ import org.apache.commons.io.IOUtils;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.transaction.PlatformTransactionManager;
 
-import com.krishagni.catissueplus.core.common.service.ConfigChangeListener;
+
 import com.krishagni.catissueplus.core.common.service.ConfigurationService;
 import com.krishagni.catissueplus.core.common.util.Utility;
-import com.krishagni.catissueplus.core.de.UserContextImpl;
+import com.krishagni.catissueplus.core.de.ui.CheckboxPvControlFactory;
+import com.krishagni.catissueplus.core.de.ui.PvControlFactory;
+import com.krishagni.catissueplus.core.de.ui.RadioButtonPvControlFactory;
 import com.krishagni.catissueplus.core.de.ui.SiteControlFactory;
-import com.krishagni.catissueplus.core.de.ui.SiteFieldMapper;
 import com.krishagni.catissueplus.core.de.ui.StorageContainerControlFactory;
-import com.krishagni.catissueplus.core.de.ui.StorageContainerMapper;
 import com.krishagni.catissueplus.core.de.ui.UserControlFactory;
-import com.krishagni.catissueplus.core.de.ui.UserFieldMapper;
+import com.krishagni.catissueplus.core.query.SpecimenQtyProcFactory;
 
 import edu.common.dynamicextensions.domain.nui.factory.ControlManager;
 import edu.common.dynamicextensions.napi.FormDataFilter;
 import edu.common.dynamicextensions.napi.FormDataManager;
 import edu.common.dynamicextensions.nutility.DeConfiguration;
 import edu.common.dynamicextensions.query.PathConfig;
-import edu.wustl.dynamicextensions.formdesigner.mapper.ControlMapper;
-import edu.wustl.dynamicextensions.formdesigner.usercontext.CSDProperties;
+import edu.common.dynamicextensions.query.ResultPostProcManager;
 
 public class DeInitializer implements InitializingBean {
 	private static final String QUERY_PATH_CFG = "/com/krishagni/catissueplus/core/de/query/paths.xml";
@@ -71,38 +70,25 @@ public class DeInitializer implements InitializingBean {
 
 	@Override
 	public void afterPropertiesSet() throws Exception {
-		Map<String, Object> localeSettings = cfgSvc.getLocaleSettings();		
-		String dateFormat = (String)localeSettings.get("deBeDateFmt");
-		String timeFormat = (String)localeSettings.get("timeFmt");
-		String dataDir = cfgSvc.getDataDir();
-		
-		String dir = new StringBuilder(dataDir).append(File.separator)
-			.append("de-file-data").append(File.separator)
-			.toString();
-		
-		File dirFile = new File(dir);
+		File dirFile = new File(cfgSvc.getDataDir(), "de-file-data");
 		if (!dirFile.exists()) {
 			if (!dirFile.mkdirs()) {
 				throw new RuntimeException("Error couldn't create directory for storing de file data");
 			}
 		}
 		
-		CSDProperties.getInstance().setUserContextProvider(new UserContextImpl());
-
 		DeConfiguration.getInstance()
 			.dataSource(dataSource, transactionManager)
-			.fileUploadDir(dir)
-			.dateFormat(dateFormat)
-			.timeFormat(timeFormat);
+			.fileUploadDir(dirFile.getAbsolutePath())
+			.dateFormat(cfgSvc.getDeDateFormat())
+			.timeFormat(cfgSvc.getTimeFormat());
 
 		ControlManager.getInstance().registerFactory(UserControlFactory.getInstance());			
-		ControlMapper.getInstance().registerControlMapper("userField", new UserFieldMapper());
-		
 		ControlManager.getInstance().registerFactory(StorageContainerControlFactory.getInstance());
-		ControlMapper.getInstance().registerControlMapper("storageContainer", new StorageContainerMapper());
-		
 		ControlManager.getInstance().registerFactory(SiteControlFactory.getInstance());
-		ControlMapper.getInstance().registerControlMapper("siteField", new SiteFieldMapper());
+		ControlManager.getInstance().registerFactory(PvControlFactory.getInstance());
+		ControlManager.getInstance().registerFactory(CheckboxPvControlFactory.getInstance());
+		ControlManager.getInstance().registerFactory(RadioButtonPvControlFactory.getInstance());
 
 		InputStream in = null;
 		try {
@@ -112,21 +98,18 @@ public class DeInitializer implements InitializingBean {
 			IOUtils.closeQuietly(in);
 		}
 		
-		cfgSvc.registerChangeListener("common", new ConfigChangeListener() {			
-			@Override
-			public void onConfigChange(String name, String value) {
-				if (!name.equals("locale")) {
-					return;
-				}
-				
-				Map<String, Object> localeSettings = cfgSvc.getLocaleSettings();
-				DeConfiguration.getInstance()
-					.dateFormat((String)localeSettings.get("deBeDateFmt"))
-					.timeFormat((String)localeSettings.get("timeFmt"));
+		cfgSvc.registerChangeListener("common", (name, value) -> {
+			if (!name.equals("locale") && !name.equals("date_format") && !name.equals("de_date_format") && !name.equals("time_format")) {
+				return;
 			}
+
+			DeConfiguration.getInstance()
+				.dateFormat(cfgSvc.getDeDateFormat())
+				.timeFormat(cfgSvc.getTimeFormat());
 		});
 
 		setFormFilters();
+		ResultPostProcManager.getInstance().addFactory("specimenqty", new SpecimenQtyProcFactory());
 	}
 
 	private void setFormFilters() {

@@ -30,10 +30,25 @@ angular.module('os.common.search.service', [])
       var opts = entitySearchMap[match.entity];
       match.group = $translate.instant(opts && opts.caption);
       match.caption = match.value;
+      match.props = null;
+      angular.forEach(match.entityProps,
+        function(value) {
+          match.props = match.props || '';
+          match.props += (!!match.props ?  ', ' : '') + value;
+        }
+      );
     }
 
     function getState(entity) {
       return entitySearchMap[entity] && entitySearchMap[entity].state;
+    }
+
+    function getVueView(entity) {
+      return entitySearchMap[entity] && entitySearchMap[entity].vueView;
+    }
+
+    function getVueUrl(entity) {
+      return entitySearchMap[entity] && entitySearchMap[entity].vueUrl;
     }
 
     return {
@@ -41,6 +56,10 @@ angular.module('os.common.search.service', [])
 
       search: search,
 
-      getState: getState
+      getState: getState,
+
+      getVueView: getVueView,
+
+      getVueUrl: getVueUrl
     };
   });

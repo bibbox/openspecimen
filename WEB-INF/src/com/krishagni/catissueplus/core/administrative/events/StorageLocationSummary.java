@@ -1,14 +1,17 @@
 package com.krishagni.catissueplus.core.administrative.events;
 
 import java.io.Serializable;
+import java.util.Date;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import org.codehaus.jackson.map.annotate.JsonSerialize;
+import com.fasterxml.jackson.annotation.JsonInclude;
 
+import com.krishagni.catissueplus.core.administrative.domain.StorageContainer;
 import com.krishagni.catissueplus.core.administrative.domain.StorageContainerPosition;
+import com.krishagni.catissueplus.core.common.events.UserSummary;
 
-@JsonSerialize(include = JsonSerialize.Inclusion.NON_NULL)
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class StorageLocationSummary implements Serializable {
 	
 	private static final long serialVersionUID = 3492284917328450439L;
@@ -16,6 +19,10 @@ public class StorageLocationSummary implements Serializable {
 	private Long id;
 	
 	private String name;
+
+	private String displayName;
+
+	private String barcode;
 
 	private String mode;
 	
@@ -26,6 +33,20 @@ public class StorageLocationSummary implements Serializable {
 	private Integer position;
 
 	private String reservationId;
+
+	private UserSummary checkoutBy;
+
+	private Date checkoutTime;
+
+	private String checkoutComments;
+
+	private Long siteId;
+
+	private String siteName;
+
+	private String formattedPosition;
+
+	private String hierarchy;
 
 	public Long getId() {
 		return id;
@@ -41,6 +62,22 @@ public class StorageLocationSummary implements Serializable {
 
 	public void setName(String name) {
 		this.name = name;
+	}
+
+	public String getDisplayName() {
+		return displayName;
+	}
+
+	public void setDisplayName(String displayName) {
+		this.displayName = displayName;
+	}
+
+	public String getBarcode() {
+		return barcode;
+	}
+
+	public void setBarcode(String barcode) {
+		this.barcode = barcode;
 	}
 
 	public String getMode() {
@@ -83,19 +120,87 @@ public class StorageLocationSummary implements Serializable {
 		this.reservationId = reservationId;
 	}
 
+	public UserSummary getCheckoutBy() {
+		return checkoutBy;
+	}
+
+	public void setCheckoutBy(UserSummary checkoutBy) {
+		this.checkoutBy = checkoutBy;
+	}
+
+	public Date getCheckoutTime() {
+		return checkoutTime;
+	}
+
+	public void setCheckoutTime(Date checkoutTime) {
+		this.checkoutTime = checkoutTime;
+	}
+
+	public String getCheckoutComments() {
+		return checkoutComments;
+	}
+
+	public void setCheckoutComments(String checkoutComments) {
+		this.checkoutComments = checkoutComments;
+	}
+
+	public Long getSiteId() {
+		return siteId;
+	}
+
+	public void setSiteId(Long siteId) {
+		this.siteId = siteId;
+	}
+
+	public String getSiteName() {
+		return siteName;
+	}
+
+	public void setSiteName(String siteName) {
+		this.siteName = siteName;
+	}
+
+	public String getFormattedPosition() {
+		return formattedPosition;
+	}
+
+	public void setFormattedPosition(String formattedPosition) {
+		this.formattedPosition = formattedPosition;
+	}
+
+	public String getHierarchy() {
+		return hierarchy;
+	}
+
+	public void setHierarchy(String hierarchy) {
+		this.hierarchy = hierarchy;
+	}
+
 	public static StorageLocationSummary from(StorageContainerPosition position) {
 		if (position == null) {
 			return null;
 		}
 		
-		StorageLocationSummary storageLocation = new StorageLocationSummary();
-		storageLocation.setId(position.getContainer().getId());
-		storageLocation.setName(position.getContainer().getName());
-		storageLocation.setMode(position.getContainer().getPositionLabelingMode().name());
+		StorageLocationSummary storageLocation = from(position.getContainer());
 		storageLocation.setPositionX(position.getPosOne());
 		storageLocation.setPositionY(position.getPosTwo());
 		storageLocation.setPosition(position.getPosition());
 		storageLocation.setReservationId(position.getReservationId());
+		storageLocation.setCheckoutBy(UserSummary.from(position.getCheckoutBy()));
+		storageLocation.setCheckoutComments(position.getCheckoutComments());
+		storageLocation.setCheckoutTime(position.getCheckoutTime());
+		return storageLocation;
+	}
+
+	public static StorageLocationSummary from(StorageContainer container) {
+		StorageLocationSummary storageLocation = new StorageLocationSummary();
+		storageLocation.setId(container.getId());
+		storageLocation.setName(container.getName());
+		storageLocation.setBarcode(container.getBarcode());
+		storageLocation.setDisplayName(container.getDisplayName());
+		storageLocation.setMode(container.getPositionLabelingMode().name());
+		storageLocation.setSiteId(container.getSite().getId());
+		storageLocation.setSiteName(container.getSite().getName());
 		return storageLocation;
 	}
 

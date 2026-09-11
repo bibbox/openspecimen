@@ -2,19 +2,24 @@ package com.krishagni.catissueplus.core.biospecimen.domain;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
-import org.apache.commons.collections.CollectionUtils;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.hibernate.envers.Audited;
 import org.hibernate.envers.NotAudited;
+import org.hibernate.envers.RelationTargetAuditMode;
 import org.springframework.beans.BeanUtils;
 
+import com.krishagni.catissueplus.core.administrative.domain.PermissibleValue;
 import com.krishagni.catissueplus.core.administrative.domain.User;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol.SpecimenLabelAutoPrintMode;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.SrErrorCode;
@@ -22,6 +27,7 @@ import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.util.NumUtil;
 import com.krishagni.catissueplus.core.common.util.Status;
 import com.krishagni.catissueplus.core.common.util.Utility;
+import com.krishagni.catissueplus.core.de.domain.DeObject;
 
 @Audited
 public class SpecimenRequirement extends BaseEntity implements Comparable<SpecimenRequirement> {
@@ -31,27 +37,27 @@ public class SpecimenRequirement extends BaseEntity implements Comparable<Specim
 	
 	private String lineage;
 		
-	private String specimenClass;
+	private PermissibleValue specimenClass;
 
-	private String specimenType;
-	
-	private String anatomicSite;
+	private PermissibleValue specimenType;
 
-	private String laterality;
+	private PermissibleValue anatomicSite;
+
+	private PermissibleValue laterality;
 			
-	private String pathologyStatus;
+	private PermissibleValue pathologyStatus;
 	
 	private String storageType;
 	
 	private BigDecimal initialQuantity;
 	
 	private BigDecimal concentration;
-	
+
 	private User collector;
 
-	private String collectionProcedure;
+	private PermissibleValue collectionProcedure;
 
-	private String collectionContainer;
+	private PermissibleValue collectionContainer;
 
 	private User receiver;
 
@@ -65,15 +71,17 @@ public class SpecimenRequirement extends BaseEntity implements Comparable<Specim
 	
 	private Integer sortOrder;
 
+	private Boolean preBarcodedTube;
+
+	private Map<String, Object> defaultCustomFieldValues;
+
 	private String activityStatus;
 			
 	private SpecimenRequirement parentSpecimenRequirement;
 	
 	private Set<SpecimenRequirement> childSpecimenRequirements = new LinkedHashSet<>();
 
-	private SpecimenRequirement pooledSpecimenRequirement;
-
-	private Set<SpecimenRequirement> specimenPoolReqs = new LinkedHashSet<>();
+	private Set<SpecimenRequirementService> services = new LinkedHashSet<>();
 
 	private Set<Specimen> specimens = new HashSet<>();
 
@@ -101,43 +109,48 @@ public class SpecimenRequirement extends BaseEntity implements Comparable<Specim
 		this.lineage = lineage;
 	}
 
-	public String getSpecimenClass() {
+	@Audited(targetAuditMode = RelationTargetAuditMode.NOT_AUDITED)
+	public PermissibleValue getSpecimenClass() {
 		return specimenClass;
 	}
 
-	public void setSpecimenClass(String specimenClass) {
+	public void setSpecimenClass(PermissibleValue specimenClass) {
 		this.specimenClass = specimenClass;
 	}
 
-	public String getSpecimenType() {
+	@Audited(targetAuditMode = RelationTargetAuditMode.NOT_AUDITED)
+	public PermissibleValue getSpecimenType() {
 		return specimenType;
 	}
 
-	public void setSpecimenType(String specimenType) {
+	public void setSpecimenType(PermissibleValue specimenType) {
 		this.specimenType = specimenType;
 	}
 
-	public String getAnatomicSite() {
+	@Audited(targetAuditMode = RelationTargetAuditMode.NOT_AUDITED)
+	public PermissibleValue getAnatomicSite() {
 		return anatomicSite;
 	}
 
-	public void setAnatomicSite(String anatomicSite) {
+	public void setAnatomicSite(PermissibleValue anatomicSite) {
 		this.anatomicSite = anatomicSite;
 	}
 
-	public String getLaterality() {
+	@Audited(targetAuditMode = RelationTargetAuditMode.NOT_AUDITED)
+	public PermissibleValue getLaterality() {
 		return laterality;
 	}
 
-	public void setLaterality(String laterality) {
+	public void setLaterality(PermissibleValue laterality) {
 		this.laterality = laterality;
 	}
 
-	public String getPathologyStatus() {
+	@Audited(targetAuditMode = RelationTargetAuditMode.NOT_AUDITED)
+	public PermissibleValue getPathologyStatus() {
 		return pathologyStatus;
 	}
 
-	public void setPathologyStatus(String pathologyStatus) {
+	public void setPathologyStatus(PermissibleValue pathologyStatus) {
 		this.pathologyStatus = pathologyStatus;
 	}
 
@@ -173,19 +186,21 @@ public class SpecimenRequirement extends BaseEntity implements Comparable<Specim
 		this.collector = collector;
 	}
 
-	public String getCollectionProcedure() {
+	@Audited(targetAuditMode = RelationTargetAuditMode.NOT_AUDITED)
+	public PermissibleValue getCollectionProcedure() {
 		return collectionProcedure;
 	}
 
-	public void setCollectionProcedure(String collectionProcedure) {
+	public void setCollectionProcedure(PermissibleValue collectionProcedure) {
 		this.collectionProcedure = collectionProcedure;
 	}
 
-	public String getCollectionContainer() {
+	@Audited(targetAuditMode = RelationTargetAuditMode.NOT_AUDITED)
+	public PermissibleValue getCollectionContainer() {
 		return collectionContainer;
 	}
 
-	public void setCollectionContainer(String collectionContainer) {
+	public void setCollectionContainer(PermissibleValue collectionContainer) {
 		this.collectionContainer = collectionContainer;
 	}
 
@@ -260,6 +275,37 @@ public class SpecimenRequirement extends BaseEntity implements Comparable<Specim
 		this.sortOrder = sortOrder;
 	}
 
+	public Boolean isPreBarcodedTube() {
+		return Boolean.TRUE.equals(preBarcodedTube);
+	}
+
+	public void setPreBarcodedTube(Boolean preBarcodedTube) {
+		this.preBarcodedTube = preBarcodedTube;
+	}
+
+	public Map<String, Object> getDefaultCustomFieldValues() {
+		return defaultCustomFieldValues;
+	}
+	public void setDefaultCustomFieldValues(Map<String, Object> defaultCustomFieldValues) {
+		this.defaultCustomFieldValues = defaultCustomFieldValues;
+	}
+
+	public String getDefCustomFieldValuesJson() {
+		if (defaultCustomFieldValues == null) {
+			return null;
+		}
+
+		return Utility.mapToJson(defaultCustomFieldValues);
+	}
+
+	public void setDefCustomFieldValuesJson(String json) {
+		if (StringUtils.isBlank(json)) {
+			this.defaultCustomFieldValues = null;
+		} else {
+			this.defaultCustomFieldValues = Utility.jsonToMap(json);
+		}
+	}
+
 	public String getActivityStatus() {
 		return activityStatus;
 	}
@@ -290,34 +336,31 @@ public class SpecimenRequirement extends BaseEntity implements Comparable<Specim
 		this.childSpecimenRequirements = childSpecimenRequirements;
 	}
 
+	@NotAudited
+	public Set<SpecimenRequirementService> getServices() {
+		return services;
+	}
+
+	public void setServices(Set<SpecimenRequirementService> services) {
+		this.services = services;
+	}
+
+	public void addService(SpecimenRequirementService service) {
+		addService(service.getService(), service.getUnits());
+	}
+
+	public void addService(LabService service, int units) {
+		SpecimenRequirementService srSvc = new SpecimenRequirementService();
+		srSvc.setRequirement(this);
+		srSvc.setService(service);
+		srSvc.setUnits(units);
+		getServices().add(srSvc);
+	}
+
 	public List<SpecimenRequirement> getOrderedChildRequirements() {
 		List<SpecimenRequirement> childReqs = new ArrayList<>(getChildSpecimenRequirements());
 		Collections.sort(childReqs);
 		return childReqs;
-	}
-
-	@NotAudited
-	public SpecimenRequirement getPooledSpecimenRequirement() {
-		return pooledSpecimenRequirement;
-	}
-
-	public void setPooledSpecimenRequirement(SpecimenRequirement pooledSpecimenRequirement) {
-		this.pooledSpecimenRequirement = pooledSpecimenRequirement;
-	}
-
-	@NotAudited
-	public Set<SpecimenRequirement> getSpecimenPoolReqs() {
-		return specimenPoolReqs;
-	}
-
-	public void setSpecimenPoolReqs(Set<SpecimenRequirement> specimenPoolReqs) {
-		this.specimenPoolReqs = specimenPoolReqs;
-	}
-
-	public List<SpecimenRequirement> getOrderedSpecimenPoolReqs() {
-		List<SpecimenRequirement> pool = new ArrayList<SpecimenRequirement>(getSpecimenPoolReqs());
-		Collections.sort(pool);
-		return pool;
 	}
 
 	@NotAudited
@@ -341,18 +384,12 @@ public class SpecimenRequirement extends BaseEntity implements Comparable<Specim
 		return getLineage().equals(Specimen.DERIVED);
 	}
 	
-	public boolean isPooledSpecimenReq() {
-		return CollectionUtils.isNotEmpty(getSpecimenPoolReqs());
-	}
-
-	public boolean isSpecimenPoolReq() {
-		return getPooledSpecimenRequirement() != null;
-	}
-
 	public void update(SpecimenRequirement sr) {
-		ensureReqIsNotClosed();
+		if (getActivityStatus().equals(sr.getActivityStatus())) {
+			ensureReqIsNotClosed();
+		}
 
-		if (isPrimary() && !isSpecimenPoolReq()) {
+		if (isPrimary()) {
 			updateRequirementAttrs(sr);
 		}
 
@@ -373,8 +410,24 @@ public class SpecimenRequirement extends BaseEntity implements Comparable<Specim
 		setLabelFormat(sr.getLabelFormat());
 		setLabelAutoPrintMode(sr.getLabelAutoPrintMode());
 		setLabelPrintCopies(sr.getLabelPrintCopies());
+		setDefaultCustomFieldValues(sr.getDefaultCustomFieldValues());
+		setPreBarcodedTube(sr.isPreBarcodedTube());
 
-		if (!isAliquot() && !isSpecimenPoolReq()) {
+		Map<LabService, SpecimenRequirementService> existingSvcs = getServices().stream()
+			.collect(Collectors.toMap(SpecimenRequirementService::getService, svc -> svc));
+
+		for (SpecimenRequirementService svc : sr.getServices()) {
+			SpecimenRequirementService existing = existingSvcs.remove(svc.getService());
+			if (existing != null) {
+				existing.update(svc);
+			} else {
+				addService(svc);
+			}
+		}
+
+		existingSvcs.values().forEach(svc -> getServices().remove(svc));
+
+		if (!isAliquot()) {
 			update(sr.getAnatomicSite(), sr.getLaterality(), sr.getConcentration(),
 				sr.getSpecimenClass(), sr.getSpecimenType(), sr.getPathologyStatus());
 		}
@@ -396,7 +449,8 @@ public class SpecimenRequirement extends BaseEntity implements Comparable<Specim
 				
 	public SpecimenRequirement copy() {
 		SpecimenRequirement copy = new SpecimenRequirement();
-		BeanUtils.copyProperties(this, copy, EXCLUDE_COPY_PROPS); 
+		BeanUtils.copyProperties(this, copy, EXCLUDE_COPY_PROPS);
+		getServices().forEach(copy::addService);
 		return copy;
 	}
 
@@ -413,12 +467,11 @@ public class SpecimenRequirement extends BaseEntity implements Comparable<Specim
 			}
 		}
 		
-		return deepCopy(cpe, getParentSpecimenRequirement(), getPooledSpecimenRequirement());
+		return deepCopy(cpe, getParentSpecimenRequirement());
 	}
 
 	public void close() {
 		setActivityStatus(Status.ACTIVITY_STATUS_CLOSED.getStatus());
-		getSpecimenPoolReqs().forEach(SpecimenRequirement::close);
 		getChildSpecimenRequirements().forEach(SpecimenRequirement::close);
 	}
 		
@@ -432,19 +485,6 @@ public class SpecimenRequirement extends BaseEntity implements Comparable<Specim
 		ensureReqIsNotClosed();
 		for (SpecimenRequirement childReq : children) {
 			addChildRequirement(childReq);
-		}
-	}
-	
-	public void addSpecimenPoolReq(SpecimenRequirement spmnPoolReq) {
-		ensureReqIsNotClosed();
-		spmnPoolReq.setPooledSpecimenRequirement(this);
-		getSpecimenPoolReqs().add(spmnPoolReq);
-	}
-
-	public void addSpecimenPoolReqs(Collection<SpecimenRequirement> spmnPoolReqs) {
-		ensureReqIsNotClosed();
-		for (SpecimenRequirement req : spmnPoolReqs) {
-			addSpecimenPoolReq(req);
 		}
 	}
 
@@ -476,6 +516,16 @@ public class SpecimenRequirement extends BaseEntity implements Comparable<Specim
 		specimen.setAvailableQuantity(getInitialQuantity());
 		specimen.setConcentration(getConcentration());
 		specimen.setSpecimenRequirement(this);
+		if (isPrimary()) {
+			specimen.setCollectionContainer(getCollectionContainer());
+			specimen.setCollectionProcedure(getCollectionProcedure());
+			specimen.setCollectionUser(getCollector());
+			specimen.setCollectionTime(Calendar.getInstance().getTime());
+			specimen.setReceivedUser(getReceiver());
+			specimen.setReceivedTime(Calendar.getInstance().getTime());
+		}
+
+		specimen.setExtension(DeObject.createExtension(getDefaultCustomFieldValues(), specimen));
 		return specimen;
 	}
 	
@@ -498,13 +548,22 @@ public class SpecimenRequirement extends BaseEntity implements Comparable<Specim
 		for (SpecimenRequirement childReq : getChildSpecimenRequirements()) {
 			childReq.delete();
 		}
-		
-		for (SpecimenRequirement poolReq : getSpecimenPoolReqs()) {
-			poolReq.delete();
-		}
 
 		setCode(Utility.getDisabledValue(getCode(), 32));
 		setActivityStatus(Status.ACTIVITY_STATUS_DISABLED.getStatus());
+	}
+
+	public String getDescription() {
+		String desc = getLineage() + ", " + getSpecimenType().getValue();
+		if (StringUtils.isNotBlank(getCode())) {
+			desc += ", " + getCode();
+		} else if (StringUtils.isNotBlank(getName())) {
+			desc += ", " + getName();
+		} else {
+			desc += ", " + getId();
+		}
+
+		return desc;
 	}
 		
 	@Override
@@ -526,20 +585,34 @@ public class SpecimenRequirement extends BaseEntity implements Comparable<Specim
 		}
 	}
 
-	private SpecimenRequirement deepCopy(CollectionProtocolEvent cpe, SpecimenRequirement parent, SpecimenRequirement pooledReq) {
+	public SpecimenRequirement getMatchingReq(Collection<SpecimenRequirement> reqs) {
+		if (CollectionUtils.isEmpty(reqs) ||  StringUtils.isBlank(getCode())) {
+			return null;
+		}
+
+		return reqs.stream()
+			.filter(sr -> getCode().equals(sr.getCode()))
+			.filter(sr -> getLineage().equals(sr.getLineage()))
+			.filter(sr -> getSpecimenType().equals(sr.getSpecimenType()))
+			.findFirst()
+			.orElse(null);
+	}
+	private SpecimenRequirement deepCopy(CollectionProtocolEvent cpe, SpecimenRequirement parent) {
 		SpecimenRequirement result = copy();
 		result.setCollectionProtocolEvent(cpe);
 		result.setParentSpecimenRequirement(parent);
-		result.setPooledSpecimenRequirement(pooledReq);
-		
 		if (isSafeToCopyCode(cpe)) {
 			result.setCode(getCode());
 		}
 
-		Set<SpecimenRequirement> childSrs = new LinkedHashSet<SpecimenRequirement>();
+		Set<SpecimenRequirement> childSrs = new LinkedHashSet<>();
 		int order = 1;
 		for (SpecimenRequirement childSr : getOrderedChildRequirements()) {
-			SpecimenRequirement copiedSr = childSr.deepCopy(cpe, result, null);
+			if (childSr.isClosed()) {
+				continue;
+			}
+
+			SpecimenRequirement copiedSr = childSr.deepCopy(cpe, result);
 			copiedSr.setSortOrder(order++);
 			childSrs.add(copiedSr);
 		}
@@ -550,15 +623,6 @@ public class SpecimenRequirement extends BaseEntity implements Comparable<Specim
 			return result;
 		}
 
-		order = 1;
-		Set<SpecimenRequirement> specimenPoolReqs = new LinkedHashSet<SpecimenRequirement>();
-		for (SpecimenRequirement specimenPoolReq : getSpecimenPoolReqs()) {
-			SpecimenRequirement copiedSr = specimenPoolReq.deepCopy(cpe, null, result);			
-			copiedSr.setSortOrder(order++);
-			specimenPoolReqs.add(copiedSr);
-		}
-
-		result.setSpecimenPoolReqs(specimenPoolReqs);
 		return result;
 	}
 	
@@ -591,16 +655,10 @@ public class SpecimenRequirement extends BaseEntity implements Comparable<Specim
 		for (SpecimenRequirement childSr : getChildSpecimenRequirements()) {
 			childSr.updateRequirementAttrs(sr);
 		}
-		
-		for (SpecimenRequirement poolSr : getSpecimenPoolReqs()) {
-			poolSr.updateRequirementAttrs(sr);
-			poolSr.setStorageType(sr.getStorageType());
-			poolSr.setLabelFormat(sr.getLabelFormat());
-		}
 	}
 	
-	private void update(String anatomicSite, String laterality, BigDecimal concentration,
-		String specimenClass, String specimenType, String pathologyStatus) {
+	private void update(PermissibleValue anatomicSite, PermissibleValue laterality, BigDecimal concentration,
+		PermissibleValue specimenClass, PermissibleValue specimenType, PermissibleValue pathologyStatus) {
 
 		setAnatomicSite(anatomicSite);
 		setLaterality(laterality);
@@ -614,17 +672,12 @@ public class SpecimenRequirement extends BaseEntity implements Comparable<Specim
 				childSr.update(anatomicSite, laterality, concentration, specimenClass, specimenType, pathologyStatus);
 			}
 		}
-		
-		for (SpecimenRequirement poolSr : getSpecimenPoolReqs()) {
-			poolSr.update(anatomicSite, laterality, concentration, specimenClass, specimenType, pathologyStatus);
-		}
 	}
 
 	private void ensureReqIsNotClosed() {
 		if (!isClosed()) {
 			return;
 		}
-
 
 		String key = getCode();
 		if (StringUtils.isBlank(key)) {
@@ -644,8 +697,8 @@ public class SpecimenRequirement extends BaseEntity implements Comparable<Specim
 		"code",
 		"parentSpecimenRequirement",
 		"childSpecimenRequirements",
-		"pooledSpecimenRequirement",
 		"specimenPoolReqs",
-		"specimens"		
+		"specimens",
+		"services"
 	};
 }

@@ -16,6 +16,8 @@ public class LabelPrintJobItem extends BaseEntity {
 	
 	private String itemLabel;
 
+	private Long itemId;
+
 	private int copies;
 	
 	private Date printDate;
@@ -25,8 +27,20 @@ public class LabelPrintJobItem extends BaseEntity {
 	private Status status;
 	
 	private String labelType;
+
+	private String labelDesign;
 	
 	private String data;
+
+	private String content;
+
+	private Boolean createFile;
+
+	private String filename;
+
+	private PrintRuleConfig rule;
+
+	private transient Object object;
 
 	private transient Map<String, String> dataItems;
 
@@ -44,6 +58,14 @@ public class LabelPrintJobItem extends BaseEntity {
 
 	public void setItemLabel(String itemLabel) {
 		this.itemLabel = itemLabel;
+	}
+
+	public Long getItemId() {
+		return itemId;
+	}
+
+	public void setItemId(Long itemId) {
+		this.itemId = itemId;
 	}
 
 	public int getCopies() {
@@ -86,12 +108,60 @@ public class LabelPrintJobItem extends BaseEntity {
 		this.labelType = labelType;
 	}
 
+	public String getLabelDesign() {
+		return labelDesign;
+	}
+
+	public void setLabelDesign(String labelDesign) {
+		this.labelDesign = labelDesign;
+	}
+
 	public String getData() {
 		return data;
 	}
 
 	public void setData(String data) {
 		this.data = data;
+	}
+
+	public String getContent() {
+		return content;
+	}
+
+	public void setContent(String content) {
+		this.content = content;
+	}
+
+	public Boolean getCreateFile() {
+		return createFile;
+	}
+
+	public void setCreateFile(Boolean createFile) {
+		this.createFile = createFile;
+	}
+
+	public String getFilename() {
+		return filename;
+	}
+
+	public void setFilename(String filename) {
+		this.filename = filename;
+	}
+
+	public PrintRuleConfig getRule() {
+		return rule;
+	}
+
+	public void setRule(PrintRuleConfig rule) {
+		this.rule = rule;
+	}
+
+	public Object getObject() {
+		return object;
+	}
+
+	public void setObject(Object object) {
+		this.object = object;
 	}
 
 	public Map<String, String> getDataItems() {

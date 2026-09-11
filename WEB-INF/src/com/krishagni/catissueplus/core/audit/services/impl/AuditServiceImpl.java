@@ -3,16 +3,20 @@ package com.krishagni.catissueplus.core.audit.services.impl;
 import java.io.File;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
-import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -20,12 +24,10 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.hibernate.SessionFactory;
-import org.hibernate.envers.Audited;
 import org.hibernate.event.service.spi.EventListenerRegistry;
 import org.hibernate.event.spi.EventType;
 import org.hibernate.event.spi.PreCollectionRecreateEvent;
@@ -44,7 +46,11 @@ import org.hibernate.internal.SessionFactoryImpl;
 import org.hibernate.persister.entity.EntityPersister;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
+import com.krishagni.catissueplus.core.administrative.domain.Password;
 import com.krishagni.catissueplus.core.administrative.domain.User;
 import com.krishagni.catissueplus.core.administrative.domain.factory.UserErrorCode;
 import com.krishagni.catissueplus.core.audit.domain.UserApiCallLog;
@@ -55,11 +61,14 @@ import com.krishagni.catissueplus.core.audit.events.FormDataRevisionDetail;
 import com.krishagni.catissueplus.core.audit.events.RevisionDetail;
 import com.krishagni.catissueplus.core.audit.events.RevisionEntityRecordDetail;
 import com.krishagni.catissueplus.core.audit.repository.RevisionsListCriteria;
+import com.krishagni.catissueplus.core.audit.services.AuditLogExporter;
 import com.krishagni.catissueplus.core.audit.services.AuditService;
 import com.krishagni.catissueplus.core.biospecimen.domain.BaseEntity;
 import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
+import com.krishagni.catissueplus.core.common.OpenSpecimenAppCtxProvider;
 import com.krishagni.catissueplus.core.common.PlusTransactional;
-import com.krishagni.catissueplus.core.common.TransactionalThreadLocals;
+import com.krishagni.catissueplus.core.common.TransactionCache;
+import com.krishagni.catissueplus.core.common.domain.Lock;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.ExportedFileDetail;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
@@ -71,13 +80,17 @@ import com.krishagni.catissueplus.core.common.util.ConfigUtil;
 import com.krishagni.catissueplus.core.common.util.CsvFileWriter;
 import com.krishagni.catissueplus.core.common.util.CsvWriter;
 import com.krishagni.catissueplus.core.common.util.EmailUtil;
+import com.krishagni.catissueplus.core.common.util.LogUtil;
 import com.krishagni.catissueplus.core.common.util.MessageUtil;
 import com.krishagni.catissueplus.core.common.util.Utility;
+import com.krishagni.catissueplus.core.de.events.QueryAuditLogsListCriteria;
+import com.krishagni.catissueplus.core.de.services.impl.QueryAuditLogsExporter;
+import com.krishagni.catissueplus.core.exporter.services.ExportService;
 import com.krishagni.rbac.common.errors.RbacErrorCode;
 
 public class AuditServiceImpl implements AuditService, InitializingBean {
 
-	private static Log logger = LogFactory.getLog(AuditServiceImpl.class);
+	private static final LogUtil logger = LogUtil.getLogger(AuditServiceImpl.class);
 
 	private static final int ONLINE_EXPORT_TIMEOUT_SECS = 30;
 
@@ -90,6 +103,10 @@ public class AuditServiceImpl implements AuditService, InitializingBean {
 	private ObjectAccessorFactory objectAccessorFactory;
 
 	private ThreadPoolTaskExecutor taskExecutor;
+
+	private TransactionTemplate newTxTmpl;
+
+	private List<AuditLogExporter> exporters = new ArrayList<>();
 
 	public void setSessionFactory(SessionFactory sessionFactory) {
 		this.sessionFactory = sessionFactory;
@@ -105,6 +122,11 @@ public class AuditServiceImpl implements AuditService, InitializingBean {
 
 	public void setTaskExecutor(ThreadPoolTaskExecutor taskExecutor) {
 		this.taskExecutor = taskExecutor;
+	}
+
+	public void setTransactionManager(PlatformTransactionManager transactionManager) {
+		this.newTxTmpl = new TransactionTemplate(transactionManager);
+		this.newTxTmpl.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
 	}
 
 	@Override
@@ -124,7 +146,7 @@ public class AuditServiceImpl implements AuditService, InitializingBean {
 			.collect(Collectors.toList());
 
 		if (criteria.size() > 1) {
-			Collections.sort(revisions, (r1, r2) -> r2.getChangedOn().compareTo(r1.getChangedOn()));
+			revisions.sort((r1, r2) -> r2.getChangedOn().compareTo(r1.getChangedOn()));
 		}
 
 		return ResponseEvent.response(revisions);
@@ -138,17 +160,41 @@ public class AuditServiceImpl implements AuditService, InitializingBean {
 		}
 
 		RevisionsListCriteria criteria = req.getPayload();
+		if (StringUtils.isBlank(criteria.recordType()) || criteria.recordType().equals("form") || CollectionUtils.isEmpty(criteria.recordIds())) {
+			if (criteria.startDate() == null) {
+				return ResponseEvent.userError(AuditErrorCode.START_DATE_REQ);
+			}
 
-		User user = null;
-		if (criteria.userId() != null) {
-			user = daoFactory.getUserDao().getById(criteria.userId());
-			if (user == null) {
-				return ResponseEvent.userError(UserErrorCode.NOT_FOUND, criteria.userId());
+			if (criteria.endDate() == null) {
+				return ResponseEvent.userError(AuditErrorCode.END_DATE_REQ);
 			}
 		}
 
-		Date startDate = Utility.chopSeconds(criteria.startDate());
-		Date endDate   = Utility.getEndOfDay(criteria.endDate());
+		if (StringUtils.isNotBlank(criteria.recordType())) {
+			// When either of "core", "form" or "form_data" is chosen
+			criteria.reportTypes(Collections.singletonList("data"));
+			if (CollectionUtils.isEmpty(criteria.records())) {
+				return ResponseEvent.userError(AuditErrorCode.RECORDS_REQ);
+			}
+		}
+
+		List<User> users = null;
+		if (CollectionUtils.isNotEmpty(criteria.userIds())) {
+			users = daoFactory.getUserDao().getByIds(criteria.userIds());
+
+			if (users.size() != criteria.userIds().size()) {
+				Set<Long> foundIds = users.stream().map(User::getId).collect(Collectors.toSet());
+				String notFoundIds = criteria.userIds().stream()
+						.filter(id -> !foundIds.contains(id))
+						.map(String::valueOf)
+						.collect(Collectors.joining(", "));
+
+				return ResponseEvent.userError(UserErrorCode.ONE_OR_MORE_NOT_FOUND, notFoundIds);
+			}
+		}
+
+		Date startDate = criteria.useProvidedInstant() ? criteria.startDate(): Utility.chopSeconds(criteria.startDate());
+		Date endDate   = criteria.useProvidedInstant() ? criteria.endDate()  : Utility.getEndOfDay(criteria.endDate());
 		Date endOfDay  = Utility.getEndOfDay(Calendar.getInstance().getTime());
 		if (startDate != null && startDate.after(endOfDay)) {
 			return ResponseEvent.userError(AuditErrorCode.DATE_GT_TODAY, Utility.getDateTimeString(startDate));
@@ -158,34 +204,51 @@ public class AuditServiceImpl implements AuditService, InitializingBean {
 			return ResponseEvent.userError(AuditErrorCode.DATE_GT_TODAY, Utility.getDateTimeString(endDate));
 		}
 
-		if (startDate != null && endDate != null) {
-			long days = Utility.daysBetween(startDate, endDate);
-			if (days > 30L) {
-				return ResponseEvent.userError(AuditErrorCode.DATE_INTERVAL_GT_ALLOWED);
-			}
-		} else if (startDate != null) {
-			Calendar cal = Calendar.getInstance();
-			cal.setTime(startDate);
-			cal.add(Calendar.DAY_OF_MONTH, 30);
-			endDate = cal.getTime().after(endOfDay) ? endOfDay : Utility.getEndOfDay(cal.getTime());
-		} else {
-			endDate = endDate != null ? endDate : endOfDay;
+		String recordType = criteria.recordType();
+		if (StringUtils.isBlank(recordType) || (!recordType.equals("form") && CollectionUtils.isEmpty(criteria.recordIds()))) {
+			int maxLimit = ConfigUtil.getInstance().getIntSetting("common", "max_audit_report_period", 90);
+			if (startDate != null && endDate != null) {
+				int days = Utility.daysBetween(startDate, endDate);
+				if (days > maxLimit) {
+					return ResponseEvent.userError(AuditErrorCode.DATE_INTERVAL_GT_ALLOWED, maxLimit);
+				}
+			} else if (startDate != null) {
+				Calendar cal = Calendar.getInstance();
+				cal.setTime(startDate);
+				cal.add(Calendar.DAY_OF_MONTH, maxLimit);
+				endDate = cal.getTime().after(endOfDay) ? endOfDay : Utility.getEndOfDay(cal.getTime());
+			} else {
+				endDate = endDate != null ? endDate : endOfDay;
 
-			Calendar cal = Calendar.getInstance();
-			cal.setTime(endDate);
-			cal.add(Calendar.DAY_OF_MONTH, -30);
-			startDate = Utility.chopTime(cal.getTime());
+				Calendar cal = Calendar.getInstance();
+				cal.setTime(endDate);
+				cal.add(Calendar.DAY_OF_MONTH, -maxLimit);
+				startDate = Utility.chopTime(cal.getTime());
+			}
+		}
+
+		if (startDate != null && endDate != null && startDate.after(endDate)) {
+			return ResponseEvent.userError(
+				AuditErrorCode.FROM_DT_GT_TO_DATE,
+				Utility.getDateTimeString(startDate),
+				Utility.getDateTimeString(endDate)
+			);
+		}
+
+		if (criteria.reportTypes() == null || criteria.reportTypes().isEmpty()) {
+			criteria.reportTypes(Collections.singletonList("data"));
 		}
 
 		criteria.startDate(startDate).endDate(endDate);
 
 		User currentUser     = AuthUtil.getCurrentUser();
-		User revisionsByUser = user;
+		String ipAddress     = AuthUtil.getRemoteAddr();
+		List<User> revisionsByUsers = users;
 
 		logger.info("Invoking task executor to initiate export of revisions: " + criteria);
 
 		File revisionsFile = null;
-		Future<File> result = taskExecutor.submit(() -> exportRevisions(criteria, currentUser, revisionsByUser));
+		Future<File> result = taskExecutor.submit(() -> exportRevisions(criteria, currentUser, ipAddress, revisionsByUsers));
 		try {
 			logger.info("Waiting for the export revisions to finish ...");
 			revisionsFile = result.get(ONLINE_EXPORT_TIMEOUT_SECS, TimeUnit.SECONDS);
@@ -198,6 +261,10 @@ public class AuditServiceImpl implements AuditService, InitializingBean {
 			throw ose;
 		} catch (Exception ie) {
 			logger.error("Encountered error exporting audit revisions", ie);
+			if (ie instanceof ExecutionException ee && ee.getCause() instanceof OpenSpecimenException ose) {
+				throw ose;
+			}
+
 			throw OpenSpecimenException.serverError(ie);
 		}
 
@@ -207,13 +274,44 @@ public class AuditServiceImpl implements AuditService, InitializingBean {
 	@Override
 	public ResponseEvent<File> getExportedRevisionsFile(RequestEvent<String> req) {
 		String filename = req.getPayload() + "_" + AuthUtil.getCurrentUser().getId();
-		return ResponseEvent.response(new File(getAuditDir(), filename));
+		return ResponseEvent.response(Utility.getFile(getAuditDir(), filename));
 	}
 
 	@Override
 	@PlusTransactional
-	public void insertApiCallLog(UserApiCallLog userAuditLog) {
-		daoFactory.getAuditDao().saveOrUpdate(userAuditLog);
+	public ResponseEvent<List<Map<String, String>>> getRevisionEntities() {
+		try {
+			if (!AuthUtil.isAdmin()) {
+				return ResponseEvent.userError(RbacErrorCode.ACCESS_DENIED);
+			}
+
+			List<String> entityNames = daoFactory.getAuditDao().getRevisionEntityNames();
+			List<Map<String, String>> result = new ArrayList<>();
+			for (String entityName : entityNames) {
+				Map<String, String> entity = new HashMap<>();
+				entity.put("name", entityName);
+				entity.put("value", MessageUtil.getInstance().getMessage("audit_entity_" + entityName));
+				result.add(entity);
+			}
+
+			return ResponseEvent.response(result.stream().sorted(Comparator.comparing(e -> e.get("value"))).collect(Collectors.toList()));
+		} catch (OpenSpecimenException ose) {
+			return ResponseEvent.error(ose);
+		} catch (Exception e) {
+			return ResponseEvent.serverError(e);
+		}
+	}
+
+	@Override
+	@PlusTransactional
+	public void saveApiCallLog(UserApiCallLog userAuditLog) {
+		daoFactory.getAuditDao().save(userAuditLog);
+	}
+
+	@Override
+	@PlusTransactional
+	public void updateApiCallLog(UserApiCallLog userAuditLog) {
+		daoFactory.getAuditDao().updateApiCallLog(userAuditLog.getId(), userAuditLog.getCallEndTime(), userAuditLog.getResponseCode());
 	}
 
 	@Override
@@ -222,6 +320,11 @@ public class AuditServiceImpl implements AuditService, InitializingBean {
 		Date lastApiCallTime = daoFactory.getAuditDao().getLatestApiCallTime(userId, token);
 		long timeSinceLastApiCallInMilli = Calendar.getInstance().getTime().getTime() - lastApiCallTime.getTime();
 		return TimeUnit.MILLISECONDS.toMinutes(timeSinceLastApiCallInMilli);
+	}
+
+	@Override
+	public void registerExporter(AuditLogExporter exporter) {
+		exporters.add(exporter);
 	}
 
 	@Override
@@ -264,38 +367,126 @@ public class AuditServiceImpl implements AuditService, InitializingBean {
 	}
 
 	@PlusTransactional
-	private File exportRevisions(RevisionsListCriteria criteria, User exportedBy, User revisionsBy) {
-		AuthUtil.setCurrentUser(exportedBy);
+	private File exportRevisions(RevisionsListCriteria criteria, User exportedBy, String ipAddress, List<User> revisionsBy) {
+		boolean lockAcquired = false;
 
-		String baseDir = UUID.randomUUID().toString();
-		Date exportedOn = Calendar.getInstance().getTime();
+		try {
+			acquireLock();
+			lockAcquired = true;
 
-		logger.info("Exporting core objects' revisions ...");
-		File coreObjectsRevs = new CoreObjectsRevisionExporter(criteria, exportedBy, exportedOn, revisionsBy).export(baseDir);
+			Date startTime = Calendar.getInstance().getTime();
+			List<File> inputFiles = new ArrayList<>();
+			AuthUtil.setCurrentUser(exportedBy, ipAddress);
 
-		logger.info("Exporting form data revisions ...");
-		File formsDataRevs   = new FormsDataRevisionExporter(criteria, exportedBy, exportedOn, revisionsBy).export(baseDir);
+			String baseDir = UUID.randomUUID().toString();
+			Date exportedOn = Calendar.getInstance().getTime();
 
-		logger.info("Creating revisions ZIP file ...");
-		File result = new File(getAuditDir(), baseDir + "_" + getTs(exportedOn) + "_" + exportedBy.getId());
-		List<String> inputFiles = Arrays.asList(coreObjectsRevs.getAbsolutePath(), formsDataRevs.getAbsolutePath());
-		Utility.zipFiles(inputFiles, result.getAbsolutePath());
+			if (criteria.includeReport("data")) {
+				if (StringUtils.isBlank(criteria.recordType()) || criteria.recordType().equals("core")) {
+					logger.info("Exporting core objects' revisions... ");
+					File coreObjectsRevs = new CoreObjectsRevisionExporter(criteria, exportedBy, exportedOn, revisionsBy).export(baseDir);
+					inputFiles.add(coreObjectsRevs);
+				}
 
-		logger.info("Cleaning up revisions directory: " + baseDir);
-		cleanupRevisionsDir(baseDir);
+				FormsRevisionExporter formsExporter = new FormsRevisionExporter(criteria, exportedBy, exportedOn, revisionsBy);
+				if (StringUtils.isBlank(criteria.recordType()) || criteria.recordType().equals("form")) {
+					logger.info("Exporting form revisions... ");
+					File formsRevs = formsExporter.exportMetadataRevisions(baseDir);
+					inputFiles.add(formsRevs);
+				}
 
-		logger.info("Sending audit revisions email to " + exportedBy.formattedName() + " (" + exportedBy.getEmailAddress() + ")");
-		sendEmailNotif(criteria, exportedBy, revisionsBy, result);
-		return result;
+				if (StringUtils.isBlank(criteria.recordType()) || criteria.recordType().equals("form_data")) {
+					logger.info("Exporting form data revisions... ");
+					File formsDataRevs = formsExporter.exportDataRevisions(baseDir);
+					inputFiles.add(formsDataRevs);
+				}
+			}
+
+			if (criteria.includeReport("auth")) {
+				logger.info("Export user password revisions... ");
+				File passwordRevs    = exportPasswordsData(criteria, exportedBy, exportedOn, revisionsBy, baseDir);
+				inputFiles.add(passwordRevs);
+			}
+
+			if (criteria.includeReport("query_exim")) {
+				logger.info("Export query run logs...");
+				File queryRuns = exportQueryAudit(criteria, exportedBy, exportedOn, revisionsBy, baseDir);
+				inputFiles.add(queryRuns);
+			}
+
+			if (criteria.includeReport("api_calls")) {
+				logger.info("Export user API call logs...");
+				File apiLogs = exportApiCallsLog(criteria, exportedBy, exportedOn, revisionsBy, baseDir);
+				inputFiles.add(apiLogs);
+			}
+
+			for (AuditLogExporter exporter : exporters) {
+				File reportFile = exporter.export(baseDir, exportedBy, exportedOn, revisionsBy, criteria);
+				if (reportFile != null) {
+					inputFiles.add(reportFile);
+				}
+			}
+
+			logger.info("Creating revisions ZIP file... ");
+			File result = new File(getAuditDir(), baseDir + "_" + getTs(exportedOn) + "_" + exportedBy.getId());
+			Utility.zipFiles(inputFiles, result);
+
+			logger.info("Cleaning up revisions directory: " + baseDir);
+			cleanupRevisionsDir(baseDir);
+
+			logger.info("Sending audit revisions email to " + exportedBy.formattedName() + " (" + exportedBy.getEmailAddress() + ")");
+			sendEmailNotif(criteria, exportedBy, revisionsBy, result);
+
+			ExportService exportSvc = OpenSpecimenAppCtxProvider.getBean("exportSvc");
+			exportSvc.saveJob("audit_report", startTime, criteria.toStrMap());
+			return result;
+		} finally {
+			AuthUtil.clearCurrentUser();
+			if (lockAcquired) {
+				relinquishLock();
+			}
+		}
 	}
 
+	private boolean acquireLock() {
+		return Boolean.TRUE.equals(newTxTmpl.execute(
+			status -> {
+				Lock lock = daoFactory.getLockDao().getLockForUpdate("audit_report");
+				if (Boolean.TRUE.equals(lock.getLocked())) {
+					throw OpenSpecimenException.userError(AuditErrorCode.REPORT_GEN_IN_PROGRESS);
+				}
+
+				lock.setLocked(true);
+				lock.setLockTime(Calendar.getInstance().getTime());
+				lock.setNode(Utility.getNodeName());
+				daoFactory.getLockDao().save(lock, true);
+				return true;
+			}
+		));
+	}
+
+	private boolean relinquishLock() {
+		return Boolean.TRUE.equals(newTxTmpl.execute(
+			status -> {
+				Lock lock = daoFactory.getLockDao().getLockForUpdate("audit_report");
+				if (Objects.equals(lock.getNode(), Utility.getNodeName())) {
+					lock.setLocked(false);
+					lock.setLockTime(null);
+					lock.setNode(null);
+					daoFactory.getLockDao().update(lock, true);
+				}
+
+				return true;
+			}
+		));
+	}
 
 	private File getAuditDir() {
-		return new File(ConfigUtil.getInstance().getDataDir(), "audit");
+		return Utility.getFile(ConfigUtil.getInstance().getDataDir(), "audit");
 	}
 
 	private File getAuditDir(String dir) {
-		File result = new File(getAuditDir(), dir);
+		File result = Utility.getFile(getAuditDir(), dir);
 		if (!result.exists()) {
 			result.mkdirs();
 		}
@@ -319,9 +510,9 @@ public class AuditServiceImpl implements AuditService, InitializingBean {
 
 		private Date exportedOn;
 
-		private User revisionsBy;
+		private List<User> revisionsBy;
 
-		public CoreObjectsRevisionExporter(RevisionsListCriteria criteria, User exportedBy, Date exportedOn, User revisionsBy) {
+		public CoreObjectsRevisionExporter(RevisionsListCriteria criteria, User exportedBy, Date exportedOn, List<User> revisionsBy) {
 			this.criteria = criteria;
 			this.exportedBy = exportedBy;
 			this.exportedOn = exportedOn;
@@ -336,7 +527,7 @@ public class AuditServiceImpl implements AuditService, InitializingBean {
 				File outputFile = getOutputFile(dir);
 				csvWriter = CsvFileWriter.createCsvFileWriter(outputFile);
 
-				writeHeader(csvWriter);
+				writeHeader(criteria, exportedBy, exportedOn, revisionsBy, csvWriter);
 
 				long lastRecId = 0, totalRecords = 0, lastChunk = 0;
 				Map<String, String> context = new HashMap<>();
@@ -382,17 +573,6 @@ public class AuditServiceImpl implements AuditService, InitializingBean {
 			return new File(getAuditDir(dir), "os_core_objects_revisions_" + getTs(exportedOn) + ".csv");
 		}
 
-		private void writeHeader(CsvWriter writer) {
-			writeExportHeader(writer, criteria, exportedBy, exportedOn, revisionsBy);
-
-			String[] keys = {
-				"audit_rev_id", "audit_rev_tstmp", "audit_rev_user", "audit_rev_user_email",
-				"audit_rev_entity_op", "audit_rev_entity_name", "audit_rev_entity_id",
-				"audit_rev_change_log"
-			};
-			writer.writeNext(Stream.of(keys).map(MessageUtil.getInstance()::getMessage).toArray(String[]::new));
-		}
-
 		//
 		// Row format
 		// revision number, rev date, user, rev type, entity name, entity id
@@ -404,16 +584,22 @@ public class AuditServiceImpl implements AuditService, InitializingBean {
 
 			String user      = null;
 			String userEmail = null;
+			String domain    = null;
+			String userLogin = null;
+			String institute = null;
 			if (revision.getChangedBy() != null) {
 				user      = revision.getChangedBy().formattedName();
 				userEmail = revision.getChangedBy().getEmailAddress();
+				domain    = revision.getChangedBy().getDomain();
+				userLogin = revision.getChangedBy().getLoginName();
+				institute = revision.getChangedBy().getInstituteName();
 			}
 
 			Function<String, String> toMsg = AuditServiceImpl.this::toMsg;
 			int recsCount = 0;
 
 			for (RevisionEntityRecordDetail record : revision.getRecords()) {
-				if (StringUtils.isBlank(record.getModifiedProps()) && record.getType() != 2) {
+				if (criteria.includeModifiedProps() && StringUtils.isBlank(record.getModifiedProps()) && record.getType() != 2) {
 					if (logger.isDebugEnabled()) {
 						logger.debug("Ignoring the revision record: " + record.toString());
 					}
@@ -439,7 +625,8 @@ public class AuditServiceImpl implements AuditService, InitializingBean {
 				String opDisplay  = context.computeIfAbsent(op, toMsg);
 				String entityName = context.computeIfAbsent("audit_entity_" + record.getEntityName(), toMsg);
 				String entityId   = record.getEntityId().toString();
-				String[] line     = {revId, dateTime, user, userEmail, opDisplay, entityName, entityId, record.getModifiedProps()};
+				String ipAddress  = revision.getIpAddress();
+				String[] line     = {revId, dateTime, user, userEmail, domain, userLogin, institute, ipAddress, opDisplay, entityName, entityId, record.getModifiedProps()};
 
 				writer.writeNext(line);
 				if (logger.isDebugEnabled()) {
@@ -457,31 +644,86 @@ public class AuditServiceImpl implements AuditService, InitializingBean {
 		}
 	}
 
-	private class FormsDataRevisionExporter {
+	private class FormsRevisionExporter {
 		private RevisionsListCriteria criteria;
 
 		private User exportedBy;
 
 		private Date exportedOn;
 
-		private User revisionsBy;
+		private List<User> revisionsBy;
 
-		public FormsDataRevisionExporter(RevisionsListCriteria criteria, User exportedBy, Date exportedOn, User revisionsBy) {
+		public FormsRevisionExporter(RevisionsListCriteria criteria, User exportedBy, Date exportedOn, List<User> revisionsBy) {
 			this.criteria = criteria;
 			this.exportedBy = exportedBy;
 			this.exportedOn = exportedOn;
 			this.revisionsBy = revisionsBy;
 		}
 
-		public File export(String dir) {
+		public File exportMetadataRevisions(String dir) {
 			long startTime = System.currentTimeMillis();
 			CsvFileWriter csvWriter = null;
 
 			try {
-				File outputFile = getOutputFile(dir);
+				File outputFile = getOutputFile(dir, "os_forms_revisions", this.exportedOn);
 				csvWriter = CsvFileWriter.createCsvFileWriter(outputFile);
 
-				writeHeader(csvWriter);
+				String[] headerColumns = {
+					"audit_rev_id", "audit_rev_tstmp", "audit_rev_user", "audit_rev_user_email",
+					"audit_rev_domain", "audit_rev_user_login", "audit_rev_institute", "audit_rev_ip_address",
+					"audit_rev_entity_op", "audit_rev_form_name", "audit_rev_entity_id", "audit_rev_change_log"
+				};
+				writeHeader(csvWriter, headerColumns);
+
+				long lastRevId = 0, totalRecords = 0;
+				Map<String, String> context = new HashMap<>();
+
+				criteria.lastId(null);
+				while (true) {
+					List<FormDataRevisionDetail> revisions = daoFactory.getAuditDao().getFormRevisions(criteria);
+					if (revisions.isEmpty()) {
+						break;
+					}
+
+					for (FormDataRevisionDetail revision : revisions) {
+						writeRow(context, revision, csvWriter);
+						lastRevId = revision.getId();
+						++totalRecords;
+
+						if (totalRecords % 25 == 0) {
+							csvWriter.flush();
+						}
+					}
+
+					criteria.lastId(lastRevId);
+				}
+
+				csvWriter.flush();
+				return outputFile;
+			} catch (Exception e) {
+				logger.error("Error exporting forms revisions", e);
+				throw OpenSpecimenException.serverError(e);
+			} finally {
+				IOUtils.closeQuietly(csvWriter);
+				logger.info("Forms revisions export finished in " +  (System.currentTimeMillis() - startTime) + " ms");
+			}
+		}
+
+		public File exportDataRevisions(String dir) {
+			long startTime = System.currentTimeMillis();
+			CsvFileWriter csvWriter = null;
+
+			try {
+				File outputFile = getOutputFile(dir, "os_forms_data_revisions", this.exportedOn);
+				csvWriter = CsvFileWriter.createCsvFileWriter(outputFile);
+
+				String[] headerColumns = {
+					"audit_rev_id", "audit_rev_tstmp", "audit_rev_user", "audit_rev_user_email",
+					"audit_rev_domain", "audit_rev_user_login", "audit_rev_institute", "audit_rev_ip_address",
+					"audit_rev_entity_op", "audit_rev_entity_name", "audit_rev_form_name",
+					"audit_rev_parent_entity_id", "audit_rev_entity_id", "audit_rev_change_log"
+				};
+				writeHeader(csvWriter, headerColumns);
 
 				long lastRevId = 0, totalRecords = 0;
 				Map<String, String> context = new HashMap<>();
@@ -521,19 +763,9 @@ public class AuditServiceImpl implements AuditService, InitializingBean {
 			}
 		}
 
-		private File getOutputFile(String dir) {
-			return new File(getAuditDir(dir), "os_forms_data_revisions_" + getTs(exportedOn) + ".csv");
-		}
-
-		private void writeHeader(CsvWriter writer) {
+		private void writeHeader(CsvWriter writer, String[] headerColumns) {
 			writeExportHeader(writer, criteria, exportedBy, exportedOn, revisionsBy);
-
-			String[] keys = {
-				"audit_rev_id", "audit_rev_tstmp", "audit_rev_user", "audit_rev_user_email",
-				"audit_rev_entity_op", "audit_rev_entity_name", "audit_rev_form_name",
-				"audit_rev_parent_entity_id", "audit_rev_entity_id"
-			};
-			writer.writeNext(Stream.of(keys).map(MessageUtil.getInstance()::getMessage).toArray(String[]::new));
+			writer.writeNext(Stream.of(headerColumns).map(MessageUtil.getInstance()::getMessage).toArray(String[]::new));
 		}
 
 		private void writeRow(Map<String, String> context, FormDataRevisionDetail revision, CsvWriter writer) {
@@ -542,9 +774,15 @@ public class AuditServiceImpl implements AuditService, InitializingBean {
 
 			String user      = null;
 			String userEmail = null;
+			String domain    = null;
+			String userLogin = null;
+			String institute = null;
 			if (revision.getUser() != null) {
 				user      = revision.getUser().formattedName();
 				userEmail = revision.getUser().getEmailAddress();
+				domain    = revision.getUser().getDomain();
+				userLogin = revision.getUser().getLoginName();
+				institute = revision.getUser().getInstituteName();
 			}
 
 			Function<String, String> toMsg = AuditServiceImpl.this::toMsg;
@@ -552,26 +790,203 @@ public class AuditServiceImpl implements AuditService, InitializingBean {
 			String op = "audit_op_" + revision.getOp().toLowerCase();
 			String opDisplay = context.computeIfAbsent(op, toMsg);
 
-			String entityType = context.computeIfAbsent("form_entity_" + revision.getEntityType(), toMsg);
+			String entityType = null;
 			String entityId = revision.getEntityId() != null ? revision.getEntityId().toString() : null;
+			if (StringUtils.isNotBlank(revision.getEntityType())) {
+				entityType = context.computeIfAbsent("form_entity_" + revision.getEntityType(), toMsg);
+			}
 
 			String formName = revision.getFormName();
 			String recordId = revision.getRecordId().toString();
+			String ipAddress = revision.getIpAddress();
+			String data = revision.getData();
 
-			writer.writeNext(new String[] {
-				revId, dateTime, user, userEmail,
-				opDisplay, entityType, formName, entityId, recordId
-			});
+			if (entityType != null) {
+				writer.writeNext(new String[] {revId, dateTime, user, userEmail, domain, userLogin, institute, ipAddress, opDisplay, entityType, formName, entityId, recordId, data});
+			} else {
+				writer.writeNext(new String[] {revId, dateTime, user, userEmail, domain, userLogin, institute, ipAddress, opDisplay, formName, recordId, data});
+			}
 		}
 	}
 
-	private void sendEmailNotif(RevisionsListCriteria criteria, User exportedBy, User revsBy, File revisionsFile) {
+	private File exportPasswordsData(RevisionsListCriteria criteria, User exportedBy, Date exportedOn, List<User> revisionsBy, String baseDir) {
+		long startTime = System.currentTimeMillis();
+		CsvFileWriter csvWriter = null;
+
+		try {
+			File outputFile = getOutputFile(baseDir, "os_password_revisions", exportedOn);
+			csvWriter = CsvFileWriter.createCsvFileWriter(outputFile);
+			writeHeader(criteria, exportedBy, exportedOn, revisionsBy, csvWriter);
+
+			String editOp = MessageUtil.getInstance().getMessage("audit_op_update");
+			String entity = MessageUtil.getInstance().getMessage("audit_entity_" + Password.class.getName());
+			long lastRevId = Long.MAX_VALUE, totalRecords = 0;
+			while (true) {
+				long t1 = System.currentTimeMillis();
+
+				List<Password> passwords = daoFactory.getUserDao()
+					.getPasswords(criteria.startDate(), criteria.endDate(), lastRevId, revisionsBy);
+				if (passwords.isEmpty()) {
+					break;
+				}
+
+				for (Password password : passwords) {
+					String user      = null;
+					String userEmail = null;
+					String userLogin = null;
+					String institute = null;
+					String domain    = null;
+					if (password.getUpdatedBy() != null) {
+						user      = password.getUpdatedBy().formattedName();
+						userEmail = password.getUpdatedBy().getEmailAddress();
+						userLogin = password.getUpdatedBy().getLoginName();
+						institute = password.getUpdatedBy().getInstitute().getName();
+						domain    = password.getUpdatedBy().getAuthDomain().getName();
+					}
+
+					csvWriter.writeNext(new String[] {
+						password.getId().toString(),
+						Utility.getDateTimeString(password.getUpdationDate()),
+						user, userEmail, domain, userLogin, institute, password.getIpAddress(),
+						editOp, entity, password.getUser().getId().toString(), "###"
+					});
+
+					lastRevId = password.getId();
+					++totalRecords;
+					if (totalRecords % 25 == 0) {
+						csvWriter.flush();
+					}
+				}
+			}
+
+			csvWriter.flush();
+			return outputFile;
+		} catch (Exception e) {
+			logger.error("Error exporting password revisions", e);
+			throw OpenSpecimenException.serverError(e);
+		} finally {
+			IOUtils.closeQuietly(csvWriter);
+			logger.info("Password revisions export finished in " +  (System.currentTimeMillis() - startTime) + " ms");
+		}
+	}
+
+	private File exportQueryAudit(RevisionsListCriteria criteria, User exportedBy, Date exportedOn, List<User> revisionsBy, String baseDir) {
+		File outputFile = getOutputFile(baseDir, "os_query_audit_logs", exportedOn);
+
+		QueryAuditLogsListCriteria crit = new QueryAuditLogsListCriteria()
+			.startDate(criteria.startDate())
+			.endDate(criteria.endDate())
+			.asc(false)
+			.userIds(Utility.nullSafeStream(revisionsBy).map(User::getId).collect(Collectors.toList()));
+		return new QueryAuditLogsExporter(crit, exportedBy, revisionsBy).exportAuditLogs(outputFile, exportedOn);
+	}
+
+	private File exportApiCallsLog(RevisionsListCriteria criteria, User exportedBy, Date exportedOn, List<User> callsBy, String baseDir) {
+		long startTime = System.currentTimeMillis();
+		CsvFileWriter csvWriter = null;
+
+		try {
+			File outputFile = getOutputFile(baseDir, "os_user_api_call_logs", exportedOn);
+			csvWriter = CsvFileWriter.createCsvFileWriter(outputFile);
+			writeExportHeader(csvWriter, criteria, exportedBy, exportedOn, callsBy);
+
+			String[] headerColumns = {
+				"audit_rev_id", "audit_start_time", "audit_end_time", "audit_rev_user", "audit_rev_user_email",
+				"audit_rev_domain", "audit_rev_user_login", "audit_rev_institute", "audit_rev_ip_address",
+				"audit_call_method", "audit_call_url", "audit_call_resp_code"
+			};
+			csvWriter.writeNext(Stream.of(headerColumns).map(MessageUtil.getInstance()::getMessage).toArray(String[]::new));
+
+			long lastRevId = Long.MAX_VALUE, totalRecords = 0;
+			while (true) {
+				long t1 = System.currentTimeMillis();
+
+				List<UserApiCallLog> callLogs = daoFactory.getAuditDao().getApiCallLogs(criteria.lastId(lastRevId));
+				if (callLogs.isEmpty()) {
+					break;
+				}
+
+				for (UserApiCallLog callLog : callLogs) {
+					String user      = null;
+					String userEmail = null;
+					String userLogin = null;
+					String institute = null;
+					String domain    = null;
+					if (callLog.getUser() != null) {
+						user      = callLog.getUser().formattedName();
+						userEmail = callLog.getUser().getEmailAddress();
+						userLogin = callLog.getUser().getLoginName();
+						institute = callLog.getUser().getInstitute().getName();
+						domain    = callLog.getUser().getAuthDomain().getName();
+					}
+
+					String ipAddres = null;
+					if (callLog.getLoginAuditLog() != null) {
+						ipAddres = callLog.getLoginAuditLog().getIpAddress();
+					}
+
+					csvWriter.writeNext(new String[] {
+						callLog.getId().toString(),
+						Utility.getDateTimeString(callLog.getCallStartTime()),
+						Utility.getDateTimeString(callLog.getCallEndTime()),
+						user, userEmail, domain, userLogin, institute, ipAddres,
+						callLog.getMethod(), callLog.getUrl(), callLog.getResponseCode()
+					});
+
+					lastRevId = callLog.getId();
+					++totalRecords;
+					if (totalRecords % 25 == 0) {
+						csvWriter.flush();
+					}
+				}
+			}
+
+			csvWriter.flush();
+			return outputFile;
+		} catch (Exception e) {
+			logger.error("Error exporting user API call logs", e);
+			throw OpenSpecimenException.serverError(e);
+		} finally {
+			IOUtils.closeQuietly(csvWriter);
+			logger.info("User API call logs export finished in " +  (System.currentTimeMillis() - startTime) + " ms");
+		}
+	}
+
+	private File getOutputFile(String dir, String filename, Date exportedOn) {
+		return new File(getAuditDir(dir), filename + "_" + getTs(exportedOn) + ".csv");
+	}
+
+	private void writeHeader(RevisionsListCriteria criteria, User exportedBy, Date exportedOn, List<User> revisionsBy, CsvWriter writer) {
+		writeExportHeader(writer, criteria, exportedBy, exportedOn, revisionsBy);
+
+		String[] keys = {
+			"audit_rev_id", "audit_rev_tstmp", "audit_rev_user", "audit_rev_user_email",
+			"audit_rev_domain", "audit_rev_user_login", "audit_rev_institute", "audit_rev_ip_address",
+			"audit_rev_entity_op", "audit_rev_entity_name", "audit_rev_entity_id",
+			"audit_rev_change_log"
+		};
+		writer.writeNext(Stream.of(keys).map(MessageUtil.getInstance()::getMessage).toArray(String[]::new));
+	}
+
+	private void sendEmailNotif(RevisionsListCriteria criteria, User exportedBy, List<User> revsBy, File revisionsFile) {
 		Map<String, Object> emailProps = new HashMap<>();
 		emailProps.put("startDate", getDateTimeString(criteria.startDate()));
 		emailProps.put("endDate",   getDateTimeString(criteria.endDate()));
-		emailProps.put("user",      revsBy != null ? revsBy.formattedName() : null);
+		String userNames = Utility.nullSafeStream(revsBy).map(User::formattedName).collect(Collectors.joining(", "));
+		emailProps.put("users",     !userNames.isEmpty() ? userNames : null);
 		emailProps.put("fileId",    getFileId(revisionsFile));
 		emailProps.put("rcpt",      exportedBy.formattedName());
+		emailProps.put("reportTypes", criteria.reportTypes().stream().map(t -> msg("audit_report_type_" + t)).collect(Collectors.joining(", ")));
+		emailProps.put("recordType", StringUtils.isNotBlank(criteria.recordType()) ? msg("audit_record_type_" + criteria.recordType()) : null);
+		if ("core".equals(criteria.recordType())) {
+			emailProps.put("records", Utility.nullSafeStream(criteria.records()).map(t -> msg("audit_entity_" + t)).collect(Collectors.joining(", ")));
+		} else {
+			emailProps.put("records", StringUtils.join(criteria.records(), ", "));
+		}
+
+		if (CollectionUtils.isNotEmpty(criteria.recordIds())) {
+			emailProps.put("recordIds", StringUtils.join(criteria.recordIds(), ", "));
+		}
 
 		EmailUtil.getInstance().sendEmail(
 			REV_EMAIL_TMPL,
@@ -579,6 +994,10 @@ public class AuditServiceImpl implements AuditService, InitializingBean {
 			null,
 			emailProps
 		);
+	}
+
+	private String msg(String key) {
+		return MessageUtil.getInstance().getMessage(key);
 	}
 
 	private String getFileId(File revisionsFile) {
@@ -593,12 +1012,16 @@ public class AuditServiceImpl implements AuditService, InitializingBean {
 		return dt != null ? Utility.getDateTimeString(dt) : null;
 	}
 
-	private void writeExportHeader(CsvWriter writer, RevisionsListCriteria criteria, User exportedBy, Date exportedOn, User revisionUser) {
-		writeRow(writer, toMsg("audit_rev_exported_by"), exportedBy.formattedName());
+	private void writeExportHeader(CsvWriter writer, RevisionsListCriteria criteria, User exportedBy, Date exportedOn, List<User> revisionUsers) {
+		writeRow(writer, toMsg("common_server_url"), ConfigUtil.getInstance().getAppUrl());
+		writeRow(writer, toMsg("common_server_env"), ConfigUtil.getInstance().getDeployEnv());
+		writeRow(writer, toMsg("audit_rev_exported_by"), exportedBy.formattedName(true));
 		writeRow(writer, toMsg("audit_rev_exported_on"), getDateTimeString(exportedOn));
 
-		if (revisionUser != null) {
-			writeRow(writer, toMsg("audit_rev_audited_user"), revisionUser.formattedName());
+		if (CollectionUtils.isNotEmpty(revisionUsers)) {
+			List<String> userNames = revisionUsers.stream().map(u -> u.formattedName(true)).collect(Collectors.toList());
+			userNames.add(0, toMsg("audit_rev_audited_users"));
+			writeRow(writer, userNames.toArray(new String[0]));
 		}
 
 		if (criteria.startDate() != null) {
@@ -637,14 +1060,6 @@ public class AuditServiceImpl implements AuditService, InitializingBean {
 		implements PreInsertEventListener, PreUpdateEventListener, PreDeleteEventListener,
 		PreCollectionRecreateEventListener, PreCollectionUpdateEventListener, PreCollectionRemoveEventListener {
 
-		private ThreadLocal<IdentityHashMap<BaseEntity, Boolean>> entities =
-			new ThreadLocal<IdentityHashMap<BaseEntity, Boolean>>() {
-				@Override
-				protected IdentityHashMap<BaseEntity, Boolean> initialValue() {
-					TransactionalThreadLocals.getInstance().register(this);
-					return new IdentityHashMap<>();
-				}
-			};
 
 		@Override
 		public boolean onPreInsert(PreInsertEvent event) {
@@ -659,7 +1074,7 @@ public class AuditServiceImpl implements AuditService, InitializingBean {
 				update = true;
 			}
 
-			if (entities.get().containsKey(entity)) {
+			if (getEntities().containsKey(entity)) {
 				return false;
 			}
 
@@ -679,7 +1094,7 @@ public class AuditServiceImpl implements AuditService, InitializingBean {
 			}
 
 			updateState(event.getPersister(), event.getState(), props);
-			entities.get().put(entity, true);
+			getEntities().put(entity, true);
 			return false;
 		}
 
@@ -694,7 +1109,7 @@ public class AuditServiceImpl implements AuditService, InitializingBean {
 				entity = entity.getRoot();
 			}
 
-			if (entities.get().containsKey(entity)) {
+			if (getEntities().containsKey(entity)) {
 				return false;
 			}
 
@@ -706,7 +1121,7 @@ public class AuditServiceImpl implements AuditService, InitializingBean {
 			props.put("updateTime", entity.getUpdateTime());
 			updateState(event.getPersister(), event.getState(), props);
 
-			entities.get().put(entity, true);
+			getEntities().put(entity, true);
 			return false;
 		}
 
@@ -721,7 +1136,7 @@ public class AuditServiceImpl implements AuditService, InitializingBean {
 				entity = entity.getRoot();
 			}
 
-			if (entities.get().containsKey(entity)) {
+			if (getEntities().containsKey(entity)) {
 				return false;
 			}
 
@@ -733,7 +1148,7 @@ public class AuditServiceImpl implements AuditService, InitializingBean {
 			props.put("updateTime", entity.getUpdateTime());
 			updateState(event.getPersister(), event.getDeletedState(), props);
 
-			entities.get().put(entity, true);
+			getEntities().put(entity, true);
 			return false;
 		}
 
@@ -748,7 +1163,7 @@ public class AuditServiceImpl implements AuditService, InitializingBean {
 				entity = entity.getRoot();
 			}
 
-			if (entities.get().containsKey(entity)) {
+			if (getEntities().containsKey(entity)) {
 				return;
 			}
 
@@ -760,7 +1175,7 @@ public class AuditServiceImpl implements AuditService, InitializingBean {
 				entity.setCreationTime(Calendar.getInstance().getTime());
 			}
 
-			entities.get().put(entity, true);
+			getEntities().put(entity, true);
 		}
 
 		@Override
@@ -774,13 +1189,13 @@ public class AuditServiceImpl implements AuditService, InitializingBean {
 				entity = entity.getRoot();
 			}
 
-			if (entities.get().containsKey(entity)) {
+			if (getEntities().containsKey(entity)) {
 				return;
 			}
 
 			entity.setUpdater(AuthUtil.getCurrentUser());
 			entity.setUpdateTime(Calendar.getInstance().getTime());
-			entities.get().put(entity, true);
+			getEntities().put(entity, true);
 		}
 
 		@Override
@@ -794,13 +1209,13 @@ public class AuditServiceImpl implements AuditService, InitializingBean {
 				entity = entity.getRoot();
 			}
 
-			if (entities.get().containsKey(entity)) {
+			if (getEntities().containsKey(entity)) {
 				return;
 			}
 
 			entity.setUpdater(AuthUtil.getCurrentUser());
 			entity.setUpdateTime(Calendar.getInstance().getTime());
-			entities.get().put(entity, true);
+			getEntities().put(entity, true);
 		}
 
 		private void updateState(EntityPersister persister, Object[] state, Map<String, Object> values) {
@@ -824,6 +1239,10 @@ public class AuditServiceImpl implements AuditService, InitializingBean {
 					break;
 				}
 			}
+		}
+
+		private IdentityHashMap<BaseEntity, Boolean> getEntities() {
+			return TransactionCache.getInstance().get("auditEntities", new IdentityHashMap<>());
 		}
 	}
 }

@@ -1,30 +1,24 @@
 package com.krishagni.catissueplus.core.de.repository.impl;
 
-import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
-import org.apache.commons.lang.StringUtils;
-import org.hibernate.Criteria;
-import org.hibernate.Query;
-import org.hibernate.criterion.Disjunction;
-import org.hibernate.criterion.MatchMode;
-import org.hibernate.criterion.Order;
-import org.hibernate.criterion.Projections;
-import org.hibernate.criterion.Restrictions;
-import org.hibernate.sql.JoinType;
+import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.lang3.StringUtils;
 
 import com.krishagni.catissueplus.core.common.events.UserSummary;
 import com.krishagni.catissueplus.core.common.repository.AbstractDao;
+import com.krishagni.catissueplus.core.common.repository.Conjunction;
+import com.krishagni.catissueplus.core.common.repository.Criteria;
+import com.krishagni.catissueplus.core.common.repository.Disjunction;
 import com.krishagni.catissueplus.core.de.domain.SavedQuery;
 import com.krishagni.catissueplus.core.de.events.ListSavedQueriesCriteria;
 import com.krishagni.catissueplus.core.de.events.SavedQuerySummary;
 import com.krishagni.catissueplus.core.de.repository.SavedQueryDao;
-
-import org.springframework.util.CollectionUtils;
 
 public class SavedQueryDaoImpl extends AbstractDao<SavedQuery> implements SavedQueryDao {
 
@@ -34,19 +28,16 @@ public class SavedQueryDaoImpl extends AbstractDao<SavedQuery> implements SavedQ
 		
 	@Override
 	public Long getQueriesCount(ListSavedQueriesCriteria crit) {
-		return ((Number) getSavedQueriesListQuery(crit)
-			.setProjection(Projections.countDistinct("s.id"))
-			.uniqueResult()).longValue();
+		Criteria<Long> query = getSavedQueriesListQuery(crit, Long.class);
+		return query.select(query.distinctCount("s.id")).uniqueResult();
 	}
 
 	@Override
 	public List<SavedQuerySummary> getQueries(ListSavedQueriesCriteria crit) {
-		Criteria query = getSavedQueriesListQuery(crit)
-			.createAlias("lastUpdatedBy", "m", JoinType.LEFT_OUTER_JOIN)
-			.addOrder(Order.desc("s.id"));
-		addProjectionFields(query);
-		addLimits(query, crit.startAt(), crit.maxResults());
-		return getSavedQueries(query);
+		Criteria<Object[]> query = getSavedQueriesListQuery(crit, Object[].class)
+			.leftJoin("s.lastUpdatedBy", "m");
+		addProjectionFields(query.addOrder(query.desc("s.id")));
+		return getSavedQueries(query, crit.startAt(), crit.maxResults());
 	}
 
 	@Override
@@ -57,90 +48,84 @@ public class SavedQueryDaoImpl extends AbstractDao<SavedQuery> implements SavedQ
 			.startAt(startAt)
 			.maxResults(maxRecords));
 	}
-	
-	@SuppressWarnings("unchecked")
+
 	@Override
 	public SavedQuery getQuery(Long queryId) {
-		List<SavedQuery> queries = sessionFactory.getCurrentSession()
-				.createCriteria(SavedQuery.class, "s")
-				.add(Restrictions.eq("s.id", queryId))
-				.add(Restrictions.isNull("s.deletedOn"))
-				.list();
+		Criteria<SavedQuery> query = createCriteria(SavedQuery.class, "s");
+		List<SavedQuery> queries = query.add(query.eq("s.id", queryId))
+			.add(query.isNull("s.deletedOn"))
+			.list();
 		return CollectionUtils.isEmpty(queries) ? null : queries.iterator().next();
 	}
 
-	@SuppressWarnings("unchecked")
 	@Override
 	public List<SavedQuery> getQueriesByIds(List<Long> queries) {
-		Query query = sessionFactory.getCurrentSession().getNamedQuery(GET_QUERIES_BY_ID);
-		return query.setParameterList("queryIds", queries).list();
+		return createNamedQuery(GET_QUERIES_BY_ID, SavedQuery.class)
+			.setParameterList("queryIds", queries)
+			.list();
 	}
 	
 	@Override
 	public Long getQueriesCountByFolderId(Long folderId, String searchString) {
-		Criteria criteria = sessionFactory.getCurrentSession()
-				.createCriteria(SavedQuery.class, "s")
-				.createAlias("folders", "f", JoinType.INNER_JOIN)
-				.add(Restrictions.isNull("s.deletedOn"))
-				.add(Restrictions.eq("f.id", folderId))
-				.setProjection(Projections.countDistinct("s.id"));
+		Criteria<Long> query = createCriteria(SavedQuery.class, Long.class, "s");
+		query.join("s.folders", "f")
+			.add(query.isNull("s.deletedOn"))
+			.add(query.eq("f.id", folderId))
+			.select(query.distinctCount("s.id"));
 		
-		addSearchConditions(criteria, searchString);
-		return ((Number)criteria.uniqueResult()).longValue();
+		addSearchConditions(query, searchString);
+		addActiveCpGroupCond(query);
+		return query.uniqueResult();
 	}
 
 	@Override
 	public List<SavedQuerySummary> getQueriesByFolderId(Long folderId, int startAt, int maxRecords, String searchString) {
-		Criteria criteria = sessionFactory.getCurrentSession()
-				.createCriteria(SavedQuery.class, "s")
-				.createAlias("createdBy", "c")
-				.createAlias("folders", "f", JoinType.INNER_JOIN)
-				.createAlias("lastUpdatedBy", "m", JoinType.LEFT_OUTER_JOIN)
-				.add(Restrictions.isNull("s.deletedOn"))
-				.add(Restrictions.eq("f.id", folderId));
+		Criteria<Object[]> query = createCriteria(SavedQuery.class, Object[].class, "s");
+		query.join("s.createdBy", "c")
+			.join("s.folders", "f")
+			.leftJoin("s.lastUpdatedBy", "m")
+			.add(query.isNull("s.deletedOn"))
+			.add(query.eq("f.id", folderId));
 
-		addSearchConditions(criteria, searchString);
-		addProjectionFields(criteria);
-		criteria.addOrder(Order.desc("s.id"));
-		addLimits(criteria, startAt, maxRecords);
-		return getSavedQueries(criteria);
+		addSearchConditions(query, searchString);
+		addProjectionFields(query);
+		query.addOrder(query.desc("s.id"));
+		return getSavedQueries(query, startAt, maxRecords);
 	}
-	
-	@SuppressWarnings("unchecked")
-	@Override
-	public boolean isQuerySharedWithUser(Long queryId, Long userId) {
-		Criteria criteria = sessionFactory.getCurrentSession()
-				.createCriteria(SavedQuery.class, "s")
-				.createAlias("createdBy", "c")
-				.createAlias("folders", "f", JoinType.INNER_JOIN)
-				.createAlias("f.sharedWith", "su", JoinType.LEFT_OUTER_JOIN)
-				.add(Restrictions.eq("s.id", queryId))
-				.add(Restrictions.isNull("s.deletedOn"))
-				.add(Restrictions.or(
-						Restrictions.eq("su.id", userId), 
-						Restrictions.eq("f.sharedWithAll", true)))
-				.setProjection(Projections.count("s.id"));
 
-		List<Number> count = criteria.list();
-		if (CollectionUtils.isEmpty(count)) {
-			return false;
+	@Override
+	public boolean isQuerySharedWithUser(Long queryId, Long userId, boolean forEdits) {
+		Criteria<Long> query = createCriteria(SavedQuery.class, Long.class, "s");
+		query.join("s.createdBy", "c")
+			.join("s.folders", "f")
+			.leftJoin("f.sharedWith", "su")
+			.leftJoin("f.sharedWithGroups", "sg")
+			.leftJoin("sg.users", "gu")
+			.add(query.eq("s.id", queryId))
+			.add(query.isNull("s.deletedOn"))
+			.add(query.or(
+				query.eq("f.sharedWithAll", true),
+				query.eq("su.id", userId),
+				query.eq("gu.id", userId)
+			));
+
+		if (forEdits) {
+			query.add(query.eq("f.allowEditsBySharedUsers", true));
 		}
-		
-		return count.iterator().next().intValue() != 0;
-	}	
-	
-	@SuppressWarnings("unchecked")
+
+		return query.select(query.count("s.id")).uniqueResult() > 0;
+	}
+
 	@Override
 	public Map<String, Object> getQueryChangeLogDetails(String fileName) {
-		List<Object[]> rows = sessionFactory.getCurrentSession()
-				.getNamedQuery(GET_QUERY_ID_AND_MD5_SQL)
-				.setString("fileName", fileName)
-				.list();
+		List<Object[]> rows = createNamedQuery(GET_QUERY_ID_AND_MD5_SQL, Object[].class)
+			.setParameter("fileName", fileName)
+			.list();
 		if (CollectionUtils.isEmpty(rows)) {
 			return null;
 		}
 		
-		Map<String, Object> result = new HashMap<String, Object>();
+		Map<String, Object> result = new HashMap<>();
 		Object[] row = rows.iterator().next();
 		result.put("queryId", row[0]);
 		result.put("md5Digest", row[1]);
@@ -149,14 +134,13 @@ public class SavedQueryDaoImpl extends AbstractDao<SavedQuery> implements SavedQ
 	
 	@Override
 	public void insertQueryChangeLog(String fileName, String digest, String status, Long queryId) {
-		sessionFactory.getCurrentSession()
-				.getNamedQuery(INSERT_QUERY_CHANGE_LOG_SQL)
-				.setString("fileName", fileName)
-				.setString("md5Digest", digest)
-				.setString("status", status)
-				.setLong("queryId", queryId)
-				.setTimestamp("executedOn", Calendar.getInstance().getTime())
-				.executeUpdate();
+		createNamedQuery(INSERT_QUERY_CHANGE_LOG_SQL)
+			.setParameter("fileName", fileName)
+			.setParameter("md5Digest", digest)
+			.setParameter("status", status)
+			.setParameter("queryId", queryId)
+			.setParameter("executedOn", Calendar.getInstance().getTime())
+			.executeUpdate();
 	}
 	
 	private SavedQuerySummary getSavedQuerySummary(Object[] row) {
@@ -180,80 +164,96 @@ public class SavedQueryDaoImpl extends AbstractDao<SavedQuery> implements SavedQ
 		return savedQuery;		
 	}
 		
-	private void addLimits(Criteria criteria, int start, int maxRecords) {
-		criteria.setFirstResult(start <= 0 ? 0 : start);
-		if (maxRecords > 0) {
-			criteria.setMaxResults(maxRecords);
-		}
-	}
-	
-	private void addProjectionFields(Criteria criteria) {
-		criteria.setProjection(Projections.distinct(
-				Projections.projectionList()
-					.add(Projections.property("s.id"), "id")
-					.add(Projections.property("s.title"), "title")
-					.add(Projections.property("c.id"), "cUserId")
-					.add(Projections.property("c.firstName"), "cFirstName")
-					.add(Projections.property("c.lastName"), "cLastName")
-					.add(Projections.property("m.id"), "mUserId")
-					.add(Projections.property("m.firstName"), "mFirstName")
-					.add(Projections.property("m.lastName"), "mLastName")
-					.add(Projections.property("lastUpdated"), "lastUpdated")
-		));		
-	}
-	
-	@SuppressWarnings("unchecked")
-	private List<SavedQuerySummary> getSavedQueries(Criteria criteria) {
-		List<SavedQuerySummary> result = new ArrayList<SavedQuerySummary>();
-		List<Object[]> rows = criteria.list();				
-		for (Object[] row : rows) {			
-			result.add(getSavedQuerySummary(row));			
-		}
-		
-		return result;		
+	private void addProjectionFields(Criteria<Object[]> query) {
+		query.distinct().select(
+			"s.id", "s.title", "c.id", "c.firstName", "c.lastName",
+			"m.id", "m.firstName", "m.lastName", "s.lastUpdated"
+		);
 	}
 
-	private Criteria getSavedQueriesListQuery(ListSavedQueriesCriteria crit) {
-		Criteria query = getCurrentSession().createCriteria(SavedQuery.class, "s")
-			.createAlias("createdBy", "c")
-			.createAlias("folders", "f", JoinType.LEFT_OUTER_JOIN)
-			.createAlias("f.sharedWith", "su", JoinType.LEFT_OUTER_JOIN)
-			.add(Restrictions.isNull("s.deletedOn"))
-			.add(Restrictions.disjunction()
-				.add(Restrictions.eq("f.sharedWithAll", true))
-				.add(Restrictions.eq("c.id", crit.userId()))
-				.add(Restrictions.eq("su.id", crit.userId())));
+	private List<SavedQuerySummary> getSavedQueries(Criteria<Object[]> query, int startAt, int maxRecords) {
+		List<Object[]> rows = query.list(Math.max(startAt, 0), maxRecords);
+		return rows.stream().map(this::getSavedQuerySummary).collect(Collectors.toList());
+	}
+
+	private <T> Criteria<T> getSavedQueriesListQuery(ListSavedQueriesCriteria crit, Class<T> returnType) {
+		Criteria<T> query = createCriteria(SavedQuery.class, returnType, "s");
+		query.join("s.createdBy", "c")
+			.leftJoin("c.institute", "i") // system users do not have institute
+			.leftJoin("s.folders", "f")
+			.leftJoin("f.sharedWith", "su")
+			.leftJoin("f.sharedWithGroups", "sg")
+			.leftJoin("sg.users", "gu")
+			.add(query.isNull("s.deletedOn"));
+
+		if (crit.userId() != null || crit.instituteId() != null) {
+			Conjunction creatorCond = query.conjunction();
+			if (crit.userId() != null) {
+				creatorCond.add(query.eq("c.id", crit.userId()));
+			} else {
+				creatorCond.add(query.eq("i.id", crit.instituteId()));
+			}
+
+			query.add(
+				query.disjunction()
+					.add(query.eq("f.sharedWithAll", true))
+					.add(creatorCond)
+					.add(query.eq("su.id", crit.userId()))
+					.add(query.eq("gu.id", crit.userId()))
+			);
+		}
+
+		if (crit.folderId() != null && crit.folderId() >= 0L) {
+			query.add(query.eq("f.id", crit.folderId()));
+		}
 
 		addCpCondition(query, crit.cpId());
 		addSearchConditions(query, crit.query());
+
+		if (CollectionUtils.isNotEmpty(crit.ids())) {
+			query.add(query.in("s.id", crit.ids()));
+		}
+
+		if (CollectionUtils.isNotEmpty(crit.notInIds())) {
+			query.add(query.not(query.in("s.id", crit.notInIds())));
+		}
+
+		addActiveCpGroupCond(query);
 		return query;
 	}
 
-	private Criteria addCpCondition(Criteria query, Long cpId) {
+	private Criteria<?> addCpCondition(Criteria<?> query, Long cpId) {
 		if (cpId == null) {
 			return query;
 		}
 
 		return query.add(
-			Restrictions.or(
-				Restrictions.isNull("s.cpId"),
-				Restrictions.eq("s.cpId", cpId)
+			query.or(
+				query.isNull("s.cpId"),
+				query.eq("s.cpId", cpId)
 			)
 		);
 	}
 
-	private Criteria addSearchConditions(Criteria query, String searchTerm) {
+	private Criteria<?> addSearchConditions(Criteria<?> query, String searchTerm) {
 		if (StringUtils.isBlank(searchTerm)) {
 			return query;
 		}
 
-		Disjunction srchCond = Restrictions.disjunction();
+		Disjunction srchCond = query.disjunction();
 		if (StringUtils.isNumeric(searchTerm)) {
-			srchCond.add(Restrictions.eq("s.id", Long.parseLong(searchTerm)));
+			srchCond.add(query.eq("s.id", Long.parseLong(searchTerm)));
 		}
 
-		srchCond.add(Restrictions.ilike("s.title", searchTerm, MatchMode.ANYWHERE));
+		srchCond.add(query.ilike("s.title", searchTerm));
 		return query.add(srchCond);
+	}
+
+	private Criteria<?> addActiveCpGroupCond(Criteria<?> query) {
+		return query.leftJoin("s.cp", "cp")
+			.leftJoin("s.cpGroup", "cpGroup")
+			.add(query.or(query.isNull("cp.id"), query.ne("cp.activityStatus", "Disabled")))
+			.add(query.or(query.isNull("cpGroup.id"), query.ne("cpGroup.activityStatus", "Disabled")));
 	}
 
 	private static final String INSERT_QUERY_CHANGE_LOG_SQL = FQN + ".insertQueryChangeLog"; 

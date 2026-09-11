@@ -3,11 +3,13 @@ package com.krishagni.catissueplus.rest.controller;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Calendar;
+import java.util.Collections;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletResponse;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -20,18 +22,21 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.multipart.MultipartFile;
-
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.gson.Gson;
+
+
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
 import com.krishagni.catissueplus.core.common.events.ResponseEvent;
 import com.krishagni.catissueplus.core.de.domain.SelectField;
-import com.krishagni.catissueplus.core.de.events.ListQueryAuditLogsCriteria;
+import com.krishagni.catissueplus.core.de.events.QueryAuditLogsListCriteria;
 import com.krishagni.catissueplus.core.de.events.ListSavedQueriesCriteria;
 import com.krishagni.catissueplus.core.de.events.QueryAuditLogSummary;
 import com.krishagni.catissueplus.core.de.events.SavedQueriesList;
 import com.krishagni.catissueplus.core.de.events.SavedQueryDetail;
 import com.krishagni.catissueplus.core.de.services.QueryService;
+import com.krishagni.catissueplus.core.exporter.services.ExportService;
+import com.krishagni.catissueplus.core.importer.services.ImportService;
 
 import edu.common.dynamicextensions.nutility.IoUtil;
 
@@ -40,37 +45,81 @@ import edu.common.dynamicextensions.nutility.IoUtil;
 public class SavedQueriesController {
 
 	@Autowired
-	private HttpServletRequest httpServletRequest;
+	private QueryService querySvc;
 
 	@Autowired
-	private QueryService querySvc;
+	private ImportService importSvc;
+
+	@Autowired
+	private ExportService exportSvc;
 	
 	@RequestMapping(method = RequestMethod.GET)
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody
-	public SavedQueriesList getSavedQueries(
+	public Object getSavedQueries(
 		@RequestParam(value = "cpId", required = false)
 		Long cpId,
+
+		@RequestParam(value = "userId", required = false)
+		Long userId,
+
+		@RequestParam(value = "folderId", required = false)
+		Long folderId,
 
 		@RequestParam(value = "searchString", required = false, defaultValue = "")
 		String searchString,
 
-		@RequestParam(value = "start", required = false, defaultValue = "0")
-		int start,
+		@RequestParam(value = "startAt", required = false, defaultValue = "0")
+		int startAt,
 			
-		@RequestParam(value = "max", required = false, defaultValue = "25")
-		int max,
+		@RequestParam(value = "maxResults", required = false, defaultValue = "25")
+		int maxResults,
 
 		@RequestParam(value = "countReq", required = false, defaultValue = "false")
-		boolean countReq) {
+		boolean countReq,
+
+		@RequestParam(value = "orderByStarred", required = false, defaultValue = "false")
+		boolean orderByStarred,
+
+		@RequestParam(value = "returnList", required = false, defaultValue = "false")
+		boolean returnList) {
 		
 		ListSavedQueriesCriteria crit = new ListSavedQueriesCriteria()
 			.cpId(cpId)
+			.userId(userId)
+			.folderId(folderId)
 			.query(searchString)
 			.countReq(countReq)
-			.startAt(start)
-			.maxResults(max);
-		return response(querySvc.getSavedQueries(request(crit)));
+			.orderByStarred(orderByStarred)
+			.startAt(startAt)
+			.maxResults(maxResults);
+		SavedQueriesList list = response(querySvc.getSavedQueries(request(crit)));
+		return returnList ? list.getQueries() : list;
+	}
+
+	@RequestMapping(method = RequestMethod.GET, value = "/count")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public Map<String, Long> getSavedQueriesCount(
+		@RequestParam(value = "cpId", required = false)
+		Long cpId,
+
+		@RequestParam(value = "userId", required = false)
+		Long userId,
+
+		@RequestParam(value = "searchString", required = false, defaultValue = "")
+		String searchString,
+
+		@RequestParam(value = "folderId", required = false)
+		Long folderId) {
+
+		ListSavedQueriesCriteria crit = new ListSavedQueriesCriteria()
+			.cpId(cpId)
+			.userId(userId)
+			.query(searchString)
+			.folderId(folderId);
+		Long count = response(querySvc.getSavedQueriesCount(request(crit)));
+		return Collections.singletonMap("count", count);
 	}
 
 	@RequestMapping(method = RequestMethod.GET, value = "/{id}")
@@ -83,6 +132,7 @@ public class SavedQueriesController {
 	@RequestMapping(method = RequestMethod.GET, value = "/{id}/definition-file")
 	@ResponseStatus(HttpStatus.OK)	
 	public void getQueryDefFile(@PathVariable("id") Long queryId, HttpServletResponse response) {
+		Date startTime = Calendar.getInstance().getTime();
 		String queryDef = response(querySvc.getQueryDef(request(queryId)));
 
 		response.setContentType("application/json");
@@ -92,6 +142,7 @@ public class SavedQueriesController {
 		try {
 			in = new ByteArrayInputStream(queryDef.getBytes());
 			IoUtil.copy(in, response.getOutputStream());
+			exportSvc.saveJob("saved_query", startTime, Collections.singletonMap("queryId", queryId.toString()));
 		} catch (IOException e) {
 			throw new RuntimeException("Error sending file", e);
 		} finally {
@@ -102,11 +153,14 @@ public class SavedQueriesController {
 	@RequestMapping(method = RequestMethod.POST, value="/definition-file")
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody		
-	public SavedQueryDetail importQuery(@PathVariable("file") MultipartFile file)
+	public SavedQueryDetail importQuery(@RequestParam("file") MultipartFile file)
 	throws IOException {
+		Date startTime = Calendar.getInstance().getTime();
 		String json = new String(file.getBytes());
 		SavedQueryDetail detail = new Gson().fromJson(json, SavedQueryDetail.class);
-		return saveQuery(detail);
+		SavedQueryDetail result = saveQuery(detail);
+		importSvc.saveJob("saved_query", "CREATE", startTime, Collections.singletonMap("queryId", result.getId().toString()));
+		return result;
 	}
 	
 	@RequestMapping(method = RequestMethod.POST)
@@ -147,11 +201,25 @@ public class SavedQueriesController {
 			@RequestParam(value = "maxResults", required = false, defaultValue = "25")
 			int maxResults) {
 		
-		ListQueryAuditLogsCriteria crit = new ListQueryAuditLogsCriteria()
+		QueryAuditLogsListCriteria crit = new QueryAuditLogsListCriteria()
 			.query(savedQueryId.toString()).startAt(startAt).maxResults(maxResults);
 		return response(querySvc.getAuditLogs(request(crit)));
 	}
-	
+
+	@RequestMapping(method = RequestMethod.POST, value = "/{id}/labels")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public Map<String, Boolean> addLabel(@PathVariable("id") Long queryId) {
+		return Collections.singletonMap("status", querySvc.toggleStarredQuery(queryId, true));
+	}
+
+	@RequestMapping(method = RequestMethod.DELETE, value = "/{id}/labels")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public Map<String, Boolean> removeLabel(@PathVariable("id") Long queryId) {
+		return Collections.singletonMap("status", querySvc.toggleStarredQuery(queryId, false));
+	}
+
 	private void curateSavedQueryDetail(SavedQueryDetail detail) {
 		Object[] selectList = detail.getSelectList();
 		if (selectList == null) {

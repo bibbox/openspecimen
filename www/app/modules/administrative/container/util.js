@@ -1,6 +1,9 @@
 
 angular.module('os.administrative.container.util', ['os.common.box'])
-  .factory('ContainerUtil', function($translate, BoxLayoutUtil, NumberConverterUtil, SpecimenUtil, Util) {
+  .factory('ContainerUtil', function(
+    $translate, BoxLayoutUtil, NumberConverterUtil, SpecimenUtil, Util, SpecimenTypeUtil) {
+
+    var spmnTypeProps;
 
     function createSpmnPos(container, label, x, y, oldOccupant) {
       return {
@@ -24,6 +27,44 @@ angular.module('os.administrative.container.util', ['os.common.box'])
       }
 
       return occupant.occupyingEntityName;
+    }
+
+    function addColorCode(el, spmnClass, type) {
+      var ret = getColorCode(spmnClass, type);
+      el.css((ret && ret.css) || {});
+    }
+
+    function getColorCode(spmnClass, type) {
+      var key = 'container_color_code';
+      var props = spmnTypeProps[spmnClass + ':' + type];
+      if (props && props.props && props.props[key]) {
+        return {specimenClass: spmnClass, type: type, css: styleToJson(props.props[key])};
+      } else {
+        props = spmnTypeProps[spmnClass + ':*'];
+        if (props && props.props && props.props[key]) {
+          return {specimenClass: spmnClass, css: styleToJson(props.props[key])};
+        }
+      }
+
+      return null;
+    }
+
+    // input is like: background = red, opacity = 0.6
+    function styleToJson(input) {
+      var kvList = input.split(',');
+      var result = {};
+      angular.forEach(kvList,
+        function(kv) {
+          var kvPair = kv.split('=');
+          if (!kvPair || kvPair.length <= 1) {
+            return;
+          }
+
+          result[kvPair[0].trim()] = kvPair[1].trim();
+        }
+      );
+
+      return result;
     }
 
     function getOpts(container, allowClicks, showAddMarker, useBarcode) {
@@ -52,11 +93,28 @@ angular.module('os.administrative.container.util', ['os.common.box'])
         occupantDisplayHtml: function(occupant) {
           var displayName = undefined;
           var cssClass = '';
+
+          var el = angular.element('<span class="slot-desc"/>');
+
           if (occupant.occuypingEntity == 'specimen' && !!occupant.occupantProps) {
             displayName = getOccupantDisplayName(container, occupant);
 
             if (occupant.occupantProps.reserved) {
               cssClass = 'slot-reserved';
+            } else {
+              var spmnClass = occupant.occupantProps.specimenClass;
+              var type = occupant.occupantProps.type;
+
+              if (spmnTypeProps) {
+                addColorCode(el, spmnClass, type);
+              } else {
+                SpecimenTypeUtil.getTypesWithProps().then(
+                  function(typeProps) {
+                    spmnTypeProps = typeProps;
+                    addColorCode(el, spmnClass, type);
+                  }
+                );
+              }
             }
           } else if (!!occupant.occupyingEntityName) {
             displayName = occupant.occupyingEntityName;
@@ -65,9 +123,7 @@ angular.module('os.administrative.container.util', ['os.common.box'])
             cssClass = 'slot-blocked';
           }
 
-          return angular.element('<span class="slot-desc"/>')
-            .addClass(cssClass).attr('title', displayName)
-            .append(displayName);
+          return el.addClass(cssClass).attr('title', displayName).append(displayName);
         },
         allowClicks: allowClicks,
         isVacatable: function(occupant) {
@@ -82,12 +138,12 @@ angular.module('os.administrative.container.util', ['os.common.box'])
 
     function getSpecimens(labels, filterOpts) {
       return SpecimenUtil.getSpecimens(labels, filterOpts).then(
-        function(specimens) {
-          if (!specimens) {
-            return specimens;
+        function(result) {
+          if (!result || !result.specimens || result.specimens.length == 0) {
+            return null;
           }
 
-          return confirmTransferAction(!labels, specimens);
+          return confirmTransferAction(!labels, result.specimens);
         }
       );
     }
@@ -128,6 +184,12 @@ angular.module('os.administrative.container.util', ['os.common.box'])
         return {map: result.occupants, noFreeLocs: result.noFreeLocs};
       },
 
-      getSpecimens: getSpecimens
+      getSpecimens: getSpecimens,
+
+      getColorCode: getColorCode,
+
+      getTypesProps: function() {
+        return spmnTypeProps;
+      }
     };
   });

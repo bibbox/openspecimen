@@ -12,26 +12,31 @@ public class ConfigSettingDaoImpl extends AbstractDao<ConfigSetting> implements 
 	public Class<ConfigSetting> getType() {
 		return ConfigSetting.class;
 	}
-	
-	@SuppressWarnings("unchecked")
+
 	@Override
 	public List<ConfigSetting> getAllSettings() {
-		return getCurrentSession().getNamedQuery(GET_ALL).list();
+		return createNamedQuery(GET_ALL, ConfigSetting.class).list();
 	}
-	
-	@SuppressWarnings("unchecked")
+
 	@Override
 	public List<ConfigSetting> getAllSettingsByModule(String moduleName) {
-		return getCurrentSession().getNamedQuery(GET_ALL_BY_MODULE)
-			.setString("name", moduleName)
+		return createNamedQuery(GET_ALL_BY_MODULE, ConfigSetting.class)
+			.setParameter("name", moduleName)
 			.list();
 	}
 
-	@SuppressWarnings("unchecked")
 	@Override
 	public List<ConfigSetting> getSettingsLaterThan(Long settingId) {
-		return getCurrentSession().getNamedQuery(GET_ALL_LATER_THAN)
+		return createNamedQuery(GET_ALL_LATER_THAN, ConfigSetting.class)
 			.setParameter("settingId", settingId)
+			.list();
+	}
+
+	@Override
+	public List<ConfigSetting> getHistory(String module, String property) {
+		return createNamedQuery(GET_ALL_PROP_SETTINGS, ConfigSetting.class)
+			.setParameter("moduleName", module)
+			.setParameter("propName", property)
 			.list();
 	}
 
@@ -42,4 +47,6 @@ public class ConfigSettingDaoImpl extends AbstractDao<ConfigSetting> implements 
 	private static final String GET_ALL_BY_MODULE = FQN + ".getAllByModule";
 
 	private static final String GET_ALL_LATER_THAN = FQN + ".getAllLaterThan";
+
+	private static final String GET_ALL_PROP_SETTINGS = FQN + ".getAllPropertySettings";
 }

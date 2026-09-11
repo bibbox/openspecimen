@@ -4,21 +4,39 @@ angular.module('os.administrative.dp.list', ['os.administrative.models'])
     $scope, $state, DistributionProtocol, Util, DeleteUtil,
     PvManager, ListPagerOpts, CheckList) {
 
-    var pagerOpts, filterOpts;
+    var pagerOpts, filterOpts, ctx;
 
     function init() {
       pagerOpts = $scope.pagerOpts = new ListPagerOpts({listSizeGetter: getDpsCount});
-      filterOpts = $scope.dpFilterOpts = Util.filterOpts({includeStats: true, maxResults: pagerOpts.recordsPerPage + 1});
-      $scope.ctx = {};
+      filterOpts = $scope.dpFilterOpts = Util.filterOpts({
+        orderByStarred: true,
+        includeStats: true,
+        maxResults: pagerOpts.recordsPerPage + 1
+      });
+
+      ctx = $scope.ctx = {
+        exportDetail: {objectType: 'distributionProtocol'},
+        emptyState: {
+          empty: true,
+          loading: true,
+          emptyMessage: 'dp.empty_list',
+          loadingMessage: 'dp.loading_list'
+        }
+      };
+
       loadDps($scope.dpFilterOpts);
       Util.filter($scope, 'dpFilterOpts', loadDps);
       loadActivityStatuses();
     }
     
     function loadDps(filterOpts) {
+      ctx.emptyState.loading = true;
       DistributionProtocol.query(filterOpts).then(
         function(dps) {
+          ctx.emptyState.loading = false;
+          ctx.emptyState.empty = dps.length <= 0;
           pagerOpts.refreshOpts(dps);
+
           $scope.distributionProtocols = dps;
           $scope.ctx.checkList = new CheckList(dps);
         }
@@ -65,6 +83,17 @@ angular.module('os.administrative.dp.list', ['os.administrative.models'])
 
     $scope.pageSizeChanged = function() {
       filterOpts.maxResults = pagerOpts.recordsPerPage + 1;
+    }
+
+    $scope.toggleStar = function(dp) {
+      var q = dp.starred ? dp.unstar() : dp.star();
+      q.then(
+        function(result) {
+          if (result.status == true) {
+            dp.starred = !dp.starred;
+          }
+        }
+      );
     }
 
     init();

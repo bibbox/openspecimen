@@ -25,7 +25,8 @@ angular.module('os.biospecimen.cp',
           $scope.cpResource = {
             createOpts: {resource: 'CollectionProtocol', operations: ['Create']},
             updateOpts: {resource: 'CollectionProtocol', operations: ['Update']},
-            deleteOpts: {resource: 'CollectionProtocol', operations: ['Delete']}
+            deleteOpts: {resource: 'CollectionProtocol', operations: ['Delete']},
+            importOpts: {resource: 'CollectionProtocol', operations: ['Export Import']}
           }
           
           $scope.participantResource = {
@@ -34,7 +35,7 @@ angular.module('os.biospecimen.cp',
           }
           
           $scope.specimenResource = {
-            updateOpts: {resource: 'VisitAndSpecimen', operations: ['Create', 'Update']}
+            updateOpts: {resource: 'Specimen', operations: ['Create', 'Update']}
           }
           
           $scope.codingEnabled = $scope.global.appProps.cp_coding_enabled;
@@ -46,50 +47,72 @@ angular.module('os.biospecimen.cp',
               operations: ['Create']
             });
 
+            var cpUpdateAllowed = AuthorizationService.isAllowed({
+              resource: 'CollectionProtocol',
+              operations: ['Update']
+            });
+
+            var cpEximAllowed = AuthorizationService.isAllowed({
+              resource: 'CollectionProtocol',
+              operations: ['Export Import']
+            });
+
             var participantEximAllowed = AuthorizationService.isAllowed({
               resource: 'ParticipantPhi',
               operations: ['Export Import']
             });
 
-            var visitSpmnEximAllowed = AuthorizationService.isAllowed({
-              resource: 'VisitAndSpecimen',
+            var visitEximAllowed = AuthorizationService.isAllowed({
+              resource: 'Visit',
               operations: ['Export Import']
+            });
+
+            var spmnEximAllowed = AuthorizationService.isAllowed({
+              resources: ['Specimen', 'PrimarySpecimen'],
+              operations: ['Export Import']
+            });
+
+            var allSpmnEximAllowed = AuthorizationService.isAllowed({
+              resources: ['Specimen'],
+              operations: ['Export Import']
+            });
+
+            var consentsEximAllowed = AuthorizationService.isAllowed({
+              resources: ['Consent'],
+              operations: ['Export Import']
+            });
+
+            var queryReadAllowed = AuthorizationService.isAllowed({
+              resources: ['Query'],
+              operations: ['Read']
             });
 
             return {
               cpCreateAllowed: cpCreateAllowed,
+              cpUpdateAllowed: cpCreateAllowed || cpUpdateAllowed,
+              cpImportAllowed: cpEximAllowed,
               participantImportAllowed: participantEximAllowed,
-              visitSpecimenImportAllowed: visitSpmnEximAllowed,
+              visitImportAllowed: visitEximAllowed,
+              specimenImportAllowed: spmnEximAllowed,
+              cpExportAllowed: cpEximAllowed,
               participantExportAllowed: participantEximAllowed,
-              visitSpecimenExportAllowed: visitSpmnEximAllowed
+              visitExportAllowed: visitEximAllowed,
+              specimenExportAllowed: spmnEximAllowed,
+              allSpmnEximAllowed: allSpmnEximAllowed,
+              consentsEximAllowed: consentsEximAllowed,
+              queryReadAllowed: queryReadAllowed
             }
           }
         },
         parent: 'signed-in'
       })
       .state('cp-list', {
-        url: '?filters', 
-        templateUrl: 'modules/biospecimen/cp/list.html',
-        controller: 'CpListCtrl',
-        parent: 'cps',
-        resolve: {
-          cpList: function($stateParams, CollectionProtocol, ListPagerOpts, Util) {
-            var filterOpts = Util.filterOpts({maxResults: ListPagerOpts.MAX_PAGE_RECS + 1}, $stateParams.filters);
-            return CollectionProtocol.list(filterOpts);
-          },
-          
-          view: function($rootScope, $state, cpList) {
-            if ($rootScope.stateChangeInfo.fromState.name == 'login' ||
-              $rootScope.stateChangeInfo.fromState.name == 'sc-catalog-dashboard' ||
-              $rootScope.stateChangeInfo.fromState.parent == 'sc-catalog-main')  {
-              if (cpList.length == 1) {
-                $state.go('cp-summary-view', {cpId: cpList[0].id});
-              } else if (cpList.length == 0) {
-                $state.go('home');
-              }
-            }
-          }
-        }
+        url: '/cps',
+        template: '<div>Discontinued</div>',
+        controller: function(VueApp) {
+          VueApp.setVueView('cps');
+        },
+        parent: 'signed-in'
       })
       .state('cp-addedit', {
         url: '/addedit/:cpId?mode',
@@ -125,12 +148,28 @@ angular.module('os.biospecimen.cp',
 
           allowedEntityTypes: function(cpsCtx) {
             var entityTypes = [];
+            if (cpsCtx.cpImportAllowed) {
+              entityTypes.push('CollectionProtocol');
+            }
+
             if (cpsCtx.participantImportAllowed) {
               entityTypes = entityTypes.concat(['CommonParticipant', 'Participant']);
             }
 
-            if (cpsCtx.visitSpecimenImportAllowed) {
-              entityTypes = entityTypes.concat(['SpecimenCollectionGroup', 'Specimen', 'SpecimenEvent']);
+            if (cpsCtx.consentsEximAllowed) {
+              entityTypes.push('Consent');
+            }
+
+            if (cpsCtx.visitImportAllowed) {
+              entityTypes.push('SpecimenCollectionGroup');
+            }
+
+            if (cpsCtx.specimenImportAllowed) {
+              entityTypes = entityTypes.concat(['Specimen', 'SpecimenEvent']);
+
+              if (cpsCtx.allSpmnEximAllowed) {
+                entityTypes.push('DerivativeAndAliquots');
+              }
             }
 
             return entityTypes;
@@ -153,9 +192,12 @@ angular.module('os.biospecimen.cp',
         resolve: {
           importDetail: function(ImportUtil) {
             var objectTypes = [
-              'cprMultiple', 'otherCpr', 'cpr', 'participant', 'consent', 'visit',
-              'specimen', 'specimenDerivative', 'specimenAliquot',
-              'masterSpecimen', 'specimenDisposal', 'extensions'
+              'cp', 'cpe', 'sr',
+              'cprMultiple', 'otherCpr', 'cpr', 'participant', 'consent', 'econsentsDocumentResponse',
+              'visit', 'specimen', 'specimenDerivative', 'specimenAliquot',
+              'masterSpecimen', 'containerSpecimen', 'specimenDisposal', 'extensions',
+              'containerTransferEvent', 'specimenDisposalEvent', 'specimenReservedEvent',
+              'specimenReservationCancelEvent', 'specimenReturnEvent', 'specimenTransferEvent'
             ];
 
             return {
@@ -181,16 +223,25 @@ angular.module('os.biospecimen.cp',
 
           allowedEntityTypes: function(cp, cpsCtx) {
             var entityTypes = [];
+
+            if (cpsCtx.cpExportAllowed) {
+              entityTypes.push('CollectionProtocol');
+            }
+
             if (cpsCtx.participantExportAllowed) {
               entityTypes.push('CommonParticipant');
               entityTypes.push('Participant');
             }
 
-            if (cpsCtx.visitSpecimenExportAllowed) {
+            if (cpsCtx.consentsEximAllowed) {
+              entityTypes.push('Consent');
+            }
+
+            if (cpsCtx.visitExportAllowed) {
               entityTypes.push('SpecimenCollectionGroup');
             }
 
-            if (cpsCtx.visitSpecimenExportAllowed) {
+            if (cpsCtx.specimenExportAllowed) {
               entityTypes.push('Specimen');
               entityTypes.push('SpecimenEvent');
             }
@@ -209,32 +260,77 @@ angular.module('os.biospecimen.cp',
         parent: 'cps'
       })
       .state('cp-detail', {
-        url: '/:cpId',
-        templateUrl: 'modules/biospecimen/cp/detail.html',
-        parent: 'cps',
-        resolve: {
-          cp: function($stateParams, CollectionProtocol) {
-            return CollectionProtocol.getById($stateParams.cpId);
-          }
+        url: '/cps/:cpId',
+        template: '<div>Unused</div>',
+        controller: function($state, $stateParams, VueApp) {
+          console.log($stateParams);
+          VueApp.setVueView('cps/' + $stateParams.cpId + '/detail/overview');
         },
-        controller: 'CpDetailCtrl',
-        breadcrumb: {
-          title: '{{cp.title}}',
-          state: 'cp-detail.overview'
-        }
+        parent: 'signed-in'
       })
       .state('cp-detail.overview', {
         url: '/overview',
         templateUrl: 'modules/biospecimen/cp/overview.html',
         parent: 'cp-detail'
       })
+      .state('cp-detail.settings.import-events', {
+        url: '/import-events',
+        templateUrl: 'modules/common/import/add.html',
+        controller: 'ImportObjectCtrl',
+        resolve: {
+          importDetail: function(cp) {
+            return {
+              objectType: 'cpe',
+              title: 'cp.import_events',
+              objectParams: {'cpId': cp.id},
+              onSuccess: {state: 'cp-detail.settings.import-jobs'}
+            };
+          }
+        },
+        parent: 'cp-detail.settings'
+      })
+      .state('cp-detail.settings.import-srs', {
+        url: '/import-reqs',
+        templateUrl: 'modules/common/import/add.html',
+        controller: 'ImportObjectCtrl',
+        resolve: {
+          importDetail: function(cp) {
+            return {
+              objectType: 'sr',
+              title: 'cp.import_reqs',
+              objectParams: {'cpId': cp.id},
+              onSuccess: {state: 'cp-detail.settings.import-jobs'}
+            };
+          }
+        },
+        parent: 'cp-detail.settings'
+      })
+      .state('cp-detail.settings.import-jobs', {
+        url: '/import-jobs',
+        templateUrl: 'modules/common/import/list.html',
+        controller: 'ImportJobsListCtrl',
+        resolve: {
+          importDetail: function(cp) {
+            return {
+              title: 'bulk_imports.jobs_list',
+              objectTypes: ['cpe', 'sr'],
+              objectParams: {'cpId': cp.id}
+            };
+          }
+        },
+        parent: 'cp-detail.settings'
+      })
       .state('cp-detail.consents', {
         url: '/consents',
         templateUrl: 'modules/biospecimen/cp/consents.html',
         parent: 'cp-detail',
         resolve: {
-          consentTiers: function(cp) {
-            return cp.getConsentTiers();
+          hasEc: function($injector) {
+            return $injector.has('ecDocument');
+          },
+
+          consentTiers: function(cp, hasEc) {
+            return hasEc ? null : cp.getConsentTiers();
           }
         },
         controller: 'CpConsentsCtrl'
@@ -244,7 +340,23 @@ angular.module('os.biospecimen.cp',
         parent: 'cp-detail',
         resolve: {
           events: function($stateParams, cp, CollectionProtocolEvent) {
-            return CollectionProtocolEvent.listFor(cp.id);
+            return CollectionProtocolEvent.listFor(cp.id).then(
+              function(events) {
+                if (events.length > 0 || !cp.specimenCentric) {
+                  return events;
+                } else {
+                  return [new CollectionProtocolEvent({id: -1, cpId: cp.id})];
+                }
+              }
+            );
+          },
+
+          mrnAccessRestriction: function(SettingUtil) {
+            return SettingUtil.getSetting('biospecimen', 'mrn_restriction_enabled').then(
+              function(setting) {
+                return setting.value == 'true';
+              }
+            );
           }
         },
         controller: 'CpEventsCtrl'
@@ -254,9 +366,21 @@ angular.module('os.biospecimen.cp',
         templateUrl: 'modules/biospecimen/cp/specimens.html',
         parent: 'cp-detail.events',
         resolve: {
+          barcodingEnabled: function(cp, SettingUtil) {
+            if (cp.barcodingEnabled) {
+              return true;
+            }
+
+            return SettingUtil.getSetting('biospecimen', 'enable_spmn_barcoding').then(
+              function(setting) {
+                return setting.value.toLowerCase() == 'true';
+              }
+            );
+          },
+
           specimenRequirements: function($stateParams, SpecimenRequirement) {
             var eventId = $stateParams.eventId;
-            if (!eventId) {
+            if (!eventId || eventId == -1) {
               return [];
             }
 
@@ -273,6 +397,12 @@ angular.module('os.biospecimen.cp',
         },
         controller: 'CpSpecimensCtrl'
       })
+      .state('cp-detail.versions', {
+        url: '/published-versions',
+        templateUrl: 'modules/biospecimen/cp/published-versions.html',
+        parent: 'cp-detail',
+        controller: 'CpPublishedVersionsCtrl'
+      })
       .state('cp-detail.settings', {
         url: '/settings',
         abstract: true,
@@ -287,7 +417,12 @@ angular.module('os.biospecimen.cp',
         url: '/label',
         templateUrl: 'modules/biospecimen/cp/label-settings.html',
         parent: 'cp-detail.settings',
-        controller: 'CpLabelSettingsCtrl'
+        controller: 'CpLabelSettingsCtrl',
+        resolve: {
+          hasSupplies: function($injector) {
+            return $injector.has('Supply');
+          }
+        }
       })
       .state('cp-detail.settings.forms', {
         url: '/forms',
@@ -346,7 +481,10 @@ angular.module('os.biospecimen.cp',
     .run(function(UrlResolver, QuickSearchSvc) {
       UrlResolver.regUrlState('cp-overview', 'cp-detail.overview', 'cpId');
 
-      var opts = {caption: 'entities.collection_protocol', state: 'cp-detail.overview'};
+      var opts = {
+        caption: 'entities.collection_protocol',
+        vueUrl: 'cps/:entityId/detail/overview'
+      };
       QuickSearchSvc.register('collection_protocol', opts);
     });
   

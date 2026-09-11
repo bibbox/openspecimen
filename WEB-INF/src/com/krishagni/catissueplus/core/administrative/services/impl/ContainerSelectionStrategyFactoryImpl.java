@@ -5,15 +5,14 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 
 import com.krishagni.catissueplus.core.administrative.services.ContainerSelectionRule;
 import com.krishagni.catissueplus.core.administrative.services.ContainerSelectionStrategy;
 import com.krishagni.catissueplus.core.administrative.services.ContainerSelectionStrategyFactory;
+import com.krishagni.catissueplus.core.common.util.LogUtil;
 
 public class ContainerSelectionStrategyFactoryImpl implements ContainerSelectionStrategyFactory {
-	private Log logger = LogFactory.getLog(ContainerSelectionStrategyFactoryImpl.class);
+	private static final LogUtil logger = LogUtil.getLogger(ContainerSelectionStrategyFactoryImpl.class);
 
 	private Map<String, Class> strategyClasses = new HashMap<>();
 
@@ -54,7 +53,7 @@ public class ContainerSelectionStrategyFactoryImpl implements ContainerSelection
 				return null;
 			}
 
-			return klass.newInstance();
+			return klass.getDeclaredConstructor().newInstance();
 		} catch (Exception e) {
 			throw new RuntimeException("Error instantiating class", e);
 		}

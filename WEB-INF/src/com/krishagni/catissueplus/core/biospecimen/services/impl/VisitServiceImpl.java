@@ -4,17 +4,18 @@ package com.krishagni.catissueplus.core.biospecimen.services.impl;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.InitializingBean;
 
@@ -22,7 +23,9 @@ import com.krishagni.catissueplus.core.audit.services.impl.DeleteLogUtil;
 import com.krishagni.catissueplus.core.biospecimen.ConfigParams;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
 import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
+import com.krishagni.catissueplus.core.biospecimen.domain.SprSavedEvent;
 import com.krishagni.catissueplus.core.biospecimen.domain.Visit;
+import com.krishagni.catissueplus.core.biospecimen.domain.VisitPreSaveEvent;
 import com.krishagni.catissueplus.core.biospecimen.domain.VisitSavedEvent;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.CpErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.CpeErrorCode;
@@ -57,6 +60,7 @@ import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.DependentEntityDetail;
 import com.krishagni.catissueplus.core.common.events.EntityQueryCriteria;
 import com.krishagni.catissueplus.core.common.events.LabelPrintJobSummary;
+import com.krishagni.catissueplus.core.common.events.LabelTokenDetail;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
 import com.krishagni.catissueplus.core.common.events.ResponseEvent;
 import com.krishagni.catissueplus.core.common.service.ConfigurationService;
@@ -65,13 +69,14 @@ import com.krishagni.catissueplus.core.common.service.LabelPrinter;
 import com.krishagni.catissueplus.core.common.service.ObjectAccessor;
 import com.krishagni.catissueplus.core.common.service.impl.EventPublisher;
 import com.krishagni.catissueplus.core.common.util.ConfigUtil;
+import com.krishagni.catissueplus.core.common.util.LogUtil;
 import com.krishagni.catissueplus.core.common.util.Utility;
 import com.krishagni.catissueplus.core.exporter.domain.ExportJob;
 import com.krishagni.catissueplus.core.exporter.services.ExportService;
 import com.krishagni.rbac.common.errors.RbacErrorCode;
 
 public class VisitServiceImpl implements VisitService, ObjectAccessor, InitializingBean {
-	private static final Log logger = LogFactory.getLog(VisitServiceImpl.class);
+	private static final LogUtil logger = LogUtil.getLogger(VisitServiceImpl.class);
 
 	private static String defaultVisitSprDir;
 
@@ -144,9 +149,12 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 	@Override
 	public ResponseEvent<List<VisitDetail>> getVisits(RequestEvent<VisitsListCriteria> criteria) {
 		VisitsListCriteria crit = criteria.getPayload();
+		if (StringUtils.isBlank(crit.name()) && StringUtils.isBlank(crit.sprNumber())) {
+			return ResponseEvent.response(getVisits0(crit));
+		}
+
 		List<Visit> visits = new ArrayList<>();
 		boolean hasPhiFields = false;
-
 		if (StringUtils.isNotEmpty(crit.name())) {
 			visits.add(getVisit(null, crit.name()));
 		} else if (StringUtils.isNotEmpty(crit.sprNumber())) {
@@ -239,6 +247,7 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 			visit.setOpComments(crit.getReason());
 
 			DeleteLogUtil.getInstance().log(visit);
+			EventPublisher.getInstance().publish(new VisitSavedEvent(visit));
 			return ResponseEvent.response(VisitDetail.from(visit));
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
@@ -272,7 +281,7 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 			// 
 			// Step 3: Collect specimens
 			//
-			RequestEvent<List<SpecimenDetail>> collectSpecimensReq = new RequestEvent<List<SpecimenDetail>>(specimens);
+			RequestEvent<List<SpecimenDetail>> collectSpecimensReq = new RequestEvent<>(specimens);
 			ResponseEvent<List<SpecimenDetail>> collectSpecimensResp = specimenSvc.collectSpecimens(collectSpecimensReq);
 			collectSpecimensResp.throwErrorIfUnsuccessful();
 			
@@ -331,7 +340,7 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 
 			FileDetail fileDetail = new FileDetail();
 			fileDetail.setFileOut(file);
-			fileDetail.setFilename(visit.getName() + fileExtension);
+			fileDetail.setFilename(Utility.sanitizeFilename(visit.getName()) + fileExtension);
 			return ResponseEvent.response(fileDetail);
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
@@ -351,6 +360,9 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 			String filename = detail.getFilename();
 			if (detail.isTextContent() || (detail.isPdfContent() && isExtractSprTextEnabled(visit))) {
 				String sprText = getTextFromReq(detail);
+				if (StringUtils.isBlank(sprText)) {
+					return ResponseEvent.userError(VisitErrorCode.SPR_TEXT_NA);
+				}
 
 				File sprFile = new File(getSprDirPath(visit.getId()) + File.separator + "spr.txt");
 				FileUtils.writeStringToFile(sprFile, sprText, (String) null, false);
@@ -363,7 +375,8 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 				FileUtils.copyInputStreamToFile(detail.getFileIn(), sprFile);
 				visit.updateSprName(filename);
 			}
-			
+
+			EventPublisher.getInstance().publish(new SprSavedEvent(visit));
 			return new ResponseEvent<>(filename);
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
@@ -390,6 +403,7 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 			}
 			
 			FileUtils.writeStringToFile(file, detail.getSprText(), (String) null, false);
+			EventPublisher.getInstance().publish(new SprSavedEvent(visit));
 			return ResponseEvent.response(detail.getSprText());
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
@@ -425,7 +439,8 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 			if (isFileDeleted) {
 				visit.setSprName(null);
 			}
-			
+
+			EventPublisher.getInstance().publish(new SprSavedEvent(visit));
 			return ResponseEvent.response(isFileDeleted);
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
@@ -457,6 +472,7 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 		}
 		
 		visit.setSprLocked(detail.isLocked());
+		EventPublisher.getInstance().publish(new SprSavedEvent(visit));
 		return ResponseEvent.response(detail);
 	}
 
@@ -472,15 +488,15 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 		}
 	}
 
+	@Override
+	public List<LabelTokenDetail> getPrintLabelTokens() {
+		return LabelTokenDetail.from("print_", getLabelPrinter().getTokens());
+	}
+
 	@SuppressWarnings("unchecked")
 	@Override
 	public LabelPrinter<Visit> getLabelPrinter() {
-		String beanName = cfgSvc.getStrSetting(
-				ConfigParams.MODULE, 
-				ConfigParams.VISIT_LABEL_PRINTER, 
-				"defaultVisitLabelPrinter");
-		
-		return (LabelPrinter<Visit>)OpenSpecimenAppCtxProvider.getAppCtx().getBean(beanName);
+		return Visit.getLabelPrinter();
 	}
 
 	@PlusTransactional
@@ -553,6 +569,41 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 		exportSvc.registerObjectsGenerator("visit", this::getVisitsGenerator);
 	}
 
+	private List<VisitDetail> getVisits0(VisitsListCriteria crit) {
+		Set<SiteCpPair> siteCps = AccessCtrlMgr.getInstance().getReadVisitSiteCps(crit.cpId());
+		if (siteCps != null) {
+			if (siteCps.isEmpty()) {
+				return Collections.emptyList();
+			}
+
+			crit.siteCps(new ArrayList<>(siteCps));
+		}
+
+		List<Visit> visits = daoFactory.getVisitsDao().getVisitsList(crit);
+		Map<Long, Boolean> hasPhiAccess = new HashMap<>(); // {cprId -> phiAccess}
+		List<VisitDetail> result = new ArrayList<>();
+		for (Visit visit : visits) {
+			Long cprId = visit.getRegistration().getId();
+			if (!hasPhiAccess.containsKey(cprId)) {
+				try {
+					boolean phiAccess = AccessCtrlMgr.getInstance().ensureReadVisitRights(visit, true);
+					hasPhiAccess.put(cprId, phiAccess);
+				} catch (OpenSpecimenException e) {
+					if (e.containsError(RbacErrorCode.ACCESS_DENIED)) {
+						continue;
+					}
+
+					throw e;
+				}
+			}
+
+			boolean excludePhi = !hasPhiAccess.get(cprId);
+			result.add(VisitDetail.from(visit, crit.includeExtensions(), excludePhi));
+		}
+
+		return result;
+	}
+
 	private Visit saveOrUpdateVisit(VisitDetail input, boolean update, boolean partial) {
 		Visit existing = null;
 		if (update) {
@@ -574,38 +625,59 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 
 	private Visit saveOrUpdateVisit(Visit visit, Visit existing) {
 		raiseErrorIfSpecimenCentric(visit);
+		EventPublisher.getInstance().publish(new VisitPreSaveEvent(existing, visit));
 
 		String prevVisitStatus = existing != null ? existing.getStatus() : null;
 		OpenSpecimenException ose = new OpenSpecimenException(ErrorType.USER_ERROR);
 		ensureValidAndUniqueVisitName(existing, visit, ose);
 		ose.checkAndThrow();
 
+		boolean createSpecimens = false;
 		if (existing == null) {
+			if (visit.isDeleted()) {
+				throw OpenSpecimenException.userError(VisitErrorCode.CREATE_DISABLED_NA);
+			}
+
 			if (visit.isEventClosed()) {
 				throw OpenSpecimenException.userError(CpeErrorCode.CLOSED, visit.getCpEvent().getEventLabel());
 			}
 
-			if (visit.isMissed()) {
-				visit.createMissedSpecimens();
-			} else if (visit.isNotCollected()) {
-				visit.createNotCollectedSpecimens();
+			if (visit.isMissedOrNotCollected()) {
+				createSpecimens = true;
 			}
-			
+
 			existing = visit;
 		} else {
+			if (visit.isDeleted()) {
+				AccessCtrlMgr.getInstance().ensureDeleteVisitRights(existing);
+			}
+
 			existing.update(visit);
 		}
 		
 		existing.setNameIfEmpty();
 		daoFactory.getVisitsDao().saveOrUpdate(existing);
 		existing.addOrUpdateExtension();
-		existing.printLabels(prevVisitStatus);
-
 		if (existing.isDeleted()) {
 			DeleteLogUtil.getInstance().log(existing);
+			createSpecimens = false;
 		}
 
 		EventPublisher.getInstance().publish(new VisitSavedEvent(existing));
+		if (createSpecimens) {
+			if (existing.isMissed()) {
+				existing.createMissedSpecimens();
+			} else if (existing.isNotCollected()) {
+				existing.createNotCollectedSpecimens();
+			}
+		}
+
+		//
+		// this might result in creation of pending specimens
+		// and associated supplies consumption
+		// therefore has to be invoked after emitting the visit saved event
+		//
+		existing.printLabels(prevVisitStatus);
 		return existing;
 	}
 
@@ -677,7 +749,6 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 		
 		for (SpecimenDetail specimen : specimens) {
 			specimen.setVisitId(visitId);
-			setVisitId(visitId, specimen.getSpecimensPool());
 			setVisitId(visitId, specimen.getChildren());
 		}
 	}
@@ -769,15 +840,15 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 					specimenDetail.setLabel(specimen.getLabel());
 				}
 
+				if (StringUtils.isBlank(specimenDetail.getAdditionalLabel())) {
+					specimenDetail.setAdditionalLabel(specimen.getAdditionalLabel());
+				}
+
 				if (StringUtils.isBlank(specimenDetail.getBarcode())) {
 					specimenDetail.setBarcode(specimen.getBarcode());
 				}
 			}
 
-			if (CollectionUtils.isNotEmpty(specimenDetail.getSpecimensPool())) {
-				setSpecimenIds(specimenDetail.getSpecimensPool(), reqSpecimenMap);
-			}
-			
 			if (CollectionUtils.isNotEmpty(specimenDetail.getChildren())) {
 				setSpecimenIds(specimenDetail.getChildren(), reqSpecimenMap);
 			}
@@ -785,19 +856,29 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 	}
 
 	private List<Visit> getVisitsToPrint(PrintVisitNameDetail printDetail) {
-		List<Visit> visits = null;
-		Object key = null;
+		List<Long> ids = printDetail.getVisitIds();
+		List<String> names = printDetail.getVisitNames();
 
-		if (CollectionUtils.isNotEmpty(printDetail.getVisitIds())) {
-			visits = daoFactory.getVisitsDao().getByIds(printDetail.getVisitIds());
-			key = printDetail.getVisitIds();
-		} else if (CollectionUtils.isNotEmpty(printDetail.getVisitNames())) {
-			visits = daoFactory.getVisitsDao().getByName(printDetail.getVisitNames());
-			key = printDetail.getVisitNames();
+		Set<SiteCpPair> siteCps = AccessCtrlMgr.getInstance().getReadVisitSiteCps(null);
+		if (siteCps != null && siteCps.isEmpty()) {
+			throw OpenSpecimenException.userError(RbacErrorCode.ACCESS_DENIED);
+		}
+
+		VisitsListCriteria crit = new VisitsListCriteria().siteCps(siteCps != null ? new ArrayList<>(siteCps) : null);
+
+		List<Visit> visits = null;
+		if (CollectionUtils.isNotEmpty(ids)) {
+			visits = daoFactory.getVisitsDao().getVisitsList(crit.ids(ids)).stream()
+				.sorted(Comparator.comparingInt((v) -> ids.indexOf(v.getId())))
+				.collect(Collectors.toList());
+		} else if (CollectionUtils.isNotEmpty(names)) {
+			visits = daoFactory.getVisitsDao().getVisitsList(crit.names(names)).stream()
+				.sorted(Comparator.comparingInt((v) -> names.indexOf(v.getName())))
+				.collect(Collectors.toList());
 		}
 
 		if (CollectionUtils.isEmpty(visits)) {
-			throw OpenSpecimenException.userError(VisitErrorCode.NO_VISITS_TO_PRINT, key);
+			throw OpenSpecimenException.userError(VisitErrorCode.NO_VISITS_TO_PRINT);
 		}
 
 		return visits;
@@ -856,9 +937,7 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 					className = lookupFlow.substring("class:".length()).trim();
 				}
 
-
-				Class<VisitsLookup> klass = (Class<VisitsLookup>) Class.forName(className);
-				result = BeanUtils.instantiate(klass);
+				result = (VisitsLookup) BeanUtils.instantiateClass(Class.forName(className));
 			}
 		} catch (Exception e) {
 			logger.error("Invalid visits lookup flow configuration setting: " + lookupFlow, e);
@@ -945,7 +1024,7 @@ public class VisitServiceImpl implements VisitService, ObjectAccessor, Initializ
 				List<SiteCpPair> siteCps = AccessCtrlMgr.getInstance().getReadAccessSpecimenSiteCps(cpId, false);
 				if (siteCps != null && siteCps.isEmpty()) {
 					endOfVisits = true;
-				} else if (!AccessCtrlMgr.getInstance().hasVisitSpecimenEximRights(cpId)) {
+				} else if (!AccessCtrlMgr.getInstance().hasVisitEximRights(cpId)) {
 					endOfVisits = true;
 				} else {
 					crit = new VisitsListCriteria()

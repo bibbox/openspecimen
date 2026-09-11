@@ -5,12 +5,13 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Configurable;
 
 import com.krishagni.catissueplus.core.administrative.domain.User;
 import com.krishagni.catissueplus.core.administrative.repository.UserDao;
+import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
 import com.krishagni.catissueplus.core.common.service.ConfigurationService;
 import com.krishagni.catissueplus.core.de.domain.DeObject;
 
@@ -27,7 +28,7 @@ public abstract class SpecimenEvent extends DeObject {
 	private Specimen specimen;
 	
 	@Autowired
-	private UserDao userDao;
+	protected DaoFactory daoFactory;
 	
 	@Autowired
 	private ConfigurationService cfgSvc;
@@ -82,11 +83,10 @@ public abstract class SpecimenEvent extends DeObject {
 	}
 	
 	public Map<String, Object> getAttrValues() {
-		Map<String, Object> vals = new HashMap<String, Object>();
-		vals.put("user", getUser().getId());
-		vals.put("time", new SimpleDateFormat(cfgSvc.getDeDateTimeFormat()).format(time)); 
+		Map<String, Object> vals = new HashMap<>();
+		vals.put("user", getUser() != null ? getUser().getId() : null);
+		vals.put("time", getTime() != null ? new SimpleDateFormat(cfgSvc.getDeDateTimeFormat()).format(getTime()) : null);
 		vals.put("comments", getComments());
-		
 		vals.putAll(getEventAttrs());
 		return vals;
 	}
@@ -95,15 +95,17 @@ public abstract class SpecimenEvent extends DeObject {
 		String userIdStr = (String)values.get("user");
 		if (StringUtils.isNotBlank(userIdStr)) {
 			Long userId = Long.parseLong(userIdStr);
-			this.user = userDao.getById(userId);
+			this.user = daoFactory.getUserDao().getById(userId);
 		}
 		
 		String timeStr = (String)values.get("time");
 		if (StringUtils.isNotBlank(timeStr)) {
-			this.time = new DatePicker().fromString(timeStr);
+			Attr timeAttr = getAttrs().stream().filter(attr -> attr.getUdn().equals("time")).findFirst().orElse(null);
+			DatePicker datePicker = (DatePicker) timeAttr.getCtrlValue().getControl();
+			this.time = (Date) datePicker.fromString(timeStr);
 		}
 				
-		this.comments = (String)values.get("comments");		
+		this.comments = (String)values.get("comments");
 		setEventAttrs(values);
 	}
 
@@ -120,7 +122,7 @@ public abstract class SpecimenEvent extends DeObject {
 
 	@Override
 	public Long getCpId() {
-		return specimen.getVisit().getCollectionProtocol().getId();
+		return specimen.getCollectionProtocol().getId();
 	}
 
 	@Override

@@ -1,9 +1,9 @@
-/*
-* For temporary we hide the print button using css.
-* Css changes are in extension.css file.
-*/
+
 angular.module('os.biospecimen.extensions', ['os.biospecimen.models'])
-  .directive('osDeForm', function($http, $rootScope, Form, ApiUrls, ExtensionsUtil, LocationChangeListener, SettingUtil) {
+  .directive('osDeForm', function(
+    $http, $rootScope, $parse, Form, ApiUrls, ExtensionsUtil,
+    LocationChangeListener, SettingUtil) {
+
     return {
       restrict: 'A',
       controller: function() {
@@ -54,8 +54,10 @@ angular.module('os.biospecimen.extensions', ['os.biospecimen.models'])
           var baseUrl = Form.url();
           var filesUrl = ApiUrls.getBaseUrl() + 'form-files';
           var hdrs = {
-            'X-OS-API-TOKEN': $http.defaults.headers.common['X-OS-API-TOKEN']
+            'X-OS-API-TOKEN': $http.defaults.headers.common['X-OS-API-TOKEN'],
+            'X-OS-SURVEY-TOKEN': $http.defaults.headers.common['X-OS-SURVEY-TOKEN']
           };
+
           var args = {
             id             : opts.formId,
             formDiv        : element,
@@ -64,7 +66,7 @@ angular.module('os.biospecimen.extensions', ['os.biospecimen.models'])
             formDataUrl    : baseUrl + '/:formId/data/:recordId',
             formSaveUrl    : baseUrl + '/:formId/data',
             formPvUrl      : baseUrl + '/:formId/permissible-values',
-            fileUploadUrl  : filesUrl,
+            fileUploadUrl  : opts.filesUploadUrl || filesUrl,
             fileDownloadUrl: ExtensionsUtil.getFileDownloadUrl,
             formData       : opts.formData,
             recordId       : opts.recordId,
@@ -72,11 +74,13 @@ angular.module('os.biospecimen.extensions', ['os.biospecimen.models'])
             appData        : {formCtxtId: opts.formCtxtId, objectId: opts.objectId},
             onSaveSuccess  : opts.onSave,
             onSaveError    : opts.onError,
+            onValidationError: opts.onValidationError,
             onCancel       : opts.onCancel,
             onPrint        : opts.onPrint,
             onDelete       : opts.onDelete,
             showActionBtns : opts.showActionBtns,
             showSaveNext   : opts.showSaveNext,
+            showSaveDraft  : opts.showSaveDraft,
             showPanel      : opts.showPanel,
             customHdrs     : hdrs,
             skipLogicFieldValue   : opts.skipLogicFieldValue ||
@@ -86,20 +90,17 @@ angular.module('os.biospecimen.extensions', ['os.biospecimen.models'])
             disableFields  : opts.disableFields || []
           };
 
-          SettingUtil.getSetting('common', 'de_form_html_markup').then(
-            function(setting) {
-              args.allowHtmlCaptions = setting.value;
-              ctrl.form = new edu.common.de.Form(args);
-              ctrl.form.render();
-              LocationChangeListener.preventChange();
-              addWatchForDomChanges(opts);
-            }
-          );
+          args.allowHtmlCaptions = ui.os.appProps.allowHtmlMarkup;
+          ctrl.form = new edu.common.de.Form(args);
+          ctrl.form.render();
+          LocationChangeListener.preventChange();
+          addWatchForDomChanges(opts);
 
           onceRendered = true;
         }, true);
 
         if (attrs.extendedObj) {
+          ctrl.extendedObj = $parse(attrs.extendedObj)(scope);
           scope.$watch(attrs.extendedObj,
             function(extendedObj) {
               ctrl.extendedObj = extendedObj;
@@ -145,6 +146,10 @@ angular.module('os.biospecimen.extensions', ['os.biospecimen.models'])
               angular.element(this).addClass("col-xs-offset-3 col-xs-8");
             }
           );
+
+          element.find('.de-sf-content').closest('.col-xs-6')
+            .removeClass('col-xs-6').addClass('col-xs-9')
+            .css({'padding-left': '30px'});
         }
       }
     }

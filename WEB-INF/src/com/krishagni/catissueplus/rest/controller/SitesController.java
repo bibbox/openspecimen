@@ -45,8 +45,11 @@ public class SitesController {
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody
 	public List<SiteSummary> getSites(
+			@RequestParam(value = "id", required = false)
+			List<Long> ids,
+
 			@RequestParam(value = "name", required= false)
-			String name,
+			List<String> names,
 			
 			@RequestParam(value = "exactMatch", required= false, defaultValue = "false")
 			boolean exactMatch,
@@ -79,13 +82,15 @@ public class SitesController {
 			boolean includeStats) {
 		
 		SiteListCriteria crit = new SiteListCriteria()
-			.query(name)
+			.ids(ids)
+			.query(names != null && names.size() == 1 ? names.get(0) : null)
+			.names(names != null && names.size() > 1 ? names : null)
 			.exactMatch(exactMatch)
 			.resource(resource)
 			.operation(operation)
 			.institute(institute)
 			.startAt(startAt)
-			.maxResults(maxResults)
+			.maxResults(ids != null && !ids.isEmpty() ? ids.size() : maxResults)
 			.listAll(listAll)
 			.includeTypes(includeTypes)
 			.excludeTypes(excludeTypes)
@@ -103,13 +108,14 @@ public class SitesController {
 	@ResponseBody
 	public Map<String, Long> getSitesCount(
 			@RequestParam(value = "name", required= false)
-			String name,
+			List<String> names,
 			
 			@RequestParam(value = "institute", required = false)
 			String institute) {
 		
 		SiteListCriteria crit = new SiteListCriteria()
-			.query(name)
+			.query(names != null && names.size() == 1 ? names.get(0) : null)
+			.names(names != null && names.size() > 1 ? names : null)
 			.institute(institute);
 		
 		RequestEvent<SiteListCriteria> req = new RequestEvent<>(crit);
@@ -123,7 +129,7 @@ public class SitesController {
 	@RequestMapping(method = RequestMethod.GET, value = "/{id}")
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody
-	public SiteDetail getSite(@PathVariable Long id) {
+	public SiteDetail getSite(@PathVariable("id") Long id) {
 		SiteQueryCriteria crit = new SiteQueryCriteria();
 		crit.setId(id);
 		
@@ -132,6 +138,13 @@ public class SitesController {
 		resp.throwErrorIfUnsuccessful();
 		
 		return resp.getPayload();
+	}
+
+	@RequestMapping(method = RequestMethod.GET, value = "/byid/{id}")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public SiteDetail getSiteById(@PathVariable("id") Long id) {
+		return this.getSite(id);
 	}
 	
 	@RequestMapping(method = RequestMethod.GET, value="/byname")
@@ -163,7 +176,7 @@ public class SitesController {
 	@RequestMapping(method = RequestMethod.PUT, value = "/{id}")
 	@ResponseBody
 	@ResponseStatus(HttpStatus.OK)
-	public SiteDetail updateSite(@PathVariable Long id, @RequestBody SiteDetail siteDetail) {
+	public SiteDetail updateSite(@PathVariable("id") Long id, @RequestBody SiteDetail siteDetail) {
 		siteDetail.setId(id);
 		
 		RequestEvent<SiteDetail> req = new RequestEvent<>(siteDetail);
@@ -176,7 +189,7 @@ public class SitesController {
 	@RequestMapping(method = RequestMethod.PATCH, value = "/{id}")
 	@ResponseBody
 	@ResponseStatus(HttpStatus.OK)
-	public SiteDetail patchSite(@PathVariable Long id, @RequestBody SiteDetail siteDetail) {
+	public SiteDetail patchSite(@PathVariable("id") Long id, @RequestBody SiteDetail siteDetail) {
 		siteDetail.setId(id);
 		
 		RequestEvent<SiteDetail> req = new RequestEvent<>(siteDetail);
@@ -199,7 +212,7 @@ public class SitesController {
 	@RequestMapping(method = RequestMethod.GET, value = "/{id}/dependent-entities")
 	@ResponseBody
 	@ResponseStatus(HttpStatus.OK)
-	public List<DependentEntityDetail> getDependentEntities(@PathVariable Long id) {
+	public List<DependentEntityDetail> getDependentEntities(@PathVariable("id") Long id) {
 		RequestEvent<Long> req = new RequestEvent<>(id);
 		ResponseEvent<List<DependentEntityDetail>> resp = siteService.getDependentEntities(req);
 		resp.throwErrorIfUnsuccessful();
@@ -211,7 +224,7 @@ public class SitesController {
 	@ResponseBody
 	@ResponseStatus(HttpStatus.OK)
 	public SiteDetail deleteSite(
-		@PathVariable
+		@PathVariable("id")
 		Long id,
 
 		@RequestParam(value="close", required=false, defaultValue="false")

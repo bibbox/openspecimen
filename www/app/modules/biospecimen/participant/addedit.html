@@ -63,28 +63,50 @@
 
     <div class="form-group">
       <div class="col-xs-6" ng-class="{'col-xs-offset-3': !partCtx.fieldOpts.verticalLayout}">
+        <button class="btn btn-primary" os-form-submit="lookup(null, null, true)" draft-mode="true"
+          ng-show="cp.draftDataEntry">
+          <span translate="participant.buttons.save_as_draft">Save as Draft</span>
+        </button>
         <button class="btn btn-primary" os-form-submit="lookup()" ng-switch on="partCtx.twoStep">
           <span ng-switch-when="true" translate="participant.buttons.lookup">Lookup</span>
           <span ng-switch-default translate="participant.buttons.register">Register</span>
         </button>
-        <button class="btn btn-primary" os-form-submit="lookup(partCtx.cpEvents[0])"
-          ng-if="!partCtx.twoStep && partCtx.cpEvents.length == 1">
-          <span translate="participant.buttons.register_n_collect">Register & Collect</span>
+        <button class="btn os-btn-secondary" ng-click="skip()" ng-if="partCtx.twoStep && partCtx.allowSkip">
+          <span translate="participant.buttons.skip">Skip</span>
         </button>
-        <span dropdown ng-if="!partCtx.twoStep && partCtx.cpEvents.length > 1" on-toggle="toggleEventsMenu(open)">
-          <button class="btn btn-primary dropdown-toggle">
-            <span translate="participant.buttons.register_n_collect">Register & Collect</span>
-            <span class="fa fa-caret-down"></span>
+        <span show-if-allowed="consentUpdateOpts">
+          <button class="btn btn-primary" os-form-submit="lookup(null, true)"
+            ng-if="!partCtx.twoStep && partCtx.documentsCount > 0">
+            <span translate="participant.buttons.register_n_consent">Register & Consent</span>
           </button>
-          <ul class="dropdown-menu os-dropdown" os-ui-element="partCtx.eventsDd">
-            <li ng-repeat="event in partCtx.cpEvents">
-              <a os-form-submit="lookup(event)">
-                <os-event-desc event-point="event.eventPoint" event-point-unit="event.eventPointUnit"
-                  event-label="event.eventLabel">
-                </os-event-desc>
-              </a>
-            </li>
-          </ul>
+        </span>
+        <span show-if-allowed="specimenUpdateOpts">
+          <span ng-if="partCtx.tmWorkflowId > 0">
+            <button class="btn btn-primary" os-form-submit="lookup(partCtx.wfEvent)">
+              <span translate="participant.buttons.register_n_collect">Register & Collect</span>
+            </button>
+          </span>
+          <span ng-if="!partCtx.tmWorkflowId || partCtx.tmWorkflowId < 0">
+            <button class="btn btn-primary" os-form-submit="lookup(partCtx.cpEvents[0])"
+              ng-if="!partCtx.twoStep && partCtx.cpEvents.length == 1">
+              <span translate="participant.buttons.register_n_collect">Register & Collect</span>
+            </button>
+            <span dropdown ng-if="!partCtx.twoStep && partCtx.cpEvents.length > 1" on-toggle="toggleEventsMenu(open)">
+              <button class="btn btn-primary dropdown-toggle">
+                <span translate="participant.buttons.register_n_collect">Register & Collect</span>
+                <span class="fa fa-caret-down"></span>
+              </button>
+              <ul class="dropdown-menu os-dropdown" os-ui-element="partCtx.eventsDd">
+                <li ng-repeat="event in partCtx.cpEvents">
+                  <a os-form-submit="lookup(event)">
+                    <os-event-desc event-point="event.eventPoint" event-point-unit="event.eventPointUnit"
+                      event-label="event.eventLabel">
+                    </os-event-desc>
+                  </a>
+                </li>
+              </ul>
+            </span>
+          </span>
         </span>
         <button class="btn os-btn-text" ng-click="back()">
           <span translate="common.buttons.discard">Discard</span>
@@ -154,10 +176,12 @@
 
 <script type="text/ng-template" id="modules/biospecimen/participant/choose-match.html">
   <form name="pform" class="form-horizontal" os-form-validator="pform" validator="pformValidator" novalidate>
-    <div class="alert alert-warning os-participant-matching-msg">
-      <span translate="participant.similar_participants">
-        Following matching participant(s) found 
-      </span>
+    <div class="os-alert-container inline">
+      <div class="alert alert-info os-participant-matching-msg">
+        <span translate="participant.similar_participants">
+          Following matching participant(s) found
+        </span>
+      </div>
     </div>
 
     <div ng-switch on="partCtx.matchingTabOpts.table.length > 0">
@@ -239,22 +263,24 @@
 <script type="text/ng-template" id="modules/biospecimen/participant/save-update.html">
   <form name="pform" class="form-horizontal" os-form-validator="pform" validator="pformValidator" novalidate>
     <div>
-      <div class="form-group" ng-if="!partCtx.edit && partCtx.twoStep && (!partCtx.matches || partCtx.matches.length == 0)">
+      <div class="form-group" ng-if="!partCtx.edit && partCtx.twoStep && !partCtx.skipped && partCtx.matches.length == 0">
         <div class="col-xs-offset-3 col-xs-6">
-          <div class="alert alert-warning os-participant-matching-msg">
-            <span translate="participant.no_matching_participant">
-              No matching participant found
-            </span>
+          <div class="os-alert-container inline">
+            <div class="alert alert-info os-participant-matching-msg">
+              <span translate="participant.no_match_add_participant">
+                No matching participant found
+              </span>
+            </div>
           </div>
         </div>
       </div>
 
-      <div class="form-group" ng-if="!partCtx.twoStep && partCtx.matchAutoSelected">
+      <div class="form-group" ng-if="partCtx.matchAutoSelected">
         <div class="col-xs-offset-3 col-xs-6">
-          <div class="alert alert-warning os-participant-matching-msg">
-            <span translate="participant.review_match_n_save">
-              Following matching participant found. Please review the details and save.
-            </span>
+          <div class="os-alert-container inline">
+            <div class="alert alert-info os-participant-matching-msg">
+              <span>{{'participant.review_match_n_save' | translate: partCtx}}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -275,28 +301,48 @@
 
         <div class="form-group">
           <div class="col-xs-6" ng-class="{'col-xs-offset-3': !partCtx.fieldOpts.verticalLayout}">
+            <button class="btn btn-primary" os-form-submit="register(null, null, true)" draft-mode="true"
+              ng-show="cp.draftDataEntry">
+              <span translate="participant.buttons.save_as_draft"> Save as Draft </span>
+            </button>
+
             <button class="btn btn-primary" os-form-submit="register()" ng-switch on="!!cpr.id">
               <span ng-switch-when="true" translate="participant.buttons.update_registration"> Update </span>
               <span ng-switch-default translate="participant.buttons.register"> Register </span>
             </button>
-            <button class="btn btn-primary" os-form-submit="register(partCtx.cpEvents[0])"
-              ng-if="!cpr.id && partCtx.cpEvents.length == 1">
-              <span translate="participant.buttons.register_n_collect">Register & Collect</span>
-            </button>
-            <span dropdown ng-if="!cpr.id && partCtx.cpEvents.length > 1" on-toggle="toggleEventsMenu(open)">
-              <button class="btn btn-primary dropdown-toggle">
-                <span translate="participant.buttons.register_n_collect">Register & Collect</span>
-                <span class="fa fa-caret-down"></span>
+            <span show-if-allowed="consentUpdateOpts">
+              <button class="btn btn-primary" os-form-submit="register(null, true)"
+                ng-if="!cpr.id && partCtx.documentsCount > 0">
+                <span translate="participant.buttons.register_n_consent">Register & Consent</span>
               </button>
-              <ul class="dropdown-menu os-dropdown" os-ui-element="partCtx.eventsDd">
-                <li ng-repeat="event in partCtx.cpEvents">
-                  <a os-form-submit="register(event)">
-                    <os-event-desc event-point="event.eventPoint" event-point-unit="event.eventPointUnit"
-                      event-label="event.eventLabel">
-                    </os-event-desc>
-                  </a>
-                </li>
-              </ul>
+            </span>
+            <span show-if-allowed="specimenUpdateOpts">
+              <span ng-if="partCtx.tmWorkflowId > 0">
+                <button class="btn btn-primary" os-form-submit="register(partCtx.wfEvent)">
+                  <span translate="participant.buttons.register_n_collect">Register & Collect</span>
+                </button>
+              </span>
+              <span ng-if="!partCtx.tmWorkflowId || partCtx.tmWorkflowId < 0">
+                <button class="btn btn-primary" os-form-submit="register(partCtx.cpEvents[0])"
+                  ng-if="!cpr.id && partCtx.cpEvents.length == 1">
+                  <span translate="participant.buttons.register_n_collect">Register & Collect</span>
+                </button>
+                <span dropdown ng-if="!cpr.id && partCtx.cpEvents.length > 1" on-toggle="toggleEventsMenu(open)">
+                  <button class="btn btn-primary dropdown-toggle">
+                    <span translate="participant.buttons.register_n_collect">Register & Collect</span>
+                    <span class="fa fa-caret-down"></span>
+                  </button>
+                  <ul class="dropdown-menu os-dropdown" os-ui-element="partCtx.eventsDd">
+                    <li ng-repeat="event in partCtx.cpEvents">
+                      <a os-form-submit="register(event)">
+                        <os-event-desc event-point="event.eventPoint" event-point-unit="event.eventPointUnit"
+                          event-label="event.eventLabel">
+                        </os-event-desc>
+                      </a>
+                    </li>
+                  </ul>
+                </span>
+              </span>
             </span>
             <button class="btn os-btn-text" ng-click="previous()">
               <span translate="common.buttons.back">Back</span>
@@ -333,9 +379,9 @@
     <div class="form-group">
       <label class="col-xs-3 control-label" translate="participant.reg_site">Registration Site</label>
       <div class="col-xs-6">
-        <os-select name="regSite" ng-model="cpr.site" list="partCtx.cpSites"
+        <os-sites name="regSite" ng-model="cpr.site" list-all="{{!partCtx.mrnAccessRestriction}}"
           placeholder="{{'participant.reg_site' | translate}}">
-        </os-select>
+        </os-sites>
         <div os-field-error field="pform.regSite"></div>
       </div>
     </div>
@@ -367,6 +413,52 @@
         <label class="part-label" translate="participant.middle_name"></label>
         <input type="text" ng-model="cpr.participant.middleName" class="form-control"
           placeholder="{{'participant.middle_name' | translate}}"/>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="col-xs-3 control-label">
+        <span translate="participant.email_address">Email Address</span>
+      </label>
+      <div class="col-xs-6">
+        <input type="text" ng-model="cpr.participant.emailAddress" class="form-control"
+          placeholder="{{'participant.email_address' | translate}}"/>
+      </div>
+    </div>
+
+    <div class="form-group" style="margin-top: -20px;" ng-if="cpr.participant.emailAddress">
+      <div class="col-xs-offset-3 col-xs-6 os-text-checkbox">
+        <div class="checkbox">
+          <os-checkbox ng-model="cpr.participant.emailOptIn"></os-checkbox>
+        </div>
+        <div class="message os-ctrl-padding-top">
+          <span translate="participant.email_opt_in">Do you want to receive emails?</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="col-xs-3 control-label">
+        <span translate="participant.phone_number">Phone Number</span>
+      </label>
+      <div class="col-xs-6">
+        <input type="text" ng-model="cpr.participant.phoneNumber" class="form-control"
+          placeholder="{{'participant.phone_number' | translate}}"/>
+      </div>
+    </div>
+
+    <div class="form-group" style="margin-top: -20px;" ng-if="cpr.participant.phoneNumber">
+      <div class="col-xs-offset-3 col-xs-6 os-text-checkbox">
+        <div class="checkbox">
+          <os-checkbox ng-model="cpr.participant.textOptIn" ng-disabled="cpr.participant.textOptInConsent === false">
+          </os-checkbox>
+        </div>
+        <div class="message os-ctrl-padding-top">
+          <span translate="participant.text_opt_in">Do you want to receive text messages?</span>
+        </div>
+      </div>
+      <div class="col-xs-offset-3 col-xs-6 os-text-checkbox" ng-show="cpr.participant.textOptInConsent === false">
+        <span class="message" translate="participant.text_opted_out">Participant has chosen to "opt out" of receiving SMSes from OpenSpecimen</span>
       </div>
     </div>
 
@@ -420,7 +512,8 @@
     <div class="form-group">
       <label class="col-xs-3 control-label" translate="participant.death_date">Death Date</label>
       <div class="col-xs-6">
-        <os-date-picker date="cpr.participant.deathDate" ng-disabled="cpr.participant.vitalStatus != 'Dead'"
+        <os-date-picker date="cpr.participant.deathDate"
+          ng-disabled="deadStatuses.indexOf(cpr.participant.vitalStatus) == -1"
           date-only = "true" placeholder="{{'participant.death_date' | translate}}">
         </os-date-picker>
       </div>
@@ -457,7 +550,7 @@
       </div>
 
       <div os-unique-items>
-        <div class="form-group clearfix" ng-repeat="pmi in cpr.participant.pmis">
+        <div class="form-group clearfix" ng-repeat="pmi in cpr.participant.pmis track by $index">
           <ng-form name="pmiForm" os-form-validator="pmiForm" parent-validator="pformValidator">
             <fieldset record-name="cpr.participant.pmis">
               <div class="col-xs-3 col-xs-offset-3" ng-switch on="!!partCtx.mrnAccessRestriction">
@@ -490,6 +583,14 @@
               </div>
             <fieldset>
           </ng-form>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <div class="col-xs-offset-3 col-xs-9">
+          <button class="btn os-btn-text os-no-left-padding" ng-click="cpr.participant.addPmi(cpr.participant.newPmi())">
+            <span translate="common.buttons.add_another">Add Another</span>
+          </button>
         </div>
       </div>
     </div>

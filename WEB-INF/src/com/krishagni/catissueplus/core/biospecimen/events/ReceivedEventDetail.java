@@ -1,11 +1,16 @@
 package com.krishagni.catissueplus.core.biospecimen.events;
 
+import com.krishagni.catissueplus.core.administrative.domain.PermissibleValue;
+import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
 import com.krishagni.catissueplus.core.biospecimen.domain.SpecimenCollectionReceiveDetail;
-import com.krishagni.catissueplus.core.biospecimen.domain.SpecimenReceivedEvent;
+import com.krishagni.catissueplus.core.common.ListenAttributeChanges;
 import com.krishagni.catissueplus.core.common.events.UserSummary;
 
+@ListenAttributeChanges
 public class ReceivedEventDetail extends SpecimenEventDetail {
 	private String receivedQuality;
+
+	private String newLabel;
 
 	public String getReceivedQuality() {
 		return receivedQuality;
@@ -15,27 +20,40 @@ public class ReceivedEventDetail extends SpecimenEventDetail {
 		this.receivedQuality = receivedQuality;
 	}
 
-	public static ReceivedEventDetail from(SpecimenReceivedEvent sre) {
-		if (sre == null) {
+	public String getNewLabel() {
+		return newLabel;
+	}
+
+	public void setNewLabel(String newLabel) {
+		this.newLabel = newLabel;
+	}
+
+	public static ReceivedEventDetail from(Specimen specimen) {
+		if (specimen == null) {
 			return null;
+		} else if (specimen.isDerivative() || specimen.isAliquot()) {
+			return from(specimen.getCollRecvDetails());
 		}
 
 		ReceivedEventDetail detail = new ReceivedEventDetail();
-		fromTo(sre, detail);
-
-		detail.setReceivedQuality(sre.getQuality());
+		detail.setReceivedQuality(PermissibleValue.getValue(specimen.getReceivedQuality()));
+		detail.setUser(UserSummary.from(specimen.getReceivedUser()));
+		detail.setTime(specimen.getReceivedTime());
+		detail.setComments(specimen.getReceivedComments());
 		return detail;
 	}
 
-	public static ReceivedEventDetail from(SpecimenCollectionReceiveDetail cre) {
+	private static ReceivedEventDetail from(SpecimenCollectionReceiveDetail cre) {
 		if (cre == null) {
 			return null;
 		}
 
 		ReceivedEventDetail re = new ReceivedEventDetail();
-		re.setReceivedQuality(cre.getRecvQuality());
+		re.setId(cre.getRecvEventId());
+		re.setReceivedQuality(PermissibleValue.getValue(cre.getRecvQuality()));
 		re.setTime(cre.getRecvTime());
 		re.setUser(UserSummary.from(cre.getReceiver()));
+		re.setComments(cre.getRecvComments());
 		return re;
 	}
 }

@@ -8,6 +8,8 @@ public enum StorageContainerErrorCode implements ErrorCode {
 	
 	NAME_REQUIRED,
 
+	ID_REQ,
+
 	ID_NAME_OR_BARCODE_REQ,
 	
 	SRC_ID_OR_NAME_REQ,
@@ -70,6 +72,10 @@ public enum StorageContainerErrorCode implements ErrorCode {
 
 	DIMLESS_NO_MAP,
 
+	DIMLESS_NO_UTILISATION_MAP,
+
+	NO_CHILDREN_UTILISATION_MAP,
+
 	INVALID_CAPACITY,
 
 	AUTOMATED_NOT_DIMENSIONLESS,
@@ -90,7 +96,17 @@ public enum StorageContainerErrorCode implements ErrorCode {
 
 	USAGE_DIFFER,
 
-	NONE_PRINTED;
+	NONE_PRINTED,
+
+	CHECKED_OUT_ALREADY,
+
+	CANNOT_ARCHIVE,
+
+	PARENT_ARCHIVED,
+
+	ARCHIVED,
+
+	EXCEED_CAPACITY_LMT;
 
 	@Override
 	public String code() {

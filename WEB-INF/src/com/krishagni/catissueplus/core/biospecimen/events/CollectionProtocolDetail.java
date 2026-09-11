@@ -8,9 +8,12 @@ import java.util.stream.Collectors;
 import com.fasterxml.jackson.annotation.JsonFilter;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
+
 import com.krishagni.catissueplus.core.administrative.events.DistributionProtocolSummary;
+import com.krishagni.catissueplus.core.biospecimen.SpecimenUtil;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
 import com.krishagni.catissueplus.core.biospecimen.domain.CpWorkflowConfig;
+import com.krishagni.catissueplus.core.biospecimen.domain.SpecimenTypeUnit;
 import com.krishagni.catissueplus.core.biospecimen.services.impl.CpWorkflowTxnCache;
 import com.krishagni.catissueplus.core.common.events.UserSummary;
 import com.krishagni.catissueplus.core.de.events.ExtensionDetail;
@@ -23,6 +26,14 @@ public class CollectionProtocolDetail extends CollectionProtocolSummary {
 	private List<CollectionProtocolSiteDetail> cpSites;
 
 	private Boolean consentsWaived;
+
+	private Boolean visitLevelConsents;
+
+	private CollectionProtocolSummary consentsSource;
+
+	private CollectionProtocolGroupSummary cpg;
+
+	private RequestManagerGroupSummary requestManagerGroup;
 
 	private String irbId;
 
@@ -44,6 +55,8 @@ public class CollectionProtocolDetail extends CollectionProtocolSummary {
 
 	private String aliquotLabelFmt;
 
+	private String additionalLabelFmt;
+
 	private String specimenBarcodeFmt;
 	
 	private String visitNameFmt;
@@ -54,15 +67,25 @@ public class CollectionProtocolDetail extends CollectionProtocolSummary {
 	
 	private Boolean manualSpecLabelEnabled;
 
+	private Boolean kitLabelsEnabled;
+
 	private Boolean bulkPartRegEnabled;
 
 	private Boolean barcodingEnabled;
 
 	private Boolean closeParentSpecimens;
 
+	private Boolean setQtyToZero;
+
 	private String containerSelectionStrategy;
 
 	private Boolean aliquotsInSameContainer;
+
+	private Boolean storageSiteBasedAccess;
+
+	private Boolean draftDataEntry;
+
+	private String labelSequenceKey;
 
 	private String visitCollectionMode;
 
@@ -71,7 +94,7 @@ public class CollectionProtocolDetail extends CollectionProtocolSummary {
 	private Integer visitNamePrintCopies;
 	
 	private String spmnLabelPrePrintMode;
-	
+
 	private List<CpSpecimenLabelPrintSettingDetail> spmnLabelPrintSettings;
 
 	private List<DistributionProtocolSummary> distributionProtocols;
@@ -93,7 +116,9 @@ public class CollectionProtocolDetail extends CollectionProtocolSummary {
 	
 	private List<CollectionProtocolEventDetail> events;
 
-	private Map<String, CpWorkflowCfgDetail.WorkflowDetail> workflows;
+	private Map<String, WorkflowDetail> workflows;
+
+	private List<SpecimenTypeUnitDetail> units;
 
 	public List<UserSummary> getCoordinators() {
 		return coordinators;
@@ -117,6 +142,38 @@ public class CollectionProtocolDetail extends CollectionProtocolSummary {
 
 	public void setConsentsWaived(Boolean consentsWaived) {
 		this.consentsWaived = consentsWaived;
+	}
+
+	public Boolean getVisitLevelConsents() {
+		return visitLevelConsents;
+	}
+
+	public void setVisitLevelConsents(Boolean visitLevelConsents) {
+		this.visitLevelConsents = visitLevelConsents;
+	}
+
+	public CollectionProtocolSummary getConsentsSource() {
+		return consentsSource;
+	}
+
+	public void setConsentsSource(CollectionProtocolSummary consentsSource) {
+		this.consentsSource = consentsSource;
+	}
+
+	public CollectionProtocolGroupSummary getCpg() {
+		return cpg;
+	}
+
+	public void setCpg(CollectionProtocolGroupSummary cpg) {
+		this.cpg = cpg;
+	}
+
+	public RequestManagerGroupSummary getRequestManagerGroup() {
+		return requestManagerGroup;
+	}
+
+	public void setRequestManagerGroup(RequestManagerGroupSummary requestManagerGroup) {
+		this.requestManagerGroup = requestManagerGroup;
 	}
 
 	public String getIrbId() {
@@ -207,6 +264,14 @@ public class CollectionProtocolDetail extends CollectionProtocolSummary {
 		this.aliquotLabelFmt = aliquotLabelFmt;
 	}
 
+	public String getAdditionalLabelFmt() {
+		return additionalLabelFmt;
+	}
+
+	public void setAdditionalLabelFmt(String additionalLabelFmt) {
+		this.additionalLabelFmt = additionalLabelFmt;
+	}
+
 	public String getVisitNameFmt() {
 		return visitNameFmt;
 	}
@@ -239,6 +304,14 @@ public class CollectionProtocolDetail extends CollectionProtocolSummary {
 		this.manualSpecLabelEnabled = manualSpecLabelEnabled;
 	}
 
+	public Boolean getKitLabelsEnabled() {
+		return kitLabelsEnabled;
+	}
+
+	public void setKitLabelsEnabled(Boolean kitLabelsEnabled) {
+		this.kitLabelsEnabled = kitLabelsEnabled;
+	}
+
 	public Boolean getBulkPartRegEnabled() {
 		return bulkPartRegEnabled;
 	}
@@ -263,6 +336,14 @@ public class CollectionProtocolDetail extends CollectionProtocolSummary {
 		this.closeParentSpecimens = closeParentSpecimens;
 	}
 
+	public Boolean getSetQtyToZero() {
+		return setQtyToZero;
+	}
+
+	public void setSetQtyToZero(Boolean setQtyToZero) {
+		this.setQtyToZero = setQtyToZero;
+	}
+
 	public String getContainerSelectionStrategy() {
 		return containerSelectionStrategy;
 	}
@@ -277,6 +358,30 @@ public class CollectionProtocolDetail extends CollectionProtocolSummary {
 
 	public void setAliquotsInSameContainer(Boolean aliquotsInSameContainer) {
 		this.aliquotsInSameContainer = aliquotsInSameContainer;
+	}
+
+	public Boolean getStorageSiteBasedAccess() {
+		return storageSiteBasedAccess;
+	}
+
+	public void setStorageSiteBasedAccess(Boolean storageSiteBasedAccess) {
+		this.storageSiteBasedAccess = storageSiteBasedAccess;
+	}
+
+	public Boolean getDraftDataEntry() {
+		return draftDataEntry;
+	}
+
+	public void setDraftDataEntry(Boolean draftDataEntry) {
+		this.draftDataEntry = draftDataEntry;
+	}
+
+	public String getLabelSequenceKey() {
+		return labelSequenceKey;
+	}
+
+	public void setLabelSequenceKey(String labelSequenceKey) {
+		this.labelSequenceKey = labelSequenceKey;
 	}
 
 	public String getVisitCollectionMode() {
@@ -383,12 +488,20 @@ public class CollectionProtocolDetail extends CollectionProtocolSummary {
 		this.events = events;
 	}
 
-	public Map<String, CpWorkflowCfgDetail.WorkflowDetail> getWorkflows() {
+	public Map<String, WorkflowDetail> getWorkflows() {
 		return workflows;
 	}
 
-	public void setWorkflows(Map<String, CpWorkflowCfgDetail.WorkflowDetail> workflows) {
+	public void setWorkflows(Map<String, WorkflowDetail> workflows) {
 		this.workflows = workflows;
+	}
+
+	public List<SpecimenTypeUnitDetail> getUnits() {
+		return units;
+	}
+
+	public void setUnits(List<SpecimenTypeUnitDetail> units) {
+		this.units = units;
 	}
 
 	public static CollectionProtocolDetail from(CollectionProtocol cp) {
@@ -401,6 +514,10 @@ public class CollectionProtocolDetail extends CollectionProtocolSummary {
 		result.setCoordinators(UserSummary.from(cp.getCoordinators()));
 
 		result.setConsentsWaived(cp.isConsentsWaived());
+		result.setVisitLevelConsents(cp.getVisitLevelConsents());
+		result.setConsentsSource(cp.getConsentsSource() != null ? CollectionProtocolSummary.from(cp.getConsentsSource()) : null);
+		result.setCpg(cp.getCpGroup() != null ? CollectionProtocolGroupSummary.from(cp.getCpGroup()) : null);
+		result.setRequestManagerGroup(RequestManagerGroupSummary.from(cp.getRequestManagerGroup()));
 		result.setIrbId(cp.getIrbIdentifier());
 		result.setAnticipatedParticipantsCount(cp.getEnrollment());
 		result.setSopDocumentUrl(cp.getSopDocumentUrl());
@@ -411,6 +528,7 @@ public class CollectionProtocolDetail extends CollectionProtocolSummary {
 		result.setSpecimenLabelFmt(cp.getSpecimenLabelFormat());
 		result.setDerivativeLabelFmt(cp.getDerivativeLabelFormat());
 		result.setAliquotLabelFmt(cp.getAliquotLabelFormat());
+		result.setAdditionalLabelFmt(cp.getAdditionalLabelFormat());
 		result.setSpecimenBarcodeFmt(cp.getSpecimenBarcodeFormat());
 		result.setAliquotLabelFmtToUse(cp.getAliquotLabelFormatToUse());
 		result.setSpecimenBarcodeFmtToUse(cp.getSpecimenBarcodeFormatToUse());
@@ -418,12 +536,17 @@ public class CollectionProtocolDetail extends CollectionProtocolSummary {
 		result.setManualPpidEnabled(cp.isManualPpidEnabled());
 		result.setManualVisitNameEnabled(cp.isManualVisitNameEnabled());
 		result.setManualSpecLabelEnabled(cp.isManualSpecLabelEnabled());
-		result.setBulkPartRegEnabled(cp.isBulkPartRegEnabled());
+		result.setKitLabelsEnabled(cp.isKitLabelsEnabled());
+//		result.setBulkPartRegEnabled(cp.isBulkPartRegEnabled());
 		result.setSpecimenCentric(cp.isSpecimenCentric());
 		result.setBarcodingEnabled(cp.isBarcodingEnabled());
 		result.setCloseParentSpecimens(cp.isCloseParentSpecimens());
+		result.setSetQtyToZero(cp.getSetQtyToZero());
 		result.setContainerSelectionStrategy(cp.getContainerSelectionStrategy());
 		result.setAliquotsInSameContainer(cp.getAliquotsInSameContainer());
+		result.setStorageSiteBasedAccess(cp.getStorageSiteBasedAccess());
+		result.setDraftDataEntry(cp.draftDataEntryEnabled());
+		result.setLabelSequenceKey(cp.getLabelSequenceKey().name());
 		result.setVisitCollectionMode(cp.getVisitCollectionMode().name());
 		result.setVisitNamePrintMode(cp.getVisitNamePrintMode().name());
 		result.setVisitNamePrintCopies(cp.getVisitNamePrintCopies());
@@ -443,6 +566,9 @@ public class CollectionProtocolDetail extends CollectionProtocolSummary {
 			if (config.getCp() != null) {
 				result.setWorkflows(CpWorkflowCfgDetail.from(config).getWorkflows());
 			}
+
+			List<SpecimenTypeUnit> units = SpecimenUtil.getInstance().getUnits(cp.getShortTitle());
+			result.setUnits(SpecimenTypeUnitDetail.from(units));
 		}
 		
 		return result;

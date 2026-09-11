@@ -8,7 +8,17 @@ public enum AuditErrorCode implements ErrorCode {
 
 	DATE_GT_TODAY,
 
-	DATE_INTERVAL_GT_ALLOWED;
+	DATE_INTERVAL_GT_ALLOWED,
+
+	FROM_DT_GT_TO_DATE,
+
+	RECORDS_REQ,
+
+	START_DATE_REQ,
+
+	END_DATE_REQ,
+
+	REPORT_GEN_IN_PROGRESS;
 
 	@Override
 	public String code() {

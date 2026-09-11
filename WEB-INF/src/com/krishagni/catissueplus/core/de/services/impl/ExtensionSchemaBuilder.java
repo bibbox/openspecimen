@@ -6,16 +6,16 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.commons.lang.StringUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.util.ResourceUtils;
 
+
 import com.krishagni.catissueplus.core.common.PlusTransactional;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.service.TemplateService;
+import com.krishagni.catissueplus.core.common.util.LogUtil;
 import com.krishagni.catissueplus.core.de.domain.FormErrorCode;
 import com.krishagni.catissueplus.core.de.repository.FormDao;
 import com.krishagni.catissueplus.core.importer.domain.ObjectSchema;
@@ -29,11 +29,16 @@ import edu.common.dynamicextensions.domain.nui.Control;
 import edu.common.dynamicextensions.domain.nui.DataType;
 import edu.common.dynamicextensions.domain.nui.DatePicker;
 import edu.common.dynamicextensions.domain.nui.FileUploadControl;
+import edu.common.dynamicextensions.domain.nui.Label;
+import edu.common.dynamicextensions.domain.nui.LinkControl;
+import edu.common.dynamicextensions.domain.nui.LookupControl;
 import edu.common.dynamicextensions.domain.nui.MultiSelectControl;
+import edu.common.dynamicextensions.domain.nui.PageBreak;
+import edu.common.dynamicextensions.domain.nui.SignatureControl;
 import edu.common.dynamicextensions.domain.nui.SubFormControl;
 
 public class ExtensionSchemaBuilder implements ObjectSchemaBuilder {
-	private static final Log logger = LogFactory.getLog(ExtensionSchemaBuilder.class);
+	private static final LogUtil logger = LogUtil.getLogger(ExtensionSchemaBuilder.class);
 
 	private TemplateService templateService;
 
@@ -65,7 +70,7 @@ public class ExtensionSchemaBuilder implements ObjectSchemaBuilder {
 			throw OpenSpecimenException.userError(FormErrorCode.NOT_FOUND, formName, 1);
 		}
 		
-		return getObjectSchema(form, entityType);
+		return getObjectSchema(form, entityType, params.getOrDefault("useUdn", "true").equals("true"));
 	}
 
 	@Override
@@ -92,27 +97,31 @@ public class ExtensionSchemaBuilder implements ObjectSchemaBuilder {
 		return templates.toString();
 	}
 
-	private  ObjectSchema getObjectSchema(Container form, String entityType) {
+	private  ObjectSchema getObjectSchema(Container form, String entityType, boolean useUdn) {
 		Record record = new Record();  
 		
 		List<Field> fields = new ArrayList<Field>();
 		fields.add(getField("recordId", form.getCaption() + " ID"));
-		
-		if (entityType.equals("Participant") || entityType.equals("CommonParticipant")) {
-			fields.add(getField("cpShortTitle", "Collection Protocol"));
-			fields.add(getField("ppid", "PPID"));
-		} else if (entityType.equals("SpecimenCollectionGroup")) {
-			fields.add(getField("visitName", "Visit Name"));
-		} else if (entityType.equals("Specimen") || entityType.equals("SpecimenEvent")) {
-			fields.add(getField("cpShortTitle", "CP Short Title"));
-			fields.add(getField("specimenLabel", "Specimen Label"));
-			fields.add(getField("barcode", "Barcode"));
+
+		switch (entityType) {
+			case "Participant", "CommonParticipant" -> {
+				fields.add(getField("cpShortTitle", "Collection Protocol"));
+				fields.add(getField("ppid", "PPID"));
+			}
+			case "SpecimenCollectionGroup" -> fields.add(getField("visitName", "Visit Name"));
+			case "Specimen", "SpecimenEvent" -> {
+				fields.add(getField("cpShortTitle", "CP Short Title"));
+				fields.add(getField("specimenLabel", "Specimen Label"));
+				fields.add(getField("barcode", "Barcode"));
+			}
+			case "User", "UserProfile" -> fields.add(getField("emailAddress", "Email Address"));
 		}
-		
+
+		fields.add(getField("fdeStatus", "Status"));
 		fields.add(getField("activityStatus", "Activity Status"));
 		record.setFields(fields);
 		
-		Record formValueMap = getFormRecord(form);
+		Record formValueMap = getFormRecord(form, useUdn);
 		formValueMap.setAttribute("formValueMap");
 		record.setSubRecords(Collections.singletonList(formValueMap));
 		
@@ -126,10 +135,14 @@ public class ExtensionSchemaBuilder implements ObjectSchemaBuilder {
 	}
 	
 	protected Record getFormRecord(Container form, boolean useUdn) {
-		List<Field> fields = new ArrayList<Field>();
-		List<Record> subRecords = new ArrayList<Record>();
+		List<Field> fields = new ArrayList<>();
+		List<Record> subRecords = new ArrayList<>();
 		
 		for (Control ctrl : form.getOrderedControlList()) {
+			if (ctrl instanceof Label || ctrl instanceof PageBreak || ctrl instanceof LinkControl) {
+				continue;
+			}
+
 			if (ctrl instanceof SubFormControl) {
 				subRecords.add(getSubRecord((SubFormControl)ctrl, useUdn));
 			} else {
@@ -153,16 +166,18 @@ public class ExtensionSchemaBuilder implements ObjectSchemaBuilder {
 		Field field = getField(
 			useUdn ? ctrl.getUserDefinedName() : ctrl.getName() ,
 			ctrl.getCaption(),
-			ctrl instanceof MultiSelectControl);
+			ctrl instanceof MultiSelectControl || (ctrl instanceof LookupControl luCtrl && luCtrl.isMultiValued()));
 
 		if (ctrl.getDataType() == DataType.DATE) {
 			if (((DatePicker)ctrl).getFormat().contains("HH:mm")) {
 				field.setType("datetime");
 			} else {
-				field.setType("date");
+				field.setType("dateOnly");
 			}
 		} else if (ctrl instanceof FileUploadControl) {
 			field.setType("defile");
+		} else if (ctrl instanceof SignatureControl) {
+			field.setType("signature");
 		} else if (ctrl instanceof CheckBox) {
 			field.setType("boolean");
 		}

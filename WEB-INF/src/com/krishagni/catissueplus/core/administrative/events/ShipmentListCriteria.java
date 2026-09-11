@@ -15,7 +15,13 @@ public class ShipmentListCriteria extends AbstractListCriteria<ShipmentListCrite
 	
 	private String recvSite;
 
+	private String labelOrBarcode;
+
 	private Shipment.Status status;
+
+	private Shipment.Type type;
+
+	private String requestStatus;
 	
 	private Set<SiteCpPair> sites;
 	
@@ -60,12 +66,39 @@ public class ShipmentListCriteria extends AbstractListCriteria<ShipmentListCrite
 		return self();
 	}
 
+	public String labelOrBarcode() {
+		return labelOrBarcode;
+	}
+
+	public ShipmentListCriteria labelOrBarcode(String labelOrBarcode) {
+		this.labelOrBarcode = labelOrBarcode;
+		return self();
+	}
+
 	public Shipment.Status status() {
 		return status;
 	}
 
 	public ShipmentListCriteria status(Shipment.Status status) {
 		this.status = status;
+		return self();
+	}
+
+	public Shipment.Type type() {
+		return type;
+	}
+
+	public ShipmentListCriteria type(Shipment.Type type) {
+		this.type = type;
+		return self();
+	}
+
+	public String requestStatus() {
+		return requestStatus;
+	}
+
+	public ShipmentListCriteria requestStatus(String requestStatus) {
+		this.requestStatus = requestStatus;
 		return self();
 	}
 	

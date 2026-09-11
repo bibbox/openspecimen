@@ -21,9 +21,11 @@ angular.module('os.administrative.form',
       })
       .state('form-list', {
         url: '/forms?filters',
-        templateUrl: 'modules/administrative/form/list.html',
-        controller: 'FormListCtrl',
-        parent: 'form-root'
+        template: '<div></div>',
+        controller: function($stateParams, VueApp) {
+          VueApp.setVueView('forms/-1', $stateParams);
+        },
+        parent: 'signed-in'
       })
       .state('form-addedit', {
         url: '/form-addedit/:formId',
@@ -40,5 +42,26 @@ angular.module('os.administrative.form',
         },
         parent: 'form-root'
       })
+      .state('form-import', {
+        url: '/import',
+        templateUrl: 'modules/administrative/form/import.html',
+        controller: 'FormImportCtrl',
+        parent: 'form-root'
+      })
+      .state('form-preview', {
+        url: '/form-preview/:formId?revId',
+        templateUrl: 'modules/administrative/form/preview.html',
+        controller: 'FormPreviewCtrl',
+        resolve: {
+          formDef: function($stateParams, Form) {
+            if ($stateParams.formId > 0 && $stateParams.revId > 0) {
+              return Form.getAtRevision($stateParams.formId, $stateParams.revId);
+            }
+
+            return Form.getDefinition($stateParams.formId);
+          }
+        },
+        parent: 'form-root'
+      });
   });
 

@@ -7,7 +7,9 @@ public enum  PrintRuleEvent implements EventCode {
 
 	UPDATED,
 
-	DELETED;
+	DELETED,
+
+	CACHE_UPDATED;
 
 	@Override
 	public String code() {

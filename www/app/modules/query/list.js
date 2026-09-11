@@ -1,15 +1,23 @@
 
 angular.module('os.query.list', ['os.query.models'])
   .controller('QueryListCtrl', function(
-    $scope, $state, $modal, currentUser, queryGlobal, folder,
-    Util, SavedQuery, QueryFolder, Alerts) {
+    $scope, $state, $modal, currentUser, queryGlobal, folders,
+    Util, SavedQuery, QueryFolder, Alerts, ListPagerOpts, VueApp) {
+
+    var filterOpts, pagerOpts;
 
     function init() {
-      $scope.filterOpts = Util.filterOpts({searchString: ''});
+      pagerOpts = $scope.pagerOpts = new ListPagerOpts({listSizeGetter: getQueriesCount});
+      filterOpts = $scope.filterOpts = Util.filterOpts({
+        searchString: '',
+        max: pagerOpts.recordsPerPage + 1,
+        orderByStarred: true
+      });
+
       $scope.queryList = [];
       $scope.selectedQueries = [];
+
       $scope.folders = {
-        selectedFolder: folder,
         allFolders: [],
         myFolders: [],
         sharedFolders: []
@@ -21,12 +29,42 @@ angular.module('os.query.list', ['os.query.models'])
       Util.filter($scope, 'filterOpts', loadQueries);
     };
 
+    function getSelectedFolder(filterOpts) {
+      var folder = undefined;
+      if (!!filterOpts.folderId) {
+        if (filterOpts.folderId <= 0) {
+          folder = {id: -1}; // all queries
+        } else {
+          folder = folders.find(function(folder) { return folder.id == filterOpts.folderId; });
+        }
+      }
+
+      return folder;
+    }
+
     function loadQueries(filterOpts) {
       $scope.selectedQueries = [];
-      if (!$scope.folders.selectedFolder) {
-        $scope.queryList = SavedQuery.list(filterOpts);
+      $scope.folders.selectedFolder = getSelectedFolder(filterOpts);
+
+      if (!$scope.folders.selectedFolder || $scope.folders.selectedFolder.id <= 0) {
+        var userId = null;
+        if (!$scope.folders.selectedFolder) {
+          userId = currentUser.id;
+        }
+
+        SavedQuery.query(angular.extend({userId: userId}, filterOpts)).then(
+          function(queries) {
+            pagerOpts.refreshOpts(queries);
+            $scope.queryList = {queries: queries};
+          }
+        );
       } else {
-        $scope.queryList = $scope.folders.selectedFolder.getQueries(filterOpts);
+        $scope.folders.selectedFolder.query(filterOpts).then(
+          function(queries) {
+            pagerOpts.refreshOpts(queries);
+            $scope.queryList = {queries: queries};
+          }
+        );
       }
     };
  
@@ -36,15 +74,35 @@ angular.module('os.query.list', ['os.query.models'])
           $scope.folders.allFolders    = resp.allFolders;
           $scope.folders.myFolders     = resp.myFolders;
           $scope.folders.sharedFolders = resp.sharedFolders;
+          $scope.folders.editableFolders = (resp.sharedFolders || []).filter(
+            function(folder) {
+              folder.editable = (
+                folder.owner.loginName != '$system' &&
+                (
+                  currentUser.admin ||
+                  (currentUser.instituteAdmin && currentUser.instituteId == folder.owner.instituteId)  ||
+                  folder.allowEditsBySharedUsers
+                )
+              );
+              return folder.editable;
+            }
+          );
         }
       );
     };
 
-    function loadFolderQueries(folder) {
-      $scope.folders.selectedFolder = folder;
-      $scope.filterOpts = {searchString: ''};
-      loadQueries($scope.filterOpts);
-    };
+    function getQueriesCount() {
+      if (!$scope.folders.selectedFolder || $scope.folders.selectedFolder.id <= 0) {
+        var userId = null;
+        if (!$scope.folders.selectedFolder) {
+          userId = currentUser.id;
+        }
+
+        return SavedQuery.getCount(angular.extend({userId: userId}, filterOpts));
+      } else {
+        return $scope.folders.selectedFolder.getCount(filterOpts)
+      }
+    }
 
     $scope.viewResults = function(query) {
       $state.go('query-results', {queryId: query.id});
@@ -75,6 +133,10 @@ angular.module('os.query.list', ['os.query.models'])
       }
     };
 
+    $scope.scheduleQuery = function(query) {
+      VueApp.setVueView('scheduled-jobs/-1/addedit', {queryId: query.id});
+    };
+
     $scope.deleteQuery = function(query) {
       var mi = $modal.open({
         templateUrl: 'modules/query/confirm-delete.html',
@@ -88,7 +150,7 @@ angular.module('os.query.list', ['os.query.models'])
 
       mi.result.then(
         function(result) {
-          loadFolderQueries($scope.folders.selectedFolder);     
+          loadQueries($scope.filterOpts);
           Alerts.success('queries.query_deleted', {queryTitle: query.title});
         }
       );
@@ -99,7 +161,7 @@ angular.module('os.query.list', ['os.query.models'])
      */
     $scope.selectFolder = function(folder, force) {
       var opts = (force && {reload: true}) || {};
-      $state.go('query-list', {folderId: (folder && folder.id) || -1}, opts);
+      filterOpts.folderId = folder && folder.id;
     };
 
     $scope.addSelectedQueriesToFolder = function(folder) {
@@ -168,6 +230,39 @@ angular.module('os.query.list', ['os.query.models'])
         }
       );
     };
+
+    $scope.showFolderInfo = function(folder) {
+      $modal.open({
+        templateUrl: 'modules/query/folder-overview.html',
+        controller: function($scope, $modalInstance, folderInfo) {
+          $scope.folder = folderInfo;
+
+          $scope.done = function() {
+            $modalInstance.dismiss('cancel');
+          }
+        },
+        resolve: {
+          folderInfo: function() {
+            return QueryFolder.getById(folder.id, {includeQueries: false});
+          }
+        }
+      });
+    }
+
+    $scope.toggleStar = function(query) {
+      var q = query.starred ? query.unstar() : query.star();
+      q.then(
+        function(result) {
+          if (result.status == true) {
+            query.starred = !query.starred;
+          }
+        }
+      );
+    }
+
+    $scope.pageSizeChanged = function() {
+      filterOpts.max = pagerOpts.recordsPerPage + 1;
+    }
 
     init();
   });

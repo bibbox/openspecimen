@@ -10,12 +10,15 @@ import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
 public class ContainerStoreList extends BaseEntity {
 	public enum Op {
 		PUT,
+
 		PICK
 	}
 
 	public enum Status {
 		PENDING,
+
 		FAILED,
+
 		SUCCESS
 	}
 
@@ -123,6 +126,7 @@ public class ContainerStoreList extends BaseEntity {
 		ContainerStoreListItem item = new ContainerStoreListItem();
 		item.setSpecimen(specimen);
 		item.setStoreList(this);
+		item.setComments(specimen.getTransferComments());
 		getItems().add(item);
 	}
 

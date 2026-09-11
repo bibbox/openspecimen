@@ -4,11 +4,17 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.charset.Charset;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collections;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -17,8 +23,12 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
-import org.apache.commons.collections.CollectionUtils;
+import jakarta.servlet.http.HttpServletResponse;
+
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.LocaleUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -30,6 +40,7 @@ import org.springframework.context.event.ContextRefreshedEvent;
 
 import com.krishagni.catissueplus.core.biospecimen.events.FileDetail;
 import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
+import com.krishagni.catissueplus.core.common.OpenSpecimenAppCtxProvider;
 import com.krishagni.catissueplus.core.common.Pair;
 import com.krishagni.catissueplus.core.common.PluginManager;
 import com.krishagni.catissueplus.core.common.PlusTransactional;
@@ -38,6 +49,7 @@ import com.krishagni.catissueplus.core.common.domain.ConfigErrorCode;
 import com.krishagni.catissueplus.core.common.domain.ConfigProperty;
 import com.krishagni.catissueplus.core.common.domain.ConfigSetting;
 import com.krishagni.catissueplus.core.common.domain.Module;
+import com.krishagni.catissueplus.core.common.errors.CommonErrorCode;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.ConfigSettingDetail;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
@@ -45,10 +57,17 @@ import com.krishagni.catissueplus.core.common.events.ResponseEvent;
 import com.krishagni.catissueplus.core.common.service.ConfigChangeListener;
 import com.krishagni.catissueplus.core.common.service.ConfigurationService;
 import com.krishagni.catissueplus.core.common.util.AuthUtil;
+import com.krishagni.catissueplus.core.common.util.LogUtil;
 import com.krishagni.catissueplus.core.common.util.Status;
 import com.krishagni.catissueplus.core.common.util.Utility;
+import com.krishagni.catissueplus.core.exporter.services.ExportService;
+import com.krishagni.catissueplus.core.importer.services.ImportService;
+import com.krishagni.rbac.common.errors.RbacErrorCode;
 
 public class ConfigurationServiceImpl implements ConfigurationService, InitializingBean, ApplicationListener<ContextRefreshedEvent> {
+	private static final LogUtil logger = LogUtil.getLogger(ConfigurationServiceImpl.class);
+
+	private static final Pattern DATE_FORMAT = Pattern.compile("(?<day>d+)|(?<month>M+)|(?<year>y+)|(?<week>EEE+)");
 	
 	private Map<String, List<ConfigChangeListener>> changeListeners = new ConcurrentHashMap<>();
 	
@@ -57,7 +76,7 @@ public class ConfigurationServiceImpl implements ConfigurationService, Initializ
 	private DaoFactory daoFactory;
 	
 	private MessageSource messageSource;
-	
+
 	private Properties appProps = new Properties();
 		
 	public void setDaoFactory(DaoFactory daoFactory) {
@@ -67,7 +86,7 @@ public class ConfigurationServiceImpl implements ConfigurationService, Initializ
 	public void setMessageSource(MessageSource messageSource) {
 		this.messageSource = messageSource;
 	}
-	
+
 	public void setAppProps(Properties appProps) {
 		this.appProps = appProps;
 	}
@@ -129,7 +148,7 @@ public class ConfigurationServiceImpl implements ConfigurationService, Initializ
 		if (existing == null) {
 			return ResponseEvent.userError(ConfigErrorCode.SETTING_NOT_FOUND);
 		}
-		
+
 		String setting = detail.getValue();
 		if (!isValidSetting(existing.getProperty(), setting)) {
 			return ResponseEvent.userError(ConfigErrorCode.INVALID_SETTING_VALUE, setting);
@@ -138,6 +157,8 @@ public class ConfigurationServiceImpl implements ConfigurationService, Initializ
 		boolean successful = false;
 		try {
 			ConfigSetting newSetting = createSetting(existing, setting);
+
+			existing = daoFactory.getConfigSettingDao().getById(existing.getId());
 			existing.setActivityStatus(Status.ACTIVITY_STATUS_DISABLED.getStatus());
 
 			daoFactory.getConfigSettingDao().saveOrUpdate(existing);
@@ -146,7 +167,7 @@ public class ConfigurationServiceImpl implements ConfigurationService, Initializ
 			
 			notifyListeners(module, prop, setting);
 			successful = true;
-			return ResponseEvent.response(ConfigSettingDetail.from(newSetting));
+			return ResponseEvent.response(ConfigSettingDetail.from(moduleSettings.get(prop)));
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
 		} catch (Exception e) {
@@ -186,20 +207,83 @@ public class ConfigurationServiceImpl implements ConfigurationService, Initializ
 
 	@Override
 	public ResponseEvent<String> uploadSettingFile(RequestEvent<FileDetail> req) {
+		Date startTime = Calendar.getInstance().getTime();
 		OutputStream out = null;
 
 		try {
 			FileDetail detail = req.getPayload();
-			String filename = UUID.randomUUID() + "_" + detail.getFilename();
+			Map<String, Object> params = detail.getObjectProps();
+			String module = null, property = null;
+			if (params != null) {
+				module = (String) params.get("module");
+				property = (String) params.get("property");
+			}
 
-			out = new FileOutputStream(new File(getSettingFilesDir() + filename));
+			if (StringUtils.isBlank(module)) {
+				return ResponseEvent.userError(CommonErrorCode.INVALID_INPUT, "Module name is required");
+			}
+
+			if (StringUtils.isBlank(property)) {
+				return ResponseEvent.userError(CommonErrorCode.INVALID_INPUT, "Property name is required");
+			}
+
+			Map<String, ConfigSetting> settings = configSettings.get(module);
+			if (settings == null) {
+				return ResponseEvent.userError(ConfigErrorCode.SETTING_NOT_FOUND);
+			}
+
+			ConfigSetting setting = settings.get(property);
+			if (setting == null) {
+				return ResponseEvent.userError(ConfigErrorCode.SETTING_NOT_FOUND);
+			}
+
+			if (!setting.getProperty().isFile()) {
+				return ResponseEvent.userError(ConfigErrorCode.INVALID_SETTING_VALUE);
+			}
+
+			String filename = UUID.randomUUID() + "_" + detail.getFilename();
+			File settingsDir = getSettingFilesDir();
+			Path settingFile = settingsDir.toPath().resolve(filename);
+			if (!settingFile.normalize().startsWith(settingsDir.toPath())) {
+				return ResponseEvent.userError(CommonErrorCode.INVALID_INPUT, "Input filename contains path traversal characters");
+			}
+
+			out = new FileOutputStream(settingFile.toFile());
 			IOUtils.copy(detail.getFileIn(), out);
 
+			ImportService importSvc = OpenSpecimenAppCtxProvider.getBean("importObjectsSvc");
+			Map<String, String> impParams = new HashMap<>();
+			impParams.put("module", module);
+			impParams.put("property", property);
+			importSvc.saveJob("cfg_setting_file", "UPSERT", startTime, impParams);
 			return ResponseEvent.response(filename);
 		} catch (Exception e) {
 			return ResponseEvent.serverError(e);
 		} finally {
 			IOUtils.closeQuietly(out);
+		}
+	}
+
+	@Override
+	@PlusTransactional
+	public ResponseEvent<List<ConfigSettingDetail>> getSettingHistory(RequestEvent<Pair<String, String>> req) {
+		try {
+			if (!AuthUtil.isAdmin()) {
+				return ResponseEvent.userError(RbacErrorCode.ADMIN_RIGHTS_REQUIRED);
+			}
+
+			Pair<String, String> payload = req.getPayload();
+			Map<String, ConfigSetting> moduleSettings = configSettings.get(payload.first());
+			if (moduleSettings == null || moduleSettings.get(payload.second()) == null) {
+				return ResponseEvent.response(Collections.emptyList());
+			}
+
+			List<ConfigSetting> settings = daoFactory.getConfigSettingDao().getHistory(payload.first(), payload.second());
+			return ResponseEvent.response(ConfigSettingDetail.from(settings, true));
+		} catch (OpenSpecimenException ose) {
+			return ResponseEvent.error(ose);
+		} catch (Exception e) {
+			return ResponseEvent.serverError(e);
 		}
 	}
 
@@ -278,7 +362,13 @@ public class ConfigurationServiceImpl implements ConfigurationService, Initializ
 			return defValue != null && defValue.length > 0 ? defValue[0] : null;
 		}
 
-		File file = new File(getSettingFilesDir() + value);
+		File settingsDir = getSettingFilesDir();
+		Path settingFile = settingsDir.toPath().resolve(value);
+		if (!settingFile.normalize().startsWith(settingsDir.toPath())) {
+			throw OpenSpecimenException.userError(CommonErrorCode.INVALID_INPUT, "Setting file has one or more path traversal characters/sequences. Value: " + value);
+		}
+
+		File file = settingFile.toFile();
 		if (!file.exists()) {
 			value = value.split("_", 2)[1];
 			throw OpenSpecimenException.userError(ConfigErrorCode.FILE_MOVED_OR_DELETED, value);
@@ -293,7 +383,7 @@ public class ConfigurationServiceImpl implements ConfigurationService, Initializ
 		try {
 			fileDetail = getFileDetail(module, name, defValue);
 			if (fileDetail != null && fileDetail.getFileIn() != null) {
-				return IOUtils.toString(fileDetail.getFileIn());
+				return IOUtils.toString(fileDetail.getFileIn(), Charset.defaultCharset());
 			}
 
 			return StringUtils.EMPTY;
@@ -326,11 +416,13 @@ public class ConfigurationServiceImpl implements ConfigurationService, Initializ
 				filename = value.substring(value.lastIndexOf(File.separator) + 1);
 				in = this.getClass().getResourceAsStream(value.substring(10));
 			} else {
-				File file = new File(value); // taking a chance whether setting was a string based before
-				if (!file.exists()) {
-					file = new File(getSettingFilesDir() + value);
+				File settingsDir = getSettingFilesDir();
+				Path filePath = settingsDir.toPath().resolve(value);
+				if (!filePath.normalize().startsWith(settingsDir.toPath())) {
+					throw OpenSpecimenException.userError(CommonErrorCode.INVALID_INPUT, "The setting filename has one or more path traversal sequences. Value = " + value);
 				}
 
+				File file = filePath.toFile();
 				contentType = Utility.getContentType(file);
 				filename = file.getName().substring(file.getName().indexOf("_") + 1);
 				in = new FileInputStream(file);
@@ -346,8 +438,32 @@ public class ConfigurationServiceImpl implements ConfigurationService, Initializ
 			fileDetail.setFileIn(in);
 			return fileDetail;
 		} catch (Exception e) {
-			throw OpenSpecimenException.serverError(e);
+			OpenSpecimenException ose = null;
+			if (e instanceof OpenSpecimenException) {
+				ose = (OpenSpecimenException) e;
+			} else {
+				ose = OpenSpecimenException.serverError(e);
+			}
+
+			throw ose;
 		}
+	}
+
+	@Override
+	public void downloadSettingFile(String moduleName, String propertyName, HttpServletResponse httpResp) {
+		Date startTime = Calendar.getInstance().getTime();
+		FileDetail detail = getFileDetail(moduleName, propertyName);
+		if (detail == null || detail.getFileIn() == null) {
+			return;
+		}
+
+		Utility.sendToClient(httpResp, detail.getFilename(), detail.getContentType(), detail.getFileIn());
+
+		ExportService exportSvc = OpenSpecimenAppCtxProvider.getBean("exportSvc");
+		Map<String, String> params = new HashMap<>();
+		params.put("module", moduleName);
+		params.put("property", propertyName);
+		exportSvc.saveJob("cfg_setting_file", startTime, params);
 	}
 
 	@Override
@@ -382,25 +498,20 @@ public class ConfigurationServiceImpl implements ConfigurationService, Initializ
 
 	@Override
 	public void registerChangeListener(String module, ConfigChangeListener callback) {
-		List<ConfigChangeListener> listeners = changeListeners.get(module);
-		if (listeners == null) {
-			listeners = new ArrayList<>();
-			changeListeners.put(module, listeners);
-		}
-		
+		List<ConfigChangeListener> listeners = changeListeners.computeIfAbsent(module, k -> new ArrayList<>());
 		listeners.add(callback);
 	}
 	
 	@Override
 	public Map<String, Object> getLocaleSettings() {
-		Map<String, Object> result = new HashMap<String, Object>();
+		Map<String, Object> result = new HashMap<>();
 
 		Locale locale = Locale.getDefault();
 		result.put("locale", locale.toString());
-		result.put("dateFmt", messageSource.getMessage("common_date_fmt", null, locale));
-		result.put("timeFmt", messageSource.getMessage("common_time_fmt", null, locale));
-		result.put("deFeDateFmt", messageSource.getMessage("common_de_fe_date_fmt", null, locale));
-		result.put("deBeDateFmt", messageSource.getMessage("common_de_be_date_fmt", null, locale));
+		result.put("dateFmt", getDateFormat());
+		result.put("timeFmt", getTimeFormat());
+		result.put("deFeDateFmt", getDeFeDateFormat());
+		result.put("deBeDateFmt", getDeDateFormat());
 		result.put("utcOffset", Utility.getTimezoneOffset());
 
 		return result;
@@ -408,17 +519,32 @@ public class ConfigurationServiceImpl implements ConfigurationService, Initializ
 		
 	@Override
 	public String getDateFormat() {
-		return messageSource.getMessage("common_date_fmt", null, Locale.getDefault());
+		String dateFmt = getStrSetting("common", "date_format");
+		if (StringUtils.isBlank(dateFmt)) {
+			dateFmt = messageSource.getMessage("common_date_fmt", null, Locale.getDefault());
+		}
+
+		return dateFmt;
 	}
 	
 	@Override
-	public String getDeDateFormat() {		
-		return messageSource.getMessage("common_de_be_date_fmt", null, Locale.getDefault());
+	public String getDeDateFormat() {
+		String dateFmt = getStrSetting("common", "de_date_format");
+		if (StringUtils.isBlank(dateFmt)) {
+			dateFmt = messageSource.getMessage("common_de_be_date_fmt", null, Locale.getDefault());
+		}
+
+		return dateFmt;
 	}
 
 	@Override
 	public String getTimeFormat() {
-		return messageSource.getMessage("common_time_fmt", null, Locale.getDefault());
+		String timeFmt = getStrSetting("common", "time_format");
+		if (StringUtils.isBlank(timeFmt)) {
+			timeFmt = messageSource.getMessage("common_time_fmt", null, Locale.getDefault());
+		}
+
+		return timeFmt;
 	}
 
 	@Override
@@ -452,6 +578,7 @@ public class ConfigurationServiceImpl implements ConfigurationService, Initializ
 	public Map<String, Object> getAppProps() {
 		Map<String, Object> props = new HashMap<>();
 		props.put("plugins",                 PluginManager.getInstance().getPluginNames());
+		props.put("pluginsDetail",           PluginManager.getInstance().getPlugins());
 		props.put("build_version",           appProps.getProperty("buildinfo.version"));
 		props.put("build_date",              appProps.getProperty("buildinfo.date"));
 		props.put("build_commit_revision",   appProps.getProperty("buildinfo.commit_revision"));
@@ -465,9 +592,14 @@ public class ConfigurationServiceImpl implements ConfigurationService, Initializ
 		props.put("forgot_password",         getBoolSetting("auth", "forgot_password", true));
 		props.put("toast_disp_time",         getIntSetting("common", "toast_disp_time", 5));
 		props.put("default_domain",          getStrSetting("auth", "default_domain"));
-		props.put("data_dir",                getDataDir());
 		props.put("not_specified",           getStrSetting("common", "not_specified_text"));
+		props.put("queryDiagnosticsEnabled", Utility.isMySQL());
 		props.put("searchDelay",             getIntSetting("common", "search_delay", 1000));
+		props.put("allowHtmlMarkup",         getBoolSetting("common", "de_form_html_markup", true));
+		props.put("auditEnabled",            appProps.getProperty("app.audit_enabled"));
+		props.put("localAccountSignups",     getBoolSetting("administrative", "local_account_signups", true));
+		props.put("caseInsensitiveSearch",   !Utility.isMySQL());
+		props.put("osDomainApiOnly",         AuthUtil.isOpenSpecimenDomainApiOnly());
 		return props;
 	}
 
@@ -475,10 +607,11 @@ public class ConfigurationServiceImpl implements ConfigurationService, Initializ
 	public String getDataDir() {		
 		String dataDir = appProps.getProperty("app.data_dir");
 		if (StringUtils.isBlank(dataDir)) {
-			dataDir = ".";
+			dataDir = Paths.get("").toAbsolutePath().toString(); // current working directory
 		}
 		
-		return getStrSetting("common", "data_dir", dataDir);
+		dataDir = getStrSetting("common", "data_dir", dataDir);
+		return Utility.getFile(dataDir).getAbsolutePath();
 	}
 	
 	@Override
@@ -574,9 +707,25 @@ public class ConfigurationServiceImpl implements ConfigurationService, Initializ
 					break;
 					
 				case FILE:
-					String path = getSettingFilesDir() + setting;
-					if (!new File(path).exists()) {
-						throw new FileNotFoundException("File at path " + path + " does not exists");
+					if (setting.startsWith("classpath:")) {
+						try (InputStream in = getClass().getResourceAsStream(setting.substring(10))) {
+							if (in == null) {
+								return false;
+							}
+						} catch (Exception e) {
+							return false;
+						}
+					} else {
+						File settingsDir = getSettingFilesDir();
+						Path filePath = settingsDir.toPath().resolve(setting);
+						if (!filePath.normalize().startsWith(settingsDir.toPath())) {
+							throw OpenSpecimenException.userError(CommonErrorCode.INVALID_INPUT, "Setting filename contains one or more path traversal sequences. Value = " + setting);
+						}
+
+						File file = filePath.toFile();
+						if (!file.exists()) {
+							throw new FileNotFoundException("File at path " + file.getAbsolutePath() + " does not exists");
+						}
 					}
 					break;
 
@@ -606,16 +755,20 @@ public class ConfigurationServiceImpl implements ConfigurationService, Initializ
 	}
 
 	private void notifyListeners(String module, String property, String setting) {
+		List<ConfigChangeListener> toNotifyListeners = new ArrayList<>();
 		List<ConfigChangeListener> listeners = changeListeners.get(module);
-		if (listeners == null) {
-			return;
+		if (listeners != null) {
+			toNotifyListeners.addAll(listeners);
 		}
-		
-		for (ConfigChangeListener listener : listeners) {
-			listener.onConfigChange(property, setting);
+
+		listeners = changeListeners.get("*");
+		if (listeners != null) {
+			toNotifyListeners.addAll(listeners);
 		}
+
+		toNotifyListeners.forEach(listener -> listener.onConfigChange(property, setting));
 	}
-	
+
 	private void setLocale() {
 		Locale existingLocale = Locale.getDefault();
 		String setting = getStrSetting("common", "locale", existingLocale.toString());
@@ -624,6 +777,8 @@ public class ConfigurationServiceImpl implements ConfigurationService, Initializ
 		if (!existingLocale.equals(newLocale)) {
 			Locale.setDefault(newLocale);
 		}
+
+		logger.info("App is using the locale: " + newLocale.toString());
 	}
 	
 	private boolean isAutoEmpiEnabled() {
@@ -631,10 +786,18 @@ public class ConfigurationServiceImpl implements ConfigurationService, Initializ
 				StringUtils.isNotBlank(getStrSetting("biospecimen", "mpi_generator", ""));
 	}
 
-	private String getSettingFilesDir() {
-		String dir = getDataDir() + File.separator + "config-setting-files";
-		new File(dir).mkdirs();
-		return dir + File.separator;
+	private File getSettingFilesDir() {
+		try {
+			Path dir = new File(getDataDir()).toPath().resolve("config-setting-files");
+			if (!dir.normalize().startsWith(getDataDir())) {
+				throw OpenSpecimenException.userError(CommonErrorCode.INVALID_INPUT, "Relative data directory paths not allowed");
+			}
+
+			Files.createDirectories(dir);
+			return dir.toFile();
+		} catch (IOException e) {
+			throw OpenSpecimenException.serverError(new RuntimeException("Error getting settings file directory.", e));
+		}
 	}
 
 	private void deleteOldSettingFile(ConfigSetting oldSetting) {
@@ -642,10 +805,16 @@ public class ConfigurationServiceImpl implements ConfigurationService, Initializ
 			return;
 		}
 
+		File settingsDir = getSettingFilesDir();
+		Path oldSettingFile = settingsDir.toPath().resolve(oldSetting.getValue());
+		if (!oldSettingFile.normalize().startsWith(settingsDir.toPath())) {
+			throw OpenSpecimenException.userError(CommonErrorCode.INVALID_INPUT, "Filenames with path traversal characters not allowed");
+		}
 
-		File file = new File(getSettingFilesDir() + oldSetting.getValue());
-		if (file.exists()) {
-			file.delete(); // Very dangerous to do! Should we just rename the file?
+		try {
+			Files.deleteIfExists(oldSettingFile);
+		} catch (Exception e) {
+			logger.error("Error deleting the old setting file: " + oldSettingFile.toString());
 		}
 	}
 
@@ -678,5 +847,77 @@ public class ConfigurationServiceImpl implements ConfigurationService, Initializ
 		}
 
 		return result;
+	}
+
+	private String getDeFeDateFormat() {
+		String dateFmt       = getDeDateFormat();
+		StringBuilder result = new StringBuilder();
+		int lastIdx          = 0;
+
+		Matcher matcher = DATE_FORMAT.matcher(dateFmt);
+		while (matcher.find()) {
+			String replacement = "";
+			String match = matcher.group();
+
+			if (matcher.group("day") != null) {
+				if (match.length() < 2) {
+					replacement = "d";
+				} else {
+					replacement = "dd";
+				}
+			}
+
+			if (matcher.group("month") != null) {
+				switch (match.length()) {
+					case 1:
+						replacement = "m";
+						break;
+
+					case 2:
+						replacement = "mm";
+						break;
+
+					case 3:
+						replacement = "M";
+						break;
+
+					default:
+						replacement = "MM";
+						break;
+				}
+			}
+
+			if (matcher.group("year") != null) {
+				switch (match.length()) {
+					case 2:
+						replacement = "yy";
+						break;
+
+					case 4:
+					default:
+						replacement = "yyyy";
+						break;
+				}
+			}
+
+			if (matcher.group("week") != null) {
+				switch (match.length()) {
+					case 3:
+						replacement = "D";
+						break;
+
+					case 4:
+					default:
+						replacement = "DD";
+						break;
+				}
+			}
+
+			result.append(dateFmt, lastIdx, matcher.start());
+			result.append(replacement);
+			lastIdx = matcher.end();
+		}
+
+		return result.toString();
 	}
 }

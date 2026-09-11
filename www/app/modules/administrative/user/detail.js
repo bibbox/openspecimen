@@ -1,10 +1,16 @@
 
 angular.module('os.administrative.user.detail', ['os.administrative.models'])
   .controller('UserDetailCtrl', function(
-    $scope, $q, $translate, user, 
-    User, AuthDomain, PvManager, Alerts, DeleteUtil) {
+    $scope, $q, $translate, $state, $stateParams, user,
+    User, AuthDomain, AuthService, PvManager, Alerts, DeleteUtil, Util, VueApp) {
 
     function init() {
+      if (!$stateParams.old || $stateParams.old == 'false') {
+        var url = $state.href($state.$current.name, $stateParams);
+        VueApp.setVueView(url.substring(2), {});
+        return;
+      }
+
       $scope.user = user;
       loadPvs();
     }
@@ -50,6 +56,21 @@ angular.module('os.administrative.user.detail', ['os.administrative.models'])
       DeleteUtil.delete($scope.user, {
         onDeleteState: 'user-list',
         confirmDelete: $scope.user.activityStatus == 'Pending' ? 'user.confirm_reject' : undefined
+      });
+    }
+
+    $scope.impersonate = function() {
+      Util.showConfirm({
+        title: 'user.impersonate_as',
+        input: {user: $scope.user},
+        confirmMsg: 'user.confirm_impersonate_as',
+        ok: function() {
+          AuthService.impersonate($scope.user).then(
+            function() {
+              $state.go('home', {}, {reload: true});
+            }
+          );
+        }
       });
     }
 

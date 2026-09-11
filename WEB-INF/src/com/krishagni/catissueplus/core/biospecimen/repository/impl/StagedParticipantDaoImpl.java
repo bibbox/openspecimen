@@ -6,16 +6,15 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 
-import org.apache.commons.collections.CollectionUtils;
-import org.apache.commons.lang.StringUtils;
-import org.hibernate.Criteria;
-import org.hibernate.criterion.Disjunction;
-import org.hibernate.criterion.Restrictions;
+import org.apache.commons.lang3.StringUtils;
 
 import com.krishagni.catissueplus.core.biospecimen.domain.StagedParticipant;
+import com.krishagni.catissueplus.core.biospecimen.domain.StagedParticipantMedicalIdentifier;
 import com.krishagni.catissueplus.core.biospecimen.events.PmiDetail;
 import com.krishagni.catissueplus.core.biospecimen.repository.StagedParticipantDao;
 import com.krishagni.catissueplus.core.common.repository.AbstractDao;
+import com.krishagni.catissueplus.core.common.repository.Criteria;
+import com.krishagni.catissueplus.core.common.repository.Disjunction;
 
 public class StagedParticipantDaoImpl extends AbstractDao<StagedParticipant> implements StagedParticipantDao {
 
@@ -25,27 +24,51 @@ public class StagedParticipantDaoImpl extends AbstractDao<StagedParticipant> imp
 	}
 
 	@Override
-	@SuppressWarnings("unchecked")	
 	public List<StagedParticipant> getByPmis(List<PmiDetail> pmis) {
-		Criteria query = getByPmisQuery(pmis);
-		return query != null ? query.list() : Collections.emptyList();
+		List<Long> participantIds = getMatchingParticipantIds(pmis);
+		if (participantIds == null || participantIds.isEmpty()) {
+			return Collections.emptyList();
+		}
+
+		Criteria<StagedParticipant> query = createCriteria(StagedParticipant.class, "sp");
+		return query.add(query.in("sp.id", participantIds)).list();
 	}
 	
 	@Override
-	@SuppressWarnings("unchecked")
 	public StagedParticipant getByEmpi(String empi) {
-		List<StagedParticipant> participants = getCurrentSession().getNamedQuery(GET_BY_EMPI)
-			.setString("empi", empi.toLowerCase())
-			.list();
-		return CollectionUtils.isEmpty(participants) ? null : participants.iterator().next();
+		Criteria<StagedParticipant> query = createCriteria(StagedParticipant.class, "sp");
+		if (isMySQL()) {
+			query.add(query.eq("sp.empi", empi));
+		} else {
+			query.add(query.eq(query.lower("sp.empi"), empi.toLowerCase()));
+		}
+
+		return query.uniqueResult();
 	}
 
 	@Override
-	@SuppressWarnings("unchecked")
+	public StagedParticipant getByUid(String uid) {
+		Criteria<StagedParticipant> query = createCriteria(StagedParticipant.class, "sp");
+		if (isMySQL()) {
+			query.add(query.eq("sp.uid", uid));
+		} else {
+			query.add(query.eq(query.lower("sp.uid"), uid.toLowerCase()));
+		}
+
+		return query.uniqueResult();
+	}
+
+	@Override
 	public List<StagedParticipant> getByMrn(String mrn) {
-		return getCurrentSession().getNamedQuery(GET_BY_MRN)
-			.setParameter("mrn", mrn.toLowerCase())
-			.list();
+		Criteria<StagedParticipant> query = createCriteria(StagedParticipant.class, "sp")
+			.join("sp.pmiList", "pmi");
+		if (isMySQL()) {
+			query.add(query.eq("pmi.medicalRecordNumber", mrn));
+		} else {
+			query.add(query.eq(query.lower("pmi.medicalRecordNumber"), mrn.toLowerCase()));
+		}
+
+		return query.list();
 	}
 
 	@Override
@@ -57,36 +80,52 @@ public class StagedParticipantDaoImpl extends AbstractDao<StagedParticipant> imp
 		return deleteOldParticipantRecs(DEL_OLD_PARTICIPANTS, olderThanDt);
 	}
 
-	private Criteria getByPmisQuery(List<PmiDetail> pmis) {
-		Criteria query = getCurrentSession().createCriteria(StagedParticipant.class)
-			.createAlias("pmis", "pmi");
-		
-		Disjunction junction = Restrictions.disjunction();
+	private List<Long> getMatchingParticipantIds(List<PmiDetail> pmis) {
+		Criteria<Long> query = createCriteria(StagedParticipantMedicalIdentifier.class, Long.class, "pmi")
+			.join("pmi.participant", "participant")
+			.select("participant.id");
+
 		boolean added = false;
+		Disjunction disjunctions = query.disjunction();
 		for (PmiDetail pmi : pmis) {
 			if (StringUtils.isBlank(pmi.getSiteName()) || StringUtils.isBlank(pmi.getMrn())) {
 				continue;
 			}
-			
-			junction.add(
-				Restrictions.and(
-					Restrictions.ilike("pmi.medicalRecordNumber", pmi.getMrn()),
-					Restrictions.ilike("pmi.site", pmi.getSiteName())));
+
 			added = true;
+			if (isMySQL()) {
+				disjunctions.add(
+					query.and(
+						query.eq("pmi.medicalRecordNumber", pmi.getMrn()),
+						query.eq("pmi.site", pmi.getSiteName())
+					)
+				);
+			} else {
+				disjunctions.add(
+					query.and(
+						query.eq(query.lower("pmi.medicalRecordNumber"), pmi.getMrn().toLowerCase()),
+						query.eq(query.lower("pmi.site"), pmi.getSiteName().toLowerCase())
+					)
+				);
+			}
 		}
 
-		return added ? query.add(junction) : null;
+		if (!added) {
+			return Collections.emptyList();
+		}
+
+		query.add(disjunctions);
+
+		return query.list();
 	}
 
 	private int deleteOldParticipantRecs(String query, Date olderThanDt) {
-		return getCurrentSession().getNamedQuery(query).setTimestamp("olderThanDt", olderThanDt).executeUpdate();
+		return createNamedQuery(query)
+			.setParameter("olderThanDt", olderThanDt)
+			.executeUpdate();
 	}
 
 	private static final String FQN = StagedParticipant.class.getName();
-
-	private static final String GET_BY_EMPI = FQN + ".getByEmpi";
-
-	private static final String GET_BY_MRN = FQN + ".getByMrn";
 
 	private static final String DEL_OLD_PARTICIPANTS = FQN + ".deleteOldParticipants";
 

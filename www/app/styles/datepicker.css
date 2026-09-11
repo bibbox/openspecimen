@@ -39,3 +39,17 @@
   background: #eee;
   pointer-events: none;
 }
+
+
+.os-search .os-dp-align-left .dropdown-menu {
+  left: -152px!important;
+}
+
+.os-search .os-dp-align-left .dropdown-menu:before {
+  left: 151px;
+}
+
+.os-search .os-dp-align-left .dropdown-menu:after {
+  left: 152px;
+}
+

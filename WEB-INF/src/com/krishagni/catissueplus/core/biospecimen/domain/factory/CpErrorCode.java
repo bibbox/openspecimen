@@ -3,6 +3,9 @@ package com.krishagni.catissueplus.core.biospecimen.domain.factory;
 import com.krishagni.catissueplus.core.common.errors.ErrorCode;
 
 public enum CpErrorCode implements ErrorCode {
+
+	ID_REQ,
+
 	REPOSITORIES_REQUIRED,
 	
 	INVALID_REPOSITORIES,
@@ -40,6 +43,8 @@ public enum CpErrorCode implements ErrorCode {
 	INVALID_DERIVATIVE_LABEL_FMT,
 
 	INVALID_SPECIMEN_BARCODE_FMT,
+
+	INVALID_ADDL_LABEL_FMT,
 	
 	INVALID_VISIT_NAME_FMT,
 	
@@ -58,16 +63,22 @@ public enum CpErrorCode implements ErrorCode {
 	CONSENT_TIER_FOUND,
 	
 	CONSENTS_WAIVED,
+
+	DELETE_USING_UPDATE_NA,
 	
 	DUP_CP_SITE_CODES,
 
 	USED_SITES,
+
+	USED_CONT_RESTRICTION,
 
 	SOP_DOC_NOT_FOUND,
 
 	SOP_DOC_MOVED_OR_DELETED,
 
 	INVALID_SOP_DOC,
+
+	INVALID_LABEL_SEQ_KEY,
 
 	INVALID_VISIT_COLL_MODE,
 
@@ -89,6 +100,8 @@ public enum CpErrorCode implements ErrorCode {
 
 	REQUIRED,
 
+	REQ_OR_INV,
+
 	RPT_DISABLED,
 
 	RPT_FILE_NOT_FOUND,
@@ -97,7 +110,27 @@ public enum CpErrorCode implements ErrorCode {
 
 	OP_NOT_ALLOWED_SC,
 
-	DOES_NOT_EXIST;
+	DOES_NOT_EXIST,
+
+	NOT_IN_DRAFT,
+
+	PUB_CHANGES_REQ,
+
+	PUB_REASON_REQ,
+
+	PUB_REVIEWERS_REQ,
+
+	PUB_INVALID_REVIEWERS,
+
+	INVALID_PUB_ID,
+
+	CONSENTS_SOURCE_NOT_FOUND,
+
+	CONSENTS_SOURCED,
+
+	VISIT_CONSENTS_ENABLED,
+
+	NOT_OF_INST;
 	
 	@Override
 	public String code() {

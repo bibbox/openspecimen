@@ -11,6 +11,9 @@
       <h3>
         <span>{{cp.shortTitle}}</span>
         <span ng-if="codingEnabled && !!cp.code">({{cp.code}})</span>
+        <span class="btn os-status-closed" ng-if="cp.activityStatus == 'Closed'">
+          <span translate="common.closed">Closed</span>
+        </span>
       </h3>
     </div>
   </div>
@@ -29,10 +32,11 @@
          <span class="os-title" translate="cp.tab.consents">Consents</span>
        </a>
      </li>
-     <li ui-sref-active="active" ng-if="!cp.specimenCentric">
+     <li ui-sref-active="active">
        <a ui-sref=".specimen-requirements">
          <span class="fa fa-list-alt"></span>
-         <span class="os-title" translate="cp.tab.events">Events</span>
+         <span class="os-title" translate="cp.tab.events" ng-if="!cp.specimenCentric">Events</span>
+         <span class="os-title" translate="cp.tab.requirements" ng-if="cp.specimenCentric">Requirements</span>
        </a>
      </li>
      <li ng-class="{'active': includesState('cp-detail.settings')}">
@@ -43,11 +47,19 @@
          <span class="os-title" translate="cp.tab.settings">Settings</span>
        </a>
      </li>
+     <li ui-sref-active="active" ng-if="cpVersioningEnabled">
+       <a ui-sref=".versions">
+         <span class="fa fa-history"></span>
+         <span class="os-title" translate="cp.tab.versions">Published Versions</span>
+       </a>
+     </li>
      <os-plugin-hooks view-name="'cp-detail'" sec-name="'side-menu'"></os-plugin-hooks>
    </ul>
   </div>
 
-  <div ng-class="{'os-side-menu-page-content': state.name.indexOf('cp-detail') != -1}" ui-view>
+  <div ng-class="{'os-side-menu-page-content': state.name.indexOf('cp-detail') != -1}">
+    <span ng-if="cp.draftMode && cpVersioningEnabled" class="os-cp-draft-marker">DRAFT</span>
+    <div ui-view></div>
   </div>
 </div>
 

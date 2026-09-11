@@ -1,10 +1,13 @@
 package com.krishagni.catissueplus.core.administrative.events;
 
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+
+import org.apache.commons.lang3.StringUtils;
 
 import com.krishagni.catissueplus.core.administrative.domain.StorageContainer;
 import com.krishagni.catissueplus.core.administrative.domain.StorageContainerPosition;
@@ -40,6 +43,10 @@ public class StorageContainerPositionDetail implements Comparable<StorageContain
 	private String cpShortTitle;
 
 	private Boolean blocked;
+
+	private Long blockedEntityId;
+
+	private String blockedEntityName;
 	
 	public Long getId() {
 		return id;
@@ -161,6 +168,22 @@ public class StorageContainerPositionDetail implements Comparable<StorageContain
 		this.blocked = blocked;
 	}
 
+	public Long getBlockedEntityId() {
+		return blockedEntityId;
+	}
+
+	public void setBlockedEntityId(Long blockedEntityId) {
+		this.blockedEntityId = blockedEntityId;
+	}
+
+	public String getBlockedEntityName() {
+		return blockedEntityName;
+	}
+
+	public void setBlockedEntityName(String blockedEntityName) {
+		this.blockedEntityName = blockedEntityName;
+	}
+
 	@Override
 	public int compareTo(StorageContainerPositionDetail other) {
 		int cmp;
@@ -197,21 +220,7 @@ public class StorageContainerPositionDetail implements Comparable<StorageContain
 		if (position.getOccupyingSpecimen() != null) {
 			Specimen specimen = position.getOccupyingSpecimen();
 
-			Map<String, Object> props = new HashMap<>();
-			props.put("specimenClass", specimen.getSpecimenClass());
-			props.put("type",          specimen.getSpecimenType());
-
-			if (specimen.getBarcode() != null) {
-				props.put("barcode", specimen.getBarcode());
-			}
-
-			if (position.getContainer().getCellDisplayProp() == StorageContainer.CellDisplayProp.SPECIMEN_PPID) {
-				//
-				// PPID is populated on demand because of its potential performance impact
-				//
-				props.put("ppid", specimen.getVisit().getRegistration().getPpid());
-			}
-
+			Map<String, Object> props = props(position.getContainer(), specimen);
 			if (specimen.getReservedEvent() != null) {
 				props.put("reserved", true);
 			}
@@ -221,9 +230,25 @@ public class StorageContainerPositionDetail implements Comparable<StorageContain
 			result.setOccupyingEntityName(specimen.getLabel());
 			result.setOccupantProps(props);
 		} else if (position.getOccupyingContainer() != null) {
+			StorageContainer container = position.getOccupyingContainer();
 			result.setOccuypingEntity("container");
-			result.setOccupyingEntityId(position.getOccupyingContainer().getId());
-			result.setOccupyingEntityName(position.getOccupyingContainer().getName());
+			result.setOccupyingEntityId(container.getId());
+			result.setOccupyingEntityName(container.getName());
+			if (StringUtils.isNotBlank(container.getDisplayName())) {
+				result.setOccupantProps(Collections.singletonMap("displayName", container.getDisplayName()));
+			}
+		} else if (position.getBlockedForContainer() != null) {
+			result.setOccuypingEntity("container");
+			result.setBlockedEntityId(position.getBlockedForContainer().getId());
+			result.setBlockedEntityName(position.getBlockedForContainer().getName());
+			if (StringUtils.isNotBlank(position.getBlockedForContainer().getDisplayName())) {
+				result.setOccupantProps(Collections.singletonMap("displayName", position.getBlockedForContainer().getDisplayName()));
+			}
+		} else if (position.getCheckoutSpecimen() != null) {
+			result.setOccuypingEntity("specimen");
+			result.setBlockedEntityId(position.getCheckoutSpecimen().getId());
+			result.setBlockedEntityName(position.getCheckoutSpecimen().getLabel());
+			result.setOccupantProps(props(position.getContainer(), position.getCheckoutSpecimen()));
 		}
 		
 		return result;
@@ -231,5 +256,24 @@ public class StorageContainerPositionDetail implements Comparable<StorageContain
 	
 	public static List<StorageContainerPositionDetail> from(Collection<StorageContainerPosition> positions) {
 		return positions.stream().map(StorageContainerPositionDetail::from).sorted().collect(Collectors.toList());
+	}
+
+	private static Map<String, Object> props(StorageContainer container, Specimen specimen) {
+		Map<String, Object> props = new HashMap<>();
+		props.put("specimenClass", specimen.getSpecimenClass().getValue());
+		props.put("type",          specimen.getSpecimenType().getValue());
+
+		if (specimen.getBarcode() != null) {
+			props.put("barcode", specimen.getBarcode());
+		}
+
+		if (container.getCellDisplayProp() == StorageContainer.CellDisplayProp.SPECIMEN_PPID) {
+			//
+			// PPID is populated on demand because of its potential performance impact
+			//
+			props.put("ppid", specimen.getRegistration().getPpid());
+		}
+
+		return props;
 	}
 }

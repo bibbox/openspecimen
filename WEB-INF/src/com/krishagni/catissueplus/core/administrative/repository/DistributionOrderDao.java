@@ -1,5 +1,6 @@
 package com.krishagni.catissueplus.core.administrative.repository;
 
+import java.util.Collection;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -28,5 +29,15 @@ public interface DistributionOrderDao extends Dao<DistributionOrder> {
 
 	List<DistributionOrderItem> getOrderItems(DistributionOrderItemListCriteria crit);
 
+	DistributionOrderItem getOrderItem(Long orderId, String spmnLabel);
+
 	void saveOrUpdateOrderItem(DistributionOrderItem item);
+
+	void deleteOrderItem(DistributionOrderItem item);
+
+	Long getCustomFieldRecordId(Long orderId, Long formId, Long formCtxtId);
+
+	Map<Long, Long> getCustomFieldRecordIds(Collection<Long> orderIds, Long formId, Long formCtxtId);
+
+	int insertCustomFieldRecordId(Long orderId, Long formId, Long formCtxtId, Long recordId);
 }

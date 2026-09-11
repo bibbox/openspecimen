@@ -1,11 +1,12 @@
 
 angular.module('os.biospecimen.cp')
-  .controller('CpLabelSettingsCtrl', function($scope, $translate, cp, PvManager) {
+  .controller('CpLabelSettingsCtrl', function($scope, $translate, cp, hasSupplies, PvManager) {
 
     function init() {
       $scope.settingCtx = {
         spmnLabelPrePrintModes: PvManager.getPvs('specimen-label-pre-print-modes'),
-        visitNamePrintModes: PvManager.getPvs('visit-name-print-modes')
+        visitNamePrintModes: PvManager.getPvs('visit-name-print-modes'),
+        hasSupplies: hasSupplies
       };
       
       if (!cp.spmnLabelPrintSettings || cp.spmnLabelPrintSettings.length == 0) {
@@ -53,7 +54,10 @@ angular.module('os.biospecimen.cp')
     }
 
     function onPrePrintModeChange() {
-      $scope.settingCtx.prePrintDisabled = ($scope.settingCtx.cp.spmnLabelPrePrintMode == 'NONE');
+      $scope.settingCtx.prePrintDisabled = (
+        $scope.settingCtx.cp.spmnLabelPrePrintMode == 'NONE' &&
+        !hasSupplies
+      );
 
       loadLabelAutoPrintModes();
       if ($scope.settingCtx.prePrintDisabled) {
@@ -68,19 +72,17 @@ angular.module('os.biospecimen.cp')
     }
     
     function loadLabelAutoPrintModes() {
-      $scope.settingCtx.spmnLabelAutoPrintModes = [];
+      $scope.settingCtx.primaryLabelAutoPrintModes = [];
+      $scope.settingCtx.childLabelAutoPrintModes   = [];
 
       PvManager.loadPvs('specimen-label-auto-print-modes').then(
         function(pvs) {
-          if ($scope.settingCtx.cp.spmnLabelPrePrintMode != 'NONE') {
-            $scope.settingCtx.spmnLabelAutoPrintModes = pvs;
-          } else {
-            $scope.settingCtx.spmnLabelAutoPrintModes = pvs.filter(
-              function(pv) {
-                return pv.name != 'PRE_PRINT';
-              }
-            );
+          if ($scope.settingCtx.cp.spmnLabelPrePrintMode == 'NONE' && !hasSupplies) {
+            pvs = pvs.filter(function(pv) { return pv.name != 'PRE_PRINT'; });
           }
+
+          $scope.settingCtx.primaryLabelAutoPrintModes = pvs;
+          $scope.settingCtx.childLabelAutoPrintModes = pvs.filter(function(pv) { return pv.name != 'ON_RECEIVE'; });
         }
       );
     }
@@ -98,7 +100,8 @@ angular.module('os.biospecimen.cp')
 
       $scope.settingCtx.cp.$saveOrUpdate().then(
         function(savedcp) {
-          angular.extend(cp, savedcp);
+          angular.extend($scope.settingCtx.cp, savedcp);
+          angular.extend(cp, $scope.settingCtx.cp);
           setViewCtx();
         }
       );

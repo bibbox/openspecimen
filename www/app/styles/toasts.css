@@ -7,6 +7,13 @@
   transition: opacity ease-in-out .5s;
 }
 
+.os-headless-view .os-alert-container {
+  top: 0px;
+  width: 100%;
+  right: 0px;
+  left: 0px;
+}
+
 .os-alert-container.inline {
   width: 100%;
   padding: 10px 0px;

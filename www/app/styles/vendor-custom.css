@@ -7,6 +7,11 @@
   white-space: normal!important;
 }
 
+.ui-select-bootstrap .ui-select-choices-row > span {
+  white-space: initial;
+  word-break: break-word;
+}
+
 .ui-select-bootstrap .form-control.ui-select-toggle,
 .ui-select-bootstrap .form-control.ui-select-match {
   height: auto!important;
@@ -187,3 +192,15 @@ body > .ui-select-bootstrap.open {
   content: "\f119";
 }
 
+@media only screen
+  and (min-device-width: 375px)
+  and (max-device-width: 812px) {
+
+  .dropdown.open .dropdown-menu {
+    min-width: 208px;
+  }
+
+  .dropdown-menu > li > a {
+    white-space: pre-wrap;
+  }
+}

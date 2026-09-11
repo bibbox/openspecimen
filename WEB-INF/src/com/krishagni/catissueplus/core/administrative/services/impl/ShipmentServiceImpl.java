@@ -4,48 +4,71 @@ import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
-import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.InitializingBean;
+import org.springframework.context.ApplicationListener;
 
 import com.krishagni.catissueplus.core.administrative.domain.Institute;
+import com.krishagni.catissueplus.core.administrative.domain.PermissibleValue;
 import com.krishagni.catissueplus.core.administrative.domain.Shipment;
 import com.krishagni.catissueplus.core.administrative.domain.Shipment.Status;
 import com.krishagni.catissueplus.core.administrative.domain.ShipmentContainer;
+import com.krishagni.catissueplus.core.administrative.domain.ShipmentSavedEvent;
+import com.krishagni.catissueplus.core.administrative.domain.ShipmentSpecimen;
 import com.krishagni.catissueplus.core.administrative.domain.Site;
 import com.krishagni.catissueplus.core.administrative.domain.StorageContainer;
+import com.krishagni.catissueplus.core.administrative.domain.User;
 import com.krishagni.catissueplus.core.administrative.domain.factory.ShipmentErrorCode;
 import com.krishagni.catissueplus.core.administrative.domain.factory.ShipmentFactory;
 import com.krishagni.catissueplus.core.administrative.domain.factory.SiteErrorCode;
+import com.krishagni.catissueplus.core.administrative.events.ShipmentCartDetail;
 import com.krishagni.catissueplus.core.administrative.events.ShipmentContainerDetail;
 import com.krishagni.catissueplus.core.administrative.events.ShipmentDetail;
 import com.krishagni.catissueplus.core.administrative.events.ShipmentItemsListCriteria;
 import com.krishagni.catissueplus.core.administrative.events.ShipmentListCriteria;
 import com.krishagni.catissueplus.core.administrative.events.ShipmentSpecimenDetail;
+import com.krishagni.catissueplus.core.administrative.events.ShipmentSpecimensRetrieveDetail;
 import com.krishagni.catissueplus.core.administrative.events.StorageContainerSummary;
+import com.krishagni.catissueplus.core.administrative.events.StorageLocationSummary;
 import com.krishagni.catissueplus.core.administrative.repository.ShipmentDao;
 import com.krishagni.catissueplus.core.administrative.repository.StorageContainerListCriteria;
 import com.krishagni.catissueplus.core.administrative.services.ShipmentService;
 import com.krishagni.catissueplus.core.administrative.services.StorageContainerService;
+import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
 import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
+import com.krishagni.catissueplus.core.biospecimen.domain.SpecimenList;
+import com.krishagni.catissueplus.core.biospecimen.domain.SpecimenListSavedEvent;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.SpecimenErrorCode;
+import com.krishagni.catissueplus.core.biospecimen.events.SpecimenDetail;
+import com.krishagni.catissueplus.core.biospecimen.events.SpecimenListDetail;
+import com.krishagni.catissueplus.core.biospecimen.events.SpecimensPickListDetail;
 import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
 import com.krishagni.catissueplus.core.biospecimen.repository.SpecimenListCriteria;
+import com.krishagni.catissueplus.core.biospecimen.services.SpecimenListService;
+import com.krishagni.catissueplus.core.biospecimen.services.SpecimenService;
 import com.krishagni.catissueplus.core.common.PlusTransactional;
 import com.krishagni.catissueplus.core.common.access.AccessCtrlMgr;
 import com.krishagni.catissueplus.core.common.access.SiteCpPair;
 import com.krishagni.catissueplus.core.common.errors.ErrorType;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
+import com.krishagni.catissueplus.core.common.events.Operation;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
+import com.krishagni.catissueplus.core.common.events.Resource;
 import com.krishagni.catissueplus.core.common.events.ResponseEvent;
 import com.krishagni.catissueplus.core.common.service.EmailService;
 import com.krishagni.catissueplus.core.common.service.ObjectAccessor;
+import com.krishagni.catissueplus.core.common.service.impl.EventPublisher;
+import com.krishagni.catissueplus.core.common.util.AuthUtil;
 import com.krishagni.catissueplus.core.common.util.ConfigUtil;
 import com.krishagni.catissueplus.core.common.util.MessageUtil;
 import com.krishagni.catissueplus.core.common.util.Utility;
@@ -56,16 +79,24 @@ import com.krishagni.catissueplus.core.de.events.ExecuteQueryEventOp;
 import com.krishagni.catissueplus.core.de.events.QueryDataExportResult;
 import com.krishagni.catissueplus.core.de.services.QueryService;
 import com.krishagni.catissueplus.core.de.services.SavedQueryErrorCode;
+import com.krishagni.catissueplus.core.exporter.domain.ExportJob;
+import com.krishagni.catissueplus.core.exporter.services.ExportService;
 import com.krishagni.rbac.common.errors.RbacErrorCode;
 
 import edu.common.dynamicextensions.query.WideRowMode;
 
-public class ShipmentServiceImpl implements ShipmentService, ObjectAccessor {
+public class ShipmentServiceImpl implements ShipmentService, ObjectAccessor, InitializingBean, ApplicationListener<SpecimenListSavedEvent> {
+	private static final String SHIPMENT_REQUESTED_EMAIL_TMPL = "shipment_requested";
+
 	private static final String SHIPMENT_SHIPPED_EMAIL_TMPL = "shipment_shipped";
 	
 	private static final String SHIPMENT_RECEIVED_EMAIL_TMPL = "shipment_received";
+
+	private static final String SHIPMENT_REQ_STATUS_EMAIL_TMPL = "shipment_req_status";
 	
 	private static final String SHIPMENT_QUERY_REPORT_SETTING = "shipment_export_report";
+
+	private static final String SHIPMENT_CONTAINER_REPORT_SETTING = "shipment_container_report";
 	
 	private DaoFactory daoFactory;
 	
@@ -78,6 +109,12 @@ public class ShipmentServiceImpl implements ShipmentService, ObjectAccessor {
 	private StorageContainerService containerSvc;
 	
 	private com.krishagni.catissueplus.core.de.repository.DaoFactory deDaoFactory;
+
+	private SpecimenListService spmnListSvc;
+
+	private SpecimenService specimenSvc;
+
+	private ExportService exportSvc;
 	
 	public void setDaoFactory(DaoFactory daoFactory) {
 		this.daoFactory = daoFactory;
@@ -102,7 +139,19 @@ public class ShipmentServiceImpl implements ShipmentService, ObjectAccessor {
 	public void setDeDaoFactory(com.krishagni.catissueplus.core.de.repository.DaoFactory deDaoFactory) {
 		this.deDaoFactory = deDaoFactory;
 	}
-	
+
+	public void setSpmnListSvc(SpecimenListService spmnListSvc) {
+		this.spmnListSvc = spmnListSvc;
+	}
+
+	public void setSpecimenSvc(SpecimenService specimenSvc) {
+		this.specimenSvc = specimenSvc;
+	}
+
+	public void setExportSvc(ExportService exportSvc) {
+		this.exportSvc = exportSvc;
+	}
+
 	@Override
 	@PlusTransactional
 	public ResponseEvent<List<ShipmentDetail>> getShipments(RequestEvent<ShipmentListCriteria> req) {
@@ -161,22 +210,24 @@ public class ShipmentServiceImpl implements ShipmentService, ObjectAccessor {
 				return ResponseEvent.response(Collections.emptyList());
 			}
 
-			Map<Long, ShipmentContainerDetail> containersMap = getShipmentDao().getShipmentContainers(crit).stream()
-				.collect(Collectors.toMap(sc -> sc.getContainer().getId(), ShipmentContainerDetail::from));
-
-			if (containersMap.isEmpty()) {
+			List<ShipmentContainer> shipmentContainers = getShipmentDao().getShipmentContainers(crit);
+			if (shipmentContainers.isEmpty()) {
 				return ResponseEvent.response(Collections.emptyList());
 			}
 
+			List<ShipmentContainerDetail> result = ShipmentContainerDetail.from(shipmentContainers);
+			Map<Long, ShipmentContainerDetail> containersMap = result.stream()
+				.collect(Collectors.toMap(sc -> sc.getContainer().getId(), sc -> sc));
+
 			Map<Long, Integer> spmnCounts;
-			if (shipment.isPending()) {
+			if (shipment.isPending() || shipment.isRequested()) {
 				spmnCounts = daoFactory.getStorageContainerDao().getSpecimensCount(containersMap.keySet());
 			} else {
 				spmnCounts = getShipmentDao().getSpecimensCountByContainer(shipment.getId(), containersMap.keySet());
 			}
 
 			spmnCounts.forEach((cid, count) -> containersMap.get(cid).setSpecimensCount(count));
-			return ResponseEvent.response(new ArrayList<>(containersMap.values()));
+			return ResponseEvent.response(result);
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
 		} catch (Exception e) {
@@ -201,12 +252,50 @@ public class ShipmentServiceImpl implements ShipmentService, ObjectAccessor {
 
 	@Override
 	@PlusTransactional
+	public ResponseEvent<Boolean> retrieveSpecimens(RequestEvent<ShipmentSpecimensRetrieveDetail> req) {
+		try {
+			ShipmentSpecimensRetrieveDetail input = req.getPayload();
+			Shipment shipment = getShipment(input.getShipmentId(), input.getShipmentName());
+			AccessCtrlMgr.getInstance().ensureUpdateShipmentRights(shipment);
+			if (!shipment.isSpecimenShipment()) {
+				return ResponseEvent.userError(ShipmentErrorCode.INVALID_TYPE);
+			} else if (!shipment.isRequested()) {
+				return ResponseEvent.userError(ShipmentErrorCode.INVALID_STATUS);
+			}
+
+			List<SpecimenDetail> specimens = new ArrayList<>();
+			for (ShipmentSpecimen shipmentSpecimen : shipment.getShipmentSpecimens()) {
+				if (!shipmentSpecimen.getSpecimen().isStored()) {
+					continue;
+				}
+
+				SpecimenDetail specimen = new SpecimenDetail();
+				specimen.setId(shipmentSpecimen.getSpecimen().getId());
+				specimen.setStorageLocation(new StorageLocationSummary());
+				specimen.setTransferUser(input.getTransferUser());
+				specimen.setTransferTime(input.getTransferTime());
+				specimen.setTransferComments(input.getComments());
+				specimen.setCheckout(input.getCheckout());
+				specimens.add(specimen);
+			}
+
+			ResponseEvent.unwrap(specimenSvc.updateSpecimens(RequestEvent.wrap(specimens)));
+			return ResponseEvent.response(true);
+		} catch (OpenSpecimenException ose) {
+			return ResponseEvent.error(ose);
+		} catch (Exception e) {
+			return ResponseEvent.serverError(e);
+		}
+	}
+
+	@Override
+	@PlusTransactional
 	public ResponseEvent<ShipmentDetail> createShipment(RequestEvent<ShipmentDetail> req) {
 		try {
-			AccessCtrlMgr.getInstance().ensureCreateShipmentRights();
 			ShipmentDetail detail = req.getPayload();
 			Shipment shipment = shipmentFactory.createShipment(detail, Status.PENDING);
-			
+			AccessCtrlMgr.getInstance().ensureCreateShipmentRights(shipment);
+
 			OpenSpecimenException ose = new OpenSpecimenException(ErrorType.USER_ERROR);
 			ensureValidShipmentStatus(shipment, detail.getStatus(), ose);
 			ensureUniqueConstraint(null, shipment, ose);
@@ -218,10 +307,13 @@ public class ShipmentServiceImpl implements ShipmentService, ObjectAccessor {
 			if (status == Status.SHIPPED) {
 				createRecvSiteContainer(shipment);
 				shipment.ship();
+			} else if (status == Status.REQUESTED) {
+				shipment.setStatus(status);
 			}
 
 			getShipmentDao().saveOrUpdate(shipment, true);
-			sendEmailNotifications(shipment, null, detail.isSendMail());
+			sendEmailNotifications(shipment, null, shipment.getRequestStatus(), detail.isSendMail());
+			EventPublisher.getInstance().publish(new ShipmentSavedEvent(shipment));
 			return ResponseEvent.response(ShipmentDetail.from(shipment));
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
@@ -242,8 +334,11 @@ public class ShipmentServiceImpl implements ShipmentService, ObjectAccessor {
 				return ResponseEvent.userError(ShipmentErrorCode.CANNOT_CHG_TYPE);
 			}
 
+			if (newShipment.isDeleted()) {
+				return ResponseEvent.response(ShipmentDetail.from(deleteShipment(existing)));
+			}
+
 			AccessCtrlMgr.getInstance().ensureUpdateShipmentRights(newShipment);
-			
 			OpenSpecimenException ose = new OpenSpecimenException(ErrorType.USER_ERROR);
 			ensureUniqueConstraint(existing, newShipment, ose);
 			ensureValidItems(existing, newShipment, ose);
@@ -251,13 +346,20 @@ public class ShipmentServiceImpl implements ShipmentService, ObjectAccessor {
 			ose.checkAndThrow();
 			
 			Status oldStatus = existing.getStatus();
+			PermissibleValue oldReqStatus = existing.getRequestStatus();
 			if (newShipment.getStatus() == Status.SHIPPED) {
 				createRecvSiteContainer(newShipment);
 			}
 
 			existing.update(newShipment);
 			getShipmentDao().saveOrUpdate(existing, true);
-			sendEmailNotifications(newShipment, oldStatus, detail.isSendMail());
+			if (existing.getCart() != null) {
+				getShipmentDao().addSpecimensToCart(existing.getId(), existing.getCart().getId());
+				getShipmentDao().removeSpecimensFromCart(existing.getId(), existing.getCart().getId());
+			}
+
+			sendEmailNotifications(existing, oldStatus, oldReqStatus, detail.isSendMail());
+			EventPublisher.getInstance().publish(new ShipmentSavedEvent(existing));
 			return ResponseEvent.response(ShipmentDetail.from(existing));
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
@@ -265,7 +367,53 @@ public class ShipmentServiceImpl implements ShipmentService, ObjectAccessor {
 			return ResponseEvent.serverError(e);
 		}
 	}
-	
+
+	@Override
+	@PlusTransactional
+	public ResponseEvent<ShipmentDetail> deleteShipment(RequestEvent<Long> req) {
+		try {
+			Shipment shipment = getShipment(req.getPayload(), null);
+			return ResponseEvent.response(ShipmentDetail.from(deleteShipment(shipment)));
+		} catch (OpenSpecimenException ose) {
+			return ResponseEvent.error(ose);
+		} catch (Exception e) {
+			return ResponseEvent.serverError(e);
+		}
+	}
+
+	@Override
+	@PlusTransactional
+	public ResponseEvent<ShipmentDetail> updateShipmentRequestStatus(RequestEvent<ShipmentDetail> req) {
+		try {
+			ShipmentDetail detail = req.getPayload();
+			Shipment existing = getShipment(detail.getId(), detail.getName());
+			AccessCtrlMgr.getInstance().ensureUpdateShipmentRights(existing);
+			if (!existing.isRequest()) {
+				return ResponseEvent.userError(ShipmentErrorCode.NOT_REQUEST, existing.getName());
+			}
+
+			PermissibleValue oldReqStatus = existing.getRequestStatus();
+			String reqStatus = detail.getRequestStatus();
+			if (StringUtils.isBlank(reqStatus)) {
+				existing.setRequestStatus(null);
+			} else {
+				PermissibleValue status = daoFactory.getPermissibleValueDao().getPv("shipment_request_status", reqStatus);
+				if (status == null) {
+					return ResponseEvent.userError(ShipmentErrorCode.INV_REQ_STATUS, reqStatus);
+				}
+
+				existing.setRequestStatus(status);
+			}
+
+			sendEmailNotifications(existing, existing.getStatus(), oldReqStatus, detail.isSendMail());
+			return ResponseEvent.response(ShipmentDetail.from(existing));
+		} catch (OpenSpecimenException ose) {
+			return ResponseEvent.error(ose);
+		} catch (Exception e) {
+			return ResponseEvent.serverError(e);
+		}
+	}
+
 	@Override
 	@PlusTransactional
 	public ResponseEvent<QueryDataExportResult> exportReport(RequestEvent<Long> req) {
@@ -275,12 +423,21 @@ public class ShipmentServiceImpl implements ShipmentService, ObjectAccessor {
 		}
 		
 		AccessCtrlMgr.getInstance().ensureReadShipmentRights(shipment);
-		Integer queryId = ConfigUtil.getInstance().getIntSetting("common", SHIPMENT_QUERY_REPORT_SETTING, -1);
+
+		Integer queryId = null;
+		if (shipment.isContainerShipment()) {
+			queryId = ConfigUtil.getInstance().getIntSetting("common", SHIPMENT_CONTAINER_REPORT_SETTING, -1);
+		}
+
+		if (queryId == null || queryId == -1) {
+			queryId = ConfigUtil.getInstance().getIntSetting("common", SHIPMENT_QUERY_REPORT_SETTING, -1);
+		}
+
 		if (queryId == -1) {
 			return ResponseEvent.userError(ShipmentErrorCode.RPT_TMPL_NOT_CONF);
 		}
 		
-		SavedQuery query = deDaoFactory.getSavedQueryDao().getQuery(new Long(queryId));
+		SavedQuery query = deDaoFactory.getSavedQueryDao().getQuery(queryId.longValue());
 		if (query == null) {
 			return ResponseEvent.userError(SavedQueryErrorCode.NOT_FOUND, queryId);
 		}
@@ -290,7 +447,7 @@ public class ShipmentServiceImpl implements ShipmentService, ObjectAccessor {
 
 	@Override
 	@PlusTransactional
-	public List<StorageContainerSummary> getContainers(List<String> names, String sendSiteName, String recvSiteName) {
+	public List<StorageContainerSummary> getContainers(List<String> names, boolean request, String sendSiteName, String recvSiteName) {
 		if (CollectionUtils.isEmpty(names)) {
 			throw OpenSpecimenException.userError(ShipmentErrorCode.CONT_NAMES_REQ);
 		}
@@ -300,7 +457,11 @@ public class ShipmentServiceImpl implements ShipmentService, ObjectAccessor {
 			throw  OpenSpecimenException.userError(RbacErrorCode.ACCESS_DENIED);
 		}
 
-		StorageContainerListCriteria crit = new StorageContainerListCriteria().siteCps(siteCps).names(names);
+		//
+		// when creating requests, users do not have access to the container stored at the sending site
+		// therefore suppress the access checks
+		//
+		StorageContainerListCriteria crit = new StorageContainerListCriteria().siteCps(request ? null : siteCps).names(names);
 		List<StorageContainer> containers = daoFactory.getStorageContainerDao().getStorageContainers(crit);
 		if (containers.isEmpty()) {
 			return Collections.emptyList();
@@ -320,9 +481,77 @@ public class ShipmentServiceImpl implements ShipmentService, ObjectAccessor {
 
 		List<Long> containerIds = containers.stream().map(StorageContainer::getId).collect(Collectors.toList());
 		Map<Long, Integer> spmnsCount = daoFactory.getStorageContainerDao().getSpecimensCount(containerIds);
-		return containers.stream().map(StorageContainerSummary::from)
-			.map(s -> { s.setStoredSpecimens(spmnsCount.get(s.getId())); return s; })
-			.collect(Collectors.toList());
+		return containers.stream().map(
+			s -> {
+				StorageContainerSummary result = StorageContainerSummary.from(s);
+				if (s.getAllowedCps() != null) {
+					result.setAllowedCollectionProtocols(s.getAllowedCps().stream().map(CollectionProtocol::getShortTitle).collect(Collectors.toSet()));
+				}
+
+				if (s.getCompAllowedCps() != null) {
+					result.setCalcAllowedCollectionProtocols(s.getCompAllowedCps().stream().map(CollectionProtocol::getShortTitle).collect(Collectors.toSet()));
+				}
+
+				if (s.getAllowedSpecimenClasses() != null) {
+					result.setAllowedSpecimenClasses(PermissibleValue.toValueSet(s.getAllowedSpecimenClasses()));
+				}
+
+				if (s.getCompAllowedSpecimenClasses() != null) {
+					result.setCalcAllowedSpecimenClasses(PermissibleValue.toValueSet(s.getCompAllowedSpecimenClasses()));
+				}
+
+				if (s.getAllowedSpecimenTypes() != null) {
+					result.setAllowedSpecimenTypes(PermissibleValue.toValueSet(s.getAllowedSpecimenTypes()));
+				}
+
+				if (s.getCompAllowedSpecimenTypes() != null) {
+					result.setCalcAllowedSpecimenTypes(PermissibleValue.toValueSet(s.getCompAllowedSpecimenTypes()));
+				}
+
+				result.setStoredSpecimens(spmnsCount.get(s.getId()));
+				return result;
+			}).collect(Collectors.toList());
+	}
+
+	@Override
+	@PlusTransactional
+	public ResponseEvent<SpecimensPickListDetail> createPickList(RequestEvent<ShipmentCartDetail> req) {
+		try {
+			ShipmentCartDetail input = req.getPayload();
+			Shipment shipment = getShipment(input.getShipmentId(), null);
+			AccessCtrlMgr.getInstance().ensureUpdateShipmentRights(shipment);
+			if (!shipment.isSpecimenShipment()) {
+				return ResponseEvent.userError(ShipmentErrorCode.SPECIMENS_REQ_FOR_CART);
+			}
+
+			SpecimenListDetail cartDetail = new SpecimenListDetail();
+			if (shipment.getCart() == null) {
+				cartDetail.setName(input.getName());
+				cartDetail.setDescription(input.getDescription());
+				cartDetail.setSharedWithGroups(input.getSharedWith());
+				cartDetail.setSourceEntityType(Shipment.getEntityName());
+				cartDetail.setSourceEntityId(shipment.getId());
+
+				cartDetail = ResponseEvent.unwrap(spmnListSvc.createSpecimenList(RequestEvent.wrap(cartDetail)));
+				SpecimenList cart = daoFactory.getSpecimenListDao().getSpecimenList(cartDetail.getId());
+
+				shipment.setCart(cart);
+				daoFactory.getShipmentDao().saveOrUpdate(shipment, true);
+				getShipmentDao().addSpecimensToCart(shipment.getId(), cart.getId());
+			} else {
+				cartDetail.setId(shipment.getCart().getId());
+				cartDetail.setName(shipment.getCart().getName());
+			}
+
+			SpecimensPickListDetail pickListDetail = new SpecimensPickListDetail();
+			pickListDetail.setCart(cartDetail);
+			pickListDetail.setName(input.getPickListName());
+			return spmnListSvc.createPickList(RequestEvent.wrap(pickListDetail));
+		} catch (OpenSpecimenException ose) {
+			return ResponseEvent.error(ose);
+		} catch (Exception e) {
+			return ResponseEvent.serverError(e);
+		}
 	}
 
 	@Override
@@ -351,6 +580,22 @@ public class ShipmentServiceImpl implements ShipmentService, ObjectAccessor {
 		AccessCtrlMgr.getInstance().ensureReadShipmentRights(shipment);
 	}
 
+	@Override
+	public void afterPropertiesSet() throws Exception {
+		exportSvc.registerObjectsGenerator("shipment", this::getShipmentsGenerator);
+	}
+
+	@Override
+	public void onApplicationEvent(SpecimenListSavedEvent event) {
+		int op = event.getOp();
+		if (op != 2) {
+			return;
+		}
+
+		SpecimenList cart = event.getEventData();
+		getShipmentDao().removeShipmentCart(cart.getId());
+	}
+
 	private ShipmentListCriteria addShipmentListCriteria(ShipmentListCriteria crit) {
 		Set<SiteCpPair> sites = AccessCtrlMgr.getInstance().getReadAccessShipmentSites();
 		if (sites != null && sites.isEmpty()) {
@@ -365,13 +610,13 @@ public class ShipmentServiceImpl implements ShipmentService, ObjectAccessor {
 	}
 
 	private List<Specimen> getValidSpecimens(List<Long> specimenIds, OpenSpecimenException ose) {
-		List<SiteCpPair> siteCpPairs = AccessCtrlMgr.getInstance().getReadAccessSpecimenSiteCps();
-		if (siteCpPairs != null && siteCpPairs.isEmpty()) {
+		List<SiteCpPair> siteCps = AccessCtrlMgr.getInstance().getReadAccessSpecimenSiteCps();
+		if (siteCps != null && siteCps.isEmpty()) {
 			ose.addError(ShipmentErrorCode.INVALID_SPECIMENS);
 			return null;
 		}
 		
-		SpecimenListCriteria crit = new SpecimenListCriteria().ids(specimenIds).siteCps(siteCpPairs);
+		SpecimenListCriteria crit = new SpecimenListCriteria().ids(specimenIds).siteCps(siteCps);
 		List<Specimen> specimens = daoFactory.getSpecimenDao().getSpecimens(crit);
 		if (specimenIds.size() != specimens.size()) {
 			ose.addError(ShipmentErrorCode.INVALID_SPECIMENS);
@@ -389,9 +634,9 @@ public class ShipmentServiceImpl implements ShipmentService, ObjectAccessor {
 		Status status = Status.fromName(shipmentStatus);
 		if (status == null) {
 			ose.addError(ShipmentErrorCode.INVALID_STATUS);
-		}
-		
-		if (status == Status.RECEIVED) {
+		} else if (shipment.isRequest() && (status != Status.PENDING && status != Status.REQUESTED)) {
+			ose.addError(ShipmentErrorCode.REQ_INV_CREATE_STATUS, shipment.getName(), status.getName());
+		} else if (status == Status.RECEIVED) {
 			ose.addError(ShipmentErrorCode.NOT_SHIPPED_TO_RECV, shipment.getName());
 		}
 	}
@@ -416,7 +661,7 @@ public class ShipmentServiceImpl implements ShipmentService, ObjectAccessor {
 	}
 	
 	private void ensureValidSpecimens(Shipment existing, Shipment shipment, OpenSpecimenException ose) {
-		if (existing != null && !existing.isPending()) {
+		if (existing != null && !(existing.isPending() || existing.isRequested())) {
 			return;
 		}
 
@@ -432,7 +677,7 @@ public class ShipmentServiceImpl implements ShipmentService, ObjectAccessor {
 	}
 
 	private void ensureValidContainers(Shipment existing, Shipment shipment, OpenSpecimenException ose) {
-		if (existing != null && !existing.isPending()) {
+		if (existing != null && !(existing.isPending() || existing.isRequested())) {
 			return;
 		}
 
@@ -636,14 +881,30 @@ public class ShipmentServiceImpl implements ShipmentService, ObjectAccessor {
 		return shipment;
 	}
 
-	private void createRecvSiteContainer(Shipment shipment) {
-		if (shipment.getReceivingSite().getContainer() != null) {
+	private Shipment deleteShipment(Shipment shipment) {
+		AccessCtrlMgr.getInstance().ensureDeleteShipmentRights(shipment);
+		if (shipment.isShipped()) {
+			createSiteContainerIfRequired(shipment.getSendingSite());
+		}
+
+		shipment.delete();
+		if (shipment.getCart() != null) {
+			shipment.getCart().delete();
+		}
+
+		return shipment;
+	}
+
+	private void createSiteContainerIfRequired(Site site) {
+		if (site.getContainer() != null) {
 			return;
 		}
 
-		Site recvSite = shipment.getReceivingSite();
-		StorageContainer recvSiteContainer = containerSvc.createSiteContainer(recvSite.getId(), recvSite.getName());
-		recvSite.setContainer(recvSiteContainer);
+		site.setContainer(containerSvc.createSiteContainer(site.getId(), site.getName()));
+	}
+
+	private void createRecvSiteContainer(Shipment shipment) {
+		createSiteContainerIfRequired(shipment.getReceivingSite());
 	}
 
 	private Site getSite(String siteName) {
@@ -655,41 +916,95 @@ public class ShipmentServiceImpl implements ShipmentService, ObjectAccessor {
 		return site;
 	}
 
-	private void sendEmailNotifications(Shipment shipment, Status oldStatus, boolean sendNotif) {
+	private void sendEmailNotifications(Shipment shipment, Status oldStatus, PermissibleValue oldReqStatus, boolean sendNotif) {
 		if (!sendNotif) {
 			return;
 		}
-		
-		if ((oldStatus == null || oldStatus == Status.PENDING) && shipment.isShipped()) {
+
+		if ((oldStatus == null || oldStatus == Status.PENDING) && shipment.isRequested()) {
+			sendShipmentRequestedEmail(shipment);
+		} else if ((oldStatus == null || oldStatus == Status.PENDING || oldStatus == Status.REQUESTED) && shipment.isShipped()) {
 			sendShipmentShippedEmail(shipment);
 		} else if (oldStatus == Status.SHIPPED && shipment.isReceived()) {
 			sendShipmentReceivedEmail(shipment);
+		} else if (!StringUtils.equals(PermissibleValue.getValue(shipment.getRequestStatus()), PermissibleValue.getValue(oldReqStatus))) {
+			sendShipmentRequestStatusEmail(shipment, oldReqStatus);
 		}
 	}
-	
-	private void sendShipmentShippedEmail(Shipment shipment) {
-		if (CollectionUtils.isEmpty(shipment.getNotifyUsers())) {
-			return;
+
+	private void sendShipmentRequestedEmail(Shipment shipment) {
+		Set<User> notifyUsers = new HashSet<>();
+		Site sendingSite = shipment.getSendingSite();
+		if (CollectionUtils.isNotEmpty(sendingSite.getCoordinators())) {
+			notifyUsers = new HashSet<>(sendingSite.getCoordinators());
+		} else {
+			List<Long> userIds = AccessCtrlMgr.getInstance().getUserIds(
+				sendingSite.getInstitute().getId(), sendingSite.getId(),
+				Resource.SHIPPING_N_TRACKING, new Operation[] { Operation.UPDATE });
+			if (!userIds.isEmpty()) {
+				notifyUsers = new HashSet<>(daoFactory.getUserDao().getByIds(userIds));
+			}
 		}
-		
-		Set<String> emailIds = Utility.<Set<String>>collect(shipment.getNotifyUsers(), "emailAddress", true);
-		emailIds.add(shipment.getSender().getEmailAddress());
-		String[] subjectParams = {shipment.getName()};
-		
-		Map<String, Object> props = new HashMap<String, Object>();
-		props.put("$subject", subjectParams);
-		props.put("shipment", shipment);
-		emailService.sendEmail(SHIPMENT_SHIPPED_EMAIL_TMPL, emailIds.toArray(new String[0]), props);
+
+		sendShipmentEmail(SHIPMENT_REQUESTED_EMAIL_TMPL, shipment, notifyUsers, null);
+	}
+
+	private void sendShipmentShippedEmail(Shipment shipment) {
+		Set<User> notifyUsers = new HashSet<>();
+		if (CollectionUtils.isNotEmpty(shipment.getNotifyUsers())) {
+			notifyUsers = new HashSet<>(shipment.getNotifyUsers());
+		}
+
+		if (shipment.getRequester() != null) {
+			notifyUsers.add(shipment.getRequester());
+		}
+
+		sendShipmentEmail(SHIPMENT_SHIPPED_EMAIL_TMPL, shipment, notifyUsers, null);
 	}
 	
 	private void sendShipmentReceivedEmail(Shipment shipment) {
-		String[] emailIds = new String[] {shipment.getSender().getEmailAddress()};
- 		String[] subjectParams = {shipment.getName()};
-		
-		Map<String, Object> props = new HashMap<String, Object>();
-		props.put("$subject", subjectParams);
+		Set<User> notifyUsers = new HashSet<>();
+		notifyUsers.add(shipment.getSender());
+		if (shipment.getRequester() != null) {
+			notifyUsers.add(shipment.getRequester());
+		}
+
+		sendShipmentEmail(SHIPMENT_RECEIVED_EMAIL_TMPL, shipment, notifyUsers, null);
+	}
+
+	private void sendShipmentRequestStatusEmail(Shipment shipment, PermissibleValue oldStatus) {
+		Set<User> notifyUsers = new HashSet<>();
+		if (CollectionUtils.isNotEmpty(shipment.getNotifyUsers())) {
+			notifyUsers = new HashSet<>(shipment.getNotifyUsers());
+		}
+
+		if (shipment.getRequester() != null) {
+			notifyUsers.add(shipment.getRequester());
+		}
+
+		if (shipment.getSender() != null) {
+			notifyUsers.add(shipment.getSender());
+		}
+
+		Map<String, Object> props = new HashMap<>();
+		props.put("oldStatus", PermissibleValue.getValue(oldStatus));
+		props.put("newStatus", PermissibleValue.getValue(shipment.getRequestStatus()));
+		props.put("user", AuthUtil.getCurrentUser());
+		sendShipmentEmail(SHIPMENT_REQ_STATUS_EMAIL_TMPL, shipment, notifyUsers, props);
+	}
+
+	private void sendShipmentEmail(String emailTmpl, Shipment shipment, Set<User> notifyUsers, Map<String, Object> inputProps) {
+		Map<String, Object> props = new HashMap<>();
+		props.put("$subject", new String[] { shipment.getName() });
 		props.put("shipment", shipment);
-		emailService.sendEmail(SHIPMENT_RECEIVED_EMAIL_TMPL, emailIds, props);
+		if (inputProps != null) {
+			props.putAll(inputProps);
+		}
+
+		for (User user : notifyUsers) {
+			props.put("rcpt", user);
+			emailService.sendEmail(emailTmpl, new String[] { user.getEmailAddress() }, props);
+		}
 	}
 	
 	private QueryDataExportResult exportShipmentReport(final Shipment shipment, SavedQuery query) {
@@ -703,6 +1018,8 @@ public class ShipmentServiceImpl implements ShipmentService, ObjectAccessor {
 		execReportOp.setAql(query.getAql(new Filter[] { filter }));
 		execReportOp.setWideRowMode(WideRowMode.DEEP.name());
 		execReportOp.setRunType("Export");
+		execReportOp.setSavedQueryId(query.getId());
+		execReportOp.setReportName(MessageUtil.getInstance().getMessage("shipment_report", new String[] { shipment.getName() }));
 		
 		return querySvc.exportQueryData(execReportOp, new QueryService.ExportProcessor() {
 			@Override
@@ -714,18 +1031,37 @@ public class ShipmentServiceImpl implements ShipmentService, ObjectAccessor {
 			public void headers(OutputStream out) {
 				@SuppressWarnings("serial")
 				Map<String, String> headers = new LinkedHashMap<String, String>() {{
-					put(getMessage("shipment_name"),            shipment.getName());
+					put(getMessage("shipment_name"), shipment.getName());
+					put(getMessage("shipment_request"), MessageUtil.getInstance().getMessage(shipment.isRequest() ? "common_yes" : "common_no"));
+					if (shipment.getRequester() != null) {
+						put(getMessage("shipment_requester"), shipment.getRequester().formattedName());
+					}
+
+					if (shipment.getRequestDate() != null) {
+						put(getMessage("shipment_request_date"), Utility.getDateTimeString(shipment.getRequestDate()));
+					}
+
+					if (StringUtils.isNotBlank(shipment.getRequesterComments())) {
+						put(getMessage("shipment_requester_comments"), shipment.getRequesterComments());
+					}
+
 					put(getMessage("shipment_courier_name"),    shipment.getCourierName());
 					put(getMessage("shipment_tracking_number"), shipment.getTrackingNumber());
 					put(getMessage("shipment_tracking_url"),    shipment.getTrackingUrl());
 					put(getMessage("shipment_sending_site"),    shipment.getSendingSite().getName());
-					put(getMessage("shipment_sender"),          shipment.getSender().formattedName());
-					put(getMessage("shipment_shipped_date"),    Utility.getDateTimeString(shipment.getShippedDate()));
+					if (shipment.getSender() != null) {
+						put(getMessage("shipment_sender"),      shipment.getSender().formattedName());
+					}
+
+					if (shipment.getShippedDate() != null) {
+						put(getMessage("shipment_shipped_date"),Utility.getDateTimeString(shipment.getShippedDate()));
+					}
+
 					put(getMessage("shipment_sender_comments"), shipment.getSenderComments());
 					put(getMessage("shipment_recv_site"),       shipment.getReceivingSite().getName());
 					
 					if (shipment.getReceiver() != null) {
-						put(getMessage("shipment_receiver"), shipment.getReceiver().formattedName());
+						put(getMessage("shipment_receiver"),    shipment.getReceiver().formattedName());
 					}
 					
 					if (shipment.getReceivedDate() != null) {
@@ -741,6 +1077,95 @@ public class ShipmentServiceImpl implements ShipmentService, ObjectAccessor {
 				Utility.writeKeyValuesToCsv(out, headers);
 			}
 		});
+	}
+
+	private Function<ExportJob, List<? extends Object>> getShipmentsGenerator() {
+		return new Function<>() {
+			private boolean paramsInited = false;
+
+			private boolean endOfShipments = false;
+
+			private ShipmentListCriteria crit;
+
+			private Long lastId;
+
+			private List<ShipmentDetail> shipments;
+
+			private ShipmentDetail currentShipment;
+
+			private int itemStartAt;
+
+			@Override
+			public List<? extends Object> apply(ExportJob job) {
+				initParams(job);
+
+				while (!endOfShipments) {
+					if (currentShipment == null) {
+						if (CollectionUtils.isEmpty(shipments)) {
+							shipments = ShipmentDetail.from(daoFactory.getShipmentDao().getShipments(crit.lastId(lastId)));
+							if (shipments.isEmpty()) {
+								return Collections.emptyList();
+							}
+						}
+
+						currentShipment = shipments.remove(0);
+						lastId = currentShipment.getId();
+						itemStartAt = 0;
+					}
+
+					ShipmentItemsListCriteria itemsCriteria = new ShipmentItemsListCriteria()
+						.shipmentId(currentShipment.getId())
+						.startAt(itemStartAt)
+						.maxResults(100);
+
+					List<ShipmentSpecimen> items = daoFactory.getShipmentDao().getShipmentSpecimens(itemsCriteria);
+					List<ShipmentDetail> records = new ArrayList<>();
+					for (ShipmentSpecimen item : items) {
+						ShipmentDetail record = currentShipment.clone();
+						record.setShipmentSpecimen(ShipmentSpecimenDetail.from(item));
+						records.add(record);
+					}
+
+					itemStartAt += items.size();
+					if (items.size() < itemsCriteria.maxResults()) {
+						currentShipment = null;
+					}
+
+					if (CollectionUtils.isNotEmpty(records)) {
+						return records;
+					}
+				}
+
+				return null;
+			}
+
+
+			private void initParams(ExportJob job) {
+				if (paramsInited) {
+					return;
+				}
+
+				Set<SiteCpPair> siteCps = AccessCtrlMgr.getInstance().getReadAccessShipmentSites();
+				if (siteCps != null && siteCps.isEmpty()) {
+					endOfShipments = true;
+				} else if (!AccessCtrlMgr.getInstance().hasShipmentEximRights()) {
+					endOfShipments = true;
+				} else {
+					crit = new ShipmentListCriteria()
+						.type(Shipment.Type.SPECIMEN)
+						.sites(siteCps)
+						.orderBy("id")
+						.asc(false);
+
+					if (CollectionUtils.isNotEmpty(job.getRecordIds())) {
+						crit.ids(job.getRecordIds());
+						crit.maxResults(crit.ids().size() + 1);
+					}
+				}
+
+				paramsInited = true;
+			}
+		};
 	}
 	
 	private String getMessage(String code) {

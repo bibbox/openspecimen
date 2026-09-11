@@ -4,7 +4,8 @@
     "http://hibernate.sourceforge.net/hibernate-mapping-3.0.dtd">
 
 <hibernate-mapping auto-import="false">
-  <class name="com.krishagni.catissueplus.core.auth.domain.AuthDomain" table="OS_AUTH_DOMAINS">
+  <class name="com.krishagni.catissueplus.core.auth.domain.AuthDomain" table="OS_AUTH_DOMAINS"
+    entity-name="com.krishagni.catissueplus.core.auth.domain.AuthDomain">
 	
     <id name="id" column="IDENTIFIER">
       <generator class="native">
@@ -15,6 +16,12 @@
     <property name="name" column="DOMAIN_NAME"/>
 
     <many-to-one name="authProvider" column="PROVIDER_ID" cascade="all"/>
+
+    <property name="allowLogins" column="ALLOW_LOGINS" not-null="true" />
+
+    <property name="legacySaml" column="LEGACY_SAML" not-null="true" />
+
+    <property name="activityStatus" column="ACTIVITY_STATUS" not-null="true" />
 
     <query name="getDomainByName">
       select
@@ -33,6 +40,8 @@
         join d.authProvider provider
       where 
         provider.authType = :authType
+      order by
+        d.id
     </query>
 	
     <query name="getAuthDomains">

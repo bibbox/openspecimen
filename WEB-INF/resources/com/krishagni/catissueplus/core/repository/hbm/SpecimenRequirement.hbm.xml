@@ -4,7 +4,9 @@
     "http://hibernate.sourceforge.net/hibernate-mapping-3.0.dtd">
 
 <hibernate-mapping auto-import="false">
-  <class name="com.krishagni.catissueplus.core.biospecimen.domain.SpecimenRequirement" table="CATISSUE_CP_REQ_SPECIMEN" batch-size="25">
+  <class name="com.krishagni.catissueplus.core.biospecimen.domain.SpecimenRequirement" table="CATISSUE_CP_REQ_SPECIMEN" batch-size="25"
+    entity-name="com.krishagni.catissueplus.core.biospecimen.domain.SpecimenRequirement">
+
     <id name="id" column="IDENTIFIER">
       <generator class="native">
         <param name="sequence">CATISSUE_REQ_SPECIMEN_SEQ</param>
@@ -17,15 +19,15 @@
 
     <property name="lineage" column="LINEAGE"/>
       
-    <property name="specimenClass" column="SPECIMEN_CLASS"/>
+    <many-to-one name="specimenClass" column="SPECIMEN_CLASS_ID" lazy="false" fetch="join"/>
 
-    <property name="specimenType" column="SPECIMEN_TYPE"/>
+    <many-to-one name="specimenType" column="SPECIMEN_TYPE_ID" lazy="false" fetch="join"/>
       
-    <property name="anatomicSite" column="TISSUE_SITE"/>
+    <many-to-one name="anatomicSite" column="ANATOMIC_SITE_ID" lazy="false" fetch="join"/>
 
-    <property name="laterality" column="TISSUE_SIDE"/>
+    <many-to-one name="laterality" column="LATERALITY_ID" lazy="false" fetch="join"/>
       
-    <property name="pathologyStatus" column="PATHOLOGICAL_STATUS"/>
+    <many-to-one name="pathologyStatus" column="PATHOLOGICAL_STATUS_ID" lazy="false" fetch="join"/>
 
     <property name="storageType" column="STORAGE_TYPE"/>
 
@@ -33,27 +35,15 @@
 
     <property name="concentration" column="CONCENTRATION"/>
 
-    <many-to-one
-      name="collector"
-      class="com.krishagni.catissueplus.core.administrative.domain.User"
-      cascade="none"
-      column="COLLECTOR_ID"/>
+    <many-to-one name="collector" column="COLLECTOR_ID" lazy="false" fetch="join"/>
 
-    <property name="collectionProcedure" column="COLLECTION_PROCEDURE"/>
+    <many-to-one name="collectionProcedure" column="COLLECTION_PROCEDURE_ID" lazy="false" fetch="join"/>
 
-    <property name="collectionContainer" column="COLLECTION_CONTAINER"/>
+    <many-to-one name="collectionContainer" column="COLLECTION_CONTAINER_ID" lazy="false" fetch="join"/>
 
-    <many-to-one
-      name="receiver"
-      class="com.krishagni.catissueplus.core.administrative.domain.User"
-      cascade="none"
-      column="RECEIVER_ID"/>
+    <many-to-one name="receiver" column="RECEIVER_ID"/>
 
-    <many-to-one
-      name="collectionProtocolEvent"
-      class="com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolEvent"
-      cascade="none"
-      column="COLLECTION_PROTOCOL_EVENT_ID"/>
+    <many-to-one name="collectionProtocolEvent" column="COLLECTION_PROTOCOL_EVENT_ID"/>
 
     <property name="labelFormat" column="LABELFORMAT"/>
     
@@ -69,6 +59,10 @@
     <property name="activityStatus" column="ACTIVITY_STATUS"/>
   
     <property name="sortOrder" column="SORT_ORDER"/>
+
+    <property name="defCustomFieldValuesJson" column="DEFAULT_CUSTOM_FIELD_VALUES" />
+
+    <property name="preBarcodedTube" column="PRE_BARCODED_TUBE" />
       
     <many-to-one
       name="parentSpecimenRequirement"
@@ -83,23 +77,15 @@
       <filter name="activeEntity"/>
     </set>
 
-    <many-to-one
-      name="pooledSpecimenRequirement"
-      class="com.krishagni.catissueplus.core.biospecimen.domain.SpecimenRequirement"
-      cascade="none"
-      update="true"
-      column="POOLED_SPMN_REQ_ID"/>
-
-    <set name="specimenPoolReqs" table="CATISSUE_CP_REQ_SPECIMEN" inverse="true" cascade="all" order-by="id asc" batch-size="25">
-      <key column="POOLED_SPMN_REQ_ID"/>
-      <one-to-many class="com.krishagni.catissueplus.core.biospecimen.domain.SpecimenRequirement"/>
-      <filter name="activeEntity"/>
-    </set>
-
     <set name="specimens" inverse="true" cascade="all">
       <key column="REQ_SPECIMEN_ID"/>
       <one-to-many class="com.krishagni.catissueplus.core.biospecimen.domain.Specimen"/>
       <filter name="activeEntity"/>
+    </set>
+
+    <set name="services" table="OS_CP_SR_LAB_SERVICES" inverse="true" cascade="all-delete-orphan">
+      <key column="SR_ID" />
+      <one-to-many class="com.krishagni.catissueplus.core.biospecimen.domain.SpecimenRequirementService" />
     </set>
 
     <filter name="activeEntity"/>
@@ -111,7 +97,7 @@
         sr.code = :code
     </query>
     
-    <query name="getSpecimensCount">
+    <query name="getCollectedSpecimensCount">
       select 
         count(spec.id) 
       from 
@@ -120,6 +106,16 @@
       where
         spec.collectionStatus = 'Collected'
         and sr.id = :srId
+    </query>
+
+    <query name="getAllSpecimensCount">
+      select
+        count(spmn.id)
+      from
+        com.krishagni.catissueplus.core.biospecimen.domain.SpecimenRequirement sr
+        join sr.specimens spmn
+      where
+        sr.id = :srId
     </query>
     
     <query name="getByCpEventLabelAndSrCode">

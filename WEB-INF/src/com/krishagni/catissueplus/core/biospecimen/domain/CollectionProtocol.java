@@ -1,6 +1,8 @@
 
 package com.krishagni.catissueplus.core.biospecimen.domain;
 
+import java.util.Calendar;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
@@ -12,18 +14,26 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.hibernate.envers.AuditTable;
 import org.hibernate.envers.Audited;
 import org.hibernate.envers.NotAudited;
+import org.hibernate.envers.RelationTargetAuditMode;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Configurable;
 
 import com.krishagni.catissueplus.core.administrative.domain.DistributionProtocol;
 import com.krishagni.catissueplus.core.administrative.domain.Site;
 import com.krishagni.catissueplus.core.administrative.domain.StorageContainer;
 import com.krishagni.catissueplus.core.administrative.domain.User;
 import com.krishagni.catissueplus.core.biospecimen.ConfigParams;
+import com.krishagni.catissueplus.core.biospecimen.domain.factory.CollectionProtocolRegistrationFactory;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.CpErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.CpeErrorCode;
+import com.krishagni.catissueplus.core.biospecimen.domain.factory.VisitFactory;
+import com.krishagni.catissueplus.core.biospecimen.events.CollectionProtocolRegistrationDetail;
+import com.krishagni.catissueplus.core.biospecimen.events.VisitDetail;
+import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
 import com.krishagni.catissueplus.core.common.CollectionUpdater;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.DependentEntityDetail;
@@ -32,6 +42,7 @@ import com.krishagni.catissueplus.core.common.util.Status;
 import com.krishagni.catissueplus.core.common.util.Utility;
 import com.krishagni.catissueplus.core.de.services.impl.FormUtil;
 
+@Configurable
 @Audited
 @AuditTable(value="CAT_COLLECTION_PROTOCOL_AUD")
 public class CollectionProtocol extends BaseExtensionEntity {
@@ -39,12 +50,15 @@ public class CollectionProtocol extends BaseExtensionEntity {
 		ON_REGISTRATION,
 		ON_VISIT,
 		ON_PRIMARY_COLL,
+		ON_PRIMARY_RECV,
+		ON_SHIPMENT_RECV,
 		NONE
 	}
 
 	public enum SpecimenLabelAutoPrintMode {
 		PRE_PRINT,
 		ON_COLLECTION,
+		ON_RECEIVE,
 		NONE
 	}
 
@@ -60,6 +74,11 @@ public class CollectionProtocol extends BaseExtensionEntity {
 		ALL_SPMNS
 	}
 
+	public enum LabelSequenceKey {
+		ID,
+		LABEL
+	};
+
 	public static final String EXTN = "CollectionProtocolExtension";
 
 	private static final String ENTITY_NAME = "collection_protocol";
@@ -67,6 +86,8 @@ public class CollectionProtocol extends BaseExtensionEntity {
 	private static final String CP_REG_PPID_FMT = "$$cp_reg_%d$$";
 
 	private static final String CP_VISIT_NAME_FMT = "$$cp_visit_%d$$";
+
+	private static final String CP_EVENT_FMT = "$$cp_event_%d$$";
 	
 	private String title;
 
@@ -81,6 +102,8 @@ public class CollectionProtocol extends BaseExtensionEntity {
 	private String activityStatus;
 
 	private User principalInvestigator;
+
+	private CollectionProtocolGroup cpGroup;
 	
 	private String irbIdentifier;
 	
@@ -102,6 +125,8 @@ public class CollectionProtocol extends BaseExtensionEntity {
 	
 	private String aliquotLabelFormat;
 
+	private String additionalLabelFormat;
+
 	private String specimenBarcodeFormat;
 
 	private String ppidFormat;
@@ -116,6 +141,8 @@ public class CollectionProtocol extends BaseExtensionEntity {
 	
 	private Boolean manualSpecLabelEnabled;
 
+	private Boolean kitLabelsEnabled;
+
 	private Boolean bulkPartRegEnabled;
 
 	private Boolean specimenCentric;
@@ -124,9 +151,17 @@ public class CollectionProtocol extends BaseExtensionEntity {
 
 	private Boolean closeParentSpecimens;
 
+	private Boolean setQtyToZero;
+
 	private String containerSelectionStrategy;
 
 	private Boolean aliquotsInSameContainer;
+
+	private Boolean storageSiteBasedAccess;
+
+	private Boolean draftDataEntry;
+
+	private LabelSequenceKey labelSequenceKey = LabelSequenceKey.ID;
 
 	private VisitCollectionMode visitCollectionMode = VisitCollectionMode.ALL_SPMNS;
 
@@ -139,6 +174,10 @@ public class CollectionProtocol extends BaseExtensionEntity {
 	private Set<CpSpecimenLabelPrintSetting> spmnLabelPrintSettings = new HashSet<>();
 	
 	private Boolean consentsWaived;
+
+	private Boolean visitLevelConsents;
+
+	private CollectionProtocol consentsSource;
 
 	private Set<CpConsentTier> consentTier = new LinkedHashSet<>();
 	
@@ -154,7 +193,22 @@ public class CollectionProtocol extends BaseExtensionEntity {
 
 	private Set<DistributionProtocol> distributionProtocols = new HashSet<>();
 
+	private Set<User> starred = new HashSet<>();
+
+	private boolean draftMode = false;
+
 	private Long catalogId;
+
+	private RequestManagerGroup requestManagerGroup;
+
+	@Autowired
+	private DaoFactory daoFactory;
+
+	@Autowired
+	private CollectionProtocolRegistrationFactory cprFactory;
+
+	@Autowired
+	private VisitFactory visitFactory;
 
 	public static String getEntityName() {
 		return ENTITY_NAME;
@@ -208,12 +262,25 @@ public class CollectionProtocol extends BaseExtensionEntity {
 		this.activityStatus = activityStatus;
 	}
 
+	public boolean isDeleted() {
+		return Status.isDisabledStatus(getActivityStatus());
+	}
+
 	public User getPrincipalInvestigator() {
 		return principalInvestigator;
 	}
 
 	public void setPrincipalInvestigator(User principalInvestigator) {
 		this.principalInvestigator = principalInvestigator;
+	}
+
+	@Audited(targetAuditMode = RelationTargetAuditMode.NOT_AUDITED)
+	public CollectionProtocolGroup getCpGroup() {
+		return cpGroup;
+	}
+
+	public void setCpGroup(CollectionProtocolGroup cpGroup) {
+		this.cpGroup = cpGroup;
 	}
 
 	public String getIrbIdentifier() {
@@ -304,6 +371,22 @@ public class CollectionProtocol extends BaseExtensionEntity {
 		this.aliquotLabelFormat = aliquotLabelFormat;
 	}
 
+	public String getAdditionalLabelFormat() {
+		return additionalLabelFormat;
+	}
+
+	public String getAdditionalLabelFormatToUse() {
+		if (StringUtils.isNotBlank(getAdditionalLabelFormat())) {
+			return getAdditionalLabelFormat();
+		} else {
+			return ConfigUtil.getInstance().getStrSetting(ConfigParams.MODULE, ConfigParams.SPMN_ADDL_LABEL_FORMAT, null);
+		}
+	}
+
+	public void setAdditionalLabelFormat(String additionalLabelFormat) {
+		this.additionalLabelFormat = additionalLabelFormat;
+	}
+
 	public String getSpecimenBarcodeFormat() {
 		return specimenBarcodeFormat;
 	}
@@ -368,6 +451,14 @@ public class CollectionProtocol extends BaseExtensionEntity {
 		return manualSpecLabelEnabled != null ? manualSpecLabelEnabled : false;
 	}
 
+	public void setKitLabelsEnabled(Boolean kitLabelsEnabled) {
+		this.kitLabelsEnabled = kitLabelsEnabled;
+	}
+
+	public boolean isKitLabelsEnabled() {
+		return Boolean.TRUE.equals(kitLabelsEnabled);
+	}
+
 	public boolean isBulkPartRegEnabled() {
 		return bulkPartRegEnabled != null ? bulkPartRegEnabled : false;
 	}
@@ -408,6 +499,22 @@ public class CollectionProtocol extends BaseExtensionEntity {
 		this.closeParentSpecimens = (closeParentSpecimens != null && closeParentSpecimens);
 	}
 
+	public Boolean getSetQtyToZero() {
+		return setQtyToZero;
+	}
+
+	public void setSetQtyToZero(Boolean setQtyToZero) {
+		this.setQtyToZero = setQtyToZero;
+	}
+
+	public boolean isZeroOutQtyEnabled() {
+		if (setQtyToZero != null) {
+			return setQtyToZero;
+		}
+
+		return ConfigUtil.getInstance().getBoolSetting(ConfigParams.MODULE, ConfigParams.SET_QTY_TO_ZERO, false);
+	}
+
 	public boolean areAllSpecimenLabelsAutoGenerated() {
 		return !isManualSpecLabelEnabled() && StringUtils.isNotBlank(getSpecimenLabelFormat()) &&
 			StringUtils.isNotBlank(getDerivativeLabelFormat()) && StringUtils.isNotBlank(getAliquotLabelFormat());
@@ -427,6 +534,44 @@ public class CollectionProtocol extends BaseExtensionEntity {
 
 	public void setAliquotsInSameContainer(Boolean aliquotsInSameContainer) {
 		this.aliquotsInSameContainer = aliquotsInSameContainer;
+	}
+
+	public Boolean getStorageSiteBasedAccess() {
+		return storageSiteBasedAccess;
+	}
+
+	public void setStorageSiteBasedAccess(Boolean storageSiteBasedAccess) {
+		this.storageSiteBasedAccess = storageSiteBasedAccess;
+	}
+
+	@NotAudited
+	public boolean storageSiteBasedAccessRightsEnabled() {
+		return Boolean.TRUE.equals(getStorageSiteBasedAccess());
+	}
+
+	public Boolean getDraftDataEntry() {
+		return draftDataEntry;
+	}
+
+	public void setDraftDataEntry(Boolean draftDataEntry) {
+		this.draftDataEntry = draftDataEntry;
+	}
+
+	@NotAudited
+	public boolean draftDataEntryEnabled() {
+		return Boolean.TRUE.equals(draftDataEntry);
+	}
+
+	public LabelSequenceKey getLabelSequenceKey() {
+		return labelSequenceKey;
+	}
+
+	public void setLabelSequenceKey(LabelSequenceKey labelSequenceKey) {
+		this.labelSequenceKey = labelSequenceKey;
+	}
+
+	public boolean useLabelsAsSequenceKey() {
+		return getLabelSequenceKey() == LabelSequenceKey.LABEL;
 	}
 
 	public VisitCollectionMode getVisitCollectionMode() {
@@ -490,7 +635,22 @@ public class CollectionProtocol extends BaseExtensionEntity {
 		this.consentsWaived = consentsWaived;
 	}
 
-	@NotAudited
+	public Boolean getVisitLevelConsents() {
+		return visitLevelConsents;
+	}
+
+	public void setVisitLevelConsents(Boolean visitLevelConsents) {
+		this.visitLevelConsents = visitLevelConsents;
+	}
+
+	public CollectionProtocol getConsentsSource() {
+		return consentsSource;
+	}
+
+	public void setConsentsSource(CollectionProtocol consentsSource) {
+		this.consentsSource = consentsSource;
+	}
+
 	public Set<CpConsentTier> getConsentTier() {
 		return consentTier;
 	}
@@ -568,12 +728,37 @@ public class CollectionProtocol extends BaseExtensionEntity {
 		this.distributionProtocols = distributionProtocols;
 	}
 
+	@NotAudited
+	public Set<User> getStarred() {
+		return starred;
+	}
+
+	public void setStarred(Set<User> starred) {
+		this.starred = starred;
+	}
+
+	public boolean isDraftMode() {
+		return draftMode;
+	}
+
+	public void setDraftMode(boolean draftMode) {
+		this.draftMode = draftMode;
+	}
+
 	public Long getCatalogId() {
 		return catalogId;
 	}
 
 	public void setCatalogId(Long catalogId) {
 		this.catalogId = catalogId;
+	}
+
+	public RequestManagerGroup getRequestManagerGroup() {
+		return requestManagerGroup;
+	}
+
+	public void setRequestManagerGroup(RequestManagerGroup requestManagerGroup) {
+		this.requestManagerGroup = requestManagerGroup;
 	}
 
 	public void update(CollectionProtocol cp) {
@@ -598,19 +783,27 @@ public class CollectionProtocol extends BaseExtensionEntity {
 		setSpecimenLabelFormat(cp.getSpecimenLabelFormat());
 		setDerivativeLabelFormat(cp.getDerivativeLabelFormat());
 		setAliquotLabelFormat(cp.getAliquotLabelFormat());
+		setAdditionalLabelFormat(cp.getAdditionalLabelFormat());
 		setSpecimenBarcodeFormat(cp.getSpecimenBarcodeFormat());
 		setManualSpecLabelEnabled(cp.isManualSpecLabelEnabled());
+		setKitLabelsEnabled(cp.isKitLabelsEnabled());
 		setBulkPartRegEnabled(cp.isBulkPartRegEnabled());
 		setBarcodingEnabled(cp.isBarcodingEnabled());
 		setCloseParentSpecimens(cp.isCloseParentSpecimens());
+		setSetQtyToZero(cp.getSetQtyToZero());
 		setContainerSelectionStrategy(cp.getContainerSelectionStrategy());
 		setAliquotsInSameContainer(cp.getAliquotsInSameContainer());
+		setStorageSiteBasedAccess(cp.getStorageSiteBasedAccess());
+		setDraftDataEntry(cp.draftDataEntryEnabled());
+		setLabelSequenceKey(cp.getLabelSequenceKey());
 		setVisitCollectionMode(cp.getVisitCollectionMode());
 		setVisitNamePrintMode(cp.getVisitNamePrintMode());
 		setVisitNamePrintCopies(cp.getVisitNamePrintCopies());
 		setUnsignedConsentDocumentURL(cp.getUnsignedConsentDocumentURL());
 		setExtension(cp.getExtension());
-//		setCatalogId(cp.getCatalogId());
+		setCatalogId(cp.getCatalogId());
+		setRequestManagerGroup(cp.getRequestManagerGroup());
+		setCpGroup(cp.getCpGroup());
 		
 		updateSites(cp.getSites());
 		updateSpecimenLabelPrintSettings(cp.getSpmnLabelPrintSettings());
@@ -645,21 +838,30 @@ public class CollectionProtocol extends BaseExtensionEntity {
 		cp.setSpecimenLabelFormat(getSpecimenLabelFormat());
 		cp.setAliquotLabelFormat(getAliquotLabelFormat());
 		cp.setDerivativeLabelFormat(getDerivativeLabelFormat());
+		cp.setAdditionalLabelFormat(getAdditionalLabelFormat());
 		cp.setSpecimenBarcodeFormat(getSpecimenBarcodeFormat());
 		cp.setManualSpecLabelEnabled(isManualSpecLabelEnabled());
+		cp.setKitLabelsEnabled(isKitLabelsEnabled());
 		cp.setBulkPartRegEnabled(isBulkPartRegEnabled());
 		cp.setBarcodingEnabled(isBarcodingEnabled());
 		cp.setCloseParentSpecimens(isCloseParentSpecimens());
+		cp.setSetQtyToZero(getSetQtyToZero());
+		cp.setStorageSiteBasedAccess(getStorageSiteBasedAccess());
+		cp.setDraftDataEntry(draftDataEntryEnabled());
+		cp.setLabelSequenceKey(getLabelSequenceKey());
 		cp.setVisitCollectionMode(getVisitCollectionMode());
 		cp.setVisitNamePrintMode(getVisitNamePrintMode());
 		cp.setVisitNamePrintCopies(getVisitNamePrintCopies());
 		cp.setSpmnLabelPrePrintMode(getSpmnLabelPrePrintMode());
 		cp.setCatalogId(getCatalogId());
+		cp.setRequestManagerGroup(getRequestManagerGroup());
 
 		copyLabelPrintSettingsTo(cp);
 		copyExtensionTo(cp);
 
 		cp.setConsentsWaived(isConsentsWaived());
+		cp.setVisitLevelConsents(getVisitLevelConsents());
+		cp.setConsentsSource(getConsentsSource());
 		cp.setUnsignedConsentDocumentURL(getUnsignedConsentDocumentURL());
 		copyConsentTierTo(cp);
 
@@ -667,10 +869,16 @@ public class CollectionProtocol extends BaseExtensionEntity {
 
 		cp.setContainerSelectionStrategy(getContainerSelectionStrategy());
 		cp.setAliquotsInSameContainer(getAliquotsInSameContainer());
+		cp.setStorageSiteBasedAccess(getStorageSiteBasedAccess());
+		cp.setDraftDataEntry(draftDataEntryEnabled());
 		cp.setActivityStatus(getActivityStatus());
 	}
 	
 	public void copyConsentTierTo(CollectionProtocol cp) {
+		if (cp.getConsentsSource() != null) {
+			return;
+		}
+
 		for (CpConsentTier consentTier : getConsentTier()) {
 			cp.addConsentTier(consentTier.copy());
 		}
@@ -690,6 +898,10 @@ public class CollectionProtocol extends BaseExtensionEntity {
 	
 	public void copyEventsTo(CollectionProtocol cp) {
 		for (CollectionProtocolEvent cpe : getOrderedCpeList()) {
+			if (cpe.isClosed()) {
+				continue;
+			}
+
 			cp.addCpe(cpe.deepCopy());
 		}
 	}
@@ -738,12 +950,23 @@ public class CollectionProtocol extends BaseExtensionEntity {
 	}
 	
 	public void updateCpe(CollectionProtocolEvent cpe) {
-		CollectionProtocolEvent existing = getCpe(cpe.getId());
-		if (existing == null) {
-			throw OpenSpecimenException.userError(CpeErrorCode.NOT_FOUND, cpe.getId(), 1);
+		Object key = null;
+		CollectionProtocolEvent existing = null;
+		if (cpe.getId() != null) {
+			key = cpe.getId();
+			existing = getCpe(cpe.getId());
+		} else if (StringUtils.isNotBlank(cpe.getEventLabel())) {
+			key = cpe.getEventLabel();
+			existing = getCpe(cpe.getEventLabel());
 		}
 
-		if (!existing.getEventLabel().equals(cpe.getEventLabel())) {
+		if (key == null) {
+			throw OpenSpecimenException.userError(CpeErrorCode.LABEL_REQUIRED);
+		} else if (existing == null) {
+			throw OpenSpecimenException.userError(CpeErrorCode.NOT_FOUND, key, 1);
+		}
+
+		if (!existing.getEventLabel().equalsIgnoreCase(cpe.getEventLabel())) {
 			if (getCpe(cpe.getEventLabel()) != null) {
 				throw OpenSpecimenException.userError(CpeErrorCode.DUP_LABEL, cpe.getEventLabel());
 			}			
@@ -803,6 +1026,7 @@ public class CollectionProtocol extends BaseExtensionEntity {
 			throw OpenSpecimenException.userError(CpErrorCode.REF_ENTITY_FOUND);
 		}
 
+		getCollectionProtocolEvents().forEach(CollectionProtocolEvent::delete);
 		setTitle(Utility.getDisabledValue(getTitle(), 255));
 		setShortTitle(Utility.getDisabledValue(getShortTitle(), 50));
 		setCode(Utility.getDisabledValue(getCode(), 32));
@@ -815,7 +1039,26 @@ public class CollectionProtocol extends BaseExtensionEntity {
 	public String getEntityType() {
 		return EXTN;
 	}
-	
+
+	@Override
+	public Long getRecordId(Long formId, Long formCtxtId) {
+		return daoFactory.getCollectionProtocolDao().getCustomFieldRecordId(getId(), formId, formCtxtId);
+	}
+
+	@Override
+	public boolean saveOrUpdateRecordEntry(boolean insert, Long formId, Long formCtxtId, Long recordId) {
+		if (insert) {
+			daoFactory.getCollectionProtocolDao().insertCustomFieldRecordId(getId(), formId, formCtxtId, recordId);
+		}
+
+		return true;
+	}
+
+	@Override
+	public Map<Long, Long> getRecordIds(Collection<Long> cpIds, Long formId, Long formCtxtId) {
+		return daoFactory.getCollectionProtocolDao().getCustomFieldRecordIds(cpIds, formId, formCtxtId);
+	}
+
 	public CollectionProtocolEvent firstEvent() {
 		if (!getCollectionProtocolEvents().isEmpty()) {
 			return getOrderedCpeList().get(0);
@@ -834,6 +1077,45 @@ public class CollectionProtocol extends BaseExtensionEntity {
 
 	public String getVisitName() {
 		return String.format(CP_VISIT_NAME_FMT, getId());
+	}
+
+	public String getEventName() {
+		return String.format(CP_EVENT_FMT, getId());
+	}
+
+	public Visit getVisit() {
+		String visitName = getVisitName();
+		Visit cpVisit = daoFactory.getVisitsDao().getByName(visitName);
+		if (cpVisit != null) {
+			return cpVisit;
+		}
+
+		String ppid = getPpid();
+		CollectionProtocolRegistration cpReg = daoFactory.getCprDao().getCprByPpid(getId(), ppid);
+		if (cpReg == null) {
+			CollectionProtocolRegistrationDetail cprInput = new CollectionProtocolRegistrationDetail();
+			cprInput.setCpId(getId());
+			cprInput.setPpid(ppid);
+			cprInput.setRegistrationDate(Calendar.getInstance().getTime());
+			cpReg = cprFactory.createCpr(cprInput);
+
+			daoFactory.getParticipantDao().saveOrUpdate(cpReg.getParticipant());
+			daoFactory.getCprDao().saveOrUpdate(cpReg);
+		}
+
+		VisitDetail visitInput = new VisitDetail();
+		visitInput.setCpId(getId());
+		visitInput.setPpid(ppid);
+		visitInput.setName(visitName);
+		visitInput.setVisitDate(Calendar.getInstance().getTime());
+		visitInput.setSite(getRepositories().iterator().next().getName());
+		if (firstEvent() != null) {
+			visitInput.setEventLabel(firstEvent().getEventLabel());
+		}
+
+		cpVisit = visitFactory.createVisit(visitInput);
+		daoFactory.getVisitsDao().saveOrUpdate(cpVisit);
+		return cpVisit;
 	}
 
 	private CpConsentTier getConsentTierById(Long ctId) {

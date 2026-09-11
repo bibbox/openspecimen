@@ -10,34 +10,46 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.BooleanUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.springframework.beans.factory.InitializingBean;
+import org.springframework.core.task.AsyncTaskExecutor;
 
+import com.krishagni.catissueplus.core.administrative.domain.PermissibleValue;
 import com.krishagni.catissueplus.core.administrative.domain.User;
 import com.krishagni.catissueplus.core.administrative.domain.factory.UserErrorCode;
 import com.krishagni.catissueplus.core.administrative.events.StorageLocationSummary;
 import com.krishagni.catissueplus.core.audit.services.impl.DeleteLogUtil;
 import com.krishagni.catissueplus.core.biospecimen.ConfigParams;
+import com.krishagni.catissueplus.core.biospecimen.SpecimenUtil;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolRegistration;
+import com.krishagni.catissueplus.core.biospecimen.domain.LabService;
+import com.krishagni.catissueplus.core.biospecimen.domain.LabSpecimenService;
 import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
+import com.krishagni.catissueplus.core.biospecimen.domain.SpecimenPreSaveEvent;
+import com.krishagni.catissueplus.core.biospecimen.domain.SpecimenRequirement;
 import com.krishagni.catissueplus.core.biospecimen.domain.SpecimenSavedEvent;
+import com.krishagni.catissueplus.core.biospecimen.domain.SpecimenTypeUnit;
 import com.krishagni.catissueplus.core.biospecimen.domain.Visit;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.CpErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.CprErrorCode;
+import com.krishagni.catissueplus.core.biospecimen.domain.factory.LabServiceErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.SpecimenErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.SpecimenFactory;
+import com.krishagni.catissueplus.core.biospecimen.domain.factory.SrErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.VisitErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.events.CollectionEventDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.CpEntityDeleteCriteria;
@@ -47,23 +59,24 @@ import com.krishagni.catissueplus.core.biospecimen.events.SpecimenAliquotsSpec;
 import com.krishagni.catissueplus.core.biospecimen.events.SpecimenDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.SpecimenInfo;
 import com.krishagni.catissueplus.core.biospecimen.events.SpecimenQueryCriteria;
+import com.krishagni.catissueplus.core.biospecimen.events.SpecimenServiceDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.SpecimenStatusDetail;
 import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
 import com.krishagni.catissueplus.core.biospecimen.repository.SpecimenListCriteria;
 import com.krishagni.catissueplus.core.biospecimen.services.SpecimenResolver;
 import com.krishagni.catissueplus.core.biospecimen.services.SpecimenService;
-import com.krishagni.catissueplus.core.common.OpenSpecimenAppCtxProvider;
+import com.krishagni.catissueplus.core.common.Pair;
 import com.krishagni.catissueplus.core.common.PlusTransactional;
 import com.krishagni.catissueplus.core.common.access.AccessCtrlMgr;
 import com.krishagni.catissueplus.core.common.access.SiteCpPair;
 import com.krishagni.catissueplus.core.common.domain.LabelPrintJob;
 import com.krishagni.catissueplus.core.common.domain.PrintItem;
-import com.krishagni.catissueplus.core.common.errors.ActivityStatusErrorCode;
 import com.krishagni.catissueplus.core.common.errors.CommonErrorCode;
 import com.krishagni.catissueplus.core.common.errors.ErrorType;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.BulkEntityDetail;
 import com.krishagni.catissueplus.core.common.events.DependentEntityDetail;
+import com.krishagni.catissueplus.core.common.events.EntityQueryCriteria;
 import com.krishagni.catissueplus.core.common.events.LabelPrintJobSummary;
 import com.krishagni.catissueplus.core.common.events.LabelTokenDetail;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
@@ -77,6 +90,8 @@ import com.krishagni.catissueplus.core.common.service.ObjectAccessor;
 import com.krishagni.catissueplus.core.common.service.impl.EventPublisher;
 import com.krishagni.catissueplus.core.common.util.AuthUtil;
 import com.krishagni.catissueplus.core.common.util.ConfigUtil;
+import com.krishagni.catissueplus.core.common.util.EmailUtil;
+import com.krishagni.catissueplus.core.common.util.LogUtil;
 import com.krishagni.catissueplus.core.common.util.NumUtil;
 import com.krishagni.catissueplus.core.common.util.Status;
 import com.krishagni.catissueplus.core.common.util.Utility;
@@ -87,7 +102,11 @@ import com.krishagni.rbac.common.errors.RbacErrorCode;
 
 public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, ConfigChangeListener, InitializingBean {
 
-	private static Log logger = LogFactory.getLog(SpecimenServiceImpl.class);
+	private static final LogUtil logger = LogUtil.getLogger(SpecimenServiceImpl.class);
+
+	private static final String SPMNS_UPDATED_TMPL = "specimens_bulk_updated";
+
+	private static final String SPMNS_UPDATE_FAILED_TMPL = "specimens_bulk_update_failed";
 
 	private DaoFactory daoFactory;
 
@@ -101,9 +120,11 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 
 	private LabelGenerator specimenBarcodeGenerator;
 
+	private LabelGenerator additionalLabelGenerator;
+
 	private ExportService exportSvc;
 
-	private int precision = 6;
+	private AsyncTaskExecutor taskExecutor;
 
 	public void setDaoFactory(DaoFactory daoFactory) {
 		this.daoFactory = daoFactory;
@@ -129,8 +150,16 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 		this.specimenBarcodeGenerator = specimenBarcodeGenerator;
 	}
 
+	public void setAdditionalLabelGenerator(LabelGenerator additionalLabelGenerator) {
+		this.additionalLabelGenerator = additionalLabelGenerator;
+	}
+
 	public void setExportSvc(ExportService exportSvc) {
 		this.exportSvc = exportSvc;
+	}
+
+	public void setTaskExecutor(AsyncTaskExecutor taskExecutor) {
+		this.taskExecutor = taskExecutor;
 	}
 
 	@Override
@@ -145,9 +174,8 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 				return ResponseEvent.error(ose);
 			}
 
-			boolean allowPhi = AccessCtrlMgr.getInstance().ensureReadSpecimenRights(specimen);
-			SpecimenDetail detail = SpecimenDetail.from(specimen, false, !allowPhi);
-			setDistributionStatus(detail);
+			AccessCtrlMgr.SpecimenAccessRights rights = AccessCtrlMgr.getInstance().ensureReadSpecimenRights(specimen);
+			SpecimenDetail detail = SpecimenDetail.from(specimen, false, !rights.phiAccess, rights.onlyPrimarySpmns || !crit.isIncludeChildren());
 			return ResponseEvent.response(detail);
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
@@ -155,8 +183,6 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 			return ResponseEvent.serverError(e);
 		}
 	}
-
-
 
 	@Override
 	@PlusTransactional
@@ -168,12 +194,23 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 				specimens = Specimen.sortByLabels(specimens, crit.labels());
 			} else if (CollectionUtils.isNotEmpty(crit.barcodes())) {
 				specimens = Specimen.sortByBarcodes(specimens, crit.barcodes());
+			} else if (CollectionUtils.isNotEmpty(crit.ids())) {
+				specimens = Specimen.sortByIds(specimens, crit.ids());
+			}
+
+			if (crit.includeExtensions()) {
+				createExtensions(crit.cpId(), specimens);
+			}
+
+			if (crit.filterFn() != null) {
+				specimens = specimens.stream().filter(crit.filterFn()).collect(Collectors.toList());
 			}
 
 			List<? extends SpecimenInfo> result = null;
 			if (crit.includeExtensions()) {
-				createExtensions(crit.cpId(), specimens);
 				result = specimens.stream().map(s -> SpecimenDetail.from(s, false, true, true)).collect(Collectors.toList());
+			} else if (crit.minimalInfo()) {
+				result = specimens.stream().map(this::toMinimalInfo).collect(Collectors.toList());
 			} else {
 				result = SpecimenInfo.from(specimens);
 			}
@@ -189,6 +226,12 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 	@Override
 	@PlusTransactional
 	public ResponseEvent<List<? extends SpecimenInfo>> getSpecimensById(List<Long> ids, boolean includeExtensions) {
+		return getSpecimensById(ids, includeExtensions, false);
+	}
+
+	@Override
+	@PlusTransactional
+	public ResponseEvent<List<? extends SpecimenInfo>> getSpecimensById(List<Long> ids, boolean includeExtensions, boolean minimalInfo) {
 		try {
 			List<Specimen> specimens = getSpecimensById(ids);
 			specimens = Specimen.sortByIds(specimens, ids);
@@ -197,6 +240,8 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 			if (includeExtensions) {
 				createExtensions(null, specimens);
 				result = specimens.stream().map(s -> SpecimenDetail.from(s, false, true, true)).collect(Collectors.toList());
+			} else if (minimalInfo) {
+				result = specimens.stream().map(this::toMinimalInfo).collect(Collectors.toList());
 			} else {
 				result = SpecimenInfo.from(specimens);
 			}
@@ -237,6 +282,11 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 		try {
 			SpecimenDetail detail = req.getPayload();
 			Specimen specimen = saveOrUpdate(detail, null, null, null);
+			getLabelPrinter().print(getSpecimenPrintItems(Collections.singleton(specimen)));
+			if (detail.closeParent()) {
+				closeParent(specimen, detail.getOpComments());
+			}
+
 			return ResponseEvent.response(SpecimenDetail.from(specimen, false, false));
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
@@ -253,6 +303,10 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 			OpenSpecimenException ose = new OpenSpecimenException(ErrorType.USER_ERROR);
 			Specimen existing = updateSpecimen(detail, ose);
 			ose.checkAndThrow();
+
+			if (detail.closeParent()) {
+				closeParent(existing, detail.getOpComments());
+			}
 			return ResponseEvent.response(SpecimenDetail.from(existing, false, false));
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
@@ -280,19 +334,49 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 	@Override
 	@PlusTransactional
 	public ResponseEvent<List<SpecimenInfo>> bulkUpdateSpecimens(RequestEvent<BulkEntityDetail<SpecimenDetail>> req) {
+		final AtomicBoolean timeout = new AtomicBoolean(false);
+
 		try {
-			BulkEntityDetail<SpecimenDetail> buDetail = req.getPayload();
-			SpecimenDetail spmn = buDetail.getDetail();
+			User currentUser = AuthUtil.getCurrentUser();
+			String ipAddress = AuthUtil.getRemoteAddr();
+			Future<List<SpecimenInfo>> result = taskExecutor.submit(
+				() ->  {
+					String emailTmpl = SPMNS_UPDATED_TMPL;
+					Map<String, Object> props = new HashMap<>();
+					props.put("rcpt", currentUser);
+					props.put("specimensCount", req.getPayload().getIds().size());
 
-			OpenSpecimenException ose = new OpenSpecimenException(ErrorType.USER_ERROR);
-			List<Specimen> savedSpmns = new ArrayList<>();
-			for (Long id : buDetail.getIds()) {
-				spmn.setId(id);
-				savedSpmns.add(updateSpecimen(spmn, ose));
-			}
+					try {
+						AuthUtil.setCurrentUser(currentUser, ipAddress);
+						return bulkUpdateSpecimens(req.getPayload());
+					} catch (Exception e) {
+						emailTmpl = SPMNS_UPDATE_FAILED_TMPL;
 
-			ose.checkAndThrow();
-			return ResponseEvent.response(SpecimenDetail.from(savedSpmns));
+						String stackTrace = ExceptionUtils.getStackTrace(e);
+						props.put("error", stackTrace);
+						if (e instanceof OpenSpecimenException) {
+							throw e;
+						} else {
+							throw OpenSpecimenException.serverError(e);
+						}
+					} finally {
+						if (timeout.get()) {
+							EmailUtil.getInstance().sendEmail(
+								emailTmpl,
+								new String[] { currentUser.getEmailAddress() },
+								null,
+								props);
+						}
+
+						AuthUtil.clearCurrentUser();
+					}
+				}
+			);
+
+			return ResponseEvent.response(result.get(30000, TimeUnit.MILLISECONDS));
+		} catch (TimeoutException te) {
+			timeout.set(true);
+			return ResponseEvent.response(null);
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
 		} catch (Exception e) {
@@ -310,17 +394,19 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 			for (SpecimenStatusDetail detail : req.getPayload()) {
 				Specimen specimen = getSpecimen(detail.getId(), detail.getCpShortTitle(), detail.getName(), detail.getBarcode(), ose);
 				User user = getUser(detail.getUser(), ose);
-				Date date = getDisposalDate(specimen, detail.getDate(), ose);
+				Date date = detail.getDate() != null ? detail.getDate() : Calendar.getInstance().getTime();
 				ose.checkAndThrow();
 
 				AccessCtrlMgr.getInstance().ensureCreateOrUpdateSpecimenRights(specimen, false);
-				specimen.updateStatus(detail.getStatus(), user, date, detail.getReason(), detail.isForceUpdate());
+				specimen.updateStatus(detail.getStatus(), user, date, detail.getReason(), detail.getComments(), detail.isForceUpdate());
 
 				if (specimen.isDeleted()) {
 					specimen.setOpComments(detail.getReason());
 					DeleteLogUtil.getInstance().log(specimen);
 				}
 
+				specimen.setUpdated(true);
+				EventPublisher.getInstance().publish(new SpecimenSavedEvent(specimen));
 				result.add(SpecimenDetail.from(specimen));
 			}
 
@@ -350,6 +436,7 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 			specimen.disable(!criteria.isForceDelete());
 
 			DeleteLogUtil.getInstance().log(specimen);
+			EventPublisher.getInstance().publish(new SpecimenSavedEvent(specimen));
 			result.add(SpecimenInfo.from(specimen));
 		}
 
@@ -406,18 +493,20 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 			OpenSpecimenException ose = new OpenSpecimenException(ErrorType.USER_ERROR);
 			
 			SpecimenAliquotsSpec spec = req.getPayload();
-			Specimen parentSpecimen = getSpecimen(spec.getParentId(), spec.getCpShortTitle(), spec.getParentLabel(), ose);
+			Specimen parentSpmn = getSpecimen(spec.getParentId(), spec.getCpShortTitle(), spec.getParentLabel(), ose);
 			ose.checkAndThrow();
 			
-			if (!parentSpecimen.isCollected()) {
-				return ResponseEvent.userError(SpecimenErrorCode.NOT_COLLECTED, parentSpecimen.getLabel());
+			if (!parentSpmn.isCollected() && !parentSpmn.isPending()) {
+				return ResponseEvent.userError(SpecimenErrorCode.NOT_COLLECTED, parentSpmn.getLabel());
+			} else if (!parentSpmn.isTxnActive()) {
+				return ResponseEvent.userError(SpecimenErrorCode.NOT_ACTIVE, parentSpmn.getLabel());
 			}
 
 			SpecimenDetail derived = null;
-			if ((StringUtils.isNotBlank(spec.getSpecimenClass()) && !spec.getSpecimenClass().equals(parentSpecimen.getSpecimenClass())) ||
-				(StringUtils.isNotBlank(spec.getType()) && !spec.getType().equals(parentSpecimen.getSpecimenType())) ||
-				(spec.createDerived() && !parentSpecimen.isDerivative())) {
-				derived = getDerivedSpecimen(parentSpecimen, spec);
+			if ((StringUtils.isNotBlank(spec.getSpecimenClass()) && !spec.getSpecimenClass().equals(parentSpmn.getSpecimenClass().getValue())) ||
+				(StringUtils.isNotBlank(spec.getType()) && !spec.getType().equals(parentSpmn.getSpecimenType().getValue())) ||
+				(spec.createDerived() && !parentSpmn.isDerivative())) {
+				derived = getDerivedSpecimen(parentSpmn, spec);
 			}
 
 			Integer count = spec.getNoOfAliquots();
@@ -436,7 +525,7 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 				count = barcodes.size();
 			}
 
-			BigDecimal parentQty = derived != null ? derived.getInitialQty() : parentSpecimen.getAvailableQuantity();
+			BigDecimal parentQty = derived != null ? derived.getInitialQty() : parentSpmn.getAvailableQuantity();
 			boolean aliquotQtyReq = ConfigUtil.getInstance().getBoolSetting(ConfigParams.MODULE, ConfigParams.ALIQUOT_QTY_REQ, true);
 			if ((count == null && (parentQty == null || aliquotQty == null)) ||
 				(parentQty == null && aliquotQty == null && aliquotQtyReq)) {
@@ -446,25 +535,62 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 			if (count == null) {
 				count = parentQty.divide(aliquotQty, RoundingMode.FLOOR).intValue();
 			} else if (aliquotQty == null && parentQty != null) {
-				aliquotQty = NumUtil.divide(parentQty, count, precision);
+				aliquotQty = parentQty.divide(new BigDecimal(count), RoundingMode.FLOOR);
 			}
 
+			List<Long> reqIds;
+			List<Long> ids = spec.getIds() != null ? spec.getIds() : Collections.emptyList();
+			if (spec.isLinkToReqs() && parentSpmn.getSpecimenRequirement() != null) {
+				reqIds = parentSpmn.getSpecimenRequirement().getOrderedChildRequirements().stream()
+					.filter(SpecimenRequirement::isAliquot)
+					.map(SpecimenRequirement::getId).collect(Collectors.toList());
+
+				Set<Long> collectedReqs = parentSpmn.getChildCollection().stream()
+					.filter(c -> c.getSpecimenRequirement() != null && c.isAliquot())
+					.map(c -> c.getSpecimenRequirement().getId())
+					.collect(Collectors.toSet());
+				reqIds.removeAll(collectedReqs);
+			} else {
+				reqIds = spec.getReqIds();
+				if (reqIds == null) {
+					reqIds = Collections.emptyList();
+				}
+			}
+
+			int childrenLimit = ConfigUtil.getInstance().getIntSetting(ConfigParams.MODULE, ConfigParams.MAX_CHILDREN_LIMIT, 100);
+			if (count > childrenLimit) {
+				throw OpenSpecimenException.userError(SpecimenErrorCode.CHILDREN_LIMIT_MAXED, parentSpmn.getLabel(), childrenLimit);
+			}
+
+			List<StorageLocationSummary> locations = spec.getLocations();
 			List<SpecimenDetail> aliquots = new ArrayList<>();
 			for (int i = 0; i < count; ++i) {
 				SpecimenDetail aliquot = new SpecimenDetail();
+				aliquot.setId(spec.getId()); // workflows
 				aliquot.setLineage(Specimen.ALIQUOT);
 				aliquot.setInitialQty(aliquotQty);
 				aliquot.setAvailableQty(aliquotQty);
 				aliquot.setConcentration(spec.getConcentration());
-				aliquot.setParentLabel(derived == null ? parentSpecimen.getLabel() : null);
-				aliquot.setParentId(derived == null ? parentSpecimen.getId() : null);
+				aliquot.setParentLabel(derived == null ? parentSpmn.getLabel() : null);
+				aliquot.setParentId(derived == null ? parentSpmn.getId() : null);
 				aliquot.setCreatedOn(spec.getCreatedOn());
 				aliquot.setCreatedBy(spec.getCreatedBy());
 				aliquot.setFreezeThawCycles(spec.getFreezeThawCycles());
 				aliquot.setIncrParentFreezeThaw(spec.getIncrParentFreezeThaw());
 				aliquot.setCloseParent(spec.closeParent());
 				aliquot.setPrintLabel(spec.printLabel());
+				aliquot.setComments(spec.getComments());
 				aliquot.setExtensionDetail(spec.getExtensionDetail());
+				aliquot.setStatus(StringUtils.isNotBlank(spec.getStatus()) ? spec.getStatus() : Specimen.COLLECTED);
+
+				if (i < ids.size()) {
+					aliquot.setId(ids.get(i));
+				}
+
+				if (i < reqIds.size()) {
+					aliquot.setReqId(reqIds.get(i));
+				}
+
 				if (i < labels.size()) {
 					aliquot.setLabel(labels.get(i));
 				}
@@ -483,16 +609,24 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 					aliquot.setContainerTypeName(spec.getContainerType());
 				}
 				
-				StorageLocationSummary location = new StorageLocationSummary();
-				location.setName(spec.getContainerName());
-				if (i == 0) {
-					if (spec.getPosition() != 0) {
-						location.setPosition(spec.getPosition());
-					} else if (spec.getPositionX() != null && spec.getPositionY() != null) {
-						location.setPositionX(spec.getPositionX());
-						location.setPositionY(spec.getPositionY());
+				StorageLocationSummary location = null;
+				if (StringUtils.isNotBlank(spec.getContainerName())) {
+					location = new StorageLocationSummary();
+					location.setName(spec.getContainerName());
+					if (i == 0) {
+						if (spec.getPosition() != null && spec.getPosition() != 0) {
+							location.setPosition(spec.getPosition());
+						}
+
+						if (spec.getPositionX() != null && spec.getPositionY() != null) {
+							location.setPositionX(spec.getPositionX());
+							location.setPositionY(spec.getPositionY());
+						}
 					}
+				} else if (locations != null && i < locations.size()) {
+					location = locations.get(i);
 				}
+
 				aliquot.setStorageLocation(location);
 				aliquots.add(aliquot);
 			}
@@ -505,7 +639,7 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 
 			ResponseEvent<List<SpecimenDetail>> resp = collectSpecimens(new RequestEvent<>(inputSpmns));
 			if (resp.isSuccessful() && spec.closeParent()) {
-				parentSpecimen.close(AuthUtil.getCurrentUser(), new Date(), "");
+				parentSpmn.close(AuthUtil.getCurrentUser(), new Date(), Specimen.PROCESSED, null);
 			}
 
 			return resp;
@@ -522,15 +656,35 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 		try {
 			SpecimenDetail spmnDetail = derivedReq.getPayload();
 			spmnDetail.setLineage(Specimen.DERIVED);
-			spmnDetail.setStatus(Specimen.COLLECTED);
+			if (StringUtils.isBlank(spmnDetail.getStatus())) {
+				spmnDetail.setStatus(Specimen.COLLECTED);
+			}
 
 			ResponseEvent<SpecimenDetail> resp = createSpecimen(new RequestEvent<SpecimenDetail>(spmnDetail));
 			if (resp.isSuccessful() && spmnDetail.closeParent()) {
 				Specimen parent = getSpecimen(spmnDetail.getParentId(), spmnDetail.getCpShortTitle(), spmnDetail.getParentLabel(), null);
-				parent.close(AuthUtil.getCurrentUser(), new Date(), "");
+				parent.close(AuthUtil.getCurrentUser(), new Date(), Specimen.PROCESSED, null);
 			}
 
 			return resp;
+		} catch (OpenSpecimenException ose) {
+			return ResponseEvent.error(ose);
+		} catch (Exception e) {
+			return ResponseEvent.serverError(e);
+		}
+	}
+
+	@Override
+	@PlusTransactional
+	public ResponseEvent<SpecimenDetail> createPooledSpecimen(RequestEvent<SpecimenDetail> req) {
+		try {
+			SpecimenDetail input = req.getPayload();
+			input.setLineage(Specimen.NEW);
+			input.setStatus(Specimen.COLLECTED);
+
+			Specimen pooledSpmn = saveOrUpdate(input, null, null, null);
+			getLabelPrinter().print(getSpecimenPrintItems(Collections.singleton(pooledSpmn)));
+			return ResponseEvent.response(SpecimenDetail.from(pooledSpmn, false, true));
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
 		} catch (Exception e) {
@@ -574,15 +728,124 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 		return ResponseEvent.response(LabelTokenDetail.from("print_", getLabelPrinter().getTokens()));
 	}
 
+	@Override
+	@PlusTransactional
+	public ResponseEvent<List<SpecimenServiceDetail>> getServices(RequestEvent<SpecimenQueryCriteria> req) {
+		try {
+			SpecimenQueryCriteria crit = req.getPayload();
+
+			OpenSpecimenException ose = new OpenSpecimenException(ErrorType.USER_ERROR);
+			Specimen specimen = getSpecimen(crit.getId(), crit.getCpShortTitle(), crit.getName(), crit.getBarcode(), ose);
+			ose.checkAndThrow();
+
+			AccessCtrlMgr.getInstance().ensureReadSpecimenRights(specimen);
+			List<LabSpecimenService> services = daoFactory.getSpecimenDao().getLabSpecimenServices(specimen.getId());
+			List<SpecimenServiceDetail> result = SpecimenServiceDetail.from(specimen, services);
+			if (Boolean.TRUE.equals(crit.paramBoolean("includeRates")) && !services.isEmpty()) {
+				Map<Long, Pair<String, BigDecimal>> rates = daoFactory.getSpecimenDao().getLabSpecimenServicesRate(specimen.getId());
+				for (SpecimenServiceDetail svc : result) {
+					Pair<String, BigDecimal> rate = rates.get(svc.getId());
+					if (rate != null) {
+						svc.setCurrency(rate.first());
+						svc.setServiceRate(rate.second().multiply(new BigDecimal(svc.getUnits())));
+					}
+				}
+			}
+
+			return ResponseEvent.response(result);
+		} catch (OpenSpecimenException ose) {
+			return ResponseEvent.error(ose);
+		} catch (Exception e) {
+			return ResponseEvent.serverError(e);
+		}
+	}
+
+	@Override
+	@PlusTransactional
+	public ResponseEvent<List<SpecimenServiceDetail>> getMultiSpecimenServices(RequestEvent<SpecimenListCriteria> req) {
+		try {
+			SpecimenListCriteria specimensCriteria = req.getPayload();
+			List<SiteCpPair> siteCps = AccessCtrlMgr.getInstance().getReadAccessSpecimenSiteCps(specimensCriteria.cpId());
+			if (siteCps != null && siteCps.isEmpty()) {
+				return ResponseEvent.userError(RbacErrorCode.ACCESS_DENIED);
+			}
+
+			List<Specimen> specimens = daoFactory.getSpecimenDao().getSpecimens(specimensCriteria);
+			List<Long> specimenIds = specimens.stream().map(Specimen::getId).toList();
+			List<LabSpecimenService> services = daoFactory.getSpecimenDao().getLabSpecimenServices(specimenIds);
+			return ResponseEvent.response(SpecimenServiceDetail.from(services));
+		} catch (OpenSpecimenException ose) {
+			return ResponseEvent.error(ose);
+		} catch (Exception e) {
+			return ResponseEvent.serverError(e);
+		}
+	}
+
+	@Override
+	@PlusTransactional
+	public ResponseEvent<SpecimenServiceDetail> getService(RequestEvent<EntityQueryCriteria> req) {
+		try {
+			EntityQueryCriteria crit = req.getPayload();
+			LabSpecimenService service = daoFactory.getSpecimenDao().getLabSpecimenService(crit.getId());
+			if (service == null) {
+				return ResponseEvent.userError(SpecimenErrorCode.LAB_SVC_NOT_FOUND, crit.getId());
+			}
+
+			AccessCtrlMgr.getInstance().ensureReadSpecimenRights(service.getSpecimen());
+			return ResponseEvent.response(SpecimenServiceDetail.from(service));
+		} catch (OpenSpecimenException ose) {
+			return ResponseEvent.error(ose);
+		} catch (Exception e) {
+			return ResponseEvent.serverError(e);
+		}
+	}
+
+	@Override
+	@PlusTransactional
+	public ResponseEvent<SpecimenServiceDetail> addOrUpdateService(RequestEvent<SpecimenServiceDetail> req) {
+		try {
+			OpenSpecimenException ose = new OpenSpecimenException(ErrorType.USER_ERROR);
+			SpecimenServiceDetail input = req.getPayload();
+			Specimen specimen = getSpecimen(input.getSpecimenId(), input.getCpShortTitle(), input.getLabel(), input.getBarcode(), ose);
+			ose.checkAndThrow();
+
+			AccessCtrlMgr.getInstance().ensureCreateOrUpdateSpecimenRights(specimen);
+			if (!specimen.isCollected()) {
+				return ResponseEvent.userError(SpecimenErrorCode.NOT_COLLECTED, specimen.getLabel());
+			}
+
+			return ResponseEvent.response(addOrUpdateService(specimen, input));
+		} catch (OpenSpecimenException ose) {
+			return ResponseEvent.error(ose);
+		} catch (Exception e) {
+			return ResponseEvent.serverError(e);
+		}
+	}
+
+	@Override
+	@PlusTransactional
+	public ResponseEvent<SpecimenServiceDetail> deleteService(RequestEvent<EntityQueryCriteria> req) {
+		try {
+			EntityQueryCriteria crit = req.getPayload();
+			LabSpecimenService service = daoFactory.getSpecimenDao().getLabSpecimenService(crit.getId());
+			if (service == null) {
+				return ResponseEvent.userError(SpecimenErrorCode.LAB_SVC_NOT_FOUND, crit.getId());
+			}
+
+			AccessCtrlMgr.getInstance().ensureCreateOrUpdateSpecimenRights(service.getSpecimen());
+			daoFactory.getSpecimenDao().delete(service);
+			return ResponseEvent.response(SpecimenServiceDetail.from(service));
+		} catch (OpenSpecimenException ose) {
+			return ResponseEvent.error(ose);
+		} catch (Exception e) {
+			return ResponseEvent.serverError(e);
+		}
+	}
+
 	@SuppressWarnings("unchecked")
 	@Override
 	public LabelPrinter<Specimen> getLabelPrinter() {
-		String labelPrinterBean = cfgSvc.getStrSetting(
-				ConfigParams.MODULE,
-				ConfigParams.SPECIMEN_LABEL_PRINTER,
-				"defaultSpecimenLabelPrinter");
-		
-		return (LabelPrinter<Specimen>)OpenSpecimenAppCtxProvider.getAppCtx().getBean(labelPrinterBean);
+		return Specimen.getLabelPrinter();
 	}
 		
 	@Override
@@ -613,6 +876,46 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 
 	@Override
 	@PlusTransactional
+	public ResponseEvent<SpecimenDetail> undeleteSpecimen(RequestEvent<SpecimenQueryCriteria> req) {
+		try {
+			AccessCtrlMgr.getInstance().ensureUserIsAdmin();
+
+			SpecimenQueryCriteria crit = req.getPayload();
+			Long specimenId = crit != null ? crit.getId() : null;
+			if (specimenId == null) {
+				return ResponseEvent.userError(SpecimenErrorCode.ID_REQUIRED);
+			}
+
+			Map<String, Object> info = daoFactory.getSpecimenDao().getDeletedSpecimenInfo(specimenId);
+			if (info == null) {
+				return ResponseEvent.userError(SpecimenErrorCode.DEL_NOT_FOUND, specimenId);
+			}
+
+			//
+			// first activate the specimen so that it is visible to Hibernate
+			//
+			int activated = daoFactory.getSpecimenDao().activateSpecimen(specimenId, crit.isIncludeChildren());
+			if (activated <= 0) {
+				return ResponseEvent.response(null);
+			}
+
+			//
+			// Do the rest of manipulation using Hibernate attached object so that
+			// changes are recorded in the audit logs
+			//
+			Specimen spmn = daoFactory.getSpecimenDao().getById(specimenId);
+			spmn.setOpComments(crit.paramString("comments"));
+			spmn.undelete(crit.isIncludeChildren());
+			return ResponseEvent.response(SpecimenDetail.from(spmn, false, true));
+		} catch (OpenSpecimenException ose) {
+			return ResponseEvent.error(ose);
+		} catch (Exception e) {
+			return ResponseEvent.serverError(e);
+		}
+	}
+
+	@Override
+	@PlusTransactional
 	public List<Specimen> getSpecimensByLabel(List<String> labels) {
 		if (CollectionUtils.isEmpty(labels)) {
 			throw OpenSpecimenException.userError(CommonErrorCode.INVALID_REQUEST);
@@ -635,6 +938,68 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 	@PlusTransactional
 	public Specimen updateSpecimen(Specimen existing, Specimen newSpmn) {
 		return saveOrUpdate(null, newSpmn, existing, null);
+	}
+
+	@Override
+	@PlusTransactional
+	public List<SpecimenInfo> bulkUpdateSpecimens(BulkEntityDetail<SpecimenDetail> buDetail) {
+		SpecimenDetail spmn = buDetail.getDetail();
+		int limit = ConfigUtil.getInstance().getIntSetting(ConfigParams.MODULE, ConfigParams.MAX_SPMNS_UPDATE_LIMIT, 100);
+		if (buDetail.getIds().size() > limit) {
+			throw OpenSpecimenException.userError(SpecimenErrorCode.UPDATE_LIMIT_MAXED, buDetail.getIds().size(), limit);
+		}
+
+		OpenSpecimenException ose = new OpenSpecimenException(ErrorType.USER_ERROR);
+		List<Specimen> savedSpmns = new ArrayList<>();
+		for (Long id : buDetail.getIds()) {
+			spmn.setId(id);
+			savedSpmns.add(updateSpecimen(spmn, ose));
+		}
+
+		ose.checkAndThrow();
+		return SpecimenDetail.from(savedSpmns);
+	}
+
+	@Override
+	@PlusTransactional
+	public SpecimenServiceDetail addOrUpdateService(Specimen specimen, SpecimenServiceDetail input) {
+		OpenSpecimenException ose = new OpenSpecimenException(ErrorType.USER_ERROR);
+
+		LabSpecimenService existing = null;
+		if (input.getId() != null) {
+			existing = daoFactory.getSpecimenDao().getLabSpecimenService(input.getId());
+			if (existing == null) {
+				ose.addError(SpecimenErrorCode.LAB_SVC_NOT_FOUND, input.getId());
+			}
+		}
+
+		Date serviceDate = specimen.getCreatedOn();
+		if (input.getServiceDate() != null) {
+			if (input.getServiceDate().before(specimen.getCreatedOn())) {
+				ose.addError(SpecimenErrorCode.LAB_SVC_DT_LT_CREATED_ON, Utility.getDateTimeString(input.getServiceDate()), Utility.getDateTimeString(specimen.getCreatedOn()));
+			}
+
+			serviceDate = input.getServiceDate();
+		}
+
+		LabSpecimenService spmnSvc = new LabSpecimenService();
+		spmnSvc.setSpecimen(specimen);
+		spmnSvc.setService(getService(input, ose));
+		spmnSvc.setUnits(input.getUnits() > 0 ? input.getUnits() : 1);
+		spmnSvc.setServicedBy(getUser(input.getServicedBy(), ose));
+		spmnSvc.setServiceDate(serviceDate);
+		spmnSvc.setComments(input.getComments());
+
+		ose.checkAndThrow();
+
+		if (existing != null) {
+			existing.update(spmnSvc);
+			spmnSvc = existing;
+		} else {
+			daoFactory.getSpecimenDao().save(spmnSvc);
+		}
+
+		return SpecimenServiceDetail.from(spmnSvc, Boolean.TRUE.equals(input.getIncludeSpmnDetailsInResp()));
 	}
 
 	@Override
@@ -680,6 +1045,10 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 			if (StringUtils.isNotBlank(value) && !labelGenerator.isValidLabelTmpl(value)) {
 				throw OpenSpecimenException.userError(CpErrorCode.INVALID_ALIQUOT_LABEL_FMT, value);
 			}
+		} else if (StringUtils.equals(name, ConfigParams.SPMN_ADDL_LABEL_FORMAT)) {
+			if (StringUtils.isNotBlank(value) && !additionalLabelGenerator.isValidLabelTmpl(value)) {
+				throw OpenSpecimenException.userError(CpErrorCode.INVALID_ADDL_LABEL_FMT, value);
+			}
 		}
 	}
 
@@ -700,16 +1069,6 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 		return daoFactory.getSpecimenDao().getSpecimens(crit);
 	}
 
-	private void setDistributionStatus(SpecimenDetail specimen) {
-		setDistributionStatus(flattenSpecimenTree(specimen));
-	}
-
-	private void setDistributionStatus(List<SpecimenInfo> specimens) {
-		List<Long> spmnIds = specimens.stream().map(SpecimenInfo::getId).collect(Collectors.toList());
-		Map<Long, String> distStatuses = daoFactory.getSpecimenDao().getDistributionStatus(spmnIds);
-		specimens.forEach(spmn -> spmn.setDistributionStatus(distStatuses.get(spmn.getId())));
-	}
-
 	private Specimen updateSpecimen(SpecimenDetail detail, OpenSpecimenException ose) {
 		Specimen existing = getSpecimen(detail.getId(), detail.getCpShortTitle(), detail.getLabel(), detail.getBarcode(), ose);
 		if (existing == null) {
@@ -717,63 +1076,24 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 		}
 
 		AccessCtrlMgr.getInstance().ensureCreateOrUpdateSpecimenRights(existing);
-		saveOrUpdate(detail, null, existing, null);
+		existing = saveOrUpdate(detail, null, existing, null);
+		getLabelPrinter().print(getSpecimenPrintItems(Collections.singleton(existing)));
 		return existing;
 	}
 
-	private List<SpecimenInfo> flattenSpecimenTree(SpecimenDetail specimen) {
-		return flattenSpecimenTree(specimen, new ArrayList<>());
-	}
-
-	private List<SpecimenInfo> flattenSpecimenTree(SpecimenDetail specimen, List<SpecimenInfo> result) {
-		result.add(specimen);
-		Utility.nullSafeStream(specimen.getChildren()).forEach(child -> flattenSpecimenTree(child, result));
-		return result;
-	}
-
-	private void ensureEditAllowed(SpecimenDetail detail, Specimen existing) {
-		if (existing == null || existing.isEditAllowed()) {
+	private void closeParent(Specimen specimen, String reason) {
+		if (specimen == null || specimen.isPrimary()) {
 			return;
 		}
 
-		if (!existing.isReserved()) {
-			//
-			// check whether the new status is active
-			//
-			String status = detail.getActivityStatus();
-			if (StringUtils.isNotBlank(status) && !Status.isValidActivityStatus(status))  {
-				throw OpenSpecimenException.userError(ActivityStatusErrorCode.INVALID);
-			}
-
-			if (StringUtils.isNotBlank(status) && Status.ACTIVITY_STATUS_ACTIVE.getStatus().equals(status)) {
-				return;
-			}
-
-			if (existing.isStoredInDistributionContainer() &&
-				detail.areTheOnlyModifiedAttrs("id", "cpShortTitle", "label", "barcode", "storageLocation", "transferComments")) {
-				return;
-			}
-		}
-
-		throw OpenSpecimenException.userError(SpecimenErrorCode.EDIT_NOT_ALLOWED, existing.getLabel());
-	}
-
-	private void ensureEditAllowed(Specimen newSpmn, Specimen existing) {
-		if (existing == null || existing.isEditAllowed()) {
-			return;
-		}
-
-		if (!existing.isReserved()) {
-			if (newSpmn.isActive()) {
-				return;
-			}
-
-			if (existing.isStoredInDistributionContainer()) {
-				return;
-			}
-		}
-
-		throw OpenSpecimenException.userError(SpecimenErrorCode.EDIT_NOT_ALLOWED, existing.getLabel());
+		specimen.getParentSpecimen().updateStatus(
+			Status.ACTIVITY_STATUS_CLOSED.getStatus(),
+			AuthUtil.getCurrentUser(),
+			Calendar.getInstance().getTime(),
+			Specimen.PROCESSED,
+			reason,
+			false
+		);
 	}
 
 	private void ensureValidAndUniqueLabel(Specimen existing, Specimen specimen, OpenSpecimenException ose) {
@@ -803,7 +1123,7 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 			}
 			
 			if (!labelGenerator.validate(labelTmpl, specimen, label)) {
-				ose.addError(SpecimenErrorCode.INVALID_LABEL, label);
+				ose.addError(SpecimenErrorCode.INVALID_LABEL, label, labelTmpl);
 				return;
 			}
 		}
@@ -813,6 +1133,24 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 				ose.addError(SpecimenErrorCode.DUP_LABEL_IN_CP, label, cp.getShortTitle());
 			} else {
 				ose.addError(SpecimenErrorCode.DUP_LABEL, label);
+			}
+		}
+	}
+
+	private void ensureUniqueAdditionalLabel(Specimen existing, Specimen specimen, OpenSpecimenException ose) {
+		if (StringUtils.isBlank(specimen.getAdditionalLabel())) {
+			return;
+		}
+
+		if (existing != null && specimen.getAdditionalLabel().equals(existing.getAdditionalLabel())) {
+			return;
+		}
+
+		if (getSpecimenByAddlLabel(specimen.getCpShortTitle(), specimen.getAdditionalLabel()) != null) {
+			if (areLabelsUniquePerCp()) {
+				ose.addError(SpecimenErrorCode.DUP_ADDL_LABEL_IN_CP, specimen.getAdditionalLabel(), specimen.getCpShortTitle());
+			} else {
+				ose.addError(SpecimenErrorCode.DUP_ADDL_LABEL, specimen.getAdditionalLabel());
 			}
 		}
 	}
@@ -827,10 +1165,11 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 		}
 
 		CollectionProtocol cp = specimen.getCollectionProtocol();
-		if (StringUtils.isNotBlank(cp.getSpecimenBarcodeFormatToUse())) {
+		if (!specimen.isPreBarcodedTube() && StringUtils.isNotBlank(cp.getSpecimenBarcodeFormatToUse())) {
 			ose.addError(SpecimenErrorCode.MANUAL_BARCODE_NOT_ALLOWED);
 		}
 
+		// is pre-barcoded or manual barcode
 		if (getSpecimenByBarcode(cp.getShortTitle(), specimen.getBarcode()) != null) {
 			if (areBarcodesUniquePerCp()) {
 				ose.addError(SpecimenErrorCode.DUP_BARCODE_IN_CP, specimen.getBarcode(), cp.getShortTitle());
@@ -866,19 +1205,21 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 		}
 
 		Specimen specimen = existing;
-		if (existing == null || !existing.isCollected()) {
-			existing = collectPoolSpecimens(detail, existing, reqSpmnsMap);
+		if (existing == null || !existing.isCollected() || detail.isUpdate()) {
 			specimen = saveOrUpdate(detail, null, existing, parent);
-
-			if (specimen.isPrimary() && specimen.getPreCreatedSpmnsMap() != null) {
+			if (specimen.getPreCreatedSpmnsMap() != null) {
 				reqSpmnsMap.putAll(specimen.getPreCreatedSpmnsMap());
 			}
 		} else {
 			existing.setUid(detail.getUid());
-			collectPoolSpecimens(detail, existing, reqSpmnsMap);
 		}
 
 		if (CollectionUtils.isNotEmpty(detail.getChildren())) {
+			int childrenLimit = ConfigUtil.getInstance().getIntSetting(ConfigParams.MODULE, ConfigParams.MAX_CHILDREN_LIMIT, 100);
+			if (detail.getChildren().size() > childrenLimit) {
+				throw OpenSpecimenException.userError(SpecimenErrorCode.CHILDREN_LIMIT_MAXED, specimen.getLabel(), childrenLimit);
+			}
+
 			for (SpecimenDetail childDetail : detail.getChildren()) {
 				if (childDetail.getCreatedOn() == null) {
 					childDetail.setCreatedOn(specimen.getCreatedOn());
@@ -889,29 +1230,10 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 		}
 
 		if (BooleanUtils.isTrue(detail.getCloseAfterChildrenCreation())) {
-			specimen.close(AuthUtil.getCurrentUser(), Calendar.getInstance().getTime(), "");
+			specimen.close(AuthUtil.getCurrentUser(), Calendar.getInstance().getTime(), Specimen.PROCESSED, null);
 		}
 
 		return specimen;
-	}
-
-	private Specimen collectPoolSpecimens(SpecimenDetail detail, Specimen existing, Map<Long, Specimen> reqSpmnsMap) {
-		// If not pooled specimen then return existing specimen
-		if (CollectionUtils.isEmpty(detail.getSpecimensPool())) {
-			return existing;
-		}
-
-		Set<Specimen> specimensPool = new HashSet<>();
-		for (SpecimenDetail poolSpmnDetail : detail.getSpecimensPool()) {
-			specimensPool.add(collectSpecimen(poolSpmnDetail, null, reqSpmnsMap));
-		}
-
-		if (existing == null) {
-			existing = specimensPool.iterator().next().getPooledSpecimen();
-		}
-
-		existing.getSpecimensPool().addAll(specimensPool);
-		return existing;
 	}
 
 	private Specimen initSpecimenIds(SpecimenDetail detail, Map<Long, Specimen> reqSpmnsMap) {
@@ -925,6 +1247,10 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 			detail.setLabel(existing.getLabel());
 		}
 
+		if (StringUtils.isBlank(detail.getAdditionalLabel()) && StringUtils.isNotBlank(existing.getAdditionalLabel())) {
+			detail.setAdditionalLabel(existing.getAdditionalLabel());
+		}
+
 		if (StringUtils.isBlank(detail.getBarcode()) && StringUtils.isNotBlank(existing.getBarcode())) {
 			detail.setBarcode(existing.getBarcode());
 		}
@@ -934,18 +1260,24 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 
 	private Specimen saveOrUpdate(SpecimenDetail detail, Specimen specimen, Specimen existing, Specimen parent) {
 		if (specimen == null) {
-			ensureEditAllowed(detail, existing);
-
 			specimen = specimenFactory.createSpecimen(existing, detail, parent);
-		} else {
-			ensureEditAllowed(specimen, existing);
 		}
 
 		AccessCtrlMgr.getInstance().ensureCreateOrUpdateSpecimenRights(specimen);
+		EventPublisher.getInstance().publish(new SpecimenPreSaveEvent(existing, specimen));
 
-		String prevStatus = existing != null ? existing.getCollectionStatus() : null;
+		String prevStatus = null;
+		String prevRecv   = null;
+		if (existing != null) {
+			prevStatus = existing.getCollectionStatus();
+			if (existing.getReceivedQuality() != null) {
+				prevRecv = existing.getReceivedQuality().getValue();
+			}
+		}
+
 		OpenSpecimenException ose = new OpenSpecimenException(ErrorType.USER_ERROR);
 		ensureValidAndUniqueLabel(existing, specimen, ose);
+		ensureUniqueAdditionalLabel(existing, specimen, ose);
 		ensureUniqueBarcode(existing, specimen, ose);
 		ensureContainerAccess(existing, specimen, ose);
 		ose.checkAndThrow();
@@ -955,24 +1287,38 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 		// before the specimen is associated to session to ensure specimen is not flushed
 		// to database
 		//
-
 		if (existing != null) {
 			existing.update(specimen);
 			specimen = existing;
+			specimen.setKitLabelsIfEmpty();
 			specimen.setLabelIfEmpty();
 		} else if (specimen.getParentSpecimen() != null) {
-			if (!specimen.getParentSpecimen().isEditAllowed()) {
-				throw OpenSpecimenException.userError(SpecimenErrorCode.EDIT_NOT_ALLOWED, specimen.getParentSpecimen().getLabel());
+			if (specimen.isDeleted()) {
+				throw OpenSpecimenException.userError(SpecimenErrorCode.CREATE_DISABLED_NA);
 			}
 
+			if (!specimen.getParentSpecimen().isEditAllowed()) {
+				throw OpenSpecimenException.userError(SpecimenErrorCode.PROC_NOT_ALLOWED, specimen.getParentSpecimen().getLabel());
+			}
+
+			if (specimen.isStorageSiteBasedAccessRightsEnabled() && specimen.getParentSpecimen().isStored()) {
+				AccessCtrlMgr.getInstance().ensureCreateOrUpdateSpecimenRights(specimen.getParentSpecimen());
+			}
+
+			specimen.setKitLabelsIfEmpty();
 			specimen.setLabelIfEmpty();
 			specimen.getParentSpecimen().addChildSpecimen(specimen);
 		} else {
-			specimen.checkPoolStatusConstraints();
+			if (specimen.isDeleted()) {
+				throw OpenSpecimenException.userError(SpecimenErrorCode.CREATE_DISABLED_NA);
+			}
+
+			specimen.setKitLabelsIfEmpty();
 			specimen.setLabelIfEmpty();
 			specimen.occupyPosition();
 		}
 
+		specimen.setAdditionalLabelIfEmpty();
 		specimen.setBarcodeIfEmpty();
 
 		if (detail != null) {
@@ -981,16 +1327,41 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 			specimen.setParentUid(detail.getParentUid());
 		}
 
-		daoFactory.getSpecimenDao().saveOrUpdate(specimen);
-		specimen.addOrUpdateCollRecvEvents();
-		specimen.addOrUpdateExtension();
+		if (existing == null) {
+			if (specimen.isMissedOrNotCollected()) {
+				specimen.updateHierarchyStatus();
+			}
+
+			specimen.setStatusChanged(true);
+		}
+
+		boolean pooling = specimen.getId() == null && detail != null && CollectionUtils.isNotEmpty(detail.getSpecimensPool());
+		specimen.updateAvailableStatus();
+		daoFactory.getSpecimenDao().saveOrUpdate(specimen, true);
+
+		if (!specimen.isDeleted()) {
+			// update specimen events and custom fields only if it is not deleted
+			specimen.addOrUpdateExtension();
+			if (existing == null) {
+				specimen.addServices();
+			}
+		}
+
+		if (pooling) {
+			for (SpecimenInfo poolSpmn : detail.getSpecimensPool()) {
+				boolean close = poolSpmn.getCloseAfterPooledCreation() == null || poolSpmn.getCloseAfterPooledCreation();
+				specimen.addPoolSpecimen(getSpecimen(poolSpmn), close);
+			}
+
+			specimen.addPooledEvent();
+		}
 
 		if (specimen.isDeleted()) {
 			DeleteLogUtil.getInstance().log(specimen);
 		}
 
 		EventPublisher.getInstance().publish(new SpecimenSavedEvent(specimen));
-		specimen.prePrintChildrenLabels(prevStatus, getLabelPrinter());
+		specimen.prePrintChildrenLabels(prevStatus, prevRecv, getLabelPrinter());
 		return specimen;
 	}
 
@@ -1001,12 +1372,17 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 	 * 2. Flattened list of specimens of a visit identified by either visit name or visit ID
 	 */
 	private List<Specimen> getSpecimensToPrint(PrintSpecimenLabelDetail detail) {
+		List<SiteCpPair> siteCps = AccessCtrlMgr.getInstance().getReadAccessSpecimenSiteCps();
+		if (siteCps != null && siteCps.isEmpty()) {
+			throw OpenSpecimenException.userError(RbacErrorCode.ACCESS_DENIED);
+		}
+
 		List<Specimen> specimens = null;
 		if (CollectionUtils.isNotEmpty(detail.getSpecimenIds())) {
-			specimens = daoFactory.getSpecimenDao().getSpecimensByIds(detail.getSpecimenIds());
+			specimens = daoFactory.getSpecimenDao().getSpecimens(new SpecimenListCriteria().ids(detail.getSpecimenIds()).siteCps(siteCps));
 			specimens = Specimen.sortByIds(specimens, detail.getSpecimenIds());
 		} else if (CollectionUtils.isNotEmpty(detail.getSpecimenLabels())) {
-			specimens = daoFactory.getSpecimenDao().getSpecimens(new SpecimenListCriteria().labels(detail.getSpecimenLabels()));
+			specimens = daoFactory.getSpecimenDao().getSpecimens(new SpecimenListCriteria().labels(detail.getSpecimenLabels()).siteCps(siteCps));
 			specimens = Specimen.sortByLabels(specimens, detail.getSpecimenLabels());
 		} else if (detail.getVisitId() != null) {
 			Visit visit = daoFactory.getVisitsDao().getById(detail.getVisitId());
@@ -1014,6 +1390,7 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 				throw OpenSpecimenException.userError(VisitErrorCode.NOT_FOUND, detail.getVisitId());
 			}
 
+			AccessCtrlMgr.getInstance().ensureReadSpecimenRights(visit.getRegistration(), false);
 			specimens = getFlattenedSpecimens(visit.getTopLevelSpecimens());
 		} else if (StringUtils.isNotBlank(detail.getVisitName())) {
 			Visit visit = daoFactory.getVisitsDao().getByName(detail.getVisitName());
@@ -1021,6 +1398,7 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 				throw OpenSpecimenException.userError(VisitErrorCode.NOT_FOUND, detail.getVisitName());
 			}
 
+			AccessCtrlMgr.getInstance().ensureReadSpecimenRights(visit.getRegistration(), false);
 			specimens = getFlattenedSpecimens(visit.getTopLevelSpecimens());
 		} else if (detail.getCprId() != null || (StringUtils.isNotBlank(detail.getCpShortTitle()) && StringUtils.isNotBlank(detail.getPpid()))) {
 			CollectionProtocolRegistration cpr = null;
@@ -1034,9 +1412,10 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 			}
 
 			if (cpr == null) {
-				throw OpenSpecimenException.userError(CprErrorCode.NOT_FOUND, key);
+				throw OpenSpecimenException.userError(CprErrorCode.M_NOT_FOUND, key, 1);
 			}
 
+			AccessCtrlMgr.getInstance().ensureReadSpecimenRights(cpr, false);
 			specimens = cpr.getVisits().stream()
 				.map(v -> getFlattenedSpecimens(v.getTopLevelSpecimens()))
 				.flatMap(List::stream)
@@ -1053,17 +1432,8 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 		List<PrintItem<Specimen>> printItems = new ArrayList<>();
 		specimens.stream().sorted(Comparator.comparingLong(Specimen::getId)).forEach(
 			(specimen) -> {
-				Integer copies = null;
-				if (specimen.getSpecimenRequirement() != null) {
-					copies = specimen.getSpecimenRequirement().getLabelPrintCopiesToUse();
-				}
-
 				if (specimen.isPrintLabel()) {
-					printItems.add(PrintItem.make(specimen, copies));
-				}
-
-				if (CollectionUtils.isNotEmpty(specimen.getSpecimensPool())) {
-					printItems.addAll(getSpecimenPrintItems(specimen.getSpecimensPool()));
+					printItems.add(PrintItem.make(specimen, specimen.getCopiesToPrint()));
 				}
 
 				if (CollectionUtils.isNotEmpty(specimen.getChildCollection())) {
@@ -1081,11 +1451,17 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 		List<Specimen> result = new ArrayList<>();
 		for (Specimen specimen : sortedSpecimens) {
 			result.add(specimen);
-			result.addAll(getFlattenedSpecimens(specimen.getSpecimensPool()));
 			result.addAll(getFlattenedSpecimens(specimen.getChildCollection()));
 		}
 
 		return result;
+	}
+
+	private Specimen getSpecimen(SpecimenInfo input) {
+		OpenSpecimenException ose = new OpenSpecimenException(ErrorType.USER_ERROR);
+		Specimen specimen = getSpecimen(input.getId(), input.getCpShortTitle(), input.getLabel(), input.getBarcode(), ose);
+		ose.checkAndThrow();
+		return specimen;
 	}
 
 	private Specimen getSpecimen(Long specimenId, String cpShortTitle, String label, String barcode, OpenSpecimenException ose) {
@@ -1098,6 +1474,10 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 
 	private Specimen getSpecimen(String cpShortTitle, String label) {
 		return specimenResolver.getSpecimen(cpShortTitle, label);
+	}
+
+	private Specimen getSpecimenByAddlLabel(String cpShortTitle, String label) {
+		return specimenResolver.getSpecimenByAddlLabel(cpShortTitle, label);
 	}
 
 	private Specimen getSpecimenByBarcode(String cpShortTitle, String barcode) {
@@ -1144,41 +1524,157 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 		return user;
 	}
 
-	private Date getDisposalDate(Specimen specimen, Date disposalDate, OpenSpecimenException ose) {
-		if (disposalDate == null) {
-			return Calendar.getInstance().getTime();
-		} else if (specimen == null) {
-			//
-			// Error to have null specimen; therefore return whatever
-			// disposal date was given as input
-			//
-			return disposalDate;
-		}
-
-		if (specimen.isPrimary() && disposalDate.before(specimen.getCollectionEvent().getTime())) {
-			ose.addError(SpecimenErrorCode.DISPOSAL_DT_LT_COLL_DT, disposalDate, specimen.getCollectionEvent().getTime());
-		} else if (!specimen.isPrimary() && disposalDate.before(specimen.getCreatedOn())) {
-			ose.addError(SpecimenErrorCode.DISPOSAL_DT_LT_CREATED_ON, disposalDate, specimen.getCreatedOn());
-		}
-
-		return disposalDate;
-	}
-
 	private SpecimenDetail getDerivedSpecimen(Specimen parentSpecimen, SpecimenAliquotsSpec spec) {
+		SpecimenRequirement parentReq = null;
+		if (CollectionUtils.isNotEmpty(spec.getReqIds())) {
+			Long reqId = spec.getReqIds().iterator().next();
+			SpecimenRequirement aliquotReq = daoFactory.getSpecimenRequirementDao().getSpecimenRequirement(reqId);
+			if (aliquotReq == null) {
+				throw OpenSpecimenException.userError(SrErrorCode.NOT_FOUND, reqId);
+			} else if (!aliquotReq.isAliquot()) {
+				throw OpenSpecimenException.userError(SpecimenErrorCode.ALIQUOT_REQ, aliquotReq.getDescription());
+			} else if (aliquotReq.isClosed()) {
+				throw OpenSpecimenException.userError(SrErrorCode.CLOSED, aliquotReq.getDescription());
+			}
+
+			parentReq = aliquotReq.getParentSpecimenRequirement();
+			if (parentReq.equals(parentSpecimen.getSpecimenRequirement())) {
+				SpecimenDetail derived = SpecimenDetail.from(parentSpecimen, true, false, true);
+				derived.setCloseAfterChildrenCreation(!spec.keepDerivedOpen());
+				return derived;
+			} else if (parentSpecimen.getSpecimenRequirement() != null) {
+				Specimen existing = null;
+				for (Specimen child : parentSpecimen.getChildCollection()) {
+					if (parentReq.equals(child.getSpecimenRequirement()) && child.isTxnActive()) {
+						existing = child;
+						break;
+					}
+				}
+
+				if (existing != null) {
+					SpecimenDetail derived = SpecimenDetail.from(existing, true, false, true);
+					if (!StringUtils.equals(derived.getStatus(), Specimen.COLLECTED)) {
+						derived.setStatus(Specimen.COLLECTED);
+					}
+
+					derived.setCloseAfterChildrenCreation(!spec.keepDerivedOpen());
+					return derived;
+				} else {
+					List<Pair<Specimen, SpecimenRequirement>> children = getChildren(Pair.make(parentSpecimen, parentSpecimen.getSpecimenRequirement()));
+					while (!children.isEmpty()) {
+						Pair<Specimen, SpecimenRequirement> child = children.remove(0);
+						List<Pair<Specimen, SpecimenRequirement>> found = findMatch(parentReq, child);
+						if (found != null) {
+							// create all specimens along the path from the parent specimen to the child's immediate parent
+							SpecimenDetail derived = createParent(parentSpecimen, found);
+							derived.setCloseAfterChildrenCreation(!spec.keepDerivedOpen());
+							return derived;
+						}
+
+						children.addAll(getChildren(Pair.make(child.first(), child.second())));
+					}
+				}
+			}
+		} else if (spec.useExistingDerived()) {
+			Specimen existing = parentSpecimen.getChildCollection().stream()
+				.filter(spmn -> {
+					if (!spmn.isDerivative() || !spmn.isCollected() || !spmn.isTxnActive()) {
+						return false;
+					}
+
+					if (StringUtils.isBlank(spec.getSpecimenClass()) || spec.getSpecimenClass().equals(spmn.getSpecimenClass().getValue())) {
+						return spmn.getSpecimenType().getValue().equals(spec.getType());
+					}
+
+					return false;
+				})
+				.findFirst().orElse(null);
+			if (existing != null) {
+				SpecimenDetail derived = SpecimenDetail.from(existing, true, false, true);
+				derived.setCloseAfterChildrenCreation(!spec.keepDerivedOpen());
+				return derived;
+			}
+		}
+
 		SpecimenDetail derived = new SpecimenDetail();
 		derived.setLineage(Specimen.DERIVED);
-		derived.setParentId(parentSpecimen.getId());
+		derived.setParentId(parentSpecimen != null ? parentSpecimen.getId() : null);
+		derived.setReqId(parentReq != null ? parentReq.getId() : null);
 		derived.setCreatedOn(spec.getCreatedOn());
 		derived.setCreatedBy(spec.getCreatedBy());
 		derived.setSpecimenClass(spec.getSpecimenClass());
 		derived.setType(spec.getType());
 		derived.setStatus(Specimen.COLLECTED);
 		derived.setIncrParentFreezeThaw(spec.getIncrParentFreezeThaw());
-		derived.setCloseAfterChildrenCreation(true);
+		derived.setCloseAfterChildrenCreation(!spec.keepDerivedOpen());
+		return derived;
+	}
 
-		Integer count = spec.getNoOfAliquots();
-		BigDecimal qtyPerAliquot = spec.getQtyPerAliquot();
-		derived.setInitialQty(count != null && qtyPerAliquot != null ? qtyPerAliquot.multiply(new BigDecimal(count)) : null);
+	private List<Pair<Specimen, SpecimenRequirement>> getChildren(Pair<Specimen, SpecimenRequirement> parent) {
+		Specimen parentSpecimen = parent.first();
+		SpecimenRequirement parentReq = parent.second();
+		List<Pair<Specimen, SpecimenRequirement>> children = new ArrayList<>();
+		if (parentSpecimen != null) {
+			children = parentSpecimen.getChildCollection().stream()
+				.map(s -> Pair.make(s, s.getSpecimenRequirement()))
+				.collect(Collectors.toList());
+			if (parentSpecimen.getSpecimenRequirement() != null) {
+				for (SpecimenRequirement childReq : parentSpecimen.getSpecimenRequirement().getChildSpecimenRequirements()) {
+					if (childReq.isClosed()) {
+						continue;
+					}
+
+					if (children.stream().noneMatch(c -> childReq.equals(c.second()))) {
+						children.add(Pair.make(null, childReq));
+					}
+				}
+			}
+		} else if (parentReq != null ){
+			children = parentReq.getChildSpecimenRequirements().stream()
+				.filter(r -> !r.isClosed())
+				.map(r -> Pair.make((Specimen) null, r))
+				.collect(Collectors.toList());
+		}
+
+		return children;
+	}
+
+	private List<Pair<Specimen, SpecimenRequirement>> findMatch(SpecimenRequirement parentReq, Pair<Specimen, SpecimenRequirement> child) {
+		if (parentReq.equals(child.second())) {
+			return Collections.singletonList(child);
+		}
+
+		List<Pair<Specimen, SpecimenRequirement>> grandChildren = getChildren(child);
+		if (grandChildren.isEmpty()) {
+			return null;
+		}
+
+		for (Pair<Specimen, SpecimenRequirement> grandChild : grandChildren) {
+			List<Pair<Specimen, SpecimenRequirement>> match = findMatch(parentReq, grandChild);
+			if (match != null) {
+				List<Pair<Specimen, SpecimenRequirement>> result = new ArrayList<>();
+				result.add(child);
+				result.addAll(match);
+				return result;
+			}
+		}
+
+		return null;
+	}
+
+	private SpecimenDetail createParent(Specimen parent, List<Pair<Specimen, SpecimenRequirement>> path) {
+		SpecimenDetail derived = SpecimenDetail.from(parent, true, false, true);
+		for (Pair<Specimen, SpecimenRequirement> sr : path) {
+			if (sr.first() != null) {
+				derived = SpecimenDetail.from(sr.first(), true, false, true);
+			} else if (sr.second() != null) {
+				SpecimenDetail input = SpecimenDetail.from(sr.second());
+				input.setStatus(Specimen.COLLECTED);
+				input.setParentId(derived.getId());
+				derived = ResponseEvent.unwrap(createSpecimen(RequestEvent.wrap(input)));
+			}
+		}
+
 		return derived;
 	}
 
@@ -1199,8 +1695,40 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 		}
 	}
 
+	private SpecimenInfo toMinimalInfo(Specimen spmn) {
+		SpecimenInfo info = new SpecimenInfo();
+		info.setId(spmn.getId());
+		info.setLabel(spmn.getLabel());
+		info.setAdditionalLabel(spmn.getAdditionalLabel());
+		info.setBarcode(spmn.getBarcode());
+		info.setInitialQty(spmn.getInitialQuantity());
+		info.setAvailableQty(spmn.getAvailableQuantity());
+		info.setActivityStatus(spmn.getActivityStatus());
+		return info;
+	}
+
+	private LabService getService(SpecimenServiceDetail input, OpenSpecimenException ose) {
+		LabService service = null;
+		Object key = null;
+		if (input.getServiceId() != null) {
+			service = daoFactory.getLabServiceDao().getById(input.getServiceId());
+			key = input.getServiceId();
+		} else if (StringUtils.isNotBlank(input.getServiceCode())) {
+			service = daoFactory.getLabServiceDao().getByCode(input.getServiceCode());
+			key = input.getServiceCode();
+		}
+
+		if (key == null) {
+			ose.addError(LabServiceErrorCode.CODE_REQ);
+		} else if (service == null) {
+			ose.addError(LabServiceErrorCode.NOT_FOUND, key);
+		}
+
+		return service;
+	}
+
 	private Function<ExportJob, List<? extends Object>> getSpecimensGenerator() {
-		return new Function<ExportJob, List<? extends Object>>() {
+		return new Function<>() {
 			private boolean endOfSpecimens;
 
 			private boolean paramsInited;
@@ -1209,36 +1737,51 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 
 			private SpecimenListCriteria crit;
 
+			private Long maxId;
+
+			private Map<String, SpecimenTypeUnit> units = new HashMap<>();
+
 			@Override
 			public List<? extends Object> apply(ExportJob job) {
 				initParams(job);
 
-				if (endOfSpecimens) {
-					return Collections.emptyList();
-				}
-
-				List<Specimen> specimens = daoFactory.getSpecimenDao().getSpecimens(crit.lastId(lastId));
-				if (CollectionUtils.isNotEmpty(crit.labels()) || specimens.size() < 100) {
-					endOfSpecimens = true;
-				}
-
 				List<SpecimenDetail> records = new ArrayList<>();
-				for (Specimen specimen : specimens) {
-					lastId = specimen.getId();
+				while (!endOfSpecimens && records.isEmpty()) {
+					List<Specimen> specimens = daoFactory.getSpecimenDao().getSpecimens(crit.lastId(lastId));
+					Long prevLastId = lastId;
+					for (Specimen specimen : specimens) {
+						lastId = specimen.getId();
+						try {
+							AccessCtrlMgr.SpecimenAccessRights rights = AccessCtrlMgr.getInstance().ensureReadSpecimenRights(specimen, true);
+							SpecimenDetail detail = SpecimenDetail.from(specimen, false, !rights.phiAccess, true);
+							if (specimen.isPrimary()) {
+								detail.setCollectionEvent(CollectionEventDetail.from(specimen));
+								detail.setReceivedEvent(ReceivedEventDetail.from(specimen));
+							}
 
-					try {
-						boolean hasPhi = AccessCtrlMgr.getInstance().ensureReadSpecimenRights(specimen, true);
+							SpecimenTypeUnit unit = getUnit(specimen);
+							if (unit != null) {
+								detail.setQuantityUnit(PermissibleValue.getValue(unit.getQuantityUnit()));
+								detail.setConcentrationUnit(PermissibleValue.getValue(unit.getConcentrationUnit()));
+							}
 
-						SpecimenDetail detail = SpecimenDetail.from(specimen, false, !hasPhi, true);
-						if (specimen.isPrimary()) {
-							detail.setCollectionEvent(CollectionEventDetail.from(specimen.getCollectionEvent()));
-							detail.setReceivedEvent(ReceivedEventDetail.from(specimen.getReceivedEvent()));
+							records.add(detail);
+						} catch (OpenSpecimenException ose) {
+							if (!ose.containsError(RbacErrorCode.ACCESS_DENIED)) {
+								logger.error("Encountered error exporting specimen record", ose);
+							}
+						}
+					}
+
+					if (CollectionUtils.isNotEmpty(crit.labels())) {
+						endOfSpecimens = true;
+					} else {
+						if (prevLastId != null && (prevLastId.equals(lastId) || records.size() < crit.maxResults())) {
+							lastId = prevLastId + crit.rangeFactor() * crit.maxResults();
 						}
 
-						records.add(detail);
-					} catch (OpenSpecimenException ose) {
-						if (!ose.containsError(RbacErrorCode.ACCESS_DENIED)) {
-							logger.error("Encountered error exporting specimen record", ose);
+						if (maxId == null || (lastId != null && lastId >= maxId)) {
+							endOfSpecimens = true;
 						}
 					}
 				}
@@ -1272,7 +1815,7 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 				List<SiteCpPair> siteCps = AccessCtrlMgr.getInstance().getReadAccessSpecimenSiteCps(cpId, false);
 				if (siteCps != null && siteCps.isEmpty()) {
 					endOfSpecimens = true;
-				} else if (!AccessCtrlMgr.getInstance().hasVisitSpecimenEximRights(cpId)) {
+				} else if (!AccessCtrlMgr.getInstance().hasSpecimenEximRights(cpId)) {
 					endOfSpecimens = true;
 				} else {
 					crit = new SpecimenListCriteria()
@@ -1284,11 +1827,20 @@ public class SpecimenServiceImpl implements SpecimenService, ObjectAccessor, Con
 					if (CollectionUtils.isNotEmpty(crit.labels())) {
 						crit.limitItems(false);
 					} else {
-						crit.limitItems(true).maxResults(100);
+						maxId = daoFactory.getSpecimenDao().getMaxSpecimenId(crit);
+						crit.limitItems(true).maxResults(100).enableIdRange(true);
 					}
 				}
 
 				paramsInited = true;
+			}
+
+			private SpecimenTypeUnit getUnit(Specimen specimen) {
+				CollectionProtocol cp = specimen.getCollectionProtocol();
+				PermissibleValue specimenClass = specimen.getSpecimenClass();
+				PermissibleValue type = specimen.getSpecimenType();
+				String key = cp.getId() + ":" + specimenClass.getId() + ":" + type.getId();
+				return units.computeIfAbsent(key, (k) -> SpecimenUtil.getInstance().getUnit(cp, specimenClass, type));
 			}
 		};
 	}

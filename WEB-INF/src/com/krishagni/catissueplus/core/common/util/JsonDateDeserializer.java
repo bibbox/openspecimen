@@ -6,17 +6,19 @@ import java.util.Date;
 
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.time.DateUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
-
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.databind.DeserializationContext;
+import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.deser.std.UntypedObjectDeserializer;
 
 
 public class JsonDateDeserializer extends UntypedObjectDeserializer {
-	private Log logger = LogFactory.getLog(JsonDateDeserializer.class);
+	private static final LogUtil logger = LogUtil.getLogger(JsonDateDeserializer.class);
+
+	public JsonDateDeserializer() {
+		super((JavaType) null, null);
+	}
 
 	@Override
 	public Object deserialize(JsonParser p, DeserializationContext ctxt)
@@ -34,7 +36,11 @@ public class JsonDateDeserializer extends UntypedObjectDeserializer {
 				try {
 					ret = Date.from(Instant.parse(p.getText()));
 				} catch (Exception e1) {
-					ret = super.deserialize(p, ctxt);
+					try {
+						ret = new Date(Long.parseLong(p.getText()));
+					} catch (Exception e2) {
+						ret = super.deserialize(p, ctxt);
+					}
 				}
 			}
 		} else if (p.getCurrentToken() == JsonToken.VALUE_NUMBER_INT) {

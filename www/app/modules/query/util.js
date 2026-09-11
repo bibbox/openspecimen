@@ -4,9 +4,15 @@ angular.module('os.query.util', ['os.query.models', 'os.query.save'])
     var ops = SavedQuery.ops;
 
     var propIdFields = {
-      'Participant.ppid': {expr: 'Participant.id', caption: '$cprId'},
-      'Specimen.label': {expr: 'Specimen.id', caption: '$specimenId'},
-      'Specimen.parentSpecimen.parentLabel': {expr: 'Specimen.parentSpecimen.parentId', caption: '$parentSpecimenId'}
+      'Participant.ppid' : [{expr: 'Participant.id', caption: '$cprId'}],
+      'Specimen.label'   : [
+                             {expr: 'Specimen.id', caption: '$specimenId'},
+                             {expr: 'CollectionProtocol.id', caption: '$cpId'}
+                           ],
+      'Specimen.parentSpecimen.parentLabel': [
+                             {expr: 'Specimen.parentSpecimen.parentId', caption: '$parentSpecimenId'},
+                             {expr: 'CollectionProtocol.id', caption: '$cpId'}
+                           ]
     }
 
     var init = false;
@@ -87,7 +93,7 @@ angular.module('os.query.util', ['os.query.models', 'os.query.save'])
         } else {
           return field.pvs ? "multiSelect" : "tagsSelect";
         }
-      } else if (field.lookupProps) {
+      } else if (field.lookupProps && !(op.name == 'contains' || op.name == 'starts_with' || op.name == 'ends_with')) {
         return "lookupSingle";
       } else if (op && op.name == "between") {
         return field.type == "DATE" ? "betweenDate" : "betweenNumeric";
@@ -192,8 +198,39 @@ angular.module('os.query.util', ['os.query.models', 'os.query.save'])
       return "\"" + escapeQuotes(value) + "\"";
     }
 
+    function isUndef(value) {
+      if (value == null || value == undefined || (typeof value == 'string' && value.trim() == '')) {
+        return true;
+      }
+
+      if (value instanceof Array) {
+        return value.every(function(val) { return val == null || val == undefined || val.toString().trim() == ''; });
+      }
+
+      return false;
+    }
+
     function getFilterExpr(filter) {
       if (filter.expr) {
+        var tObj = getTemporalExprObj(filter.expr);
+        if (isUndef(tObj.lhs) && isUndef(tObj.op)) {
+          return filter.expr;
+        }
+
+        if (isUndef(tObj.lhs) || isUndef(tObj.op)) {
+          alert('Invalid temporal expression: ' + filter.expr);
+          return '1 = 0';
+        }
+
+        if (isUndef(tObj.rhs)) {
+          if (!filter.parameterized) {
+            alert('Invalid temporal expression: ' + filter.expr + '. No RHS and not parameterized.');
+            return '1 = 0';
+          } else {
+            return tObj.lhs + " any ";
+          }
+        }
+
         return filter.expr;
       }
 
@@ -201,18 +238,25 @@ angular.module('os.query.util', ['os.query.models', 'os.query.save'])
         return '';
       }
           
+      var type = filter.field.type;
       var expr = filter.form.name + "." + filter.field.name + " ";
-      expr += filter.op.symbol + " ";
-
       if (filter.op.name == 'exists' || filter.op.name == 'not_exists' || filter.op.name == 'any') {
+        expr += filter.op.symbol + " ";
         return expr;
       }
 
       if (filter.hasSq) {
+        expr += filter.op.symbol + " ";
         var sqWhere = getWhereExpr(filter.subQuery.context.filtersMap, filter.subQuery.context.exprNodes);
         expr += '(select ' + filter.form.name + '.' + filter.field.name + ' where ' + sqWhere + ')';
         return expr;
       }
+
+      if (isUndef(filter.value) && (type == 'DATE' || type == 'INTEGER' || type == 'FLOAT')) {
+        return expr + "any";
+      }
+
+      expr += filter.op.symbol + " ";
 
       var filterValue = filter.value;
       if (filter.field.type == "STRING" || filter.field.type == "DATE") {
@@ -287,13 +331,16 @@ angular.module('os.query.util', ['os.query.models', 'os.query.save'])
               continue;
             }
 
-            var idField = propIdFields[prop];
-            if (selFieldName != prop || addedIds[idField.expr]) {
-              continue;
-            }
+            propIdFields[prop].forEach(
+              function(idField) {
+                if (selFieldName != prop || addedIds[idField.expr]) {
+                  return;
+                }
 
-            result += idField.expr + " as \"" + idField.caption + "\"" + ", ";
-            addedIds[idField.expr] = true;
+                result += idField.expr + " as \"" + idField.caption + "\"" + ", ";
+                addedIds[idField.expr] = true;
+              }
+            );
           }
         }
 
@@ -334,14 +381,36 @@ angular.module('os.query.util', ['os.query.models', 'os.query.save'])
     };
 
     function getTemporalExprObj(temporalExpr) {
-      var re = /<=|>=|<|>|=|!=|\sbetween\s|\sany|\sexists/g
+      var qre = /"(.*?)"|'(.*?)'/;
+      var qmatches = undefined;
+      var placeholders = {};
+      var i = 0;
+      while ((qmatches = qre.exec(temporalExpr))) {
+        var match = qmatches[0];
+        placeholders['$RX' + i] = match;
+
+        temporalExpr = temporalExpr.substring(0, qmatches.index) + '$RX' + i + temporalExpr.substring(qmatches.index + match.length);
+        ++i;
+      }
+
+      var re = /<=|>=|<|>|=|!=|\sbetween\s|\)any|\sany|\)exists|\sexists/g
       var matches = undefined;
       if ((matches = re.exec(temporalExpr))) {
-        return {
-          lhs: temporalExpr.substring(0, matches.index),
-          op : matches[0].trim(),
-          rhs: temporalExpr.substring(matches.index + matches[0].length)
+        var lhs = temporalExpr.substring(0, matches.index);
+        if (lhs) {
+          angular.forEach(Object.keys(placeholders), function(placeholder) {
+            lhs = lhs.replaceAll(placeholder, placeholders[placeholder]);
+          });
         }
+
+        var rhs = temporalExpr.substring(matches.index + matches[0].length);
+        if (rhs) {
+          angular.forEach(Object.keys(placeholders), function(placeholder) {
+            rhs = rhs.replaceAll(placeholder, placeholders[placeholder]);
+          });
+        }
+
+        return { lhs: lhs, op : matches[0].trim(), rhs: rhs }
       }
 
       return {};
@@ -350,6 +419,14 @@ angular.module('os.query.util', ['os.query.models', 'os.query.save'])
     function getRptExpr(selectedFields, reporting) {
       if (!reporting || reporting.type == 'none') {
         return '';
+      }
+
+      if (reporting.type == 'specimenqty') {
+        return 'specimenqty("' +
+          reporting.params.restrictBy + '", "' +
+          (reporting.params.minQty || -1) + '", "' +
+          (reporting.params.maxQty || - 1) + '"' +
+        ')';
       }
 
       var rptFields = getReportFields(selectedFields, true);

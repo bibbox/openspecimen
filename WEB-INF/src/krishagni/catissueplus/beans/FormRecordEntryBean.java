@@ -1,6 +1,18 @@
 package krishagni.catissueplus.beans;
 
+import java.util.Collections;
 import java.util.Date;
+
+import org.apache.commons.lang3.StringUtils;
+
+import com.krishagni.catissueplus.core.administrative.domain.User;
+import com.krishagni.catissueplus.core.biospecimen.domain.BaseEntity;
+import com.krishagni.catissueplus.core.common.util.AuthUtil;
+
+import edu.common.dynamicextensions.domain.nui.Container;
+import edu.common.dynamicextensions.domain.nui.UserContext;
+import edu.common.dynamicextensions.napi.FormAuditManager;
+import edu.common.dynamicextensions.napi.impl.FormAuditManagerImpl;
 
 public class FormRecordEntryBean {
 
@@ -20,10 +32,14 @@ public class FormRecordEntryBean {
 	
 	private String entityType;
 
+	private BaseEntity.DataEntryStatus formStatus;
+
+	private FormContextBean formCtxt;
+
 	public enum Status {
 		ACTIVE, CLOSED
 	}
-	
+
 	public Long getIdentifier() {
 		return identifier;
 	}
@@ -88,15 +104,65 @@ public class FormRecordEntryBean {
 	  this.status = status != null ? Status.valueOf(status) : Status.ACTIVE;
 	}
 
-	public String getEntityType() {
-		return entityType;
+	public BaseEntity.DataEntryStatus getFormStatus() {
+		return formStatus;
 	}
 
-	public void setEntityType(String entityType) {
-		this.entityType = entityType;
+	public void setFormStatus(BaseEntity.DataEntryStatus formStatus) {
+		this.formStatus = formStatus;
+	}
+
+	public String getEntityType() {
+		return formCtxt != null ? formCtxt.getEntityType() : null;
+	}
+
+	public boolean isSysRecord() {
+		return formCtxt != null && formCtxt.isSysForm();
+	}
+
+	public boolean isMultiRecord() {
+		return formCtxt != null && formCtxt.isMultiRecord();
+	}
+
+	public FormContextBean getFormCtxt() {
+		return formCtxt;
+	}
+
+	public void setFormCtxt(FormContextBean formCtxt) {
+		this.formCtxt = formCtxt;
 	}
 
 	public void delete() {
 		setActivityStatus(Status.CLOSED);
+
+		FormAuditManager auditMgr = new FormAuditManagerImpl();
+		auditMgr.audit(getUserContext(), getDeForm(), Collections.emptyList(), "DELETE", getRecordId());
+	}
+
+	private UserContext getUserContext() {
+		User currentUser = AuthUtil.getCurrentUser();
+		return new UserContext() {
+			@Override
+			public Long getUserId() {
+				return currentUser.getId();
+			}
+
+			@Override
+			public String getUserName() {
+				return currentUser.getUsername();
+			}
+
+			@Override
+			public String getIpAddress() {
+				return null;
+			}
+		};
+	}
+
+	private Container getDeForm() {
+		Container container = new Container();
+		container.setId(formCtxt.getForm().getId());
+		container.setName(formCtxt.getForm().getName());
+		return container;
 	}
 }

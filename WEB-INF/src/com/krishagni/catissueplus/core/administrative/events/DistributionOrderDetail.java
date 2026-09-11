@@ -8,6 +8,7 @@ import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
+
 import com.krishagni.catissueplus.core.administrative.domain.DistributionOrder;
 import com.krishagni.catissueplus.core.biospecimen.events.SpecimenListSummary;
 import com.krishagni.catissueplus.core.common.events.UserSummary;
@@ -25,7 +26,11 @@ public class DistributionOrderDetail extends DistributionOrderSummary implements
 	private SpecimenListSummary specimenList;
 
 	private Boolean allReservedSpmns;
-	
+
+	private Long clearListId;
+
+	private String clearListMode;
+
 	private List<DistributionOrderItemDetail> orderItems = new ArrayList<>();
 	
 	private String activityStatus;
@@ -47,6 +52,10 @@ public class DistributionOrderDetail extends DistributionOrderSummary implements
 	private boolean completed = true;
 
 	private boolean copyItemsFromExistingOrder;
+
+	private boolean distributeAvailableQty;
+
+	private boolean checkout;
 
 	public UserSummary getDistributor() {
 		return distributor;
@@ -94,6 +103,22 @@ public class DistributionOrderDetail extends DistributionOrderSummary implements
 
 	public void setAllReservedSpmns(Boolean allReservedSpmns) {
 		this.allReservedSpmns = allReservedSpmns;
+	}
+
+	public Long getClearListId() {
+		return clearListId;
+	}
+
+	public void setClearListId(Long clearListId) {
+		this.clearListId = clearListId;
+	}
+
+	public String getClearListMode() {
+		return clearListMode;
+	}
+
+	public void setClearListMode(String clearListMode) {
+		this.clearListMode = clearListMode;
 	}
 
 	public List<DistributionOrderItemDetail> getOrderItems() {
@@ -161,6 +186,23 @@ public class DistributionOrderDetail extends DistributionOrderSummary implements
 		this.copyItemsFromExistingOrder = copyItemsFromExistingOrder;
 	}
 
+	public boolean isDistributeAvailableQty() {
+		return distributeAvailableQty;
+	}
+
+	@JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+	public void setDistributeAvailableQty(boolean distributeAvailableQty) {
+		this.distributeAvailableQty = distributeAvailableQty;
+	}
+
+	public boolean isCheckout() {
+		return checkout;
+	}
+
+	public void setCheckout(boolean checkout) {
+		this.checkout = checkout;
+	}
+
 	public static DistributionOrderDetail from(DistributionOrder order) {
 		return from(order, false);
 	}
@@ -181,6 +223,8 @@ public class DistributionOrderDetail extends DistributionOrderSummary implements
 			detail.setSpecimenList(SpecimenListSummary.fromSpecimenList(order.getSpecimenList()));
 		}
 
+		detail.setClearListId(order.getClearListId());
+		detail.setClearListMode(order.getClearListMode() != null ? order.getClearListMode().name() : null);
 		detail.setAllReservedSpmns(order.getAllReservedSpecimens());
 		detail.setTrackingUrl(order.getTrackingUrl());
 		detail.setComments(order.getComments());
@@ -190,6 +234,7 @@ public class DistributionOrderDetail extends DistributionOrderSummary implements
 			detail.setOrderItems(DistributionOrderItemDetail.from(order.getOrderItems()));
 		}
 
+		detail.setCheckout(Boolean.TRUE.equals(order.getCheckoutSpecimens()));
 		detail.setActivityStatus(order.getActivityStatus());
 		return detail;
 	}

@@ -7,14 +7,19 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import com.krishagni.catissueplus.core.administrative.domain.DistributionOrderItem;
+import com.krishagni.catissueplus.core.biospecimen.events.SpecimenDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.SpecimenInfo;
 
 public class DistributionOrderItemDetail implements Serializable {
 	private Long id;
 
+	private Long orderId;
+
 	private String orderName;
 	
 	private SpecimenInfo specimen;
+
+	private String specimenLocation;
 	
 	private BigDecimal quantity;
 
@@ -36,6 +41,14 @@ public class DistributionOrderItemDetail implements Serializable {
 		this.id = id;
 	}
 
+	public Long getOrderId() {
+		return orderId;
+	}
+
+	public void setOrderId(Long orderId) {
+		this.orderId = orderId;
+	}
+
 	public String getOrderName() {
 		return orderName;
 	}
@@ -50,6 +63,14 @@ public class DistributionOrderItemDetail implements Serializable {
 
 	public void setSpecimen(SpecimenInfo specimen) {
 		this.specimen = specimen;
+	}
+
+	public String getSpecimenLocation() {
+		return specimenLocation;
+	}
+
+	public void setSpecimenLocation(String specimenLocation) {
+		this.specimenLocation = specimenLocation;
 	}
 
 	public BigDecimal getQuantity() {
@@ -101,14 +122,23 @@ public class DistributionOrderItemDetail implements Serializable {
 	}
 
 	public static DistributionOrderItemDetail from(DistributionOrderItem orderItem) {
+		return from(orderItem, true);
+	}
+
+	public static DistributionOrderItemDetail from(DistributionOrderItem orderItem, boolean incSpmn) {
 		DistributionOrderItemDetail detail = new DistributionOrderItemDetail();
 		detail.setId(orderItem.getId());
+		detail.setOrderId(orderItem.getOrder().getId());
 		detail.setOrderName(orderItem.getOrder().getName());
 		detail.setQuantity(orderItem.getQuantity());
-		detail.setSpecimen(SpecimenInfo.from(orderItem.getSpecimen()));
 		detail.setCost(orderItem.getCost());
 		detail.setLabel(orderItem.getLabel());
 		detail.setStatus(orderItem.getStatus().name());
+		detail.setSpecimenLocation(orderItem.getSpecimenLocation());
+		if (incSpmn) {
+			detail.setSpecimen(SpecimenDetail.from(orderItem.getSpecimen(), true, true, true));
+		}
+
 		return detail;
 	}
 	

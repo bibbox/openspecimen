@@ -5,7 +5,9 @@ import java.util.Collection;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import com.krishagni.catissueplus.core.administrative.domain.PermissibleValue;
 import com.krishagni.catissueplus.core.administrative.domain.ShipmentContainer;
+import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
 
 public class ShipmentContainerDetail implements Comparable<ShipmentContainerDetail>, Serializable {
 
@@ -59,16 +61,38 @@ public class ShipmentContainerDetail implements Comparable<ShipmentContainerDeta
 	public static ShipmentContainerDetail from(ShipmentContainer shipmentContainer) {
 		ShipmentContainerDetail detail = new ShipmentContainerDetail();
 		detail.setId(shipmentContainer.getId());
-		detail.setContainer(StorageContainerSummary.from(shipmentContainer.getContainer()));
 
-		if (shipmentContainer.getReceivedQuality() != null) {
-			detail.setReceivedQuality(shipmentContainer.getReceivedQuality().toString());
+		StorageContainerSummary container = StorageContainerSummary.from(shipmentContainer.getContainer());
+		if (shipmentContainer.getContainer().getAllowedCps() != null) {
+			container.setAllowedCollectionProtocols(shipmentContainer.getContainer().getAllowedCps().stream().map(CollectionProtocol::getShortTitle).collect(Collectors.toSet()));
 		}
 
+		if (shipmentContainer.getContainer().getCompAllowedCps() != null) {
+			container.setCalcAllowedCollectionProtocols(shipmentContainer.getContainer().getCompAllowedCps().stream().map(CollectionProtocol::getShortTitle).collect(Collectors.toSet()));
+		}
+
+		if (shipmentContainer.getContainer().getAllowedSpecimenClasses() != null) {
+			container.setAllowedSpecimenClasses(PermissibleValue.toValueSet(shipmentContainer.getContainer().getAllowedSpecimenClasses()));
+		}
+
+		if (shipmentContainer.getContainer().getCompAllowedSpecimenClasses() != null) {
+			container.setCalcAllowedSpecimenClasses(PermissibleValue.toValueSet(shipmentContainer.getContainer().getCompAllowedSpecimenClasses()));
+		}
+
+		if (shipmentContainer.getContainer().getAllowedSpecimenTypes() != null) {
+			container.setAllowedSpecimenTypes(PermissibleValue.toValueSet(shipmentContainer.getContainer().getAllowedSpecimenTypes()));
+		}
+
+		if (shipmentContainer.getContainer().getCompAllowedSpecimenTypes() != null) {
+			container.setCalcAllowedSpecimenTypes(PermissibleValue.toValueSet(shipmentContainer.getContainer().getCompAllowedSpecimenTypes()));
+		}
+
+		detail.setContainer(container);
+		detail.setReceivedQuality(PermissibleValue.getValue(shipmentContainer.getReceivedQuality()));
 		return detail;
 	}
 
 	public static List<ShipmentContainerDetail> from(Collection<ShipmentContainer> shipmentContainers) {
-		return shipmentContainers.stream().map(ShipmentContainerDetail::from).sorted().collect(Collectors.toList());
+		return shipmentContainers.stream().map(ShipmentContainerDetail::from).collect(Collectors.toList());
 	}
 }

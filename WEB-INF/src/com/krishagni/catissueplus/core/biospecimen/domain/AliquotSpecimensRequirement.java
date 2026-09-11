@@ -1,6 +1,10 @@
 package com.krishagni.catissueplus.core.biospecimen.domain;
 
 import java.math.BigDecimal;
+import java.util.List;
+import java.util.Map;
+
+import com.krishagni.catissueplus.core.biospecimen.events.SrServiceDetail;
 
 public class AliquotSpecimensRequirement {
 	private String cpShortTitle;
@@ -24,6 +28,14 @@ public class AliquotSpecimensRequirement {
 	private String labelAutoPrintMode;
 	
 	private Integer labelPrintCopies;
+
+	private Integer sortOrder;
+
+	private Map<String, Object> defaultCustomFieldValues;
+
+	private boolean isPreBarcodedTube;
+
+	private List<SrServiceDetail> services;
 	
 	public String getCpShortTitle() {
 		return cpShortTitle;
@@ -111,5 +123,37 @@ public class AliquotSpecimensRequirement {
 
 	public void setLabelPrintCopies(Integer labelPrintCopies) {
 		this.labelPrintCopies = labelPrintCopies;
+	}
+
+	public Integer getSortOrder() {
+		return sortOrder;
+	}
+
+	public void setSortOrder(Integer sortOrder) {
+		this.sortOrder = sortOrder;
+	}
+
+	public Map<String, Object> getDefaultCustomFieldValues() {
+		return defaultCustomFieldValues;
+	}
+
+	public void setDefaultCustomFieldValues(Map<String, Object> defaultCustomFieldValues) {
+		this.defaultCustomFieldValues = defaultCustomFieldValues;
+	}
+
+	public boolean isPreBarcodedTube() {
+		return isPreBarcodedTube;
+	}
+
+	public void setPreBarcodedTube(boolean preBarcodedTube) {
+		isPreBarcodedTube = preBarcodedTube;
+	}
+
+	public List<SrServiceDetail> getServices() {
+		return services;
+	}
+
+	public void setServices(List<SrServiceDetail> services) {
+		this.services = services;
 	}
 }

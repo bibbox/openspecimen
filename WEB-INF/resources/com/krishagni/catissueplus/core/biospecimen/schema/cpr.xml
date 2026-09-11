@@ -22,7 +22,7 @@
     </field>
 
     <field>
-      <type>date</type>
+      <type>dateOnly</type>
       <caption>#getMessage("participant_registration_date")</caption>
       <attribute>registrationDate</attribute>
     </field>
@@ -40,6 +40,11 @@
     <field>
       <caption>#getMessage("participant_activity_status")</caption>
       <attribute>activityStatus</attribute>
+    </field>
+
+    <field>
+      <caption>#getMessage("common_data_entry_status")</caption>
+      <attribute>dataEntryStatus</attribute>
     </field>
 
     <field>

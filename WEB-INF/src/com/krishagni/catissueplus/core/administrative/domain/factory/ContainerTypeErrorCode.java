@@ -14,6 +14,8 @@ public enum ContainerTypeErrorCode implements ErrorCode {
 	
 	INVALID_CAPACITY,
 
+	INVALID_RATE,
+
 	INVALID_POSITION_LABELING_MODE,
 
 	INVALID_POSITION_ASSIGNMENT,
@@ -28,7 +30,9 @@ public enum ContainerTypeErrorCode implements ErrorCode {
 
 	CANNOT_HOLD_CONTAINER,
 
-	INVALID_NAME_FORMAT;
+	INVALID_NAME_FORMAT,
+
+	EXCEED_CAPACITY_LMT;
 
 	@Override
 	public String code() {

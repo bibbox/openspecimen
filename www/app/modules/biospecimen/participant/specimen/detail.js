@@ -1,24 +1,18 @@
 angular.module('os.biospecimen.specimen.detail', [])
   .controller('SpecimenDetailCtrl', function(
     $scope, $state, $modal, $stateParams, currentUser, cp, listView, cpr, visit, specimen,
-    ParticipantSpecimensViewState, Specimen, SpecimenLabelPrinter, SpecimensHolder, DeleteUtil, Alerts) {
+    ParticipantSpecimensViewState, Specimen, SpecimenUtil, SpecimenLabelPrinter, SpecimensHolder, DeleteUtil, Alerts) {
 
     function init() {
       $scope.cpr = cpr;
       $scope.visit = visit;
       $scope.specimen = specimen;
       $scope.treeSpecimens = getTreeSpecimens(specimen);
+      $scope.statusCss = SpecimenUtil.getStatusCss(specimen);
     }
 
     function getTreeSpecimens(specimen) {
       var result = [];
-      angular.forEach(specimen.specimensPool,
-        function(poolSpecimen) {
-          poolSpecimen.pooledSpecimen = specimen;
-          result.push(poolSpecimen);
-        }
-      );
-
       return result.concat(specimen.children);
     }
 
@@ -46,7 +40,12 @@ angular.module('os.biospecimen.specimen.detail', [])
     }
 
     $scope.reopen = function() {
-      specimen.reopen().then(specimenUpdatedInline);
+      specimen.reopen().then(
+        function() {
+          $scope.statusCss = SpecimenUtil.getStatusCss(specimen);
+          specimenUpdatedInline();
+        }
+      );
     }
 
     $scope.deleteSpecimen = function() {
@@ -85,9 +84,12 @@ angular.module('os.biospecimen.specimen.detail', [])
           }
         }
       }).result.then(
-        function() {
+        function(result) {
           specimen.storageLocation = undefined;
-          specimen.activityStatus = 'Closed';
+          specimen.checkoutPosition = undefined;
+          specimen.activityStatus = result[0].activityStatus;
+          specimen.availabilityStatus = result[0].availabilityStatus;
+          $scope.statusCss = SpecimenUtil.getStatusCss(specimen);
           specimenUpdatedInline();
         }
       );

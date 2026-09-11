@@ -5,22 +5,25 @@ import java.util.Date;
 import java.util.HashSet;
 import java.util.Set;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.hibernate.envers.AuditJoinTable;
+import org.hibernate.envers.Audited;
+import org.hibernate.envers.NotAudited;
+import org.hibernate.envers.RelationTargetAuditMode;
 import org.springframework.beans.BeanUtils;
 
 import com.krishagni.catissueplus.core.administrative.domain.factory.ScheduledJobErrorCode;
 import com.krishagni.catissueplus.core.administrative.services.ScheduledTask;
-import com.krishagni.catissueplus.core.administrative.services.impl.ExternalScheduledTask;
 import com.krishagni.catissueplus.core.biospecimen.domain.BaseEntity;
 import com.krishagni.catissueplus.core.common.CollectionUpdater;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
+import com.krishagni.catissueplus.core.common.util.LogUtil;
 import com.krishagni.catissueplus.core.common.util.Status;
 import com.krishagni.catissueplus.core.common.util.Utility;
 import com.krishagni.catissueplus.core.de.domain.SavedQuery;
 
+@Audited
 public class ScheduledJob extends BaseEntity {
-	private static final Log logger = LogFactory.getLog(ScheduledJob.class);
+	private static final LogUtil logger = LogUtil.getLogger(ScheduledJob.class);
 
 	public enum RepeatSchedule { 
 		MINUTELY,
@@ -38,7 +41,7 @@ public class ScheduledJob extends BaseEntity {
 		WEDNESDAY(4),
 		THURSDAY(5),
 		FRIDAY(6),
-		SATRUDAY(7);
+		SATURDAY(7);
 		
 		private final int value;
 		
@@ -92,8 +95,12 @@ public class ScheduledJob extends BaseEntity {
 	private SavedQuery savedQuery;
 
 	private User runAs;
+
+	private String runByNode;
 	
 	private Set<User> recipients = new HashSet<>();
+
+	private Set<User> sharedWith = new HashSet<>();
 	
 	//
 	// UI purpose
@@ -232,6 +239,7 @@ public class ScheduledJob extends BaseEntity {
 		this.fixedArgs = fixedArgs;
 	}
 
+	@Audited(targetAuditMode = RelationTargetAuditMode.NOT_AUDITED)
 	public SavedQuery getSavedQuery() {
 		return savedQuery;
 	}
@@ -248,6 +256,16 @@ public class ScheduledJob extends BaseEntity {
 		this.runAs = runAs;
 	}
 
+	@NotAudited
+	public String getRunByNode() {
+		return runByNode;
+	}
+
+	public void setRunByNode(String runByNode) {
+		this.runByNode = runByNode;
+	}
+
+	@AuditJoinTable(name = "OS_SCHED_JOBS_NOTIF_RCPTS_AUD")
 	public Set<User> getRecipients() {
 		return recipients;
 	}
@@ -255,7 +273,16 @@ public class ScheduledJob extends BaseEntity {
 	public void setRecipients(Set<User> recipients) {
 		this.recipients = recipients;
 	}
-	
+
+	@AuditJoinTable(name = "OS_SCHED_JOB_SHARED_USERS_AUD")
+	public Set<User> getSharedWith() {
+		return sharedWith;
+	}
+
+	public void setSharedWith(Set<User> sharedWith) {
+		this.sharedWith = sharedWith;
+	}
+
 	public Boolean getRtArgsProvided() {
 		return rtArgsProvided;
 	}
@@ -282,7 +309,8 @@ public class ScheduledJob extends BaseEntity {
 
 	public void update(ScheduledJob other) {
 		BeanUtils.copyProperties(other, this, JOB_UPDATE_IGN_PROPS);
-		CollectionUpdater.update(this.getRecipients(), other.getRecipients());
+		CollectionUpdater.update(getRecipients(), other.getRecipients());
+		CollectionUpdater.update(getSharedWith(), other.getSharedWith());
 	}
 
 	public boolean isOnDemand() {
@@ -290,50 +318,39 @@ public class ScheduledJob extends BaseEntity {
 	}
 	
 	public boolean isActiveJob() {
+		return isActiveJob(false);
+	}
+
+	public boolean isActiveJob(boolean printReason) {
 		if (!Status.ACTIVITY_STATUS_ACTIVE.getStatus().equals(activityStatus)) {
+			if (printReason) {
+				logger.info("Scheduled job " + getName() + " is not active. Activity Status = " + activityStatus);
+			}
+
 			return false;
 		}
 
 		if (getType() == Type.QUERY && (getSavedQuery() == null || getSavedQuery().getDeletedOn() != null)) {
+			if (printReason) {
+				String title = (getSavedQuery() != null ? getSavedQuery().getTitle() : "Unknown");
+				logger.info("Scheduled query " + title + " is deleted.");
+			}
+
 			return false;
 		}
 
-		if (isOnDemand()) {
-			return true;
-		}
-		
-		Date current = new Date();
-		if (current.before(startDate)) {
-			return false;
-		}
-		
-		if (endDate != null && current.after(endDate)) {
-			return false;
-		}
-		
 		return true;
 	}
 
 	public Date getNextRunOn() {
-		switch (repeatSchedule) {
-			case MINUTELY:
-				return getNextMinutelyOccurence();
-				
-			case HOURLY:
-				return getNextHourlyOccurence();
-			
-			case DAILY:
-				return getNextDailyOccurence();
-
-			case MONTHLY:
-				return getNextMonthlyOccurence();
-			
-			case WEEKLY:
-				return getNextWeeklyOccurence();
-				
-			default:
-				return null;
-		}
+		return switch (repeatSchedule) {
+			case MINUTELY -> getNextMinutelyOccurence();
+			case HOURLY -> getNextHourlyOccurence();
+			case DAILY -> getNextDailyOccurence();
+			case MONTHLY -> getNextMonthlyOccurence();
+			case WEEKLY -> getNextWeeklyOccurence();
+			default -> null;
+		};
 	}
 	
 	public void delete() {
@@ -435,11 +452,11 @@ public class ScheduledJob extends BaseEntity {
 	
 	public ScheduledTask newTask() {
 		if (getType() == Type.EXTERNAL) {
-			return new ExternalScheduledTask();
+			throw OpenSpecimenException.userError(ScheduledJobErrorCode.EXT_TASK_FORBIDDEN);
 		}
 		
 		try {
-			return (ScheduledTask)Class.forName(getTaskImplfqn()).newInstance();
+			return (ScheduledTask) Class.forName(getTaskImplfqn()).getDeclaredConstructor().newInstance();
 		} catch (Exception e) {
 			logger.error("Invalid scheduled job class: " + getTaskImplfqn(), e);
 			throw OpenSpecimenException.userError(ScheduledJobErrorCode.INVALID_TYPE);
@@ -449,6 +466,7 @@ public class ScheduledJob extends BaseEntity {
 	private static final String[] JOB_UPDATE_IGN_PROPS = new String[] {
 		"id", 
 		"createdBy",
-		"recipients"
+		"recipients",
+		"sharedWith"
 	};
 }

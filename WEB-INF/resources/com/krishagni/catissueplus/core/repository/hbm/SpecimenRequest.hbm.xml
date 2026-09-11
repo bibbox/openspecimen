@@ -4,7 +4,9 @@
     "http://hibernate.sourceforge.net/hibernate-mapping-3.0.dtd">
 
 <hibernate-mapping auto-import="false">
-  <class name="com.krishagni.catissueplus.core.administrative.domain.SpecimenRequest" table="OS_SPECIMEN_REQUESTS">
+  <class name="com.krishagni.catissueplus.core.administrative.domain.SpecimenRequest" table="OS_SPECIMEN_REQUESTS"
+    entity-name="com.krishagni.catissueplus.core.administrative.domain.SpecimenRequest">
+
     <id name="id" column="IDENTIFIER">
       <generator class="native">
         <param name="sequence">OS_SPECIMEN_REQUESTS_SEQ</param>
@@ -44,6 +46,8 @@
 
     <many-to-one name="dp" column="DP_ID"/>
 
+    <many-to-one name="requestManagerGroup" column="RMG_ID"/>
+
     <property name="comments" column="COMMENTS"/>
 
     <property name="itemsCriteriaJson" column="ITEMS_CRIT_JSON"/>
@@ -60,6 +64,12 @@
       <one-to-many class="com.krishagni.catissueplus.core.administrative.domain.DistributionOrder"/>
     </set>
 
+    <many-to-one name="cart" column="CART_ID" />
+
     <filter name="activeEntity"/>
+
+    <sql-query name="removeRequestCart">
+      update os_specimen_requests set cart_id = null where cart_id = :cartId
+    </sql-query>
   </class>
 </hibernate-mapping>

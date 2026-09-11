@@ -20,18 +20,23 @@
     <field>
       <caption>#getMessage("specimen_visit_name")</caption>
       <attribute>visitName</attribute>
-    </field>     
+    </field>
+    #end
 
     <field>
       <caption>#getMessage("specimen_req_code")</caption>
       <attribute>reqCode</attribute>
     </field>
-    #end
 
     <field>
       <caption>#getMessage("specimen_label")</caption>
       <attribute>label</attribute>
-    </field>  
+    </field>
+
+    <field>
+      <caption>#getMessage("specimen_additional_label")</caption>
+      <attribute>additionalLabel</attribute>
+    </field>
 
     <field>
       <caption>#getMessage("specimen_barcode")</caption>
@@ -91,6 +96,16 @@
     <field>
       <caption>#getMessage("specimen_concentration")</caption>
       <attribute>concentration</attribute>
+    </field>
+
+    <field>
+      <caption>#getMessage("specimen_quantity_unit")</caption>
+      <attribute>quantityUnit</attribute>
+    </field>
+
+    <field>
+      <caption>#getMessage("specimen_concentration_unit")</caption>
+      <attribute>concentrationUnit</attribute>
     </field>
 
     <field>
@@ -176,6 +191,28 @@
     <field>
       <caption>#getMessage("specimen_activity_status")</caption>
       <attribute>activityStatus</attribute>
+    </field>
+
+    <record>
+      <caption>#getMessage("specimen_transfer_user")</caption>
+      <attribute>transferUser</attribute>
+
+      <field>
+        <caption>#getMessage("specimen_event_user_email")</caption>
+        <attribute>emailAddress</attribute>
+      </field>
+    </record>
+
+    <field>
+      <type>datetime</type>
+      <caption>#getMessage("specimen_transfer_time")</caption>
+      <attribute>transferTime</attribute>
+    </field>
+
+    <field>
+      <type>boolean</type>
+      <caption>#getMessage("specimen_checkout")</caption>
+      <attribute>checkout</attribute>
     </field>
 
     <field>

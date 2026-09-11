@@ -5,7 +5,9 @@ import java.util.Map;
 import com.krishagni.catissueplus.core.common.domain.LabelPrintRule;
 
 public interface LabelPrintRuleFactory {
-	LabelPrintRule createLabelPrintRule(Map<String, String> ruleDef);
+	String getItemType();
 
-	LabelPrintRule createLabelPrintRule(Map<String, String> ruleDef, boolean failOnError);
+	LabelPrintRule createLabelPrintRule(Map<String, Object> ruleDef);
+
+	LabelPrintRule createLabelPrintRule(Map<String, Object> ruleDef, boolean failOnError);
 }

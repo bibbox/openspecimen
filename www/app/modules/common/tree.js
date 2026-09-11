@@ -1,12 +1,22 @@
 
 angular.module('openspecimen')
-  .directive('osTree', function() {
+  .directive('osTree', function($timeout) {
     return {
       restrict: 'E',
 
       replace: true,
 
+      scope: true,
+
       link: function(scope, element, attrs) {
+        scope.$$sortOpts = {
+          stop: function() {
+            var treeData = scope.opts.treeData;
+            scope.opts.treeData = [];
+            $timeout(function() { scope.opts.treeData = treeData; });
+          }
+        };
+
         scope.$watch(
           attrs.opts, 
           function(newOpts) {
@@ -17,6 +27,7 @@ angular.module('openspecimen')
 
       controller: function($scope) {
         this.nodeChecked = function(node) {
+          node.checked = !this.isNodeChecked(node);
           if (typeof $scope.opts.nodeChecked == "function") {
             $scope.opts.nodeChecked(node);
           }
@@ -50,7 +61,7 @@ angular.module('openspecimen')
 
       template:
         '<div class="os-tree">' +
-        '  <ul ui-sortable ng-model="opts.treeData"> ' +
+        '  <ul ui-sortable="$$sortOpts" ng-model="opts.treeData"> ' +
         '    <os-tree-node ng-repeat="node in opts.treeData" node="node" node-tmpl="opts.nodeTmpl"> ' +
         '    </os-tree-node> ' + 
         '  </ul> ' +
@@ -58,7 +69,7 @@ angular.module('openspecimen')
     };
   })
 
-  .directive('osTreeNode', function($compile) {
+  .directive('osTreeNode', function($compile, $timeout) {
     return {
       restrict: 'E',
       require: '^osTree',
@@ -70,7 +81,7 @@ angular.module('openspecimen')
       link: function(scope, element, attrs, ctrl) {
         element.append(
           $compile(
-            '<ul ui-sortable ng-model="node.children" ng-if="node.expanded"> ' +
+            '<ul ui-sortable="$$sortOpts" ng-model="node.children" ng-if="node.expanded"> ' +
               '  <os-tree-node node-tmpl="nodeTmpl" ng-repeat="child in node.children" node="child"> ' +
               '  </os-tree-node> ' +
             '</ul>'
@@ -80,6 +91,14 @@ angular.module('openspecimen')
         scope.nodeChecked = ctrl.nodeChecked;
         scope.onNodeToggle = ctrl.onNodeToggle;
         scope.isNodeChecked = ctrl.isNodeChecked;
+
+        scope.$$sortOpts = {
+          stop: function() {
+            var children = scope.node.children;
+            scope.node.children = [];
+            $timeout(function() { scope.node.children = children; });
+          }
+        };
       },
 
       template:
@@ -93,7 +112,7 @@ angular.module('openspecimen')
         '         ng-click="onNodeToggle(node)"> ' +
         '    </div> ' +
         '    <div class="os-tree-node-checkbox"> ' +
-        '      <input type="checkbox" ng-model="node.checked" ng-checked="isNodeChecked(node)" ' +
+        '      <input type="checkbox" ng-checked="isNodeChecked(node)" ' +
         '        ng-click="nodeChecked(node)"> ' +
         '    </div> ' +
         '    <div class="os-tree-node-label"> ' +

@@ -4,22 +4,26 @@ import java.util.Calendar;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 
 import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
 import com.krishagni.catissueplus.core.common.PlusTransactional;
+import com.krishagni.catissueplus.core.common.access.AccessCtrlMgr;
+import com.krishagni.catissueplus.core.common.domain.ExtAppMessage;
 import com.krishagni.catissueplus.core.common.domain.MessageLog;
+import com.krishagni.catissueplus.core.common.errors.CommonErrorCode;
+import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.MessageLogCriteria;
 import com.krishagni.catissueplus.core.common.service.MessageHandler;
 import com.krishagni.catissueplus.core.common.service.MessageLogService;
 import com.krishagni.catissueplus.core.common.util.ConfigUtil;
+import com.krishagni.catissueplus.core.common.util.LogUtil;
 import com.krishagni.catissueplus.core.common.util.Utility;
 
 public class MessageLogServiceImpl implements MessageLogService {
-	private static final Log logger = LogFactory.getLog(MessageLogServiceImpl.class);
+	private static final LogUtil logger = LogUtil.getLogger(MessageLogServiceImpl.class);
 
 	private Map<String, MessageHandler> handlers = new HashMap<>();
 
@@ -27,6 +31,19 @@ public class MessageLogServiceImpl implements MessageLogService {
 
 	public void setDaoFactory(DaoFactory daoFactory) {
 		this.daoFactory = daoFactory;
+	}
+
+	@Override
+	@PlusTransactional
+	public MessageLog getMessageLog(Long id) {
+		AccessCtrlMgr.getInstance().ensureUserIsAdmin();
+
+		MessageLog log = daoFactory.getMessageLogDao().getById(id);
+		if (log == null) {
+			throw OpenSpecimenException.userError(CommonErrorCode.INVALID_INPUT, "Invalid message ID " + id);
+		}
+
+		return log;
 	}
 
 	@Override
@@ -65,13 +82,34 @@ public class MessageLogServiceImpl implements MessageLogService {
 						logger.error("Error while processing message with log id = " + msgLog.getId(), e);
 						error = Utility.getErrorMessage(e);
 					} finally {
-						updateStatus(msgLog, recordIds, error);
+						updateStatus(msgLog.getId(), recordIds, error);
 					}
 				}
 			}
 		} finally {
 			finished();
 		}
+	}
+
+	@Override
+	public String processMessages(String extAppName, List<ExtAppMessage> messages) {
+		MessageHandler handler = handlers.get(extAppName);
+		if (handler == null) {
+			logger.error("No handler registered to process messages of external app: " + extAppName);
+			throw OpenSpecimenException.userError(CommonErrorCode.INVALID_INPUT, "Unrecognised external app: " + extAppName);
+		}
+
+		for (ExtAppMessage message : messages) {
+			if (StringUtils.isBlank(message.getMessage())) {
+				continue;
+			}
+
+			MessageLog messageLog = message.toMessageLog();
+			messageLog.setExternalApp(extAppName);
+			handler.process(messageLog);
+		}
+
+		return UUID.randomUUID().toString();
 	}
 
 	private int getMaxRetries() {
@@ -92,16 +130,26 @@ public class MessageLogServiceImpl implements MessageLogService {
 	}
 
 	@PlusTransactional
-	private void updateStatus(MessageLog msgLog, String recordIds, String error) {
-		if (StringUtils.isNotBlank(recordIds) && StringUtils.isBlank(error)) {
-			msgLog.setRecordId(recordIds);
-			msgLog.setProcessStatus(MessageLog.ProcessStatus.PROCESSED);
-		} else if (StringUtils.isNotBlank(error)) {
-			msgLog.setError(error);
+	private void updateStatus(Long msgLogId, String recordIds, String error) {
+		if (msgLogId == null) {
+			logger.info("No message log ID to update the status");
+			return;
 		}
 
+		MessageLog msgLog = daoFactory.getMessageLogDao().getById(msgLogId);
+		if (msgLog == null) {
+			logger.error("No message log with ID = " + msgLogId);
+			return;
+		}
+
+		if (StringUtils.isNotBlank(recordIds) && StringUtils.isBlank(error)) {
+			msgLog.setRecordId(recordIds);
+			msgLog.setStatus(MessageLog.Status.SUCCESS);
+			msgLog.setProcessStatus(MessageLog.ProcessStatus.PROCESSED);
+		}
+
+		msgLog.setError(error);
 		msgLog.incrNoOfRetries();
 		msgLog.setProcessTime(Calendar.getInstance().getTime());
-		daoFactory.getMessageLogDao().saveOrUpdate(msgLog);
 	}
 }

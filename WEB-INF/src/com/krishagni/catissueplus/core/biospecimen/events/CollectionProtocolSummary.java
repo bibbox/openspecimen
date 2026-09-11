@@ -3,10 +3,15 @@ package com.krishagni.catissueplus.core.biospecimen.events;
 
 import java.util.Date;
 
+import com.fasterxml.jackson.annotation.JsonFilter;
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
 import com.krishagni.catissueplus.core.common.AttributeModifiedSupport;
 import com.krishagni.catissueplus.core.common.events.UserSummary;
 
+@JsonFilter("withoutId")
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class CollectionProtocolSummary extends AttributeModifiedSupport implements Comparable<CollectionProtocolSummary> {
 	private Long id;
 
@@ -33,6 +38,12 @@ public class CollectionProtocolSummary extends AttributeModifiedSupport implemen
 	private Boolean specimenCentric;
 
 	private Long catalogId;
+
+	private Boolean starred;
+
+	private boolean draftMode;
+
+	private Boolean groupWorkflowsInherited;
 
 	public Long getId() {
 		return id;
@@ -138,6 +149,30 @@ public class CollectionProtocolSummary extends AttributeModifiedSupport implemen
 		this.catalogId = catalogId;
 	}
 
+	public Boolean getStarred() {
+		return starred;
+	}
+
+	public void setStarred(Boolean starred) {
+		this.starred = starred;
+	}
+
+	public boolean isDraftMode() {
+		return draftMode;
+	}
+
+	public void setDraftMode(boolean draftMode) {
+		this.draftMode = draftMode;
+	}
+
+	public Boolean getGroupWorkflowsInherited() {
+		return groupWorkflowsInherited;
+	}
+
+	public void setGroupWorkflowsInherited(Boolean groupWorkflowsInherited) {
+		this.groupWorkflowsInherited = groupWorkflowsInherited;
+	}
+
 	@Override
 	public int compareTo(CollectionProtocolSummary cpSummary) {
 		return this.shortTitle.toUpperCase().compareTo(cpSummary.getShortTitle().toUpperCase());
@@ -161,5 +196,6 @@ public class CollectionProtocolSummary extends AttributeModifiedSupport implemen
 		detail.setManualPpidEnabled(cp.isManualPpidEnabled());
 		detail.setSpecimenCentric(cp.isSpecimenCentric());
 		detail.setCatalogId(cp.getCatalogId());
+		detail.setDraftMode(cp.isDraftMode());
 	}
 }

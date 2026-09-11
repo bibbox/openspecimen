@@ -4,17 +4,18 @@ package com.krishagni.catissueplus.core.auth.domain;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+
+import org.apache.commons.lang3.exception.ExceptionUtils;
 
 import com.krishagni.catissueplus.core.auth.domain.factory.AuthProviderErrorCode;
 import com.krishagni.catissueplus.core.auth.services.AuthenticationService;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
+import com.krishagni.catissueplus.core.common.util.LogUtil;
 import com.krishagni.catissueplus.core.common.util.Status;
 import com.krishagni.catissueplus.core.common.util.Utility;
 
 public class AuthDomain {
-	private static final Log logger = LogFactory.getLog(AuthDomain.class);
+	private static final LogUtil logger = LogUtil.getLogger(AuthDomain.class);
 
 	private static Map<Long, AuthenticationService> authProviderMap = new HashMap<>();
 
@@ -23,6 +24,11 @@ public class AuthDomain {
 	private String name;
 
 	private AuthProvider authProvider;
+
+
+	private boolean allowLogins = true;
+
+	private boolean legacySaml = false;
 
 	private String activityStatus;
 
@@ -54,6 +60,22 @@ public class AuthDomain {
 		return getAuthProviderInstance(getAuthProvider());
 	}
 
+	public boolean isAllowLogins() {
+		return allowLogins;
+	}
+
+	public void setAllowLogins(boolean allowLogins) {
+		this.allowLogins = allowLogins;
+	}
+
+	public boolean isLegacySaml() {
+		return legacySaml;
+	}
+
+	public void setLegacySaml(boolean legacySaml) {
+		this.legacySaml = legacySaml;
+	}
+
 	public String getActivityStatus() {
 		return activityStatus;
 	}
@@ -64,6 +86,7 @@ public class AuthDomain {
 
 	public void update(AuthDomain domain) {
 		setName(domain.getName());
+		setAllowLogins(domain.isAllowLogins());
 
 		Map<String, String> newProps = domain.getAuthProvider().getProps();
 		Map<String, String> oldProps = authProvider.getProps();
@@ -108,8 +131,9 @@ public class AuthDomain {
 			
 			return authService;
 		} catch (Exception e) {
-			logger.error("Error obtaining an instance of auth provider", e);
-			throw OpenSpecimenException.userError(AuthProviderErrorCode.INVALID_AUTH_IMPL);
+			String cause = ExceptionUtils.getRootCauseMessage(e);
+			logger.error("Error obtaining an instance of auth provider - " + cause, e);
+			throw OpenSpecimenException.userError(AuthProviderErrorCode.INVALID_AUTH_IMPL, cause);
 		}
 	}
 }

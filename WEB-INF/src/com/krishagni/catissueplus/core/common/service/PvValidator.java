@@ -3,8 +3,8 @@ package com.krishagni.catissueplus.core.common.service;
 import java.util.Collection;
 import java.util.Collections;
 
-import org.apache.commons.collections.CollectionUtils;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.lang3.StringUtils;
 
 import com.krishagni.catissueplus.core.administrative.repository.PermissibleValueDao;
 import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;

@@ -1,39 +1,52 @@
-function osRequired($timeout) {
-  return {
-    require: '^form',
-    restrict: 'A',
-    link: function(scope, element, attrs, ctrl) {
-      if (!ctrl._osFormEl) {
-        var formEl = ctrl._osFormEl = element.closest('.os-no-label-form');
-        if (formEl.length == 0) {
-          formEl = ctrl._osFormEl = element.closest("*[os-no-label-form]");
-        }
-
-        ctrl._noLabelForm = (formEl.length > 0);
-      }
-
-      var setDirty = function() { ctrl[attrs.name] && ctrl[attrs.name].$setDirty(true); }
-      var noHint = (attrs.noHint == true) || (attrs.noHint == 'true');
-
+function osRequired(conditional, $timeout) {
+  return function() {
+    function updatePlaceholder(element, text) {
       if (element.hasClass('os-select-container')) {
-        $timeout(
-          function() {
-            element.find('.ui-select-focusser, .ui-select-search').bind('blur', setDirty);
-
-            if (!ctrl._noLabelForm && !noHint) {
-              element.find('.ui-select-placeholder').addClass('os-italic').text('mandatory');
-              element.find('.ui-select-match, .ui-select-search').addClass('os-italic').attr('placeholder', 'mandatory');
-            }
-          }
-        );
+        element.find('.ui-select-placeholder').addClass('os-italic').text(text);
+        element.find('.ui-select-match, .ui-select-search').addClass('os-italic').attr('placeholder', text);
       } else {
-        element.bind('blur', setDirty);
-        if (!ctrl._noLabelForm && !noHint) {
-          $timeout(function() { element.addClass('os-italic').attr('placeholder', 'mandatory'); });
-        }
+        element.addClass('os-italic').attr('placeholder', text);
       }
     }
-  };
+
+    return {
+      require: '^form',
+      restrict: 'A',
+      link: function(scope, element, attrs, ctrl) {
+        if (!ctrl._osFormEl) {
+          var formEl = ctrl._osFormEl = element.closest('.os-no-label-form');
+          if (formEl.length == 0) {
+            formEl = ctrl._osFormEl = element.closest("*[os-no-label-form]");
+          }
+
+          ctrl._noLabelForm = (formEl.length > 0);
+        }
+
+        var setDirty = function() { ctrl[attrs.name] && ctrl[attrs.name].$setDirty(true); }
+        var noHint = (attrs.noHint == true) || (attrs.noHint == 'true');
+
+        if (element.hasClass('os-select-container')) {
+          $timeout(
+            function() {
+              element.find('.ui-select-focusser, .ui-select-search').bind('blur', setDirty);
+              if (!ctrl._noLabelForm && !noHint && !conditional) {
+                updatePlaceholder(element, 'mandatory');
+              }
+            }
+          );
+        } else {
+          element.bind('blur', setDirty);
+          if (!ctrl._noLabelForm && !noHint && !conditional) {
+            $timeout(function() { updatePlaceholder(element, 'mandatory'); });
+          }
+        }
+
+        if (!ctrl._noLabelForm && conditional) {
+          attrs.$observe('required', function(val) { updatePlaceholder(element, val ? 'mandatory' : ''); });
+        }
+      }
+    };
+  }
 }
 
 angular.module('os.common.form', [])
@@ -157,7 +170,15 @@ angular.module('os.common.form', [])
         );
       } else {
         ctrl.formSubmitted(true);
-        if (ctrl.isValidForm()) {
+
+        var draftMode = attrs.draftMode;
+        if (draftMode == 'true') {
+          draftMode = true;
+        } else if (draftMode) {
+          draftMode = scope.$eval(draftMode);
+        }
+
+        if (draftMode || ctrl.isValidForm()) {
           if (attrs.localForm) {
             LocationChangeListener.allowChange();
           }
@@ -174,7 +195,7 @@ angular.module('os.common.form', [])
             }
           );
         } else {
-          Alerts.error("common.form_validation_error");
+          $timeout(function() { Alerts.error("common.form_validation_error"); });
         }
       }
     }
@@ -246,8 +267,8 @@ angular.module('os.common.form', [])
 
       template: 
         '<div>' +
-        '  <div ng-if="isInteracted()" class="alert alert-danger os-form-err-msg" ' +
-        '    ng-messages="field.$error" ng-messages-include="modules/common/error-messages.html"> ' +
+        '  <div ng-if="isInteracted()" class="alert alert-danger os-form-err-msg" ng-messages="field.$error"> ' +
+        '    <div ng-messages-include="modules/common/error-messages.html"> </div>' +
         '  </div>' +
         '</div>'
     };
@@ -272,6 +293,6 @@ angular.module('os.common.form', [])
     };
   })
 
-  .directive('required', osRequired)
+  .directive('required', function($timeout) { return osRequired(false, $timeout)(); })
 
-  .directive('ngRequired', osRequired);
+  .directive('ngRequired', function($timeout) { return osRequired(true, $timeout)(); })

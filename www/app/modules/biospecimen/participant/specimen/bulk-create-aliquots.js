@@ -1,6 +1,6 @@
 angular.module('os.biospecimen.specimen')
   .controller('BulkCreateAliquotsCtrl', function(
-    $scope, $q, $injector, $translate, parentSpmns, cp, cpr, containerAllocRules, aliquotQtyReq,
+    $scope, $q, $injector, $translate, userRole, parentSpmns, cp, cpr, containerAllocRules, aliquotQtyReq,
     sysAliquotFmt, createDerived, cpDict, aliquotFields, spmnHeaders, incrFreezeThawCycles,
     Specimen, Alerts, Util, SpecimenUtil, Container) {
 
@@ -64,7 +64,7 @@ angular.module('os.biospecimen.specimen')
       };
 
       var groups = ctx.customFieldGroups = SpecimenUtil.sdeGroupSpecimens(
-        cpDict, aliquotFields || [], aliquotsSpec, {}, opts);
+        cpDict, aliquotFields || [], aliquotsSpec, {userRole: userRole}, opts);
       if (groups.length > 1 || (groups.length == 1 && !groups[0].noMatch)) {
         if (groups[groups.length - 1].noMatch) {
           ctx.warnNoMatch = true;
@@ -85,17 +85,34 @@ angular.module('os.biospecimen.specimen')
           },
           true
         );
-        return;
+      } else {
+        ctx.showCustomFields = false;
       }
 
-      ctx.showCustomFields = false;
       if (!!cp.containerSelectionStrategy) {
         ctx.step2Title = 'specimens.review_locations';
         ctx.autoPosAllocate = true;
+        ctx.manualPosSelection = false;
         $scope.$on('$destroy', vacateReservedPositions);
+
+        if (ctx.showCustomFields) {
+          //
+          // exclude the location field from the UI form
+          //
+          angular.forEach(groups,
+            function(group) {
+              group.fields.table = group.fields.table.filter(
+                function(f) {
+                  return f.name != 'specimen.storageLocation';
+                }
+              );
+            }
+          )
+        }
       } else {
         ctx.step2Title= 'specimens.assign_locations';
         ctx.autoPosAllocate = false;
+        ctx.manualPosSelection = true;
       }
     }
 
@@ -126,10 +143,7 @@ angular.module('os.biospecimen.specimen')
     }
 
     function isValidCreatedOn(spec) {
-      if (spec.createdOn < spec.parent.createdOn) {
-        Alerts.error("specimens.errors.children_created_on_lt_parent", {parentLabel: spec.parent.label});
-        return false;
-      } else if (spec.createdOn > new Date().getTime()) {
+      if (spec.createdOn > new Date().getTime()) {
         Alerts.error("specimens.errors.children_created_on_gt_curr_time", {parentLabel: spec.parent.label});
         return false;
       } else {
@@ -152,7 +166,8 @@ angular.module('os.biospecimen.specimen')
         children: [],
         createdOn: spec.createdOn,
         createdBy: spec.createdBy,
-        printLabel: spec.printLabel
+        printLabel: spec.printLabel,
+        '$$spec': spec.$$spec // this is stored to allow assigning locations back to individual aliquot
       });
     }
 
@@ -223,6 +238,85 @@ angular.module('os.biospecimen.specimen')
       );
     }
 
+    //
+    // used when custom fields are used
+    //
+    function reservePositions0() {
+      var attrsToDelete = ['parent', 'count', 'quantity'];
+
+      var criteria = [], specs = [];
+      var countError = 0;
+      angular.forEach(ctx.customFieldGroups,
+        function(group) {
+          angular.forEach(group.input,
+            function(spec) {
+              // spec.specimen.$$events = spec.events;
+              spec.specimen.$$spec = spec;
+              specs.push(spec.specimen);
+
+              var spmn = new Specimen(spec.specimen);
+              var parent = spmn.parent;
+
+              spmn.lineage = 'Aliquot';
+              spmn.quantity = spmn.initialQty = spmn.qtyPerAliquot;
+              spmn.parentId = parent.id;
+              angular.forEach(attrsToDelete, function(attr) { delete spmn[attr]; });
+
+              var count = +spmn.noOfAliquots;
+              if (!count) {
+                if (!!spmn.labels) {
+                  var labels = Util.splitStr(spmn.labels, /,|\t|\n/, false);
+                  count = labels.length;
+                } else if (!!spmn.barcodes) {
+                  var barcodes = Util.splitStr(spmn.barcodes, /,|\t|\n/, false);
+                  count = barcodes.length;
+                } else if (!!spmn.qtyPerAliquot && spmn.type == parent.type && !!parent.availableQty &&
+                  (parent.lineage == 'Derived' || !createDerived)) {
+                  count = Math.floor(parent.availableQty / spmn.qtyPerAliquot);
+                }
+              }
+
+              if (!count && !countError) {
+                Alerts.error('specimens.aliquots_count_req_auto_alloc');
+                countError = true;
+                return;
+              }
+
+              spec.specimen.count = count;
+              spec.specimen.quantity = spmn.initialQty;
+              var match = spmn.getMatchingRule(containerAllocRules);
+              criteria.push({
+                specimen: spmn,
+                minFreePositions: count,
+                ruleName: match.index != -1 ? match.rule.name : undefined,
+                ruleParams: match.index != -1 ? match.rule.params : undefined
+              });
+            }
+          );
+        }
+      );
+
+      if (countError) {
+        return false;
+      }
+
+      return Container.getReservedPositions({
+        cpId: cp.id,
+        reservationToCancel: reservationId,
+        criteria: criteria,
+      }).then(
+        function(locations) {
+          var location = locations.find(function(l) { return !!l && !!l.reservationId; });
+          if (location) {
+            reservationId = location.reservationId;
+          }
+
+          setAliquots(specs, locations);
+          return true;
+        }
+      );
+    }
+
     function setAliquots(specs, locations) {
       //
       // kill all watches before creating new one
@@ -240,6 +334,8 @@ angular.module('os.biospecimen.specimen')
 
         for (var j = 0; j < specs[i].count; ++j) {
           var aliquot = angular.copy(tmpl);
+          aliquot.$$spec = tmpl.$$spec;
+
           if (locations.length > 0) {
             aliquot.storageLocation = locations[locationIdx++];
           }
@@ -273,8 +369,8 @@ angular.module('os.biospecimen.specimen')
           var idx = $scope.ctx.aliquots.indexOf(aliquot);
           for (var i = idx + 1; i < idx + aliquot.$$count; ++i) {
             $scope.ctx.aliquots[i].storageLocation = {
-              name: aliquot.storageLocation.name,
-              mode: aliquot.storageLocation.mode
+              name: aliquot.storageLocation && aliquot.storageLocation.name,
+              mode: aliquot.storageLocation && aliquot.storageLocation.mode
             };
           }
         }
@@ -324,21 +420,37 @@ angular.module('os.biospecimen.specimen')
             }
           );
 
-          samples[samples.length - 1].aliquotsSpec.closeParent = closeParent;
+          var lastSample = samples[samples.length - 1];
+          lastSample.aliquotsSpec.closeParent = closeParent;
         }
       );
     }
 
     function submitSamples() {
       var parentSamples = {};
-
       var samples = [];
+
+      if (ctx.aliquots && ctx.aliquots.length > 0) {
+        angular.forEach(ctx.aliquots,
+          function(aliquot) {
+            if (!aliquot.$$spec) {
+              return;
+            }
+
+            if (!aliquot.$$spec.specimen.storageLocations) {
+              aliquot.$$spec.specimen.storageLocations = [];
+            }
+
+            aliquot.$$spec.specimen.storageLocations.push(aliquot.storageLocation);
+          }
+        );
+      }
+
       angular.forEach(ctx.customFieldGroups,
         function(group) {
           angular.forEach(group.input,
             function(spec) {
               var spmn = spec.specimen;
-
               var sample = {
                 specimen: {lineage: 'Aliquot', extensionDetail: spmn.extensionDetail},
                 aliquotsSpec: {
@@ -355,9 +467,12 @@ angular.module('os.biospecimen.specimen')
                   containerName: spmn.storageLocation && spmn.storageLocation.name,
                   positionX: spmn.storageLocation && spmn.storageLocation.positionX,
                   positionY: spmn.storageLocation && spmn.storageLocation.positionY,
+                  position:  spmn.storageLocation && spmn.storageLocation.position,
+                  locations: spmn.storageLocations,
                   freezeThawCycles: spmn.freezeThawCycles,
                   incrParentFreezeThaw: spmn.incrParentFreezeThaw,
                   closeParent: spmn.closeParent,
+                  comments: spmn.comments,
                   printLabel: spmn.printLabel,
                   createDerived: createDerived
                 },
@@ -400,6 +515,10 @@ angular.module('os.biospecimen.specimen')
     }
 
     $scope.validateSpecs = function() {
+      if (ctx.showCustomFields && ctx.autoPosAllocate) {
+        return reservePositions0();
+      }
+
       for (var i = 0; i < $scope.ctx.aliquotsSpec.length; ++i) {
         var spec = $scope.ctx.aliquotsSpec[i];
         if (!isValidCountQty(spec)) {
@@ -449,13 +568,13 @@ angular.module('os.biospecimen.specimen')
             }
           );
 
-          $scope.ctx.autoPosAllocate = false;
+          $scope.ctx.manualPosSelection = true;
         }
       );
     }
 
     $scope.applyFirstLocationToAll = function() {
-      var loc = undefined;
+      var loc = {};
       if ($scope.ctx.aliquots.length > 0 && !!$scope.ctx.aliquots[0].storageLocation) {
         loc = $scope.ctx.aliquots[0].storageLocation;
       }
@@ -463,7 +582,7 @@ angular.module('os.biospecimen.specimen')
       angular.forEach($scope.ctx.aliquots,
         function(aliquot, idx) {
           if (idx != 0) {
-            aliquot.storageLocation = {name: loc.name, mode: loc.mode};
+            aliquot.storageLocation = {name: loc.name, mode: loc.mode, displayTitle: loc.displayTitle};
           }
         }
       );
@@ -475,6 +594,7 @@ angular.module('os.biospecimen.specimen')
       reservationId = undefined;
       $scope.ctx.aliquots.length = 0;
       $scope.ctx.autoPosAllocate = !!cp.containerSelectionStrategy
+      $scope.ctx.manualPosSelection = !$scope.ctx.autoPosAllocate;
       return true;
     }
 

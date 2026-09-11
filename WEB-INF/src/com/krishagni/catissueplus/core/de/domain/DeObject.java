@@ -1,5 +1,8 @@
 package com.krishagni.catissueplus.core.de.domain;
 
+import java.io.OutputStream;
+import java.io.StringWriter;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
@@ -12,7 +15,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.collections4.MapUtils;
+import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,10 +25,15 @@ import org.springframework.beans.factory.annotation.Configurable;
 import org.springframework.dao.DataAccessException;
 
 import com.krishagni.catissueplus.core.administrative.domain.User;
+import com.krishagni.catissueplus.core.biospecimen.domain.BaseEntity;
 import com.krishagni.catissueplus.core.biospecimen.domain.BaseExtensionEntity;
+import com.krishagni.catissueplus.core.common.OpenSpecimenAppCtxProvider;
 import com.krishagni.catissueplus.core.common.errors.CommonErrorCode;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.util.AuthUtil;
+import com.krishagni.catissueplus.core.common.util.CsvFileWriter;
+import com.krishagni.catissueplus.core.common.util.CsvWriter;
+import com.krishagni.catissueplus.core.common.util.LogUtil;
 import com.krishagni.catissueplus.core.common.util.MessageUtil;
 import com.krishagni.catissueplus.core.common.util.Utility;
 import com.krishagni.catissueplus.core.de.events.ExtensionDetail;
@@ -33,6 +43,7 @@ import com.krishagni.catissueplus.core.de.repository.DaoFactory;
 
 import edu.common.dynamicextensions.domain.nui.CheckBox;
 import edu.common.dynamicextensions.domain.nui.Container;
+import edu.common.dynamicextensions.domain.nui.Control;
 import edu.common.dynamicextensions.domain.nui.DatePicker;
 import edu.common.dynamicextensions.domain.nui.SubFormControl;
 import edu.common.dynamicextensions.domain.nui.UserContext;
@@ -45,7 +56,10 @@ import krishagni.catissueplus.beans.FormRecordEntryBean.Status;
 
 @Configurable
 public abstract class DeObject {
-	private static FormInfoCache formInfoCache = new FormInfoCache();
+	private static final LogUtil logger = LogUtil.getLogger(DeObject.class);
+
+	@Autowired
+	private FormInfoCache formInfoCache;
 
 	@Autowired
 	private FormDataManager formDataMgr;
@@ -110,6 +124,10 @@ public abstract class DeObject {
 		return form != null ? form.getCaption() : null;
 	}
 
+	public Long getFormContextId() {
+		return getFormContext();
+	}
+
 	public boolean saveOrUpdate() {
 		try {
 			Container form = getForm();
@@ -119,12 +137,10 @@ public abstract class DeObject {
 			int revision = formData.getRevision();
 			boolean isInsert = (this.id == null);
 			this.id = formDataMgr.saveOrUpdateFormData(userCtx, formData);
-			if (isInsert && this.id != null) {
-				saveRecordEntry();			
-			}
-
+			saveOrUpdateRecordEntry(isInsert);
 			attrs.clear();
 			attrs.addAll(getAttrs(formData));
+			this.recordLoaded = true;
 			return revision != formData.getRevision();
 		} catch(IllegalArgumentException ex) {
 			throw OpenSpecimenException.userError(FormErrorCode.INVALID_DATA, ex.getMessage());
@@ -139,7 +155,23 @@ public abstract class DeObject {
 		FormRecordEntryBean re = prepareRecordEntry(getUserCtx(), getFormContext(), getId());
 		daoFactory.getFormDao().saveOrUpdateRecordEntry(re);
 	}
-	
+
+	public void saveOrUpdateRecordEntry(boolean insert) {
+		if (this.id == null) {
+			return;
+		}
+
+		Long fcId = getFormContext();
+		FormRecordEntryBean re = null;
+		if (insert) {
+			saveRecordEntry();
+		} else {
+			re = daoFactory.getFormDao().getRecordEntry(fcId, getObjectId(), getId());
+			if (re != null) {
+				re.setFormStatus(getDataEntryStatus());
+			}
+		}
+	}
 	public void delete() {
 		if (getId() == null) {
 			return;
@@ -150,24 +182,17 @@ public abstract class DeObject {
 			return;
 		}
 
-		re.setActivityStatus(Status.CLOSED);
+		re.delete();
 		daoFactory.getFormDao().saveOrUpdateRecordEntry(re);
+	}
+
+	public Map<Long, List<Long>> getRecordIds(Collection<Long> objectIds, Long formId, Long formCtxtId) {
+		return daoFactory.getFormDao().getRecordIds(formCtxtId, objectIds);
 	}
 	
 	/** Hackish method */
 	public List<Long> getRecordIds() {
-		Long formCtx = getFormContext();
-		if (formCtx == null) {
-			return null;
-		}
-		
-		List<FormRecordSummary> records = daoFactory.getFormDao().getFormRecords(formCtx, getObjectId());
-		List<Long> recIds = new ArrayList<Long>();
-		for (FormRecordSummary rec : records) {
-			recIds.add(rec.getRecordId());
-		}
-		
-		return recIds;
+		return getRecordIds(getFormContext());
 	}
 	
 	public boolean hasPhiFields() {
@@ -193,14 +218,28 @@ public abstract class DeObject {
 		}
 	}
 
-	protected void loadRecordIfNotLoaded() {
-		Long recordId = getId();
-		if (recordLoaded || recordId == null) {
-			return;
+	protected List<Long> getRecordIds(Long formCtxtId) {
+		if (formCtxtId == null) {
+			return null;
 		}
 
-		FormData formData = formDataMgr.getFormData(getForm(), recordId);
-		loadRecord(formData);
+		List<FormRecordSummary> records = daoFactory.getFormDao().getFormRecords(formCtxtId, getObjectId());
+		return records.stream().map(FormRecordSummary::getRecordId).collect(Collectors.toList());
+	}
+
+	protected void loadRecordIfNotLoaded() {
+		try {
+			Long recordId = getId();
+			if (recordLoaded || recordId == null) {
+				return;
+			}
+
+			FormData formData = formDataMgr.getFormData(getForm(), recordId);
+			loadRecord(formData);
+		} catch (Exception e) {
+			logger.error("Error loading the form fields", e);
+			throw e;
+		}
 	}
 
 	protected void loadRecord(FormData formData) {
@@ -249,20 +288,151 @@ public abstract class DeObject {
 
 	public abstract void setAttrValues(Map<String, Object> attrValues);
 
+	public BaseEntity.DataEntryStatus getDataEntryStatus() {
+		return BaseEntity.DataEntryStatus.COMPLETE;
+	}
+
 	public Map<String, Object> getAttrValues() {
 		loadRecordIfNotLoaded();
-		return getAttrValues(attrs);
+		return getAttrValues(attrs, isUseUdn());
+	}
+
+	public Object getAttrValue(Attr attr, boolean useUdn) {
+		Object value = null;
+		if (attr.isSubForm()) {
+			if (attr.isOneToOne()) {
+				value = getAttrValues((List<Attr>)attr.getValue(), useUdn);
+			} else {
+				if (attr.getValue() == null) {
+					value = new ArrayList<>();
+				} else {
+					value = ((List<List<Attr>>)attr.getValue()).stream()
+						.map(sfAttrs -> getAttrValues(sfAttrs, useUdn))
+						.collect(Collectors.toList());
+				}
+			}
+		} else {
+			value = attr.getValue();
+		}
+
+		return value;
+	}
+
+	public Object getAttrValue(String udn) {
+		Attr reqAttr = getAttrs().stream().filter(attr -> attr.getUdn().equals(udn)).findFirst().orElse(null);
+		return reqAttr != null ? getAttrValue(reqAttr, true) : null;
+	}
+
+	public String getAttrDisplayValue(String udn) {
+		Attr reqAttr = getAttrs().stream().filter(attr -> attr.getUdn().equals(udn)).findFirst().orElse(null);
+		return reqAttr != null ? reqAttr.getDisplayValue() : null;
 	}
 
 	public Map<String, String> getLabelValueMap() {
 		String notSpecified = MessageUtil.getInstance().getMessage("common_not_specified");
-		return getAttrs().stream().collect(
-			Collectors.toMap(
-				attr -> attr.getCaption(),
-				attr -> attr.getDisplayValue(notSpecified),
-				(v1, v2) -> {throw new IllegalStateException("Duplicate key");},
-				LinkedHashMap::new)
-		);
+		return getAttrs().stream()
+			.filter(attr -> !attr.getType().equals("subForm"))
+			.collect(
+				Collectors.toMap(
+					Attr::getCaption,
+					attr -> attr.getDisplayValue(notSpecified),
+					(v1, v2) -> {throw new IllegalStateException("Duplicate key");},
+					LinkedHashMap::new)
+			);
+	}
+
+	public void writeSubForms(OutputStream out) {
+		List<DeObject.Attr> subForms = getAttrs().stream()
+			.filter(attr -> attr.getType().equals("subForm"))
+			.collect(Collectors.toList());
+
+		StringWriter stringWriter = new StringWriter();
+		CsvWriter csvWriter = null;
+		try {
+			csvWriter = CsvFileWriter.createCsvFileWriter(stringWriter);
+			for (DeObject.Attr subForm : subForms) {
+				List<String> headers = new ArrayList<>();
+				List<List<DeObject.Attr>> sfRows = (List<List<DeObject.Attr>>) subForm.getValue();
+				if (CollectionUtils.isNotEmpty(sfRows)) {
+					List<DeObject.Attr> sfRow = sfRows.iterator().next();
+					for (DeObject.Attr sfAttr : sfRow) {
+						headers.add(sfAttr.getCaption());
+					}
+				}
+
+				if (headers.isEmpty()) {
+					continue;
+				}
+
+				csvWriter.writeNext(new String[] { subForm.getCaption() });
+				csvWriter.writeNext(headers.toArray(new String[0]));
+				for (List<DeObject.Attr> sfRow : sfRows) {
+					List<String> values = new ArrayList<>();
+					for (DeObject.Attr sfAttr : sfRow) {
+						values.add(sfAttr.getDisplayValue());
+					}
+
+					csvWriter.writeNext(values.toArray(new String[0]));
+				}
+
+				csvWriter.writeNext(new String[] {" "});
+				csvWriter.flush();
+			}
+
+			out.write(stringWriter.toString().getBytes());
+		} catch (Exception e) {
+			throw new RuntimeException("Error generating the sub forms CSV", e);
+		} finally {
+			IOUtils.closeQuietly(csvWriter);
+			IOUtils.closeQuietly(stringWriter);
+		}
+	}
+
+	public static DeObject fromValueMap(Long cpId, String entityType, Map<String, Object> valueMap) {
+		DeObject extnObj = new DeObject() {
+			@Override
+			public Long getObjectId() {
+				return null;
+			}
+
+			@Override
+			public String getEntityType() {
+				return entityType;
+			}
+
+			@Override
+			public String getFormName() {
+				return getFormNameByEntityType();
+			}
+
+			@Override
+			public Long getCpId() {
+				return cpId;
+			}
+
+			@Override
+			public boolean isCpBased() {
+				return true;
+			}
+
+			@Override
+			public Long getEntityId() {
+				return null;
+			}
+
+			@Override
+			public void setAttrValues(Map<String, Object> attrValues) {
+
+			}
+		};
+
+		Container form = extnObj.getForm();
+		if (form == null) {
+			return null;
+		}
+
+		extnObj.loadRecord(FormData.getFormData(form, valueMap));
+		return extnObj;
 	}
 
 	//
@@ -343,12 +513,38 @@ public abstract class DeObject {
 			valueMap.put(attrDetail.getName(), attrDetail.getValue());
 		}
 
-		FormData formData = FormData.getFormData(extension.getForm(), valueMap);
+		FormData formData = FormData.getFormData(extension.getForm(), valueMap, detail.isUseUdn(), null);
 		List<Attr> attrs = extension.getAttrs(formData);
 		for (Attr attr : attrs) {
 			existingAttrs.remove(attr.getName());
 		}
 		
+		attrs.addAll(existingAttrs.values());
+		extension.setAttrs(attrs);
+		return extension;
+	}
+
+	public static DeObject createExtension(Map<String, Object> valueMap, BaseExtensionEntity entity) {
+		if (MapUtils.isEmpty(valueMap)) {
+			return null;
+		}
+
+		DeObject extension = entity.createExtension();
+		if (extension == null) {
+			return null;
+		}
+
+		Map<String, Attr> existingAttrs = new HashMap<>();
+		for (Attr attr : extension.getAttrs()) {
+			existingAttrs.put(attr.getName(), attr);
+		}
+
+		FormData formData = FormData.getFormData(extension.getForm(), valueMap, true, null);
+		List<Attr> attrs = extension.getAttrs(formData);
+		for (Attr attr : attrs) {
+			existingAttrs.remove(attr.getName());
+		}
+
 		attrs.addAll(existingAttrs.values());
 		extension.setAttrs(attrs);
 		return extension;
@@ -364,21 +560,22 @@ public abstract class DeObject {
 
 		List<DeObject> result = new ArrayList<>();
 		String formName = null;
+		Container form = null;
 
 		Map<String, Object> formInfo = DeObject.getFormInfo(cpBased, entityType, entityId);
 		if (formInfo != null) {
 			Long formCtxtId = (Long) formInfo.get("formCtxtId");
 			formName = (String) formInfo.get("formName");
+			form = getForm(formName);
 
-			Map<Long, List<Long>> objRecordIds = fakeDeObj.daoFactory.getFormDao().getRecordIds(formCtxtId, objectsMap.keySet());
-			Map<Long, Long> recObjIdMap = objRecordIds.entrySet().stream()
-				.collect(Collectors.toMap(re -> re.getValue().get(0), Map.Entry::getKey));
+			Map<Long, Long> objRecordIds = objects.iterator().next().getRecordIds(objectsMap.keySet(), form.getId(), formCtxtId);
+			Map<Long, Long> recObjIdMap = objRecordIds.entrySet().stream().collect(Collectors.toMap(Map.Entry::getValue, Map.Entry::getKey));
 
 			List<FormData> formDataList = null;
 			if (recObjIdMap.isEmpty()) {
 				formDataList = Collections.emptyList();
 			} else {
-				formDataList = fakeDeObj.formDataMgr.getFormData(getForm(formName), new ArrayList<>(recObjIdMap.keySet()));
+				formDataList = fakeDeObj.formDataMgr.getFormData(form, new ArrayList<>(recObjIdMap.keySet()));
 			}
 
 			for (FormData formData : formDataList) {
@@ -409,11 +606,13 @@ public abstract class DeObject {
 	}
 
 	public static Map<String, Object> getFormInfo(boolean cpBased, String entity, Long entityId) {
-		return formInfoCache.getFormInfo(cpBased, entity, entityId);
+		FormInfoCache cache = OpenSpecimenAppCtxProvider.getBean("formInfoCache");
+		return cache.getFormInfo(cpBased, entity, entityId);
 	}
 
 	public static Container getForm(String formName) {
-		return formInfoCache.getForm(formName);
+		FormInfoCache cache = OpenSpecimenAppCtxProvider.getBean("formInfoCache");
+		return cache.getForm(formName);
 	}
 
 	public static Long getFormContextId(boolean cpBased, String entity, Long entityId, String formName) {
@@ -428,6 +627,7 @@ public abstract class DeObject {
 		re.setUpdatedBy(AuthUtil.getCurrentUser().getId());
 		re.setUpdatedTime(Calendar.getInstance().getTime());
 		re.setActivityStatus(Status.ACTIVE);
+		re.setFormStatus(BaseEntity.DataEntryStatus.COMPLETE);
 		DeObject.fakeObject().daoFactory.getFormDao().saveOrUpdateRecordEntry(re);
 		return re.getIdentifier();
 	}
@@ -489,7 +689,7 @@ public abstract class DeObject {
 			
 			@Override
 			public String getIpAddress() {
-				return null;
+				return AuthUtil.getRemoteAddr();
 			}
 		};
 	}
@@ -498,11 +698,27 @@ public abstract class DeObject {
 		FormData formData = FormData.getFormData(container, getAttrValues(), useUdn, null);
 		formData.setRecordId(this.id);
 
-		formData.validate();
-		return formData;		
+		Map<String, Object> appData = formData.getAppData();
+		if (appData == null) {
+			appData = new HashMap<>();
+			formData.setAppData(appData);
+		}
+
+		BaseEntity.DataEntryStatus formStatus = getDataEntryStatus();
+		if (formStatus == null) {
+			formStatus = BaseEntity.DataEntryStatus.COMPLETE;
+		}
+
+		appData.put("formStatus", formStatus.name());
+		if (formStatus == BaseEntity.DataEntryStatus.COMPLETE) {
+			formData.validate();
+		}
+
+		appData.put("objectType", getEntityType());
+		appData.put("objectId", getObjectId());
+		return formData;
 	}
-	
-	
+
 	private FormRecordEntryBean prepareRecordEntry(UserContext userCtx, Long formCtxId, Long recordId) {
 		FormRecordEntryBean re = new FormRecordEntryBean();
 		re.setFormCtxtId(formCtxId);
@@ -511,8 +727,9 @@ public abstract class DeObject {
 		re.setUpdatedBy(userCtx.getUserId());
 		re.setUpdatedTime(Calendar.getInstance().getTime());
 		re.setActivityStatus(Status.ACTIVE);
+		re.setFormStatus(getDataEntryStatus());
 		return re;
-	}	
+	}
 		
 	private Container getForm() {
 		return formInfoCache.getForm(getFormName());
@@ -537,14 +754,18 @@ public abstract class DeObject {
 		return formCtxt;
 	}
 
+	//
+	// get list of all attributes that have some value
+	//
 	private List<Attr> getAttrs(FormData formData) {
 		List<Attr> attrs = new ArrayList<>();
-		for (ControlValue cv : formData.getOrderedFieldValues()) {
+		for (Control ctrl : formData.getContainer().getOrderedControlList()) {
+			ControlValue cv = formData.getFieldValue(ctrl.getName());
 			if (cv == null) {
 				continue;
 			}
-                
-			if (cv.getControl() instanceof SubFormControl) {
+
+			if (cv.getControl() instanceof SubFormControl && cv.getValue() != null) {
 				SubFormControl sfCtrl = (SubFormControl)cv.getControl();
 				if (sfCtrl.isOneToOne()) {
 					cv.setValue(getAttrs((FormData)cv.getValue()));
@@ -556,30 +777,17 @@ public abstract class DeObject {
 					cv.setValue(values);
 				}
 			}
+
 			attrs.add(Attr.from(cv));
 		}
 
 		return attrs;
 	}
 
-	private Map<String, Object> getAttrValues(List<Attr> attrs) {
+	private Map<String, Object> getAttrValues(List<Attr> attrs, boolean useUdn) {
 		Map<String, Object> result = new LinkedHashMap<>();
-
-		Object value = null;
 		for (Attr attr : attrs) {
-			if (attr.isSubForm()) {
-				if (attr.isOneToOne()) {
-					value = getAttrValues((List<Attr>)attr.getValue());
-				} else {
-					value = ((List<List<Attr>>)attr.getValue()).stream()
-						.map(sfAttrs -> getAttrValues(sfAttrs))
-						.collect(Collectors.toList());
-				}
-			} else {
-				value = attr.getValue();
-			}
-
-			result.put(isUseUdn() ? attr.getUdn() : attr.getName(), value);
+			result.put(useUdn ? attr.getUdn() : attr.getName(), getAttrValue(attr, useUdn));
 		}
 
 		return result;
@@ -597,6 +805,8 @@ public abstract class DeObject {
 		private Object value;
 
 		private String type;
+
+		private String codedValue;
 
 		public ControlValue getCtrlValue() {
 			return ctrlValue;
@@ -646,6 +856,14 @@ public abstract class DeObject {
 			this.type = type;
 		}
 
+		public String getCodedValue() {
+			return codedValue;
+		}
+
+		public void setCodedValue(String codedValue) {
+			this.codedValue = codedValue;
+		}
+
 		public String getDisplayValue() {
 			String displayValue = ctrlValue.getControl().toDisplayValue(ctrlValue.getValue());
 
@@ -655,8 +873,12 @@ public abstract class DeObject {
 			//
 			if (StringUtils.isNotBlank(displayValue) && ctrlValue.getControl() instanceof DatePicker) {
 				DatePicker dateCtrl = (DatePicker)ctrlValue.getControl();
-				Date date = dateCtrl.fromString(displayValue);
-				displayValue = dateCtrl.isDateTimeFmt() ? Utility.getDateTimeString(date) : Utility.getDateString(date);
+				Object date = dateCtrl.fromString(displayValue);
+				if (date instanceof Date dt) {
+					displayValue = dateCtrl.isDateTimeFmt() ? Utility.getDateTimeString(dt) : Utility.getDateString(dt);
+				} else if (date instanceof LocalDate ldt) {
+					displayValue = Utility.getDateString(ldt);
+				}
 			} else if (ctrlValue.getControl() instanceof CheckBox) {
 				Boolean truth = StringUtils.equals(displayValue, "1") || StringUtils.equalsIgnoreCase(displayValue, "true");
 				displayValue = StringUtils.capitalize(MessageUtil.getInstance().getBooleanMsg(truth));
@@ -712,6 +934,7 @@ public abstract class DeObject {
 			}
 
 			attr.setValue(value);
+			attr.setCodedValue(cv.getCodedValue());
 			return attr;
 		}
 	}

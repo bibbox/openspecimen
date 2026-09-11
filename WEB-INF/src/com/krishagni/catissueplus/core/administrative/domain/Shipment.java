@@ -1,5 +1,6 @@
 package com.krishagni.catissueplus.core.administrative.domain;
 
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
@@ -8,15 +9,22 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.hibernate.envers.Audited;
+import org.hibernate.envers.NotAudited;
 
 import com.krishagni.catissueplus.core.administrative.domain.factory.ShipmentErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.domain.BaseEntity;
 import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
+import com.krishagni.catissueplus.core.biospecimen.domain.SpecimenList;
+import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
 import com.krishagni.catissueplus.core.common.CollectionUpdater;
+import com.krishagni.catissueplus.core.common.OpenSpecimenAppCtxProvider;
+import com.krishagni.catissueplus.core.common.domain.PrintItem;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
+import com.krishagni.catissueplus.core.common.util.AuthUtil;
+import com.krishagni.catissueplus.core.common.util.Utility;
 
 @Audited
 public class Shipment extends BaseEntity {
@@ -24,6 +32,8 @@ public class Shipment extends BaseEntity {
 
 	public enum Status {
 		PENDING("Pending"),
+
+		REQUESTED("Requested"),
 
 		SHIPPED("Shipped"),
 
@@ -60,6 +70,14 @@ public class Shipment extends BaseEntity {
 		SPECIMEN, CONTAINER
 	}
 
+	private boolean request;
+
+	private User requester;
+
+	private Date requestDate;
+
+	private String requesterComments;
+
 	private String name;
 
 	private Type type;
@@ -87,6 +105,8 @@ public class Shipment extends BaseEntity {
 	private String receiverComments;
 	
 	private Status status;
+
+	private PermissibleValue requestStatus;
 	
 	private String activityStatus;
 	
@@ -96,10 +116,44 @@ public class Shipment extends BaseEntity {
 
 	private Set<User> notifyUsers = new HashSet<>();
 
+	private SpecimenList cart;
+
 	public static String getEntityName() {
 		return ENTITY_NAME;
 	}
-	
+
+	public boolean isRequest() {
+		return request;
+	}
+
+	public void setRequest(boolean request) {
+		this.request = request;
+	}
+
+	public User getRequester() {
+		return requester;
+	}
+
+	public void setRequester(User requester) {
+		this.requester = requester;
+	}
+
+	public Date getRequestDate() {
+		return requestDate;
+	}
+
+	public void setRequestDate(Date requestDate) {
+		this.requestDate = requestDate;
+	}
+
+	public String getRequesterComments() {
+		return requesterComments;
+	}
+
+	public void setRequesterComments(String requesterComments) {
+		this.requesterComments = requesterComments;
+	}
+
 	public String getName() {
 		return name;
 	}
@@ -212,6 +266,14 @@ public class Shipment extends BaseEntity {
 		this.status = status;
 	}
 
+	public PermissibleValue getRequestStatus() {
+		return requestStatus;
+	}
+
+	public void setRequestStatus(PermissibleValue requestStatus) {
+		this.requestStatus = requestStatus;
+	}
+
 	public String getActivityStatus() {
 		return activityStatus;
 	}
@@ -244,6 +306,15 @@ public class Shipment extends BaseEntity {
 		this.notifyUsers = notifyUsers;
 	}
 
+	@NotAudited
+	public SpecimenList getCart() {
+		return cart;
+	}
+
+	public void setCart(SpecimenList cart) {
+		this.cart = cart;
+	}
+
 	public boolean isSpecimenShipment() {
 		return getType() == Type.SPECIMEN;
 	}
@@ -253,12 +324,24 @@ public class Shipment extends BaseEntity {
 	}
 
 	public void update(Shipment other) {
+		if (isRequest() != other.isRequest()) {
+			throw OpenSpecimenException.userError(ShipmentErrorCode.REQ_CHG_NA);
+		}
+
+		if (isRequest()) {
+			setRequester(other.getRequester());
+			setRequestDate(other.getRequestDate());
+			setRequesterComments(other.getRequesterComments());
+		} else {
+			setRequester(null);
+			setRequestDate(null);
+			setRequesterComments(null);
+		}
+
 		setName(other.getName());
 		setCourierName(other.getCourierName());
 		setTrackingNumber(other.getTrackingNumber());
 		setTrackingUrl(other.getTrackingUrl());
-		setSendingSite(other.getSendingSite());
-		setReceivingSite(other.getReceivingSite());
 		setShippedDate(other.getShippedDate());
 		setSender(other.getSender());
 		setSenderComments(other.getSenderComments());
@@ -266,16 +349,52 @@ public class Shipment extends BaseEntity {
 		setReceiver(other.getReceiver());
 		setReceiverComments(other.getReceiverComments());
 		setActivityStatus(other.getActivityStatus());
+		if (isPending() || isRequested()) {
+			setSendingSite(other.getSendingSite());
+			setReceivingSite(other.getReceivingSite());
+		}
 
 		updateShipmentSpecimens(other);
 		updateShipmentContainers(other);
 		updateNotifyUsers(other);
 		updateStatus(other);
+		if (isRequested()) {
+			setRequestStatus(other.getRequestStatus());
+		}
+	}
+
+	public void delete() {
+		if (isShipped()) {
+			moveItemsToSendingSite();
+		}
+
+		DaoFactory daoFactory = OpenSpecimenAppCtxProvider.getBean("biospecimenDaoFactory");
+		setName(Utility.getDisabledValue(getName(), 255));
+		setActivityStatus(com.krishagni.catissueplus.core.common.util.Status.ACTIVITY_STATUS_DISABLED.getStatus());
+		daoFactory.getShipmentDao().deleteSpecimenShipmentEvents(getId());
 	}
 
 	public void ship() {
 		if (isShipped()) {
-			throw OpenSpecimenException.userError(ShipmentErrorCode.ALREADY_SHIPPED);
+			//
+			// the shipment is already in 'Shipped' state.
+			// no need to do any extra work
+			//
+			return;
+		}
+
+		if ((isRequest() && !isRequested()) || (!isRequest() && !isPending())) {
+			// A request has to be in requested state to be shipped.
+			// Others need to be in pending state to be shipped.
+			throw OpenSpecimenException.userError(ShipmentErrorCode.CANNOT_SHIP, getStatus().getName());
+		}
+
+		//
+		// if we are here - it means the shipment is in pending state
+		//
+		if (getSender() == null) {
+			// OPSMN-6460 default the sender to the current user
+			setSender(AuthUtil.getCurrentUser());
 		}
 
 		if (isSpecimenShipment()) {
@@ -296,8 +415,8 @@ public class Shipment extends BaseEntity {
 	}
 	
 	public void receive(Shipment other) {
-		if (isReceived()) {
-			throw OpenSpecimenException.userError(ShipmentErrorCode.ALREADY_RECEIVED);
+		if (!isShipped() && !isReceived()) {
+			throw OpenSpecimenException.userError(ShipmentErrorCode.CANNOT_RECEIVE, getStatus().getName());
 		}
 
 		if (isSpecimenShipment()) {
@@ -318,13 +437,25 @@ public class Shipment extends BaseEntity {
 	public boolean isPending() {
 		return Status.PENDING == getStatus();
 	}
-	
+
+	public boolean isRequested() {
+		return Status.REQUESTED == getStatus();
+	}
+
 	public boolean isShipped() {
 		return Status.SHIPPED == getStatus();
 	}
 	
 	public boolean isReceived() {
 		return Status.RECEIVED == getStatus();
+	}
+
+	public boolean isActive() {
+		return com.krishagni.catissueplus.core.common.util.Status.isActiveStatus(getActivityStatus());
+	}
+
+	public boolean isDeleted() {
+		return com.krishagni.catissueplus.core.common.util.Status.isDisabledStatus(getActivityStatus());
 	}
 
 	private Map<Specimen, ShipmentSpecimen> getShipmentSpecimensMap() {
@@ -338,7 +469,7 @@ public class Shipment extends BaseEntity {
 	}
 
 	private void updateShipmentSpecimens(Shipment other) {
-		if (!isSpecimenShipment() || getStatus() != Status.PENDING) {
+		if (!isSpecimenShipment() || !(isPending() || isRequested())) {
 			return;
 		}
 
@@ -355,12 +486,22 @@ public class Shipment extends BaseEntity {
 	}
 
 	private void receiveSpecimens(Shipment other) {
-		ensureShippedSpecimens(other);
+		if (!isReceived()) {
+			ensureShippedSpecimens(other);
+		}
 
 		Map<Specimen, ShipmentSpecimen> existingItems = getShipmentSpecimensMap();
+		List<PrintItem<Specimen>> printItems = new ArrayList<>();
 		for (ShipmentSpecimen newItem : other.getShipmentSpecimens()) {
 			ShipmentSpecimen oldItem = existingItems.remove(newItem.getSpecimen());
 			oldItem.receive(newItem);
+			if (oldItem.getSpecimen().isPrintLabel()) {
+				printItems.add(PrintItem.make(oldItem.getSpecimen(), oldItem.getSpecimen().getCopiesToPrint()));
+			}
+		}
+
+		if (!printItems.isEmpty()) {
+			Specimen.getLabelPrinter().print(printItems);
 		}
 	}
 
@@ -375,7 +516,7 @@ public class Shipment extends BaseEntity {
 	}
 
 	private void updateShipmentContainers(Shipment other) {
-		if (!isContainerShipment() || getStatus() != Status.PENDING) {
+		if (!isContainerShipment() || !(isPending() || isRequested())) {
 			return;
 		}
 
@@ -392,7 +533,9 @@ public class Shipment extends BaseEntity {
 	}
 
 	private void receiveContainers(Shipment other) {
-		ensureShippedContainers(other);
+		if (!isReceived()) {
+			ensureShippedContainers(other);
+		}
 
 		Map<StorageContainer, ShipmentContainer> existingItems = getShipmentContainersMap();
 		for (ShipmentContainer newItem : other.getShipmentContainers()) {
@@ -412,7 +555,7 @@ public class Shipment extends BaseEntity {
 	}
 
 	private void updateNotifyUsers(Shipment other) {
-		if (getStatus() != Status.PENDING) {
+		if (!(isPending() || isRequested())) {
 			return;
 		}
 
@@ -420,16 +563,30 @@ public class Shipment extends BaseEntity {
 	}
 
 	private void updateStatus(Shipment other) {
-		if (getStatus() == other.getStatus()) {
-			return;
-		}
-		
-		if (getStatus() == Status.PENDING && other.isShipped()) {
+		if (isRequest() && (isPending() || isRequested()) && other.isRequested()) {
+			//
+			// to move to requested state, the shipment should be a request and
+			// should be either in pending or requested state
+			//
+			setStatus(Status.REQUESTED);
+		} else if (((!isRequest() && isPending()) || isRequested() || isShipped()) && other.isShipped()) {
+			//
+			// to move to shipped state, the shipment should be in either pending (for non-requests),
+			// requested or shipped state
+			//
 			ship();
-		} else if (isShipped() && other.isReceived()) {
+		} else if ((isShipped() || isReceived()) && other.isReceived()) {
 			receive(other);
+		} else if (getStatus() != other.getStatus()) {
+			throw OpenSpecimenException.userError(ShipmentErrorCode.STATUS_CHANGE_NOT_ALLOWED, getStatus().getName(), other.getStatus().getName());
+		}
+	}
+
+	private void moveItemsToSendingSite() {
+		if (isSpecimenShipment()) {
+			getShipmentSpecimens().forEach(ShipmentSpecimen::unship);
 		} else {
-			throw OpenSpecimenException.userError(ShipmentErrorCode.STATUS_CHANGE_NOT_ALLOWED);
+			getShipmentContainers().forEach(ShipmentContainer::unship);
 		}
 	}
 }

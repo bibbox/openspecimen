@@ -4,13 +4,16 @@ package com.krishagni.catissueplus.core.biospecimen.repository.impl;
 import org.hibernate.SessionFactory;
 
 import com.krishagni.catissueplus.core.administrative.repository.AutoFreezerProviderDao;
+import com.krishagni.catissueplus.core.administrative.repository.ContainerActivityLogDao;
 import com.krishagni.catissueplus.core.administrative.repository.ContainerStoreListDao;
+import com.krishagni.catissueplus.core.administrative.repository.ContainerTaskDao;
 import com.krishagni.catissueplus.core.administrative.repository.ContainerTypeDao;
 import com.krishagni.catissueplus.core.administrative.repository.DistributionOrderDao;
 import com.krishagni.catissueplus.core.administrative.repository.DistributionProtocolDao;
 import com.krishagni.catissueplus.core.administrative.repository.DpRequirementDao;
 import com.krishagni.catissueplus.core.administrative.repository.InstituteDao;
 import com.krishagni.catissueplus.core.administrative.repository.PermissibleValueDao;
+import com.krishagni.catissueplus.core.administrative.repository.ScheduledContainerActivityDao;
 import com.krishagni.catissueplus.core.administrative.repository.ScheduledJobDao;
 import com.krishagni.catissueplus.core.administrative.repository.ShipmentDao;
 import com.krishagni.catissueplus.core.administrative.repository.SiteDao;
@@ -18,14 +21,18 @@ import com.krishagni.catissueplus.core.administrative.repository.SpecimenRequest
 import com.krishagni.catissueplus.core.administrative.repository.StorageContainerDao;
 import com.krishagni.catissueplus.core.administrative.repository.StorageContainerPositionDao;
 import com.krishagni.catissueplus.core.administrative.repository.UserDao;
+import com.krishagni.catissueplus.core.administrative.repository.UserGroupDao;
 import com.krishagni.catissueplus.core.administrative.repository.impl.AutoFreezerProviderDaoImpl;
+import com.krishagni.catissueplus.core.administrative.repository.impl.ContainerActivityLogDaoImpl;
 import com.krishagni.catissueplus.core.administrative.repository.impl.ContainerStoreListDaoImpl;
+import com.krishagni.catissueplus.core.administrative.repository.impl.ContainerTaskDaoImpl;
 import com.krishagni.catissueplus.core.administrative.repository.impl.ContainerTypeDaoImpl;
 import com.krishagni.catissueplus.core.administrative.repository.impl.DistributionOrderDaoImpl;
 import com.krishagni.catissueplus.core.administrative.repository.impl.DistributionProtocolDaoImpl;
 import com.krishagni.catissueplus.core.administrative.repository.impl.DpRequirementDaoImpl;
 import com.krishagni.catissueplus.core.administrative.repository.impl.InstituteDaoImpl;
 import com.krishagni.catissueplus.core.administrative.repository.impl.PermissibleValueDaoImpl;
+import com.krishagni.catissueplus.core.administrative.repository.impl.ScheduledContainerActivityDaoImpl;
 import com.krishagni.catissueplus.core.administrative.repository.impl.ScheduledJobDaoImpl;
 import com.krishagni.catissueplus.core.administrative.repository.impl.ShipmentDaoImpl;
 import com.krishagni.catissueplus.core.administrative.repository.impl.SiteDaoImpl;
@@ -33,43 +40,61 @@ import com.krishagni.catissueplus.core.administrative.repository.impl.SpecimenRe
 import com.krishagni.catissueplus.core.administrative.repository.impl.StorageContainerDaoImpl;
 import com.krishagni.catissueplus.core.administrative.repository.impl.StorageContainerPositionDaoImpl;
 import com.krishagni.catissueplus.core.administrative.repository.impl.UserDaoImpl;
+import com.krishagni.catissueplus.core.administrative.repository.impl.UserGroupDaoImpl;
 import com.krishagni.catissueplus.core.audit.repository.AuditDao;
 import com.krishagni.catissueplus.core.audit.repository.impl.AuditDaoImpl;
 import com.krishagni.catissueplus.core.auth.repository.AuthDao;
+import com.krishagni.catissueplus.core.auth.repository.OAuthStateDao;
 import com.krishagni.catissueplus.core.auth.repository.impl.AuthDaoImpl;
+import com.krishagni.catissueplus.core.auth.repository.impl.OAuthStateDaoImpl;
 import com.krishagni.catissueplus.core.biospecimen.repository.AnonymizeEventDao;
 import com.krishagni.catissueplus.core.biospecimen.repository.CollectionProtocolDao;
+import com.krishagni.catissueplus.core.biospecimen.repository.CollectionProtocolGroupDao;
+import com.krishagni.catissueplus.core.biospecimen.repository.CollectionProtocolPublishEventDao;
 import com.krishagni.catissueplus.core.biospecimen.repository.CollectionProtocolRegistrationDao;
 import com.krishagni.catissueplus.core.biospecimen.repository.ConsentStatementDao;
 import com.krishagni.catissueplus.core.biospecimen.repository.CpReportSettingsDao;
 import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
+import com.krishagni.catissueplus.core.biospecimen.repository.LabServiceDao;
+import com.krishagni.catissueplus.core.biospecimen.repository.LabServicesRateListDao;
 import com.krishagni.catissueplus.core.biospecimen.repository.LabelPrintJobDao;
 import com.krishagni.catissueplus.core.biospecimen.repository.ParticipantDao;
+import com.krishagni.catissueplus.core.biospecimen.repository.RequestManagerGroupDao;
 import com.krishagni.catissueplus.core.biospecimen.repository.SpecimenDao;
 import com.krishagni.catissueplus.core.biospecimen.repository.SpecimenKitDao;
 import com.krishagni.catissueplus.core.biospecimen.repository.SpecimenListDao;
+import com.krishagni.catissueplus.core.biospecimen.repository.SpecimenListsFolderDao;
 import com.krishagni.catissueplus.core.biospecimen.repository.SpecimenRequirementDao;
+import com.krishagni.catissueplus.core.biospecimen.repository.SpecimenTypeUnitDao;
 import com.krishagni.catissueplus.core.biospecimen.repository.StagedParticipantDao;
 import com.krishagni.catissueplus.core.biospecimen.repository.StagedVisitDao;
 import com.krishagni.catissueplus.core.biospecimen.repository.VisitsDao;
 import com.krishagni.catissueplus.core.common.repository.AbstractDao;
 import com.krishagni.catissueplus.core.common.repository.ConfigSettingDao;
 import com.krishagni.catissueplus.core.common.repository.ExternalAppIdDao;
+import com.krishagni.catissueplus.core.common.repository.LockDao;
 import com.krishagni.catissueplus.core.common.repository.MessageLogDao;
+import com.krishagni.catissueplus.core.common.repository.PdeAuditLogDao;
 import com.krishagni.catissueplus.core.common.repository.PrintRuleConfigDao;
 import com.krishagni.catissueplus.core.common.repository.SearchEntityKeywordDao;
+import com.krishagni.catissueplus.core.common.repository.StarredItemDao;
 import com.krishagni.catissueplus.core.common.repository.UnhandledExceptionDao;
 import com.krishagni.catissueplus.core.common.repository.UniqueIdGenerator;
 import com.krishagni.catissueplus.core.common.repository.UpgradeLogDao;
+import com.krishagni.catissueplus.core.common.repository.UserFavoriteDao;
 import com.krishagni.catissueplus.core.common.repository.UserNotificationDao;
 import com.krishagni.catissueplus.core.common.repository.impl.ConfigSettingDaoImpl;
 import com.krishagni.catissueplus.core.common.repository.impl.ExternalAppIdDaoImpl;
+import com.krishagni.catissueplus.core.common.repository.impl.LockDaoImpl;
 import com.krishagni.catissueplus.core.common.repository.impl.MessageLogDaoImpl;
+import com.krishagni.catissueplus.core.common.repository.impl.PdeAuditLogDaoImpl;
 import com.krishagni.catissueplus.core.common.repository.impl.PrintRuleConfigDaoImpl;
 import com.krishagni.catissueplus.core.common.repository.impl.SearchEntityKeywordDaoImpl;
+import com.krishagni.catissueplus.core.common.repository.impl.StarredItemDaoImpl;
 import com.krishagni.catissueplus.core.common.repository.impl.UnhandledExceptionDaoImpl;
 import com.krishagni.catissueplus.core.common.repository.impl.UniqueIdGeneratorImpl;
 import com.krishagni.catissueplus.core.common.repository.impl.UpgradeLogDaoImpl;
+import com.krishagni.catissueplus.core.common.repository.impl.UserFavoriteDaoImpl;
 import com.krishagni.catissueplus.core.common.repository.impl.UserNotificationDaoImpl;
 
 public class DaoFactoryImpl implements DaoFactory {
@@ -129,6 +154,13 @@ public class DaoFactoryImpl implements DaoFactory {
 		setSessionFactory(dao);
 		return dao;
 	}
+
+	@Override
+	public SpecimenTypeUnitDao getSpecimenTypeUnitDao() {
+		SpecimenTypeUnitDaoImpl dao = new SpecimenTypeUnitDaoImpl();
+		setSessionFactory(dao);
+		return dao;
+	}
 	
 	@Override
 	public SpecimenRequirementDao getSpecimenRequirementDao() {
@@ -140,6 +172,13 @@ public class DaoFactoryImpl implements DaoFactory {
 	@Override
 	public CollectionProtocolDao getCollectionProtocolDao() {
 		CollectionProtocolDaoImpl dao = new CollectionProtocolDaoImpl();
+		setSessionFactory(dao);
+		return dao;
+	}
+
+	@Override
+	public CollectionProtocolPublishEventDao getCollectionProtocolPublishEventDao() {
+		CollectionProtocolPublishEventDaoImpl dao = new CollectionProtocolPublishEventDaoImpl();
 		setSessionFactory(dao);
 		return dao;
 	}
@@ -166,8 +205,22 @@ public class DaoFactoryImpl implements DaoFactory {
 	}
 
 	@Override
+	public UserGroupDao getUserGroupDao() {
+		UserGroupDaoImpl dao = new UserGroupDaoImpl();
+		setSessionFactory(dao);
+		return dao;
+	}
+
+	@Override
 	public AuthDao getAuthDao() {
 		AuthDaoImpl dao = new AuthDaoImpl();
+		setSessionFactory(dao);
+		return dao;
+	}
+
+	@Override
+	public OAuthStateDao getOAuthStateDao() {
+		OAuthStateDaoImpl dao = new OAuthStateDaoImpl();
 		setSessionFactory(dao);
 		return dao;
 	}
@@ -208,6 +261,27 @@ public class DaoFactoryImpl implements DaoFactory {
 	}
 
 	@Override
+	public ContainerTaskDao getContainerTaskDao() {
+		ContainerTaskDaoImpl dao = new ContainerTaskDaoImpl();
+		setSessionFactory(dao);
+		return dao;
+	}
+
+	@Override
+	public ScheduledContainerActivityDao getScheduledContainerActivityDao() {
+		ScheduledContainerActivityDaoImpl dao = new ScheduledContainerActivityDaoImpl();
+		setSessionFactory(dao);
+		return dao;
+	}
+
+	@Override
+	public ContainerActivityLogDao getContainerActivityLogDao() {
+		ContainerActivityLogDaoImpl dao = new ContainerActivityLogDaoImpl();
+		setSessionFactory(dao);
+		return dao;
+	}
+
+	@Override
 	public DistributionProtocolDao getDistributionProtocolDao() {
 		DistributionProtocolDaoImpl dao = new DistributionProtocolDaoImpl();
 		setSessionFactory(dao);
@@ -217,6 +291,13 @@ public class DaoFactoryImpl implements DaoFactory {
 	@Override
 	public SpecimenListDao getSpecimenListDao() {
 		SpecimenListDaoImpl dao = new SpecimenListDaoImpl();
+		setSessionFactory(dao);
+		return dao;
+	}
+
+	@Override
+	public SpecimenListsFolderDao getSpecimenListsFolderDao() {
+		SpecimenListsFolderDaoImpl dao = new SpecimenListsFolderDaoImpl();
 		setSessionFactory(dao);
 		return dao;
 	}
@@ -315,7 +396,7 @@ public class DaoFactoryImpl implements DaoFactory {
 	@Override
 	public ConsentStatementDao getConsentStatementDao() {
 		ConsentStatementDaoImpl dao = new ConsentStatementDaoImpl();
-		setSessionFactory(dao);;
+		setSessionFactory(dao);
 		return dao;
 	}
 
@@ -364,6 +445,62 @@ public class DaoFactoryImpl implements DaoFactory {
 	@Override
 	public SearchEntityKeywordDao getSearchEntityKeywordDao() {
 		SearchEntityKeywordDaoImpl dao = new SearchEntityKeywordDaoImpl();
+		setSessionFactory(dao);
+		return dao;
+	}
+
+	@Override
+	public CollectionProtocolGroupDao getCpGroupDao() {
+		CollectionProtocolGroupDaoImpl dao = new CollectionProtocolGroupDaoImpl();
+		setSessionFactory(dao);
+		return dao;
+	}
+
+	@Override
+	public StarredItemDao getStarredItemDao() {
+		StarredItemDaoImpl dao = new StarredItemDaoImpl();
+		setSessionFactory(dao);
+		return dao;
+	}
+
+	@Override
+	public PdeAuditLogDao getPdeAuditLogDao() {
+		PdeAuditLogDaoImpl dao = new PdeAuditLogDaoImpl();
+		setSessionFactory(dao);
+		return dao;
+	}
+
+	@Override
+	public LockDao getLockDao() {
+		LockDaoImpl dao = new LockDaoImpl();
+		setSessionFactory(dao);
+		return dao;
+	}
+
+	@Override
+	public UserFavoriteDao getUserFavoriteDao() {
+		UserFavoriteDaoImpl dao = new UserFavoriteDaoImpl();
+		setSessionFactory(dao);
+		return dao;
+	}
+
+	@Override
+	public LabServiceDao getLabServiceDao() {
+		LabServiceDaoImpl dao = new LabServiceDaoImpl();
+		setSessionFactory(dao);
+		return dao;
+	}
+
+	@Override
+	public LabServicesRateListDao getLabServiceRateListDao() {
+		LabServicesRateListDaoImpl dao = new LabServicesRateListDaoImpl();
+		setSessionFactory(dao);
+		return dao;
+	}
+
+	@Override
+	public RequestManagerGroupDao getRequestManagerGroupDao() {
+		RequestManagerGroupDaoImpl dao = new RequestManagerGroupDaoImpl();
 		setSessionFactory(dao);
 		return dao;
 	}

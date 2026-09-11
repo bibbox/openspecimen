@@ -6,7 +6,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections4.CollectionUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Controller;
@@ -29,6 +29,7 @@ import com.krishagni.catissueplus.core.biospecimen.events.VisitSpecimensQueryCri
 import com.krishagni.catissueplus.core.biospecimen.repository.SpecimenListCriteria;
 import com.krishagni.catissueplus.core.biospecimen.services.CollectionProtocolRegistrationService;
 import com.krishagni.catissueplus.core.biospecimen.services.SpecimenService;
+import com.krishagni.catissueplus.core.common.errors.CommonErrorCode;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.BulkEntityDetail;
 import com.krishagni.catissueplus.core.common.events.DependentEntityDetail;
@@ -69,7 +70,7 @@ public class SpecimensController {
 		SpecimenQueryCriteria crit = new SpecimenQueryCriteria(cpShortTitle, label);
 		ResponseEvent<Boolean> resp = specimenSvc.doesSpecimenExists(getRequest(crit));
 		resp.throwErrorIfUnsuccessful();
-		if (resp.getPayload() == true) {
+		if (resp.getPayload()) {
 			return true;
 		}
 
@@ -108,7 +109,10 @@ public class SpecimensController {
 			boolean exactMatch,
 
 			@RequestParam(value = "includeExtensions", required = false, defaultValue = "false")
-			boolean includeExtensions) {
+			boolean includeExtensions,
+
+			@RequestParam(value = "minimalInfo", required = false, defaultValue = "false")
+			boolean minimalInfo) {
 				
 		if (cprId != null) { // TODO: Move this to CPR controller
 			VisitSpecimensQueryCriteria crit = new VisitSpecimensQueryCriteria();
@@ -120,7 +124,7 @@ public class SpecimensController {
 			resp.throwErrorIfUnsuccessful();
 			return resp.getPayload();
 		} else if (CollectionUtils.isNotEmpty(ids)) {
-			ResponseEvent<List<? extends SpecimenInfo>> resp = specimenSvc.getSpecimensById(ids, includeExtensions);
+			ResponseEvent<List<? extends SpecimenInfo>> resp = specimenSvc.getSpecimensById(ids, includeExtensions, minimalInfo);
 			resp.throwErrorIfUnsuccessful();
 			return resp.getPayload();
 		} else if (CollectionUtils.isNotEmpty(labels) || CollectionUtils.isNotEmpty(barcodes)) {
@@ -140,6 +144,32 @@ public class SpecimensController {
 		} else {
 			return Collections.emptyList();
 		}
+	}
+
+	@RequestMapping(method = RequestMethod.POST, value = "/search")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public List<? extends SpecimenInfo> getSpecimens(@RequestBody SpecimenListCriteria crit) {
+		int size = 0;
+		if (crit.labels() != null) {
+			size += crit.labels().size();
+		}
+
+		if (crit.barcodes() != null) {
+			size += crit.barcodes().size();
+		}
+
+		if (size > 10000) {
+			throw OpenSpecimenException.userError(SpecimenErrorCode.LABELS_SRCH_LIMIT_MAXED, 10000);
+		}
+
+		if (crit.maxResults() > 10000) {
+			crit.maxResults(10000);
+		} else if (size > 0 && !crit.maxResultsSpecified()) {
+			crit.maxResults(size);
+		}
+
+		return ResponseEvent.unwrap(specimenSvc.getSpecimens(RequestEvent.wrap(crit.limitItems(true))));
 	}
 	
 	@RequestMapping(method = RequestMethod.GET, value = "/{id}")
@@ -282,6 +312,29 @@ public class SpecimensController {
 		return resp.getPayload();
 	}
 
+	@RequestMapping(method = RequestMethod.POST, value="/undelete")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public SpecimenDetail undelete(@RequestBody Map<String, Object> payload) {
+		if (payload == null || payload.get("id") == null) {
+			throw OpenSpecimenException.userError(SpecimenErrorCode.ID_REQUIRED);
+		}
+
+		SpecimenQueryCriteria crit = null;
+		try {
+			Number id = (Number) payload.get("id");
+			Boolean includeChildren = (Boolean) payload.get("includeChildren");
+			String reason = (String) payload.get("reason");
+			crit = new SpecimenQueryCriteria(id.longValue());
+			crit.setIncludeChildren(includeChildren != null && includeChildren);
+			crit.setParams(Collections.singletonMap("comments", reason));
+		} catch (Exception e) {
+			throw OpenSpecimenException.userError(CommonErrorCode.INVALID_INPUT, e.getMessage());
+		}
+
+		return ResponseEvent.unwrap(specimenSvc.undeleteSpecimen(RequestEvent.wrap(crit)));
+	}
+
 	@RequestMapping(method = RequestMethod.GET, value = "/{id}/forms")
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody
@@ -342,6 +395,13 @@ public class SpecimensController {
 		ResponseEvent<List<SpecimenDetail>> resp = specimenSvc.collectSpecimens(getRequest(specimens));
 		resp.throwErrorIfUnsuccessful();
 		return resp.getPayload();
+	}
+
+	@RequestMapping(method = RequestMethod.POST, value="/pooled")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public SpecimenDetail createPooledSpecimen(@RequestBody SpecimenDetail specimen) {
+		return ResponseEvent.unwrap(specimenSvc.createPooledSpecimen(RequestEvent.wrap(specimen)));
 	}
 	
 	/** API present for UI purpose **/

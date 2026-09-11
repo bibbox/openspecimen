@@ -4,9 +4,8 @@
     "http://hibernate.sourceforge.net/hibernate-mapping-3.0.dtd">
     
 <hibernate-mapping auto-import="false">
-  <class
-    name="com.krishagni.catissueplus.core.audit.domain.UserApiCallLog"
-    table="OS_USER_API_CALLS_LOG">
+  <class name="com.krishagni.catissueplus.core.audit.domain.UserApiCallLog" table="OS_USER_API_CALLS_LOG"
+    entity-name="com.krishagni.catissueplus.core.audit.domain.UserApiCallLog">
 
     <id name="id" column="IDENTIFIER">
       <generator class="native">
@@ -15,6 +14,8 @@
     </id>
     
     <many-to-one name="user" column="USER_ID" />
+
+    <many-to-one name="impersonatedUser" column="IMPERSONATED_USER_ID" />
     
     <property name="url" column="URL" />
     
@@ -38,6 +39,24 @@
       where 
         a.user.id = :userId and t.token = :authToken
     </query>
-   
-  </class>  
-</hibernate-mapping>    
+
+    <query name="deleteOlderLogs">
+      <![CDATA[
+        delete
+          com.krishagni.catissueplus.core.audit.domain.UserApiCallLog l
+        where
+          l.callStartTime < :olderThan
+      ]]>
+    </query>
+
+    <query name="updateApiCallLogTime">
+      update
+        com.krishagni.catissueplus.core.audit.domain.UserApiCallLog l
+      set
+        l.callEndTime = :endTime,
+        l.responseCode = :statusCode
+      where
+        l.id = :callLogId
+    </query>
+  </class>
+</hibernate-mapping>

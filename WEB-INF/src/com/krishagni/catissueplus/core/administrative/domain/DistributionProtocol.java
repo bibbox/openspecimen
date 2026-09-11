@@ -2,10 +2,12 @@
 package com.krishagni.catissueplus.core.administrative.domain;
 
 import java.math.BigDecimal;
+import java.util.Calendar;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -13,10 +15,13 @@ import org.hibernate.envers.AuditTable;
 import org.hibernate.envers.Audited;
 import org.hibernate.envers.NotAudited;
 import org.hibernate.envers.RelationTargetAuditMode;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Configurable;
 
 import com.krishagni.catissueplus.core.administrative.domain.factory.DistributionProtocolErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.domain.BaseExtensionEntity;
 import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
+import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
 import com.krishagni.catissueplus.core.common.CollectionUpdater;
 import com.krishagni.catissueplus.core.common.Pair;
 import com.krishagni.catissueplus.core.common.access.SiteCpPair;
@@ -27,10 +32,23 @@ import com.krishagni.catissueplus.core.common.util.Utility;
 import com.krishagni.catissueplus.core.de.domain.Form;
 import com.krishagni.catissueplus.core.de.domain.SavedQuery;
 
+import krishagni.catissueplus.beans.FormContextBean;
+
+@Configurable
 @Audited(targetAuditMode = RelationTargetAuditMode.NOT_AUDITED)
 @AuditTable(value = "CAT_DISTRIBUTION_PROTOCOL_AUD")
 public class DistributionProtocol extends BaseExtensionEntity {
 	public static final String EXTN = "DistributionProtocolExtension";
+
+	public enum NotifAttachmentType {
+		NONE,
+
+		CSV_REPORT,
+
+		MANIFEST,
+
+		BOTH
+	}
 
 	private static final String ENTITY_NAME = "distribution_protocol";
 
@@ -60,6 +78,8 @@ public class DistributionProtocol extends BaseExtensionEntity {
 
 	private Boolean disableEmailNotifs;
 
+	private NotifAttachmentType attachmentType;
+
 	private String orderItemLabelFormat;
 	
 	private Set<DistributionOrder> distributionOrders = new HashSet<>();
@@ -71,6 +91,9 @@ public class DistributionProtocol extends BaseExtensionEntity {
 	private Set<DpConsentTier> consentTiers = new HashSet<>();
 
 	private Set<StorageContainer> distributionContainers = new HashSet<>();
+
+	@Autowired
+	private DaoFactory daoFactory;
 	
 	public static String getEntityName() {
 		return ENTITY_NAME;
@@ -184,6 +207,18 @@ public class DistributionProtocol extends BaseExtensionEntity {
 		this.disableEmailNotifs = disableEmailNotifs;
 	}
 
+	public boolean areEmailNotifsDisabled() {
+		return Boolean.TRUE.equals(disableEmailNotifs);
+	}
+
+	public NotifAttachmentType getAttachmentType() {
+		return attachmentType;
+	}
+
+	public void setAttachmentType(NotifAttachmentType attachmentType) {
+		this.attachmentType = attachmentType;
+	}
+
 	public String getOrderItemLabelFormat() {
 		return orderItemLabelFormat;
 	}
@@ -211,10 +246,15 @@ public class DistributionProtocol extends BaseExtensionEntity {
 
 	@NotAudited
 	public Set<SiteCpPair> getAllowedDistributingSites() {
+		return getAllowedDistributingSites("DistributionProtocol");
+	}
+
+	@NotAudited
+	public Set<SiteCpPair> getAllowedDistributingSites(String resource) {
 		return getDistributingSites().stream().map(
 			(distSite) -> {
 				Long siteId = distSite.getSite() != null ? distSite.getSite().getId() : null;
-				return SiteCpPair.make(distSite.getInstitute().getId(), siteId, null);
+				return SiteCpPair.make(resource, distSite.getInstitute().getId(), siteId, null);
 			}
 		).collect(Collectors.toSet());
 	}
@@ -228,7 +268,6 @@ public class DistributionProtocol extends BaseExtensionEntity {
 		this.requirements = requirements;
 	}
 
-	@NotAudited
 	public Set<DpConsentTier> getConsentTiers() {
 		return consentTiers;
 	}
@@ -248,8 +287,7 @@ public class DistributionProtocol extends BaseExtensionEntity {
 
 	public void update(DistributionProtocol dp) {
 		if (dp.getActivityStatus().equals(Status.ACTIVITY_STATUS_DISABLED.getStatus())) {
-			setShortTitle(Utility.getDisabledValue(dp.getShortTitle(), 50));
-			setTitle(Utility.getDisabledValue(dp.getTitle(), 255));
+			delete();
 		} else {
 			setShortTitle(dp.getShortTitle());
 			setTitle(dp.getTitle());
@@ -265,6 +303,7 @@ public class DistributionProtocol extends BaseExtensionEntity {
 		setReport(dp.getReport());
 		setOrderExtnForm(dp.getOrderExtnForm());
 		setDisableEmailNotifs(dp.getDisableEmailNotifs());
+		setAttachmentType(dp.getAttachmentType());
 		setOrderItemLabelFormat(dp.getOrderItemLabelFormat());
 		CollectionUpdater.update(getCoordinators(), dp.getCoordinators());
 		CollectionUpdater.update(getDistributingSites(), dp.getDistributingSites());
@@ -272,36 +311,43 @@ public class DistributionProtocol extends BaseExtensionEntity {
 	}
 	
 	public List<DependentEntityDetail> getDependentEntities() {
+		Map<String, Integer> dependents = daoFactory.getDistributionProtocolDao().getDependents(getId());
 		return DependentEntityDetail
 			.listBuilder()
-			.add(DistributionOrder.getEntityName(), getDistributionOrders().size())
-			.add(StorageContainer.getEntityName(), getDistributionContainers().size())
+			.add(DistributionOrder.getEntityName(), dependents.get(DistributionOrder.getEntityName()))
+			.add(StorageContainer.getEntityName(), dependents.get(StorageContainer.getEntityName()))
+			.add(Specimen.getEntityName(), dependents.get(Specimen.getEntityName()))
 			.build();
 	}
 	
 	public void delete() {
+		getDistributionContainers().forEach(container -> container.removeDpRestriction(this));
+		getDistributionContainers().clear();
+
 		List<DependentEntityDetail> dependentEntities = getDependentEntities();
 		if (!dependentEntities.isEmpty()) {
 			throw OpenSpecimenException.userError(DistributionProtocolErrorCode.REF_ENTITY_FOUND, getShortTitle());
 		}
-		
+
 		setShortTitle(Utility.getDisabledValue(getShortTitle(), 50));
 		setTitle(Utility.getDisabledValue(getTitle(), 255));
 		setActivityStatus(Status.ACTIVITY_STATUS_DISABLED.getStatus());
+		if (getOrderExtnForm() != null) {
+			FormContextBean  orderExtnFc = getOrderExtnForm().getAssociations().stream()
+				.filter(fc -> fc.getDeletedOn() == null && "OrderExtension".equals(fc.getEntityType()) && getId().equals(fc.getEntityId()))
+				.findFirst().orElse(null);
+			if (orderExtnFc != null) {
+				orderExtnFc.setDeletedOn(Calendar.getInstance().getTime());
+			}
+		}
 	}
 	
 	public Set<Institute> getDistributingInstitutes() {
 		return getDistributingSites().stream().map(DpDistributionSite::getInstitute).collect(Collectors.toSet());
 	}
 	
-	public boolean hasRequirement(String specimenType, String anatomicSite, Set<String> pathologyStatuses, String clinicalDiagnosis) {
-		for (DpRequirement req : getRequirements()) {
-			if (req.equalsSpecimenGroup(specimenType, anatomicSite, pathologyStatuses, clinicalDiagnosis)) {
-				return true;
-			}
-		}
-		
-		return false;
+	public boolean hasRequirement(DpRequirement dpr) {
+		return getRequirements().stream().anyMatch(req -> req.equalsSpecimenGroup(dpr));
 	}
 
 	@Override

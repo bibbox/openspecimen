@@ -8,16 +8,24 @@ public interface Dao<T> {
 	void saveOrUpdate(T t);
 	
 	void saveOrUpdate(T t, boolean flush);
+
+	T merge(T t);
+
+	T merge(T t, boolean flush);
+
+	void save(Object obj);
+
+	void save(Object obj, boolean flush);
+
+	void update(Object obj);
+
+	void update(Object obj, boolean flush);
 	
-	void delete(T t);
+	<R> void delete(R t);
 	
 	T getById(Long id);
-	
-	T getById(Long id, String activeCondition);
 
 	List<T> getByIds(Collection<Long> ids);
-
-	List<T> getByIds(Collection<Long> ids, String activeCondition);
 	
 	void flush();
 }

@@ -1,7 +1,10 @@
 
 package com.krishagni.catissueplus.core.auth.domain.factory.impl;
 
-import org.apache.commons.lang.StringUtils;
+import java.util.HashMap;
+import java.util.Map;
+
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import com.krishagni.catissueplus.core.auth.domain.AuthDomain;
@@ -13,9 +16,12 @@ import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
 import com.krishagni.catissueplus.core.common.errors.ActivityStatusErrorCode;
 import com.krishagni.catissueplus.core.common.errors.ErrorType;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
+import com.krishagni.catissueplus.core.common.util.LogUtil;
 import com.krishagni.catissueplus.core.common.util.Status;
 
 public class DomainRegistrationFactoryImpl implements DomainRegistrationFactory {
+
+	private static final LogUtil logger = LogUtil.getLogger(DomainRegistrationFactoryImpl.class);
 
 	@Autowired
 	private DaoFactory daoFactory;
@@ -30,6 +36,7 @@ public class DomainRegistrationFactoryImpl implements DomainRegistrationFactory 
 
 		AuthDomain domain = new AuthDomain();
 		setDomainName(input, domain, ose);
+		setAllowLogins(input, domain, ose);
 		setAuthProvider(input, domain, ose);
 		setActivityStatus(input, domain, ose);
 
@@ -44,6 +51,10 @@ public class DomainRegistrationFactoryImpl implements DomainRegistrationFactory 
 		}
 		
 		domain.setName(domainName);
+	}
+
+	private void setAllowLogins(AuthDomainDetail input, AuthDomain domain, OpenSpecimenException ose) {
+		domain.setAllowLogins(input.isAllowLogins());
 	}
 	
 	private void setAuthProvider(AuthDomainDetail detail, AuthDomain authDomain, OpenSpecimenException ose) {
@@ -63,22 +74,32 @@ public class DomainRegistrationFactoryImpl implements DomainRegistrationFactory 
 		}
 
 		if (!isValidImplClass(implClass)) {
-			ose.addError(AuthProviderErrorCode.INVALID_AUTH_IMPL, implClass);
+			ose.addError(AuthProviderErrorCode.INVALID_AUTH_IMPL, "Invalid class: " + implClass);
 			return null;
 		}
 		
 		AuthProvider authProvider = new AuthProvider();
 		authProvider.setAuthType(detail.getAuthType());
 		authProvider.setImplClass(implClass);
-		authProvider.setProps(detail.getAuthProviderProps());
+
+		Map<String, String> props = null;
+		if (detail.getAuthProviderProps() != null) {
+			props = new HashMap<>(detail.getAuthProviderProps());
+		} else {
+			props = new HashMap<>();
+		}
+
+		props.entrySet().removeIf(prop -> StringUtils.isBlank(prop.getValue()));
+		authProvider.setProps(props);
 		return authProvider;
 	}
 
 	private boolean isValidImplClass(String implClass) {
 		try {
-			Class authImplClass = Class.forName(implClass);
-			return authImplClass.newInstance() != null;
+			Class.forName(implClass).getDeclaredConstructor().newInstance();
+			return true;
 		} catch (Exception e) {
+			logger.error("Error validating the  authentication provider: " + implClass, e);
 			return false;
 		}
 	}

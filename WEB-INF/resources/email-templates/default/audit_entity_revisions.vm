@@ -1,5 +1,5 @@
 #set ( $apiUrl = "$appUrl/rest/ng/audit/revisions-file?fileId=$fileId" )
-#set ( $downloadUrl = "$appUrl/#/file-download?downloadUrl=$urlEncoder.encode($apiUrl)" )
+#set ( $downloadUrl = "$appUrl/ui-app/#/download-file?downloadUrl=$urlEncoder.encode($apiUrl)" )
 
 <table cellspacing="0" cellpadding="0" border="0" width="100%" style="border-spacing:0;border-collapse:separate">
   <tbody>
@@ -23,8 +23,8 @@
                   <tr>
                     <td> Revisions By </td>
                     <td> :
-                      #if ( $user )
-                        $user
+                      #if ( $users )
+                        $users
                       #else
                         Not Specified
                       #end
@@ -49,6 +49,28 @@
                         Not Specified
                       #end
                     </td>
+                  </tr>
+                  #if ($recordType)
+                  <tr>
+                    <td> Report Type </td>
+                    <td> : $recordType </td>
+                  </tr>
+                  #end
+                  #if ($records)
+                  <tr>
+                    <td> Records </td>
+                    <td> : $records </td>
+                  </tr>
+                  #end
+                  #if ($recordIds)
+                  <tr>
+                    <td> Record IDs </td>
+                    <td> : $recordIds </td>
+                  </tr>
+                  #end
+                  <tr>
+                    <td> Include </td>
+                    <td> : $reportTypes </td>
                   </tr>
                 </table>
               </td>

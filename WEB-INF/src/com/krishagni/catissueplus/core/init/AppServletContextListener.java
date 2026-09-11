@@ -1,33 +1,33 @@
 package com.krishagni.catissueplus.core.init;
 
 import java.io.File;
-import java.io.IOException;
+import java.lang.management.ManagementFactory;
 import java.net.URL;
 import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
+import java.util.Objects;
 import java.util.Properties;
 import java.util.jar.Attributes;
 import java.util.jar.JarFile;
 import java.util.stream.Collectors;
 
-import javax.servlet.ServletContextEvent;
-import javax.servlet.ServletContextListener;
+import jakarta.servlet.ServletContextEvent;
+import jakarta.servlet.ServletContextListener;
 
 import org.apache.commons.io.IOUtils;
-import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang3.ObjectUtils;
-import org.apache.log4j.BasicConfigurator;
-import org.apache.log4j.Logger;
-import org.apache.log4j.PropertyConfigurator;
+import org.apache.commons.lang3.StringUtils;
 
 import com.krishagni.catissueplus.core.common.PluginManager;
 import com.krishagni.catissueplus.core.common.util.ClassPathUtil;
+import com.krishagni.catissueplus.core.common.util.LogUtil;
+import com.krishagni.catissueplus.core.common.util.Utility;
 
 public class AppServletContextListener implements ServletContextListener {
 
-	private static final Logger logger = Logger.getLogger(AppServletContextListener.class);
+	private static final LogUtil logger = LogUtil.getLogger(AppServletContextListener.class);
 
 	private static final String DATA_DIR_PROP   = "app.data_dir";
 
@@ -40,13 +40,37 @@ public class AppServletContextListener implements ServletContextListener {
 	@Override
 	public void contextInitialized(ServletContextEvent sce) {
 		try {
+			if (Utility.isRootUser()) {
+				System.err.println(" ***************************************************");
+				System.err.println(" *        ERROR! ERROR!! ERROR!!!                  *");
+				System.err.println(" ***************************************************");
+				System.err.println(" OpenSpecimen is started using root user.");
+				System.err.println(" Avoid using root user to run OpenSpecimen.");
+				System.err.println(" Instead consider using a regular user account.");
+				System.err.println(" Exiting");
+				System.err.println(" ***************************************************");
+				System.exit(1);
+			}
+
 			String rootDir = sce.getServletContext().getResource("/").getPath();
 			String tomcatDir = new File(rootDir).getParentFile().getParentFile().getPath();
 
 			Properties props = AppProperties.getInstance(tomcatDir, getContextName(sce)).getProperties();
 
-			String msg = getWelcomeMessage();
+			double maxSizeGb = getMaxSizeInGb();
+			String msg = getWelcomeMessage(maxSizeGb);
 			writeToConsole(msg);
+			if (maxSizeGb < 2.0) {
+				System.err.println(" ***************************************************");
+				System.err.println(" *        ERROR! ERROR!! ERROR!!!                  *");
+				System.err.println(" ***************************************************");
+				System.err.println(" OpenSpecimen is started using < 2GB heap size.");
+				System.err.println(" Minimum 2GB heap required.");
+				System.err.println(" Consider using -Xmx2048m option when starting Tomcat");
+				System.err.println(" Exiting");
+				System.err.println(" ***************************************************");
+				System.exit(1);
+			}
 
 			initLogging(props);
 			writeToLogFile(msg);
@@ -97,42 +121,59 @@ public class AppServletContextListener implements ServletContextListener {
 		new File(logDir).mkdirs();
 		System.setProperty("os_log_dir", logDir);
 
-		BasicConfigurator.resetConfiguration();
-		PropertyConfigurator.configure(url);
-		logger.info("Initialised logging configuration from following file: " + url);
-		if (url.getProtocol().equals("file")) {
-			PropertyConfigurator.configureAndWatch(url.getFile());
+		String nodeName = AppProperties.getInstance().getNodeName();
+		if (!"none".equals(nodeName)) {
+			System.setProperty("os_log_file", "os." + nodeName.replaceAll("\\s+", "_"));
+		} else {
+			System.setProperty("os_log_file", "os");
 		}
+
+		LogUtil.configure(url);
+		logger.info("Initialised logging configuration from following file: " + url);
 	}
 
-	private void loadPluginResources(String pluginDir) 
-	throws IOException {
-		File pluginDirFile = new File(pluginDir);
-		if (!pluginDirFile.isDirectory()) {
-			throw new RuntimeException("Invalid plugin directory: " + pluginDir);
+	private void loadPluginResources(String pluginDirPath) {
+		File pluginDir = new File(pluginDirPath);
+		if (!pluginDir.isDirectory()) {
+			throw new RuntimeException("Invalid plugin directory: " + pluginDirPath);
 		}
 
-		List<File> pluginFiles = Arrays.stream(pluginDirFile.listFiles())
-			.filter(f -> !f.isDirectory() && f.getName().endsWith(".jar"))
+		List<File> files = Arrays.stream(Objects.requireNonNull(pluginDir.listFiles()))
 			.sorted((f1, f2) -> ObjectUtils.compare(f1.getName(), f2.getName()))
 			.collect(Collectors.toList());
 
-		for (File file : pluginFiles) {
-			JarFile jarFile = null;
-			try {
-				logger.info("Loading plugin resource from: " + file.getAbsolutePath());
-				jarFile = new JarFile(file);
-				Attributes attrs = jarFile.getManifest().getMainAttributes();
-				String pluginName = attrs.getValue("os-plugin-name");
-				if (StringUtils.isNotBlank(pluginName)) {
-					ClassPathUtil.addFile(file);
-					PluginManager.getInstance().addPluginName(pluginName.trim());
-				}
-			} catch (Exception e) {
-				logger.error("Error loading plugin resources from: ", e);
-			} finally {
-				IOUtils.closeQuietly(jarFile);
+		files.stream().filter(File::isDirectory).forEach(this::loadPluginResources);
+		files.stream().filter(File::isFile).forEach(this::loadPlugin);
+	}
+
+	private void loadPluginResources(File pluginDir) {
+		Arrays.stream(Objects.requireNonNull(pluginDir.listFiles()))
+			.sorted((f1, f2) -> ObjectUtils.compare(f1.getName(), f2.getName()))
+			.forEach(this::loadPlugin);
+	}
+
+	private void loadPlugin(File file) {
+		if (file.isDirectory() || !file.getName().endsWith(".jar")) {
+			return;
+		}
+
+		JarFile jarFile = null;
+		try {
+			logger.info("Loading plugin resource from: " + file.getAbsolutePath());
+			jarFile = new JarFile(file);
+			Attributes attrs = jarFile.getManifest().getMainAttributes();
+			String pluginName = attrs.getValue("os-plugin-name");
+			if (StringUtils.isNotBlank(pluginName)) {
+//				Class<?> jarLoader = Class.forName("com.krishagni.openspecimen.JarLoader");
+//				Method addToClassPath = jarLoader.getDeclaredMethod("addToClassPath", JarFile.class);
+//				addToClassPath.invoke(null, jarFile);
+				ClassPathUtil.addFile(file);
+				PluginManager.getInstance().addPlugin(attrs);
 			}
+		} catch (Exception e) {
+			logger.error("Error loading plugin resources from: ", e);
+		} finally {
+			IOUtils.closeQuietly(jarFile);
 		}
 	}
 
@@ -144,7 +185,7 @@ public class AppServletContextListener implements ServletContextListener {
 		logger.info(msg);
 	}
 
-	private String getWelcomeMessage() {
+	private String getWelcomeMessage(double maxSizeInGb) {
 		AppProperties appProps = AppProperties.getInstance();
 
 		return
@@ -154,6 +195,56 @@ public class AppServletContextListener implements ServletContextListener {
 			"\n Build Date    : " + new Date(Long.parseLong(appProps.getBuildDate())) +
 			"\n Commit        : " + appProps.getBuildRevision() +
 			"\n Present Time  : " + Calendar.getInstance().getTime() +
+			"\n Max. Heap Size: " + String.format("%.2f GB", maxSizeInGb) +
 			"\n ***************************************************";
+	}
+
+	private double getMaxSizeInGb() {
+		double maxMemory = Runtime.getRuntime().maxMemory();
+		for (String arg : ManagementFactory.getRuntimeMXBean().getInputArguments()) {
+			arg = arg.trim().toLowerCase();
+			if (arg.startsWith("-xmx")) {
+				arg = arg.substring(4).toLowerCase().trim();
+
+				int unitIdx = -1;
+				for (char ch : arg.toCharArray()) {
+					++unitIdx;
+					if (!Character.isDigit(ch)) {
+						break;
+					}
+				}
+
+				String sizeStr = arg.substring(0, unitIdx).trim();
+				String unit = arg.substring(unitIdx).trim();
+
+				double factor = 1;
+				switch (unit) {
+					case "k":
+					case "kb":
+						factor = 1024.0;
+						break;
+
+					case "m":
+					case "mb":
+						factor = 1024.0 * 1024.0;
+						break;
+
+					case "g":
+					case "gb":
+						factor = 1024.0 * 1024.0 * 1024.0;
+						break;
+
+					case "t":
+					case "tb":
+						factor = 1024.0 * 1024.0 * 1024.0;
+						break;
+				}
+
+				maxMemory = Double.parseDouble(sizeStr) * factor;
+				break;
+			}
+		}
+
+		return (maxMemory / (1024.0 * 1024.0 * 1024.0));
 	}
 }

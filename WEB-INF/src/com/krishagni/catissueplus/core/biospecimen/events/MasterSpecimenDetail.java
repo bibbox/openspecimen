@@ -6,13 +6,17 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections4.CollectionUtils;
 
+
+import com.krishagni.catissueplus.core.common.AttributeModifiedSupport;
+import com.krishagni.catissueplus.core.common.ListenAttributeChanges;
 import com.krishagni.catissueplus.core.common.events.NameValuePair;
 import com.krishagni.catissueplus.core.common.events.UserSummary;
 import com.krishagni.catissueplus.core.de.events.ExtensionDetail;
 
-public class MasterSpecimenDetail {
+@ListenAttributeChanges
+public class MasterSpecimenDetail extends AttributeModifiedSupport {
 	private String cpShortTitle;
 	
 	private String ppid;
@@ -28,6 +32,16 @@ public class MasterSpecimenDetail {
 	private String lastName;
 	
 	private String middleName;
+
+	private String emailAddress;
+
+	private Boolean emailOptIn;
+
+	private String phoneNumber;
+
+	private Boolean textOptIn;
+
+	private Boolean textOptInConsent;
 
 	private Date birthDate;
 
@@ -92,14 +106,20 @@ public class MasterSpecimenDetail {
 	private String pathology;
 	
 	private BigDecimal initialQty;
+
+	private BigDecimal availableQty;
 	
 	private BigDecimal concentration;
+
+	private Integer freezeThawCycles;
 	
 	private Date createdOn;
 
 	private UserSummary createdBy;
 	
 	private String comments;
+
+	private String collectionStatus;
 	
 	private String container;
 	
@@ -195,6 +215,46 @@ public class MasterSpecimenDetail {
 
 	public void setMiddleName(String middleName) {
 		this.middleName = middleName;
+	}
+
+	public String getEmailAddress() {
+		return emailAddress;
+	}
+
+	public void setEmailAddress(String emailAddress) {
+		this.emailAddress = emailAddress;
+	}
+
+	public Boolean getEmailOptIn() {
+		return emailOptIn;
+	}
+
+	public void setEmailOptIn(Boolean emailOptIn) {
+		this.emailOptIn = emailOptIn;
+	}
+
+	public String getPhoneNumber() {
+		return phoneNumber;
+	}
+
+	public void setPhoneNumber(String phoneNumber) {
+		this.phoneNumber = phoneNumber;
+	}
+
+	public Boolean getTextOptIn() {
+		return textOptIn;
+	}
+
+	public void setTextOptIn(Boolean textOptIn) {
+		this.textOptIn = textOptIn;
+	}
+
+	public Boolean getTextOptInConsent() {
+		return textOptInConsent;
+	}
+
+	public void setTextOptInConsent(Boolean textOptInConsent) {
+		this.textOptInConsent = textOptInConsent;
 	}
 
 	public Date getBirthDate() {
@@ -469,12 +529,28 @@ public class MasterSpecimenDetail {
 		this.initialQty = initialQty;
 	}
 
+	public BigDecimal getAvailableQty() {
+		return availableQty;
+	}
+
+	public void setAvailableQty(BigDecimal availableQty) {
+		this.availableQty = availableQty;
+	}
+
 	public BigDecimal getConcentration() {
 		return concentration;
 	}
 
 	public void setConcentration(BigDecimal concentration) {
 		this.concentration = concentration;
+	}
+
+	public Integer getFreezeThawCycles() {
+		return freezeThawCycles;
+	}
+
+	public void setFreezeThawCycles(Integer freezeThawCycles) {
+		this.freezeThawCycles = freezeThawCycles;
 	}
 
 	public Date getCreatedOn() {
@@ -499,6 +575,14 @@ public class MasterSpecimenDetail {
 
 	public void setComments(String comments) {
 		this.comments = comments;
+	}
+
+	public String getCollectionStatus() {
+		return collectionStatus;
+	}
+
+	public void setCollectionStatus(String collectionStatus) {
+		this.collectionStatus = collectionStatus;
 	}
 
 	public String getContainer() {

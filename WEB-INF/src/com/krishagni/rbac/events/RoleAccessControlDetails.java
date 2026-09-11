@@ -11,7 +11,7 @@ public class RoleAccessControlDetails {
 	
 	private String resourceName;
 	
-	private List<ResourceInstanceOpDetails> operations = new ArrayList<ResourceInstanceOpDetails>();
+	private List<ResourceInstanceOpDetails> operations = new ArrayList<>();
 
 	public Long getId() {
 		return id;

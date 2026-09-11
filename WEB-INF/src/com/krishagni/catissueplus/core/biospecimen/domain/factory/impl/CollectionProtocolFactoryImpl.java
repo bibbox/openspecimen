@@ -1,5 +1,6 @@
 package com.krishagni.catissueplus.core.biospecimen.domain.factory.impl;
 
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -7,7 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 
 import com.krishagni.catissueplus.core.administrative.domain.DistributionProtocol;
@@ -21,14 +22,20 @@ import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol.SpecimenLabelAutoPrintMode;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol.SpecimenLabelPrePrintMode;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol.VisitNamePrintMode;
+import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolGroup;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolSite;
 import com.krishagni.catissueplus.core.biospecimen.domain.CpSpecimenLabelPrintSetting;
+import com.krishagni.catissueplus.core.biospecimen.domain.RequestManagerGroup;
 import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.CollectionProtocolFactory;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.CpErrorCode;
+import com.krishagni.catissueplus.core.biospecimen.domain.factory.CpGroupErrorCode;
+import com.krishagni.catissueplus.core.biospecimen.domain.factory.RequestManagerGroupErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.events.CollectionProtocolDetail;
+import com.krishagni.catissueplus.core.biospecimen.events.CollectionProtocolGroupSummary;
 import com.krishagni.catissueplus.core.biospecimen.events.CollectionProtocolSiteDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.CpSpecimenLabelPrintSettingDetail;
+import com.krishagni.catissueplus.core.biospecimen.events.RequestManagerGroupSummary;
 import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
 import com.krishagni.catissueplus.core.biospecimen.services.impl.CollectionProtocolCopier;
 import com.krishagni.catissueplus.core.common.errors.ActivityStatusErrorCode;
@@ -46,6 +53,8 @@ public class CollectionProtocolFactoryImpl implements CollectionProtocolFactory 
 	private LabelGenerator ppidGenerator;
 
 	private LabelGenerator specimenLabelGenerator;
+
+	private LabelGenerator specimenAddlLabelGenerator;
 
 	private LabelGenerator specimenBarcodeGenerator;
 	
@@ -65,6 +74,10 @@ public class CollectionProtocolFactoryImpl implements CollectionProtocolFactory 
 
 	public void setSpecimenLabelGenerator(LabelGenerator specimenLabelGenerator) {
 		this.specimenLabelGenerator = specimenLabelGenerator;
+	}
+
+	public void setSpecimenAddlLabelGenerator(LabelGenerator specimenAddlLabelGenerator) {
+		this.specimenAddlLabelGenerator = specimenAddlLabelGenerator;
 	}
 
 	public void setSpecimenBarcodeGenerator(LabelGenerator specimenBarcodeGenerator) {
@@ -106,7 +119,6 @@ public class CollectionProtocolFactoryImpl implements CollectionProtocolFactory 
 		cp.setStoreSprEnabled(input.getStoreSprEnabled());
 		cp.setExtractSprText(input.getExtractSprText());
 		cp.setDescriptionURL(input.getDescriptionUrl());
-		cp.setConsentsWaived(input.getConsentsWaived());
 		cp.setBulkPartRegEnabled(input.getBulkPartRegEnabled());
 		cp.setSpecimenCentric(input.isSpecimenCentric());
 		if (!cp.isSpecimenCentric()) {
@@ -119,7 +131,10 @@ public class CollectionProtocolFactoryImpl implements CollectionProtocolFactory 
 		setSpecimenBarcodeFormat(input, cp, ose);
 		setBarcodeSetting(input, cp, ose);
 		setCloseParentSpecimens(input, cp, ose);
+		setSetQtyToZero(input, cp, ose);
 		setContainerSelectionStrategy(input, cp, ose);
+		cp.setStorageSiteBasedAccess(input.getStorageSiteBasedAccess());
+		cp.setDraftDataEntry(input.getDraftDataEntry() != null ? input.getDraftDataEntry() : false);
 		setVisitCollectionMode(input, cp, ose);
 		setVisitNamePrintMode(input, cp, ose);
 		cp.setVisitNamePrintCopies(input.getVisitNamePrintCopies());
@@ -128,6 +143,10 @@ public class CollectionProtocolFactoryImpl implements CollectionProtocolFactory 
 		setDistributionProtocolSettings(input, cp, ose);
 		setActivityStatus(input, cp, ose);
 		setCollectionProtocolExtension(input, cp, ose);
+		setConsentsSource(input, cp, ose);
+		setCatalogId(input, cp, ose);
+		setCpGroup(input, cp, ose);
+		setRequestManagerGroup(input, cp, ose);
 
 		ose.checkAndThrow();
 		return cp;
@@ -171,6 +190,10 @@ public class CollectionProtocolFactoryImpl implements CollectionProtocolFactory 
 		cp.setSopDocumentUrl(input.getSopDocumentUrl());
 		cp.setSopDocumentName(input.getSopDocumentName());
 		setDistributionProtocolSettings(input, cp, ose);
+		setCollectionProtocolExtension(input, cp, ose);
+		setCpGroup(input, cp, ose);
+		setRequestManagerGroup(input, cp, ose);
+
 		ose.checkAndThrow();
 		return cp;
 	}
@@ -326,15 +349,33 @@ public class CollectionProtocolFactoryImpl implements CollectionProtocolFactory 
 		
 		labelFmt = ensureValidLabelFmt(input.getDerivativeLabelFmt(), CpErrorCode.INVALID_DERIVATIVE_LABEL_FMT, ose);
 		result.setDerivativeLabelFormat(labelFmt);
+
+		labelFmt = ensureValidLabelFmt(specimenAddlLabelGenerator, input.getAdditionalLabelFmt(), CpErrorCode.INVALID_ADDL_LABEL_FMT, ose);
+		result.setAdditionalLabelFormat(labelFmt);
 		
 		result.setManualSpecLabelEnabled(input.getManualSpecLabelEnabled());
+		result.setKitLabelsEnabled(input.getKitLabelsEnabled());
+
+		if (StringUtils.isBlank(input.getLabelSequenceKey())) {
+			result.setLabelSequenceKey(CollectionProtocol.LabelSequenceKey.ID);
+		} else {
+			try {
+				result.setLabelSequenceKey(CollectionProtocol.LabelSequenceKey.valueOf(input.getLabelSequenceKey()));
+			} catch (IllegalArgumentException iae) {
+				ose.addError(CpErrorCode.INVALID_LABEL_SEQ_KEY, input.getLabelSequenceKey());
+			}
+		}
 	}
 	
 	private String ensureValidLabelFmt(String labelFmt, ErrorCode error, OpenSpecimenException ose) {
-		if (StringUtils.isNotBlank(labelFmt) && !specimenLabelGenerator.isValidLabelTmpl(labelFmt)) {
+		return ensureValidLabelFmt(specimenLabelGenerator, labelFmt, error, ose);
+	}
+
+	private String ensureValidLabelFmt(LabelGenerator labelGenerator, String labelFmt, ErrorCode error, OpenSpecimenException ose) {
+		if (StringUtils.isNotBlank(labelFmt) && !labelGenerator.isValidLabelTmpl(labelFmt)) {
 			ose.addError(error, labelFmt);
 		}
-		
+
 		return labelFmt;
 	}
 
@@ -348,16 +389,15 @@ public class CollectionProtocolFactoryImpl implements CollectionProtocolFactory 
 	}
 
 	private void setBarcodeSetting(CollectionProtocolDetail input, CollectionProtocol result, OpenSpecimenException ose) {
-		boolean barcodingEnabled = input.getBarcodingEnabled() != null ? input.getBarcodingEnabled() : false;
-		if (barcodingEnabled && !result.areAllSpecimenLabelsAutoGenerated()) {
-			ose.addError(CpErrorCode.CANNOT_ENABLE_BARCODING, result.getShortTitle());
-		}
-
-		result.setBarcodingEnabled(barcodingEnabled);
+		result.setBarcodingEnabled(Boolean.TRUE.equals(input.getBarcodingEnabled()));
 	}
 
 	private void setCloseParentSpecimens(CollectionProtocolDetail input, CollectionProtocol result, OpenSpecimenException ose) {
 		result.setCloseParentSpecimens(input.getCloseParentSpecimens());
+	}
+
+	private void setSetQtyToZero(CollectionProtocolDetail input, CollectionProtocol result, OpenSpecimenException ose) {
+		result.setSetQtyToZero(input.getSetQtyToZero());
 	}
 
 	private void setVisitNameFmt(CollectionProtocolDetail input, CollectionProtocol result, OpenSpecimenException ose) {
@@ -525,6 +565,92 @@ public class CollectionProtocolFactoryImpl implements CollectionProtocolFactory 
 		DeObject extension = DeObject.createExtension(input.getExtensionDetail(), result);
 		result.setExtension(extension);
 	}
+
+	private void setConsentsSource(CollectionProtocolDetail input, CollectionProtocol result, OpenSpecimenException ose) {
+		if (result.isSpecimenCentric()) {
+			result.setConsentsWaived(true);
+			result.setVisitLevelConsents(false);
+			result.setConsentsSource(null);
+			result.setConsentTier(Collections.emptySet());
+			return;
+		}
+
+		if (input.getConsentsSource() == null) {
+			return;
+		}
+
+		result.setConsentsWaived(Boolean.TRUE.equals(input.getConsentsWaived()));
+		result.setVisitLevelConsents(Boolean.TRUE.equals(input.getVisitLevelConsents()));
+		if (Boolean.TRUE.equals(result.getVisitLevelConsents())) {
+			result.setConsentsSource(null);
+			ose.addError(CpErrorCode.VISIT_CONSENTS_ENABLED, result.getShortTitle());
+			return;
+		}
+
+		Object key = null;
+		CollectionProtocol consentsSource = null;
+		if (input.getConsentsSource().getId() != null) {
+			key = input.getConsentsSource().getId();
+			consentsSource = daoFactory.getCollectionProtocolDao().getById(input.getConsentsSource().getId());
+		} else if (StringUtils.isNotBlank(input.getConsentsSource().getShortTitle())) {
+			key = input.getConsentsSource().getShortTitle();
+			consentsSource = daoFactory.getCollectionProtocolDao().getCpByShortTitle(input.getConsentsSource().getShortTitle());
+		} else if (StringUtils.isNotBlank(input.getConsentsSource().getCode())) {
+			key = input.getConsentsSource().getCode();
+			consentsSource = daoFactory.getCollectionProtocolDao().getCpByCode(input.getConsentsSource().getCode());
+		}
+
+		if (key == null) {
+			return;
+		}
+
+		if (consentsSource == null) {
+			ose.addError(CpErrorCode.CONSENTS_SOURCE_NOT_FOUND, key);
+		} else if (Boolean.TRUE.equals(consentsSource.getVisitLevelConsents())) {
+			ose.addError(CpErrorCode.VISIT_CONSENTS_ENABLED, consentsSource.getShortTitle());
+		} else if (CollectionUtils.intersection(consentsSource.getRepositories(), result.getRepositories()).isEmpty()) {
+			// TODO: common site between CP and consents source is missing
+		}
+
+		result.setConsentsSource(consentsSource);
+	}
+
+	private void setCatalogId(CollectionProtocolDetail input, CollectionProtocol result, OpenSpecimenException ose) {
+		result.setCatalogId(input.getCatalogId() != null && input.getCatalogId() > 0L ? input.getCatalogId() :  null);
+	}
+
+	private void setCpGroup(CollectionProtocolDetail input, CollectionProtocol result, OpenSpecimenException ose) {
+		CollectionProtocolGroupSummary inputGroup = input.getCpg();
+		if (inputGroup == null) {
+			return;
+		}
+
+		Object key = null;
+		CollectionProtocolGroup cpGroup = null;
+		if (inputGroup.getId() != null) {
+			cpGroup = daoFactory.getCpGroupDao().getById(inputGroup.getId());
+			key = inputGroup.getId();
+		} else if (StringUtils.isNotBlank(inputGroup.getName())) {
+			cpGroup = daoFactory.getCpGroupDao().getByName(inputGroup.getName());
+			key = inputGroup.getName();
+		}
+
+		if (key != null && cpGroup == null) {
+			ose.addError(CpGroupErrorCode.NOT_FOUND, key);
+		}
+
+		result.setCpGroup(cpGroup);
+	}
+
+	private void setRequestManagerGroup(CollectionProtocolDetail input, CollectionProtocol result, OpenSpecimenException ose) {
+		RequestManagerGroupSummary inputRmg = input.getRequestManagerGroup();
+		if (inputRmg == null) {
+			result.setRequestManagerGroup(null);
+			return;
+		}
+
+		result.setRequestManagerGroup(getRequestManagerGroup(inputRmg, ose));
+	}
 	
 	private User getUser(UserSummary userDetail) {
 		if (userDetail == null) {
@@ -541,5 +667,23 @@ public class CollectionProtocolFactoryImpl implements CollectionProtocolFactory 
 		}
 		
 		return user;
+	}
+
+	private RequestManagerGroup getRequestManagerGroup(RequestManagerGroupSummary input, OpenSpecimenException ose) {
+		Object key = null;
+		RequestManagerGroup rmg = null;
+		if (input.getId() != null) {
+			rmg = daoFactory.getRequestManagerGroupDao().getById(input.getId());
+			key = input.getId();
+		} else if (StringUtils.isNotBlank(input.getName())) {
+			rmg = daoFactory.getRequestManagerGroupDao().getByName(input.getName());
+			key = input.getName();
+		}
+
+		if (key != null && rmg == null) {
+			ose.addError(RequestManagerGroupErrorCode.NOT_FOUND, key);
+		}
+
+		return rmg;
 	}
 }

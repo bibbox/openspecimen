@@ -59,25 +59,23 @@
             <udn>label</udn>
             <caption>#getMessage("children_event_label")</caption>
             <column>LABEL</column>
+            <recordUrl>#/object-state-params-resolver?stateName=ParticipantsListItemSpecimenDetail.Overview&amp;objectName=specimen&amp;key=label&amp;value={{$value}}</recordUrl>
           </textField>
           <textField>
             <name>barcode</name>
             <udn>barcode</udn>
             <caption>#getMessage("children_event_barcode")</caption>
             <column>BARCODE</column>
+            <recordUrl>#/object-state-params-resolver?stateName=ParticipantsListItemSpecimenDetail.Overview&amp;objectName=specimen&amp;key=barcode&amp;value={{$value}}</recordUrl>
           </textField>
-          <dropDown>
+          <pvField>
             <name>type</name>
             <udn>type</udn>
             <caption>#getMessage("children_event_type")</caption>
-            <column>SPECIMEN_TYPE</column>
-            <options>
-              <sql>
-                select distinct specimen_type from catissue_specimen order by specimen_type
-              </sql>
-            </options>
+            <column>SPECIMEN_TYPE_ID</column>
+            <attribute>specimen_type</attribute>
             <mandatory>true</mandatory>
-          </dropDown>
+          </pvField>
         </row>
       </subForm>
     </row>

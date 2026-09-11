@@ -2,7 +2,7 @@ package com.krishagni.catissueplus.rest.controller;
 
 import java.util.List;
 
-import javax.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequest;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -17,10 +17,8 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 
 import com.krishagni.catissueplus.core.biospecimen.domain.AliquotSpecimensRequirement;
 import com.krishagni.catissueplus.core.biospecimen.domain.DerivedSpecimenRequirement;
-import com.krishagni.catissueplus.core.biospecimen.events.SpecimenPoolRequirements;
 import com.krishagni.catissueplus.core.biospecimen.events.SpecimenRequirementDetail;
 import com.krishagni.catissueplus.core.biospecimen.services.CollectionProtocolService;
-import com.krishagni.catissueplus.core.common.Pair;
 import com.krishagni.catissueplus.core.common.Tuple;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
 import com.krishagni.catissueplus.core.common.events.ResponseEvent;
@@ -82,23 +80,6 @@ public class SpecimenRequirementsController {
 		return response(cpSvc.updateSpecimenRequirement(request(requirement)));
 	}
 	
-	@RequestMapping(method = RequestMethod.POST, value="/{id}/specimen-pool")
-	@ResponseStatus(HttpStatus.OK)
-	@ResponseBody
-	public List<SpecimenRequirementDetail> addSpecimenPoolReqs(
-			@PathVariable("id")
-			Long pooledSpecimenReqId,
-
-			@RequestBody
-			List<SpecimenRequirementDetail> specimenPoolReqs) {
-
-		SpecimenPoolRequirements detail = new SpecimenPoolRequirements();
-		detail.setPooledSpecimenReqId(pooledSpecimenReqId);
-		detail.setSpecimenPoolReqs(specimenPoolReqs);
-
-		return response(cpSvc.addSpecimenPoolReqs(request(detail)));
-	}
-
 	@RequestMapping(method = RequestMethod.POST, value="/{id}/aliquots")
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody

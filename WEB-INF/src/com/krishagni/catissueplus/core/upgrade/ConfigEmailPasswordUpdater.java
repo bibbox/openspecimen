@@ -1,5 +1,6 @@
 package com.krishagni.catissueplus.core.upgrade;
 
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
 
@@ -35,11 +36,13 @@ public class ConfigEmailPasswordUpdater implements CustomTaskChange {
 	@Override
 	public void execute(Database database) throws CustomChangeException {
 		JdbcConnection dbConnection = (JdbcConnection) database.getConnection();
-		Statement statement = null;
+		Statement getEmailPasswdStmt = null;
+		PreparedStatement updateEmailPasswdStmt = null;
 		ResultSet rs = null;
+
 		try {
-			statement = dbConnection.createStatement();
-			rs = statement.executeQuery(GET_EMAIL_PASSWORD_SQL);
+			getEmailPasswdStmt = dbConnection.createStatement();
+			rs = getEmailPasswdStmt.executeQuery(GET_EMAIL_PASSWORD_SQL);
 			
 			String password = null;
 			Long id = null;
@@ -49,16 +52,31 @@ public class ConfigEmailPasswordUpdater implements CustomTaskChange {
 			}
 			
 			if (password != null) {
-				password = Utility.encrypt(password);
-				statement.executeUpdate(String.format(UPDATE_PASSWORD_SQL, password, id));
+				updateEmailPasswdStmt = dbConnection.prepareStatement(UPDATE_PASSWORD_SQL);
+				updateEmailPasswdStmt.setString(1, Utility.encrypt(dbConnection.getUnderlyingConnection(), password));
+				updateEmailPasswdStmt.setLong(2, id);
+				updateEmailPasswdStmt.executeUpdate();
 			}
 		} catch (Exception e) {
 			throw new CustomChangeException("Error when encrypting email account password: ", e);
 		} finally {
-			try { rs.close(); } catch (Exception e) {}
+			try {
+				if (rs != null) {
+					rs.close();
+				}
+			} catch (Exception e) {}
 
-			try { statement.close(); } catch (Exception e) {
-			}
+			try {
+				if (getEmailPasswdStmt != null) {
+					getEmailPasswdStmt.close();
+				}
+			}  catch (Exception e) { }
+
+			try {
+				if (updateEmailPasswdStmt != null) {
+					updateEmailPasswdStmt.close();
+				}
+			} catch (Exception e) {};
 		}
 	}
 	
@@ -74,5 +92,5 @@ public class ConfigEmailPasswordUpdater implements CustomTaskChange {
 			"  p.name = 'account_password' and " +
 			"  s.activity_status = 'Active'";
 
-	public static final String UPDATE_PASSWORD_SQL = "update os_cfg_settings set value = '%s' where identifier = %d";
+	public static final String UPDATE_PASSWORD_SQL = "update os_cfg_settings set value = ? where identifier = ?";
 }

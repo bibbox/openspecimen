@@ -4,7 +4,8 @@
     "http://hibernate.sourceforge.net/hibernate-mapping-3.0.dtd">
 
 <hibernate-mapping auto-import="false">
-  <class name="com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolRegistration" table="CATISSUE_COLL_PROT_REG" batch-size="100">
+  <class name="com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolRegistration" table="CATISSUE_COLL_PROT_REG" batch-size="100"
+    entity-name="com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolRegistration">
 
     <id name="id" column="IDENTIFIER">
       <generator class="native">
@@ -22,7 +23,7 @@
 
     <property name="barcode" column="BARCODE"/>
 
-    <property name="registrationDate" column="REGISTRATION_DATE"/>
+    <property name="registrationDate" column="REGISTRATION_DATE" type="date" />
 
     <property name="externalSubjectId" column="EXTERNAL_SUBJECT_ID"/>
 
@@ -36,15 +37,22 @@
 
     <many-to-one name="updater" column="UPDATER"/>
 
-    <many-to-one name="site" column="SITE_ID"/>
+    <many-to-one name="site" column="SITE_ID" lazy="false" fetch="join" />
 
-    <property name="activityStatus" column="ACTIVITY_STATUS"/>
+    <property name="activityStatus" column="ACTIVITY_STATUS" />
+
+    <property name="dataEntryStatus" column="DATA_ENTRY_STATUS">
+      <type name="org.hibernate.type.EnumType">
+        <param name="enumClass">com.krishagni.catissueplus.core.biospecimen.domain.BaseEntity$DataEntryStatus</param>
+        <param name="type">12</param>
+      </type>
+    </property>
 
     <many-to-one name="consentWitness" column="CONSENT_WITNESS" />
 
-    <many-to-one name="participant" column="PARTICIPANT_ID" />
+    <many-to-one name="collectionProtocol" column="COLLECTION_PROTOCOL_ID" lazy="false" fetch="join" />
 
-    <many-to-one name="collectionProtocol" column="COLLECTION_PROTOCOL_ID" />
+    <many-to-one name="participant" column="PARTICIPANT_ID" lazy="false" fetch="join"/>
 
     <set name="consentResponses" table="CATISSUE_CONSENT_TIER_RESPONSE" inverse="true" cascade="all-delete-orphan">
       <key column="COLL_PROT_REG_ID" />
@@ -99,7 +107,18 @@
         cpr.collectionProtocol.shortTitle = :shortTitle and
         p.empi = :empi
     </query>
-    
+
+    <query name="getCprByCpShortTitleAndUid">
+      select
+        cpr
+      from
+        com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolRegistration cpr
+        join cpr.participant p
+      where
+        cpr.collectionProtocol.shortTitle = :shortTitle and
+        p.uid = :uid
+    </query>
+
     <query name="getCprByCpIdAndPid">
       select
         cpr
@@ -134,5 +153,68 @@
       group by
         site.name
     </query>
+
+    <query name="getByPpids">
+      select
+        cpr
+      from
+        com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolRegistration cpr
+        join cpr.collectionProtocol cp
+      where
+        cp.shortTitle = :cpShortTitle and
+        cpr.ppid in (:ppids)
+    </query>
+
+    <sql-query name="getCustomFieldRecordId">
+      <return-scalar column="recordId" type="long" />
+
+      select
+        record_id as recordId
+      from
+        os_cpr_cust_fields
+      where
+        cpr_id = :cprId and
+        form_id = :formId and
+        form_ctxt_id = :formCtxtId
+    </sql-query>
+
+    <sql-query name="getCustomFieldRecordIds">
+      <return-scalar column="cprId" type="long" />
+      <return-scalar column="recordId" type="long" />
+
+      select
+        cpr_id as cprId, record_id as recordId
+      from
+        os_cpr_cust_fields
+      where
+        cpr_id in (:cprIds) and
+        form_id = :formId and
+        form_ctxt_id = :formCtxtId
+    </sql-query>
+
+    <sql-query name="insertCustomFieldRecord">
+      insert into
+        os_cpr_cust_fields(cpr_id, form_id, form_ctxt_id, record_id)
+      values
+        (:cprId, :formId, :formCtxtId, :recordId)
+    </sql-query>
+
+    <sql-query name="insertCustomFieldRecordStatus">
+      insert into
+        os_form_record_statuses (identifier, form_id, record_id, form_status)
+      values
+        (:cprId, :formId, :recordId, :formStatus)
+    </sql-query>
+
+    <sql-query name="updateCustomFieldRecordStatus">
+      update
+        os_form_record_statuses
+      set
+        form_status = :formStatus
+      where
+        identifier = :cprId and
+        form_id = :formId and
+        record_id = :recordId
+    </sql-query>
   </class>
 </hibernate-mapping>

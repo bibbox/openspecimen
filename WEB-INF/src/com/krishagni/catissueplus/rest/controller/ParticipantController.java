@@ -5,7 +5,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
-import javax.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequest;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -45,34 +45,17 @@ public class ParticipantController {
 	public ParticipantDetail getParticipantById(@PathVariable("id") Long participantId) {
 		return response(participantSvc.getParticipant(request(participantId)));
 	}
-	
-	/*@RequestMapping(method = RequestMethod.POST)
-	@ResponseStatus(HttpStatus.OK)
-	@ResponseBody
-	public ParticipantDetail createParticipant(@RequestBody ParticipantDetail participantDetail) {
-		return response(participantSvc.createParticipant(request(participantDetail)));
-	}
-
-	@RequestMapping(method = RequestMethod.PUT, value = "/{id}")
-	@ResponseStatus(HttpStatus.OK)
-	@ResponseBody
-	public ParticipantDetail updateParticipant(@PathVariable Long id, @RequestBody ParticipantDetail participantDetail) {
-		participantDetail.setId(id);
-		return response(participantSvc.updateParticipant(request(participantDetail)));
-	}
-
-	@RequestMapping(method = RequestMethod.DELETE, value = "/{id}")
-	@ResponseStatus(HttpStatus.OK)
-	@ResponseBody
-	public ParticipantDetail delete(@PathVariable Long id) {
-		return response(participantSvc.delete(request(id)));
-	}*/
 
 	@RequestMapping(method = RequestMethod.POST, value = "/match")
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody
 	public List<MatchedParticipant> getMatchedParticipants(@RequestBody ParticipantDetail criteria) {
-		List<MatchedParticipantsList> result = getMatchedParticipants(Collections.singletonList(criteria));
+		if (criteria == null) {
+			return null;
+		}
+
+		criteria.setReqRegInfo(true);
+		List<MatchedParticipantsList> result = response(participantSvc.getMatchingParticipants(request(Collections.singletonList(criteria))));
 		return result.get(0).getMatches();
 	}
 

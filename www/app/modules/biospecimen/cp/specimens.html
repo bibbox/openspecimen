@@ -55,7 +55,7 @@
               <os-spmn-measure-val value="sr.initialQty" specimen="sr"></os-spmn-measure-val>
             </div>
             <div class="col col-xs-1 os-more-options"> 
-              <div dropdown ng-if="view == 'list_sr'">
+              <div dropdown dropdown-append-to-body ng-if="view == 'list_sr'">
                 <button class="dropdown-toggle"> 
                   <span class="fa fa-ellipsis-v"></span>
                 </button>
@@ -104,6 +104,12 @@
                     <a ng-click="deleteSr(sr)">
                       <span class="fa fa-trash"></span>
                       <span translate="srs.ctx_menu.delete"> Delete </span>
+                    </a>
+                  </li>
+                  <li ng-if="sr.activityStatus == 'Closed'" show-if-allowed="cpResource.updateOpts">
+                    <a ng-click="reopenSr(sr)">
+                      <span class="fa fa-check"></span>
+                      <span translate="srs.ctx_menu.reopen"> Reopen </span>
                     </a>
                   </li>
                   <li ng-if="sr.activityStatus != 'Closed'" show-if-allowed="cpResource.updateOpts">

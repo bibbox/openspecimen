@@ -1,11 +1,14 @@
 package com.krishagni.catissueplus.core.administrative.domain;
 
+import org.hibernate.envers.Audited;
+
 import com.krishagni.catissueplus.core.administrative.domain.factory.SpecimenRequestErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.domain.BaseEntity;
 import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
 import com.krishagni.catissueplus.core.common.errors.ErrorCode;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 
+@Audited
 public class SpecimenRequestItem extends BaseEntity {
 	public enum Status {
 		PENDING,
@@ -68,6 +71,12 @@ public class SpecimenRequestItem extends BaseEntity {
 	public void distribute(DistributionOrder distribution) {
 		setStatus(Status.DISTRIBUTED);
 		setDistribution(distribution);
+	}
+
+	public void undoProcessing() {
+		setStatus(Status.PENDING);
+		setDistribution(null);
+		setShipment(null);
 	}
 
 	public void ship(Shipment shipment) {

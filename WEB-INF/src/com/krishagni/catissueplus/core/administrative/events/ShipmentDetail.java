@@ -1,5 +1,6 @@
 package com.krishagni.catissueplus.core.administrative.events;
 
+import java.io.Serial;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -7,22 +8,33 @@ import java.util.Date;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import org.codehaus.jackson.annotate.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
+import com.krishagni.catissueplus.core.administrative.domain.PermissibleValue;
 import com.krishagni.catissueplus.core.administrative.domain.Shipment;
+import com.krishagni.catissueplus.core.biospecimen.events.SpecimenListSummary;
 import com.krishagni.catissueplus.core.common.events.UserSummary;
 
 public class ShipmentDetail implements Mergeable<String, ShipmentDetail>, Serializable {
 
+	@Serial
 	private static final long serialVersionUID = -778300952449162194L;
 
 	private Long id;
+
+	private boolean request;
+
+	private UserSummary requester;
+
+	private Date requestDate;
+
+	private String requesterComments;
 	
 	private String name;
 
 	private String type;
 	
-	private String  courierName;
+	private String courierName;
 	
 	private String trackingNumber;
 	
@@ -47,6 +59,8 @@ public class ShipmentDetail implements Mergeable<String, ShipmentDetail>, Serial
 	private String receiverComments;
 	
 	private String status;
+
+	private String requestStatus;
 	
 	private String activityStatus;
 	
@@ -58,7 +72,7 @@ public class ShipmentDetail implements Mergeable<String, ShipmentDetail>, Serial
 
 	private Integer specimensCount;
 
-	private SpecimenRequestSummary request;
+	private SpecimenListSummary cart;
 	
 	//
 	// For BO template
@@ -75,6 +89,38 @@ public class ShipmentDetail implements Mergeable<String, ShipmentDetail>, Serial
 
 	public void setId(Long id) {
 		this.id = id;
+	}
+
+	public boolean isRequest() {
+		return request;
+	}
+
+	public void setRequest(boolean request) {
+		this.request = request;
+	}
+
+	public UserSummary getRequester() {
+		return requester;
+	}
+
+	public void setRequester(UserSummary requester) {
+		this.requester = requester;
+	}
+
+	public Date getRequestDate() {
+		return requestDate;
+	}
+
+	public void setRequestDate(Date requestDate) {
+		this.requestDate = requestDate;
+	}
+
+	public String getRequesterComments() {
+		return requesterComments;
+	}
+
+	public void setRequesterComments(String requesterComments) {
+		this.requesterComments = requesterComments;
 	}
 
 	public String getName() {
@@ -197,6 +243,14 @@ public class ShipmentDetail implements Mergeable<String, ShipmentDetail>, Serial
 		this.status = status;
 	}
 
+	public String getRequestStatus() {
+		return requestStatus;
+	}
+
+	public void setRequestStatus(String requestStatus) {
+		this.requestStatus = requestStatus;
+	}
+
 	public String getActivityStatus() {
 		return activityStatus;
 	}
@@ -237,12 +291,12 @@ public class ShipmentDetail implements Mergeable<String, ShipmentDetail>, Serial
 		this.specimensCount = specimensCount;
 	}
 
-	public SpecimenRequestSummary getRequest() {
-		return request;
+	public SpecimenListSummary getCart() {
+		return cart;
 	}
 
-	public void setRequest(SpecimenRequestSummary request) {
-		this.request = request;
+	public void setCart(SpecimenListSummary cart) {
+		this.cart = cart;
 	}
 
 	public ShipmentSpecimenDetail getShipmentSpecimen() {
@@ -269,9 +323,42 @@ public class ShipmentDetail implements Mergeable<String, ShipmentDetail>, Serial
 		this.sendMail = sendMail;
 	}
 
+	public ShipmentDetail clone() {
+		ShipmentDetail detail = new ShipmentDetail();
+		detail.setId(this.getId());
+		detail.setRequest(this.isRequest());
+		detail.setRequester(this.getRequester());
+		detail.setRequestDate(this.getRequestDate());
+		detail.setRequesterComments(this.getRequesterComments());
+		detail.setName(this.getName());
+		detail.setType(this.getType());
+		detail.setCourierName(this.getCourierName());
+		detail.setTrackingNumber(this.getTrackingNumber());
+		detail.setTrackingUrl(this.getTrackingUrl());
+		detail.setSendingSite(this.getSendingSite());
+		detail.setReceivingInstitute(this.getReceivingInstitute());
+		detail.setReceivingSite(this.getReceivingSite());
+		detail.setShippedDate(this.getShippedDate());
+		detail.setSender(this.getSender());
+		detail.setSenderComments(this.getSenderComments());
+		detail.setReceivedDate(this.getReceivedDate());
+		detail.setReceiver(this.getReceiver());
+		detail.setReceiverComments(this.getReceiverComments());
+		detail.setStatus(this.getStatus());
+		detail.setRequestStatus(this.getRequestStatus());
+		detail.setActivityStatus(this.getActivityStatus());
+		detail.setNotifyUsers(this.getNotifyUsers());
+		detail.setCart(this.getCart());
+		return detail;
+	}
+
 	public static ShipmentDetail from(Shipment shipment) {
 		ShipmentDetail detail = new ShipmentDetail();
 		detail.setId(shipment.getId());
+		detail.setRequest(shipment.isRequest());
+		detail.setRequester(UserSummary.from(shipment.getRequester()));
+		detail.setRequestDate(shipment.getRequestDate());
+		detail.setRequesterComments(shipment.getRequesterComments());
 		detail.setName(shipment.getName());
 		detail.setType(shipment.getType().name());
 		detail.setCourierName(shipment.getCourierName());
@@ -287,8 +374,13 @@ public class ShipmentDetail implements Mergeable<String, ShipmentDetail>, Serial
 		detail.setReceiver(shipment.getReceiver() == null ? null : UserSummary.from(shipment.getReceiver()));
 		detail.setReceiverComments(shipment.getReceiverComments());
 		detail.setStatus(shipment.getStatus().getName());
+		detail.setRequestStatus(PermissibleValue.getValue(shipment.getRequestStatus()));
 		detail.setActivityStatus(shipment.getActivityStatus());
 		detail.setNotifyUsers(UserSummary.from(shipment.getNotifyUsers()));
+		if (shipment.getCart() != null) {
+			detail.setCart(SpecimenListSummary.fromSpecimenList(shipment.getCart()));
+		}
+
 		return detail;
 	}
 	

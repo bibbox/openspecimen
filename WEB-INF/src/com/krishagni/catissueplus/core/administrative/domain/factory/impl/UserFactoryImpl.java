@@ -2,11 +2,15 @@
 package com.krishagni.catissueplus.core.administrative.domain.factory.impl;
 
 import java.util.Calendar;
+import java.util.List;
+import java.util.TimeZone;
 import java.util.UUID;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.security.web.util.matcher.IpAddressMatcher;
 
 import com.krishagni.catissueplus.core.administrative.domain.Institute;
+import com.krishagni.catissueplus.core.administrative.domain.PermissibleValue;
 import com.krishagni.catissueplus.core.administrative.domain.Site;
 import com.krishagni.catissueplus.core.administrative.domain.User;
 import com.krishagni.catissueplus.core.administrative.domain.factory.InstituteErrorCode;
@@ -17,12 +21,16 @@ import com.krishagni.catissueplus.core.administrative.events.UserDetail;
 import com.krishagni.catissueplus.core.auth.domain.AuthDomain;
 import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
 import com.krishagni.catissueplus.core.common.errors.ActivityStatusErrorCode;
+import com.krishagni.catissueplus.core.common.errors.CommonErrorCode;
 import com.krishagni.catissueplus.core.common.errors.ErrorType;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
+import com.krishagni.catissueplus.core.common.util.LogUtil;
 import com.krishagni.catissueplus.core.common.util.Status;
 import com.krishagni.catissueplus.core.common.util.Utility;
 
 public class UserFactoryImpl implements UserFactory {
+
+	private static final LogUtil logger = LogUtil.getLogger(UserFactoryImpl.class);
 
 	private DaoFactory daoFactory;
 
@@ -47,6 +55,14 @@ public class UserFactoryImpl implements UserFactory {
 		setAddress(detail, user, ose);
 		setAuthDomain(detail, user, ose);
 		setManageForms(detail, user, ose);
+		setManageWfs(detail, user, ose);
+		setManagePrintJobs(detail, user, ose);
+		setDnd(detail, user, ose);
+		setApiUser(detail, user, ose);
+		setIpRange(detail, user, ose);
+		setTimeZone(detail, user, ose);
+		setDefaultPrinter(detail, user, ose);
+		setDownloadLabelsPrintFile(detail, user, ose);
 		user.setCreationDate(Calendar.getInstance().getTime());
 		ose.checkAndThrow();
 		return user;
@@ -70,6 +86,14 @@ public class UserFactoryImpl implements UserFactory {
 		setAddress(detail, existing, user, ose);
 		setAuthDomain(detail, existing, user, ose);
 		setManageForms(detail, existing, user, ose);
+		setManageWfs(detail, existing, user, ose);
+		setManagePrintJobs(detail, existing, user, ose);
+		setDnd(detail, existing, user, ose);
+		setApiUser(detail, existing, user, ose);
+		setIpRange(detail, existing, user, ose);
+		setTimeZone(detail, existing, user, ose);
+		setDefaultPrinter(detail, existing, user, ose);
+		setDownloadLabelsPrintFile(detail, existing, user, ose);
 		ose.checkAndThrow();
 		return user;		
 	}
@@ -321,6 +345,7 @@ public class UserFactoryImpl implements UserFactory {
 
 			default:
 				user.setManageForms(detail.getManageForms());
+				break;
 		}
 	}
 
@@ -329,6 +354,153 @@ public class UserFactoryImpl implements UserFactory {
 			setManageForms(detail, user, ose);
 		} else {
 			user.setManageForms(existing.getManageForms());
+		}
+	}
+
+	private void setManageWfs(UserDetail detail, User user, OpenSpecimenException ose) {
+		switch (user.getType()) {
+			case SUPER, INSTITUTE -> user.setManageWfs(true);
+			case CONTACT -> user.setManageWfs(false);
+			default -> user.setManageWfs(detail.isManageWfs());
+		}
+	}
+
+	private void setManageWfs(UserDetail detail, User existing, User user, OpenSpecimenException ose) {
+		if (detail.isAttrModified("manageWfs")) {
+			setManageWfs(detail, user, ose);
+		} else {
+			user.setManageWfs(existing.getManageWfs());
+		}
+	}
+
+	private void setManagePrintJobs(UserDetail detail, User user, OpenSpecimenException ose) {
+		switch (user.getType()) {
+			case SUPER -> user.setManagePrintJobs(true);
+			case CONTACT -> user.setManagePrintJobs(false);
+			default -> user.setManagePrintJobs(detail.isManagePrintJobs());
+		}
+	}
+
+	private void setManagePrintJobs(UserDetail detail, User existing, User user, OpenSpecimenException ose) {
+		if (detail.isAttrModified("managePrintJobs")) {
+			setManagePrintJobs(detail, user, ose);
+		} else {
+			user.setManagePrintJobs(existing.getManagePrintJobs());
+		}
+	}
+
+	private void setDnd(UserDetail detail, User existing, User user, OpenSpecimenException ose) {
+		if (detail.isAttrModified("dnd")) {
+			setDnd(detail, user, ose);
+		} else {
+			user.setDnd(existing.getDnd());
+		}
+	}
+
+	private void setDnd(UserDetail detail, User user, OpenSpecimenException ose) {
+		user.setDnd(detail.getDnd());
+	}
+
+	private void setApiUser(UserDetail detail, User existing, User user, OpenSpecimenException ose) {
+		if (detail.isAttrModified("apiUser")) {
+			setApiUser(detail, user, ose);
+		} else {
+			user.setApiUser(existing.isApiUser());
+		}
+	}
+
+	private void setApiUser(UserDetail detail, User user, OpenSpecimenException ose) {
+		user.setApiUser(detail.isApiUser());
+	}
+
+	private void setIpRange(UserDetail detail, User existing, User user, OpenSpecimenException ose) {
+		if (detail.isAttrModified("ipRange")) {
+			setIpRange(detail, user, ose);
+		} else {
+			user.setIpRange(existing.getIpRange());
+		}
+
+		if (user.isApiUser() && StringUtils.isBlank(user.getIpRange())) {
+			ose.addError(UserErrorCode.IP_REQ);
+		}
+
+	}
+
+	private void setIpRange(UserDetail detail, User user, OpenSpecimenException ose) {
+		user.setIpRange(detail.getIpRange());
+		try {
+			if (StringUtils.isNotBlank(user.getIpRange()) && !user.getIpRange().equals("*")) {
+				List<String> addresses = Utility.csvToStringList(user.getIpRange());
+				for (String address : addresses) {
+					new IpAddressMatcher(Utility.normaliseIpRange(address));
+				}
+			}
+		} catch (Exception e) {
+			ose.addError(UserErrorCode.INVALID_IP, user.getIpRange());
+		}
+
+		if (user.isApiUser() && StringUtils.isBlank(user.getIpRange())) {
+			ose.addError(UserErrorCode.IP_REQ);
+		}
+	}
+
+	private void setTimeZone(UserDetail detail, User user, OpenSpecimenException ose) {
+		if (StringUtils.isBlank(detail.getTimeZone())) {
+			return;
+		}
+
+		try {
+			TimeZone tz = TimeZone.getTimeZone(detail.getTimeZone());
+			if (tz == null) {
+				ose.addError(CommonErrorCode.INVALID_TZ, detail.getTimeZone());
+			}
+
+			user.setTimeZone(detail.getTimeZone());
+		} catch (Exception e) {
+			ose.addError(CommonErrorCode.INVALID_TZ, detail.getTimeZone());
+			logger.error("Error obtaining timezone for " + detail.getTimeZone(), e);
+		}
+	}
+
+	private void setTimeZone(UserDetail detail, User existing, User user, OpenSpecimenException ose) {
+		if (detail.isAttrModified("timeZone")) {
+			setTimeZone(detail, user, ose);
+		} else {
+			user.setTimeZone(existing.getTimeZone());
+		}
+	}
+
+	private void setDefaultPrinter(UserDetail detail, User user, OpenSpecimenException ose) {
+		if (StringUtils.isBlank(detail.getDefaultPrinter())) {
+			user.setDefaultPrinter(null);
+			return;
+		}
+
+		PermissibleValue pv = daoFactory.getPermissibleValueDao().getByValue("label_printer_name", detail.getDefaultPrinter());
+		if (pv == null) {
+			ose.addError(UserErrorCode.INVALID_PRINTER_NAME, detail.getDefaultPrinter());
+		}
+
+		user.setDefaultPrinter(pv);
+	}
+
+	private void setDefaultPrinter(UserDetail detail, User existing, User user, OpenSpecimenException ose) {
+		if (detail.isAttrModified("defaultPrinter")) {
+			setDefaultPrinter(detail, user, ose);
+		} else {
+			user.setDefaultPrinter(existing.getDefaultPrinter());
+		}
+	}
+
+	private void setDownloadLabelsPrintFile(UserDetail detail, User user, OpenSpecimenException ose) {
+		user.setDownloadLabelsPrintFile(detail.isDownloadLabelsPrintFile());
+	}
+
+	private void setDownloadLabelsPrintFile(UserDetail detail, User existing, User user, OpenSpecimenException ose) {
+		if (detail.isAttrModified("downloadLabelsPrintFile")) {
+			setDownloadLabelsPrintFile(detail, user, ose);
+		} else {
+			user.setDownloadLabelsPrintFile(existing.isDownloadLabelsPrintFile());
 		}
 	}
 }

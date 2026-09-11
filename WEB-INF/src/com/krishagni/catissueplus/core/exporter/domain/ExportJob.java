@@ -10,6 +10,7 @@ import org.apache.commons.lang3.StringUtils;
 
 import com.krishagni.catissueplus.core.administrative.domain.User;
 import com.krishagni.catissueplus.core.biospecimen.domain.BaseEntity;
+import com.krishagni.catissueplus.core.common.util.MessageUtil;
 import com.krishagni.catissueplus.core.importer.domain.ObjectSchema;
 
 public class ExportJob extends BaseEntity {
@@ -33,6 +34,8 @@ public class ExportJob extends BaseEntity {
 	private Date endTime;
 
 	private Map<String, String> params = new HashMap<>();
+
+	private String ipAddress;
 
 	private transient ObjectSchema schema;
 
@@ -96,6 +99,30 @@ public class ExportJob extends BaseEntity {
 		this.params = params;
 	}
 
+	public void param(String name, String value) {
+		if (params == null) {
+			params = new HashMap<>();
+		}
+
+		params.putIfAbsent(name, value);
+	}
+
+	public String param(String name) {
+		if (params == null) {
+			return null;
+		}
+
+		return params.get(name);
+	}
+
+	public String getIpAddress() {
+		return ipAddress;
+	}
+
+	public void setIpAddress(String ipAddress) {
+		this.ipAddress = ipAddress;
+	}
+
 	public ObjectSchema getSchema() {
 		return schema;
 	}
@@ -147,5 +174,23 @@ public class ExportJob extends BaseEntity {
 
 		String userIdStr = user.getId().toString();
 		return Arrays.stream(users.split(",")).anyMatch(userId -> userId.trim().equals(userIdStr));
+	}
+
+	public String getEntityName() {
+		String entityName;
+
+		if (getName().equals("extensions")) {
+			entityName = param("formName") + " (" + param("entityType") + ")";
+		} else {
+			Object[] params = { param("formName") };
+
+			String key = "export_entities_" + getName();
+			entityName = MessageUtil.getInstance().getMessage(key, params);
+			if (entityName.equals(key)) {
+				entityName = getName();
+			}
+		}
+
+		return entityName;
 	}
 }

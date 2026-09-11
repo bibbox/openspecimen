@@ -6,11 +6,15 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.krishagni.catissueplus.core.administrative.domain.DistributionProtocol;
 import com.krishagni.catissueplus.core.administrative.domain.DpDistributionSite;
 import com.krishagni.catissueplus.core.common.ListenAttributeChanges;
 import com.krishagni.catissueplus.core.common.events.UserSummary;
+import com.krishagni.catissueplus.core.common.util.Utility;
 import com.krishagni.catissueplus.core.de.events.ExtensionDetail;
 import com.krishagni.catissueplus.core.de.events.FormSummary;
 import com.krishagni.catissueplus.core.de.events.SavedQuerySummary;
@@ -19,8 +23,6 @@ import com.krishagni.catissueplus.core.de.events.SavedQuerySummary;
 public class DistributionProtocolDetail extends DistributionProtocolSummary {
 
 	private List<UserSummary> coordinators;
-
-	private String instituteName;
 
 	private String irbId;
 
@@ -31,6 +33,8 @@ public class DistributionProtocolDetail extends DistributionProtocolSummary {
 	private FormSummary orderExtnForm;
 
 	private Boolean disableEmailNotifs;
+
+	private String attachmentType;
 
 	private String orderItemLabelFormat;
 
@@ -46,14 +50,6 @@ public class DistributionProtocolDetail extends DistributionProtocolSummary {
 		this.coordinators = coordinators;
 	}
 
-	public String getInstituteName() {
-		return instituteName;
-	}
-
-	public void setInstituteName(String instituteName) {
-		this.instituteName = instituteName;
-	}
-	
 	public String getIrbId() {
 		return irbId;
 	}
@@ -94,6 +90,14 @@ public class DistributionProtocolDetail extends DistributionProtocolSummary {
 		this.disableEmailNotifs = disableEmailNotifs;
 	}
 
+	public String getAttachmentType() {
+		return attachmentType;
+	}
+
+	public void setAttachmentType(String attachmentType) {
+		this.attachmentType = attachmentType;
+	}
+
 	public String getOrderItemLabelFormat() {
 		return orderItemLabelFormat;
 	}
@@ -110,6 +114,21 @@ public class DistributionProtocolDetail extends DistributionProtocolSummary {
 		this.distributingSites = distributingSites;
 	}
 
+	@JsonIgnore
+	public List<Map<String, Object>> getDistributingSitesMapList() {
+		List<Map<String, Object>> result = new ArrayList<>();
+
+		for (Map.Entry<String, List<String>> instituteSites : distributingSites.entrySet()) {
+			Map<String, Object> distSite = new HashMap<>();
+			distSite.put("institute", instituteSites.getKey());
+			distSite.put("site", instituteSites.getValue());
+			result.add(distSite);
+		}
+
+		return result;
+	}
+
+	@JsonProperty("distributingSitesMapList")
 	public void setDistributingSitesMapList(List<Map<String, Object>> input) {
 		Map<String, List<String>> distributingSites = new HashMap<>();
 
@@ -134,12 +153,12 @@ public class DistributionProtocolDetail extends DistributionProtocolSummary {
 		DistributionProtocolDetail detail = new DistributionProtocolDetail();
 		
 		copy(dp, detail);
-		detail.setInstituteName(dp.getInstitute().getName());
 		detail.setIrbId(dp.getIrbId());
 		detail.setPrincipalInvestigator(UserSummary.from(dp.getPrincipalInvestigator()));
 		detail.setCoordinators(UserSummary.from(dp.getCoordinators()));
 		detail.setActivityStatus(dp.getActivityStatus());
 		detail.setDisableEmailNotifs(dp.getDisableEmailNotifs());
+		detail.setAttachmentType(dp.getAttachmentType() != null ? dp.getAttachmentType().name() : null);
 		detail.setOrderItemLabelFormat(dp.getOrderItemLabelFormat());
 
 		if (dp.getReport() != null) {
@@ -157,14 +176,7 @@ public class DistributionProtocolDetail extends DistributionProtocolSummary {
 		return detail;
 	}
 
-	public static List<DistributionProtocolDetail> from(List<DistributionProtocol> distributionProtocols) {
-		List<DistributionProtocolDetail> list = new ArrayList<>();
-		
-		for (DistributionProtocol dp : distributionProtocols) {
-			list.add(from(dp));
-		}
-		
-		return list;
+	public static List<DistributionProtocolDetail> from(List<DistributionProtocol> dps) {
+		return Utility.nullSafeStream(dps).map(DistributionProtocolDetail::from).collect(Collectors.toList());
 	}
-	
 }

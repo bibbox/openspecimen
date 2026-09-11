@@ -5,7 +5,10 @@ angular.module('os.biospecimen.models.cpr',
     'os.biospecimen.models.visit',
     'os.biospecimen.models.form'
   ])
-  .factory('CollectionProtocolRegistration', function($filter, $http, osModel, Participant, Visit, Form, Util) {
+  .factory('CollectionProtocolRegistration', function(
+    $filter, $http, $parse, $injector, osModel,
+    Participant, Visit, Form, Util, ExtensionsUtil) {
+
     var CollectionProtocolRegistration = 
       osModel(
         'collection-protocol-registrations',
@@ -39,8 +42,24 @@ angular.module('os.biospecimen.models.cpr',
     }
 
     CollectionProtocolRegistration.bulkRegistration = function(bulkRegDetail) {
+      var participant = bulkRegDetail.participant = bulkRegDetail.participant || {};
+      participant.source = 'OpenSpecimen';
+
       var url = CollectionProtocolRegistration.url() + '/bulk';
       return $http.post(url, bulkRegDetail).then(CollectionProtocolRegistration.modelRespTransform);
+    }
+
+    //Update registrations in bulk with same detail
+    CollectionProtocolRegistration.bulkEdit = function(detail) {
+      var participant = detail.participant = detail.participant || {};
+      participant.source = 'OpenSpecimen';
+      return $http.put(CollectionProtocolRegistration.url() + "bulk-update", detail)
+        .then(CollectionProtocolRegistration.modelArrayRespTransform);
+    }
+
+    CollectionProtocolRegistration.bulkDelete = function(cprIds, reason) {
+      return $http.delete(CollectionProtocolRegistration.url(), {params: {id: cprIds, forceDelete: true, reason: reason}})
+        .then(function(result) { return result.data; });
     }
 
     function prepareFilterOpts(cpId, includeStats, filterOpts) {
@@ -87,7 +106,8 @@ angular.module('os.biospecimen.models.cpr',
     };
 
     CollectionProtocolRegistration.prototype.$saveProps = function() {
-      this.participant = this.participant.$saveProps();
+      this.participant = angular.copy(this.participant.$saveProps());
+      this.participant.source = 'OpenSpecimen';
       return this;
     };
 
@@ -105,6 +125,10 @@ angular.module('os.biospecimen.models.cpr',
     }
 
     CollectionProtocolRegistration.prototype.getConsents = function() {
+      if ($injector.has('ecDocResponse')) {
+        return $injector.get('ecDocResponse').getConsents(this.$id());
+      }
+
       var url = CollectionProtocolRegistration.url() + this.$id() + "/consents";
       return $http.get(url).then(function(result) {return result.data;});
     }
@@ -117,6 +141,46 @@ angular.module('os.biospecimen.models.cpr',
     CollectionProtocolRegistration.prototype.anonymize = function() {
       var url = CollectionProtocolRegistration.url() + this.$id() + "/anonymize";
       return $http.put(url).then(CollectionProtocolRegistration.modelRespTransform);
+    }
+
+    CollectionProtocolRegistration.prototype.getAllowedEvents = function(visitsTab) {
+      if (!visitsTab.anticipatedEvents) {
+        return null;
+      }
+
+      ExtensionsUtil.createExtensionFieldMap(this.participant);
+
+      var anticipatedEvents = {rules: [], matchType: 'any'};
+      if (visitsTab.anticipatedEvents instanceof Array) {
+        anticipatedEvents.rules = visitsTab.anticipatedEvents;
+      } else if (typeof visitsTab.anticipatedEvents == 'object') {
+        anticipatedEvents = visitsTab.anticipatedEvents;
+      }
+
+
+      var result = null;
+      var input = {cpr: this};
+      var rules = anticipatedEvents.rules || [];
+      for (var i = 0; i < rules.length; ++i) {
+        var spec = rules[i];
+        if (!spec.rule || spec.rule == 'any' || spec.rule == '*' || $parse(spec.rule)(input)) {
+          result = result || [];
+          if (anticipatedEvents.matchType == 'any') {
+            result = spec.events;
+            break;
+          } else if (anticipatedEvents.matchType == 'all') {
+            angular.forEach(spec.events,
+              function(event) {
+                if (result.indexOf(event) == -1) {
+                  result.push(event);
+                }
+              }
+            );
+          }
+        }
+      }
+
+      return result;
     }
 
     return CollectionProtocolRegistration;

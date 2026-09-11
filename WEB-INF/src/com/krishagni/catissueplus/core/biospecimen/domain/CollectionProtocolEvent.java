@@ -9,12 +9,14 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.ObjectUtils;
 import org.hibernate.envers.Audited;
 import org.hibernate.envers.NotAudited;
+import org.hibernate.envers.RelationTargetAuditMode;
 import org.springframework.beans.BeanUtils;
 
+import com.krishagni.catissueplus.core.administrative.domain.PermissibleValue;
 import com.krishagni.catissueplus.core.administrative.domain.Site;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol.VisitNamePrintMode;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.CpeErrorCode;
@@ -35,15 +37,17 @@ public class CollectionProtocolEvent extends BaseEntity implements Comparable<Co
 
 	private IntervalUnit eventPointUnit;
 
+	private Integer sortOrder;
+
 	private CollectionProtocol collectionProtocol;
 	
 	private String code;
 	
 	private Site defaultSite;
 
-	private String clinicalDiagnosis;
+	private PermissibleValue clinicalDiagnosis;
 	
-	private String clinicalStatus;
+	private PermissibleValue clinicalStatus;
 
 	private VisitNamePrintMode visitNamePrintMode;
 
@@ -51,9 +55,9 @@ public class CollectionProtocolEvent extends BaseEntity implements Comparable<Co
 	
 	private String activityStatus;
 
-	private Set<SpecimenRequirement> specimenRequirements = new LinkedHashSet<SpecimenRequirement>();
+	private Set<SpecimenRequirement> specimenRequirements = new LinkedHashSet<>();
 
-	private Set<Visit> specimenCollectionGroups = new HashSet<Visit>();
+	private Set<Visit> specimenCollectionGroups = new HashSet<>();
 
 	private transient int offset = 0;
 
@@ -87,6 +91,14 @@ public class CollectionProtocolEvent extends BaseEntity implements Comparable<Co
 		this.eventPointUnit = eventPointUnit;
 	}
 
+	public Integer getSortOrder() {
+		return sortOrder;
+	}
+
+	public void setSortOrder(Integer sortOrder) {
+		this.sortOrder = sortOrder;
+	}
+
 	@NotAudited
 	public CollectionProtocol getCollectionProtocol() {
 		return collectionProtocol;
@@ -112,19 +124,21 @@ public class CollectionProtocolEvent extends BaseEntity implements Comparable<Co
 		this.defaultSite = defaultSite;
 	}
 
-	public String getClinicalDiagnosis() {
+	@Audited(targetAuditMode = RelationTargetAuditMode.NOT_AUDITED)
+	public PermissibleValue getClinicalDiagnosis() {
 		return clinicalDiagnosis;
 	}
 
-	public void setClinicalDiagnosis(String clinicalDiagnosis) {
+	public void setClinicalDiagnosis(PermissibleValue clinicalDiagnosis) {
 		this.clinicalDiagnosis = clinicalDiagnosis;
 	}
 
-	public String getClinicalStatus() {
+	@Audited(targetAuditMode = RelationTargetAuditMode.NOT_AUDITED)
+	public PermissibleValue getClinicalStatus() {
 		return clinicalStatus;
 	}
 
-	public void setClinicalStatus(String clinicalStatus) {
+	public void setClinicalStatus(PermissibleValue clinicalStatus) {
 		this.clinicalStatus = clinicalStatus;
 	}
 
@@ -174,18 +188,9 @@ public class CollectionProtocolEvent extends BaseEntity implements Comparable<Co
 	}
 	
 	public Set<SpecimenRequirement> getTopLevelAnticipatedSpecimens() {
-		Set<SpecimenRequirement> anticipated = new LinkedHashSet<>();
-		if (getSpecimenRequirements() == null) {
-			return anticipated;
-		}
-		
-		for (SpecimenRequirement sr : getSpecimenRequirements()) {
-			if (sr.getParentSpecimenRequirement() == null && sr.getPooledSpecimenRequirement() == null) {
-				anticipated.add(sr);
-			}
-		}
-		
-		return anticipated;
+		return Utility.nullSafeStream(getSpecimenRequirements())
+			.filter(SpecimenRequirement::isPrimary)
+			.collect(Collectors.toCollection(LinkedHashSet::new));
 	}
 
 	public List<SpecimenRequirement> getOrderedTopLevelAnticipatedSpecimens() {
@@ -199,6 +204,21 @@ public class CollectionProtocolEvent extends BaseEntity implements Comparable<Co
 
 	public void setSpecimenCollectionGroups(Set<Visit> specimenCollectionGroups) {
 		this.specimenCollectionGroups = specimenCollectionGroups;
+	}
+
+	public String getDescription() {
+		String result = "";
+		if (eventPoint != null) {
+			result += ((eventPoint < 0) ? "-" : "") + "T" + Math.abs(eventPoint);
+			result += eventPointUnit.name().charAt(0) + ": ";
+		}
+
+		result += eventLabel;
+		if (code != null) {
+			result += " (" + code + ")";
+		}
+
+		return result;
 	}
 
 	public int getOffset() {
@@ -219,12 +239,13 @@ public class CollectionProtocolEvent extends BaseEntity implements Comparable<Co
 
 	// updates all but specimen requirements
 	public void update(CollectionProtocolEvent other) {
-		if (isClosed()) {
+		if (isClosed() && other.isClosed()) {
 			throw OpenSpecimenException.userError(CpeErrorCode.CLOSED, getEventLabel());
 		}
 
 		setEventPoint(other.getEventPoint());
 		setEventPointUnit(other.getEventPointUnit());
+		setSortOrder(other.getSortOrder());
 		setEventLabel(other.getEventLabel());
 		setCollectionProtocol(other.getCollectionProtocol());
 		setCode(other.getCode());
@@ -251,6 +272,10 @@ public class CollectionProtocolEvent extends BaseEntity implements Comparable<Co
 	}
 	
 	public CollectionProtocolEvent copy() {
+		if (isClosed()) {
+			throw OpenSpecimenException.userError(CpeErrorCode.CLOSED, getEventLabel());
+		}
+
 		CollectionProtocolEvent copy = new CollectionProtocolEvent();
 		BeanUtils.copyProperties(this, copy, EXCLUDE_COPY_PROPS);
 		return copy;
@@ -268,6 +293,10 @@ public class CollectionProtocolEvent extends BaseEntity implements Comparable<Co
 
 		int order = 1;
 		for (SpecimenRequirement sr : topLevelSrs) {
+			if (sr.isClosed()) {
+				continue;
+			}
+
 			SpecimenRequirement copiedSr = sr.deepCopy(cpe);
 			copiedSr.setSortOrder(order++);
 			cpe.addSpecimenRequirement(copiedSr);
@@ -286,7 +315,7 @@ public class CollectionProtocolEvent extends BaseEntity implements Comparable<Co
 	
 	public void delete() {
 		for (SpecimenRequirement sr : getSpecimenRequirements()) {
-			if (sr.isPrimary() && !sr.isSpecimenPoolReq()) {
+			if (sr.isPrimary()) {
 				sr.delete();
 			}
 		}
@@ -299,10 +328,6 @@ public class CollectionProtocolEvent extends BaseEntity implements Comparable<Co
 	public void ensureUniqueSrCode(SpecimenRequirement sr) {
 		if (StringUtils.isNotBlank(sr.getCode()) && getSrByCode(sr.getCode()) != null) {
 			throw OpenSpecimenException.userError(SrErrorCode.DUP_CODE, sr.getCode());
-		}
-
-		if (sr.isPooledSpecimenReq()) {
-			ensureUniqueSrCodes(sr.getSpecimenPoolReqs());
 		}
 	}
 
@@ -327,6 +352,10 @@ public class CollectionProtocolEvent extends BaseEntity implements Comparable<Co
 		Integer otherEventPoint = Utility.getNoOfDays(other.getEventPoint(), other.getEventPointUnit());
 		int result = ObjectUtils.compare(thisEventPoint, otherEventPoint, true);
 		if (result == 0) {
+			result = ObjectUtils.compare(getSortOrder(), other.getSortOrder(), true);
+		}
+
+		if (result == 0) {
 			result = ObjectUtils.compare(getId(), other.getId());
 		}
 
@@ -335,7 +364,6 @@ public class CollectionProtocolEvent extends BaseEntity implements Comparable<Co
 
 	private static final String[] EXCLUDE_COPY_PROPS = {
 			"id",
-			"code",
 			"collectionProtocol",
 			"specimenRequirements",
 			"specimenCollectionGroups"

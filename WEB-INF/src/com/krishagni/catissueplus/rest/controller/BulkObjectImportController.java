@@ -6,13 +6,14 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletResponse;
 
 import org.apache.commons.io.IOUtils;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Controller;
@@ -25,8 +26,10 @@ import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.krishagni.catissueplus.core.biospecimen.events.FileDetail;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
 import com.krishagni.catissueplus.core.common.events.ResponseEvent;
+import com.krishagni.catissueplus.core.common.util.Utility;
 import com.krishagni.catissueplus.core.importer.domain.ObjectSchema;
 import com.krishagni.catissueplus.core.importer.events.FileRecordsDetail;
 import com.krishagni.catissueplus.core.importer.events.ImportDetail;
@@ -64,6 +67,8 @@ public class BulkObjectImportController {
 		if (StringUtils.isNotBlank(formName) && StringUtils.isNotBlank(entityType)) {
 			filename = formName + "_" + entityType + ".csv";
 		}
+
+		filename = Utility.cleanPath(Utility.stripWs(filename));
 		
 		ObjectSchemaCriteria detail = new ObjectSchemaCriteria();
 		detail.setObjectType(schemaName);
@@ -86,23 +91,23 @@ public class BulkObjectImportController {
 	@RequestMapping(method = RequestMethod.POST, value = "/input-file")
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody		
-	public Map<String, String> uploadJobInputFile(@PathVariable("file") MultipartFile file) 
+	public Map<String, String> uploadJobInputFile(@RequestParam("file") MultipartFile file)
 	throws IOException {
-		RequestEvent<InputStream> req = new RequestEvent<InputStream>(file.getInputStream());
+		RequestEvent<InputStream> req = new RequestEvent<>(file.getInputStream());
 		ResponseEvent<String> resp = importSvc.uploadImportJobFile(req);
 		resp.throwErrorIfUnsuccessful();
-		
-		return Collections.singletonMap("fileId", resp.getPayload());
+
+		Map<String, String> response = new HashMap<>();
+		response.put("fileId", resp.getPayload());
+		response.put("filename", file.getOriginalFilename());
+		return response;
 	}
 
 	@RequestMapping(method = RequestMethod.POST, value = "/process-file-records")
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody
 	public List<Map<String, Object>> processFileRecords(@RequestBody FileRecordsDetail detail) {
-		ResponseEvent<List<Map<String, Object>>> resp = importSvc.processFileRecords(new RequestEvent<>(detail));
-		resp.throwErrorIfUnsuccessful();
-
-		return resp.getPayload();
+		return ResponseEvent.unwrap(importSvc.processFileRecords(RequestEvent.wrap(detail)));
 	}
 
 	@RequestMapping(method = RequestMethod.POST, value = "/record-fields-csv")
@@ -186,20 +191,25 @@ public class BulkObjectImportController {
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody	
 	public ImportJobDetail createImportJob(@RequestBody ImportDetail detail) {
-		RequestEvent<ImportDetail> req = new RequestEvent<ImportDetail>(detail);
-		ResponseEvent<ImportJobDetail> resp = importSvc.importObjects(req);
-		resp.throwErrorIfUnsuccessful();
-		
-		return resp.getPayload();
+		return ResponseEvent.unwrap(importSvc.importObjects(RequestEvent.wrap(detail)));
 	}
 
 	@RequestMapping(method = RequestMethod.PUT, value = "{id}/stop")
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody
 	public ImportJobDetail stopImportJob(@PathVariable("id") Long jobId) {
-		ResponseEvent<ImportJobDetail> resp = importSvc.stopJob(new RequestEvent<>(jobId));
-		resp.throwErrorIfUnsuccessful();
+		return ResponseEvent.unwrap(importSvc.stopJob(RequestEvent.wrap(jobId)));
+	}
 
-		return resp.getPayload();
+	@RequestMapping(method = RequestMethod.POST, value = "schedule")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public Map<String, Integer> scheduleJobs(@RequestParam("file") MultipartFile file)
+	throws IOException {
+		FileDetail input = new FileDetail();
+		input.setFilename(file.getOriginalFilename());
+		input.setFileIn(file.getInputStream());
+		Integer scheduled = ResponseEvent.unwrap(importSvc.scheduleImportJobs(RequestEvent.wrap(input)));
+		return Collections.singletonMap("scheduled", scheduled);
 	}
 }

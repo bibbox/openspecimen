@@ -13,20 +13,27 @@ public class SpecimenRequirementDaoImpl extends AbstractDao<SpecimenRequirement>
 	
 	@Override
 	public SpecimenRequirement getSpecimenRequirement(Long id) {
-		return (SpecimenRequirement) getCurrentSession().get(SpecimenRequirement.class, id);
+		return getCurrentSession().find(SpecimenRequirement.class, id);
 	}
 	
 	@Override
 	public int getSpecimensCount(Long srId) {
-		return ((Number) getCurrentSession().getNamedQuery(GET_SPECIMENS_COUNT)
+		Long count = createNamedQuery(GET_SPECIMENS_COUNT, Long.class)
 			.setParameter("srId", srId)
-			.uniqueResult()).intValue();
+			.uniqueResult();
+		return count != null ? count.intValue() : 0;
+	}
+	@Override
+	public int getAllSpecimensCount(Long srId) {
+		Long count = createNamedQuery(GET_ALL_SPECIMENS_COUNT, Long.class)
+			.setParameter("srId", srId)
+			.uniqueResult();
+		return count != null ? count.intValue() : 0;
 	}
 	
 	@Override
-	@SuppressWarnings("unchecked")
 	public SpecimenRequirement getByCpEventLabelAndSrCode(String cpShortTitle, String eventLabel, String code) {
-		return (SpecimenRequirement) getCurrentSession().getNamedQuery(GET_SR_BY_CP_EVENT_AND_SR_CODE)
+		return createNamedQuery(GET_SR_BY_CP_EVENT_AND_SR_CODE, SpecimenRequirement.class)
 			.setParameter("cpShortTitle", cpShortTitle)
 			.setParameter("eventLabel", eventLabel)
 			.setParameter("code", code)
@@ -35,7 +42,7 @@ public class SpecimenRequirementDaoImpl extends AbstractDao<SpecimenRequirement>
 
 	@Override
 	public SpecimenRequirement getByCpEventLabelAndSrCode(Long cpId, String eventLabel, String code) {
-		return (SpecimenRequirement) getCurrentSession().getNamedQuery(GET_SR_BY_CP_ID_EVENT_N_SR_CODE)
+		return createNamedQuery(GET_SR_BY_CP_ID_EVENT_N_SR_CODE, SpecimenRequirement.class)
 			.setParameter("cpId", cpId)
 			.setParameter("eventLabel", eventLabel)
 			.setParameter("code", code)
@@ -44,7 +51,9 @@ public class SpecimenRequirementDaoImpl extends AbstractDao<SpecimenRequirement>
 
 	private static final String FQN = SpecimenRequirement.class.getName();
 	
-	private static final String GET_SPECIMENS_COUNT = FQN + ".getSpecimensCount";
+	private static final String GET_SPECIMENS_COUNT = FQN + ".getCollectedSpecimensCount";
+
+	private static final String GET_ALL_SPECIMENS_COUNT = FQN + ".getAllSpecimensCount";
 	
 	private static final String GET_SR_BY_CP_EVENT_AND_SR_CODE = FQN + ".getByCpEventLabelAndSrCode";
 

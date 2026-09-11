@@ -26,18 +26,23 @@
         <div ng-switch on="!!fieldsCtx.headers.specimen.leftTitle">
           <div ng-switch-when="true">
             <os-html-template template="fieldsCtx.headers.specimen.leftTitle"></os-html-template>
-            <span class="btn os-status-closed" ng-if="specimen.activityStatus == 'Closed'" translate="specimens.closed">
-              Closed
+            <span class="btn" ng-class="statusCss.css">{{specimen.availabilityStatus || 'Pending'}}</span>
+            <span class="btn os-status-pooled" ng-if="specimen.specimensPool.length > 0">
+              <span translate="specimens.pooled">Pooled</span>
+            </span>
+            <span class="btn os-status-closed" ng-if="specimen.checkoutPosition">
+              <span translate="specimens.checked_out">Checked Out</span>
             </span>
           </div>
           <div ng-switch-when="false" ng-switch on="!!specimen.label">
             <span ng-switch-when="true">{{specimen.label}}</span>
             <span ng-switch-default>{{specimen.type}} ({{specimen.specimenClass}})</span>
-            <span class="btn os-status-closed" ng-if="specimen.activityStatus == 'Closed'" translate="specimens.closed">
-              Closed
+            <span class="btn" ng-class="statusCss.css">{{specimen.availabilityStatus || 'Pending'}}</span>
+            <span class="btn os-status-pooled" ng-if="specimen.specimensPool.length > 0">
+              <span translate="specimens.pooled">Pooled</span>
             </span>
-            <span class="btn os-status-reserved" ng-if="specimen.reserved" translate="specimens.reserved">
-              Reserved
+            <span class="btn os-status-closed" ng-if="specimen.checkoutPosition">
+              <span translate="specimens.checked_out">Checked Out</span>
             </span>
           </div>
         </div>
@@ -65,7 +70,7 @@
           <span class="os-title" translate="specimens.menu.extensions">Forms</span>
         </a>
       </li>
-      <li ui-sref-active="active" ng-if="!!specimen.id">
+      <li ui-sref-active="active" ng-if="!!specimen.id && notCoordinatOrStoreAllowed">
         <a ui-sref=".events">
           <i class="fa fa-calendar-o"></i>
           <span class="os-title">Events</span>

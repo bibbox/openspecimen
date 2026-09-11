@@ -64,5 +64,34 @@
       <caption>#getMessage("user_activity_status")</caption>
       <attribute>activityStatus</attribute>
     </field>
+
+    <field>
+      <type>boolean</type>
+      <caption>#getMessage("user_dnd")</caption>
+      <attribute>dnd</attribute>
+    </field>
+
+    <field>
+      <type>boolean</type>
+      <caption>#getMessage("user_manage_forms")</caption>
+      <attribute>manageForms</attribute>
+    </field>
+
+    <field>
+      <type>boolean</type>
+      <caption>#getMessage("user_manage_wfs")</caption>
+      <attribute>manageWfs</attribute>
+    </field>
+
+    <field>
+      <caption>#getMessage("user_default_printer")</caption>
+      <attribute>defaultPrinter</attribute>
+    </field>
+
+    <field>
+      <type>boolean</type>
+      <caption>#getMessage("user_download_labels_print_file")</caption>
+      <attribute>downloadLabelsPrintFile</attribute>
+    </field>
   </record>
 </object-schema>

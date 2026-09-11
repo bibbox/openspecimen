@@ -1,27 +1,38 @@
 angular.module('os.administrative.container.list', ['os.administrative.models'])
   .controller('ContainerListCtrl', function($scope, $state, Container, Util, DeleteUtil, ListPagerOpts, CheckList) {
 
-    var pagerOpts, filterOpts;
+    var pagerOpts, filterOpts, ctx;
 
     function init() {
       pagerOpts = $scope.pagerOpts = new ListPagerOpts({listSizeGetter: getContainersCount});
       filterOpts = $scope.containerFilterOpts = Util.filterOpts({
+        orderByStarred: true,
         maxResults: pagerOpts.recordsPerPage + 1,
         includeStats: true,
         topLevelContainers: true
       });
 
-      $scope.ctx = {
-        exportDetail: { objectType: 'storageContainer' }
-      }
+      ctx = $scope.ctx = {
+        containerList: [],
+        exportDetail: { objectType: 'storageContainer' },
+        emptyState: {
+          loading: true,
+          empty: true,
+          loadingMessage: 'container.loading_list',
+          emptyMessage: 'container.empty_list'
+        }
+      };
 
       loadContainers($scope.containerFilterOpts);
       Util.filter($scope, 'containerFilterOpts', loadContainers, ['maxResults', 'includeStats', 'topLevelContainers']);
     }
 
     function loadContainers(filterOpts) {
+      ctx.emptyState.loading = true;
       Container.list(filterOpts).then(
         function(containers) {
+          ctx.emptyState.loading = false;
+          ctx.emptyState.empty = containers.length <= 0;
           pagerOpts.refreshOpts(containers);
 
           angular.forEach(containers,
@@ -32,7 +43,7 @@ angular.module('os.administrative.container.list', ['os.administrative.models'])
             }
           );
 
-          $scope.containerList = containers;
+          $scope.ctx.containerList = containers;
           $scope.ctx.checkList = new CheckList(containers);
         }
       );
@@ -66,6 +77,17 @@ angular.module('os.administrative.container.list', ['os.administrative.models'])
 
     $scope.pageSizeChanged = function() {
       filterOpts.maxResults = pagerOpts.recordsPerPage + 1;
+    }
+
+    $scope.toggleStar = function(container) {
+      var q = container.starred ? container.unstar() : container.star();
+      q.then(
+        function(result) {
+          if (result.status == true) {
+            container.starred = !container.starred;
+          }
+        }
+      );
     }
 
     init();

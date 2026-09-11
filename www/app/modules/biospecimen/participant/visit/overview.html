@@ -1,8 +1,8 @@
 <div>
   <div class="os-page-commands">
     <div class="left">
-      <span ng-if="visitCtx.showEdit">
-        <button show-if-allowed="specimenResource.updateOpts" class="default"
+      <span ng-if="visitCtx.showEdit && (!!visit.id || cpr.hasConsented)">
+        <button show-if-allowed="visitResource.updateOpts" class="default"
           ng-switch on="!!visit.id" ui-sref="visit-addedit">
           <span ng-switch-when="true">
             <span class="fa fa-pencil"></span>
@@ -15,12 +15,7 @@
         </button>
       </span>
       <span ng-if="visit.status == 'Complete'" show-if-allowed="specimenResource.updateOpts">
-        <button ng-if="visitCtx.spmnReqs.length == 0" class="default"
-          ui-sref="specimen-addedit({cpId: cp.id, visitId: visit.id, cprId: cpr.id})">
-          <span class="fa fa-plus"></span>
-          <span translate="specimens.buttons.add_specimen">Add Specimen</span>
-        </button>
-        <div class="os-inline-btn" dropdown ng-if="visitCtx.spmnReqs.length > 0">
+        <div class="os-inline-btn" dropdown>
           <button class="default dropdown-toggle">
             <span class="fa fa-plus"></span>
             <span translate="specimens.buttons.add_specimen">Add Specimen</span>
@@ -34,23 +29,31 @@
             <li class="divider"></li>
             <li>
               <a ui-sref="specimen-addedit({cpId: cp.id, visitId: visit.id, cprId: cpr.id})">
-                <span translate="specimens.other">Other</span>
+                <span translate="specimens.regular">Other</span>
+              </a>
+            </li>
+            <li>
+              <a ui-sref="specimen-create-pooled({cpId: cp.id, visitId: visit.id, cprId: cpr.id})">
+                <span translate="specimens.pooled">Pooled</span>
               </a>
             </li>
           </ul>
         </div>
       </span>
-      <button ng-if="!!visit.id && visit.status != 'Missed Collection' && visit.status != 'Not Collected'
-        && specimens.length  > 0" show-if-allowed="specimenResource.updateOpts" class="default"
+      <button ng-if="!cpViewCtx.isCoordinator && !!visit.id && visit.status != 'Missed Collection' &&
+        visit.status != 'Not Collected' && specimens.length  > 0"
+        show-if-allowed="specimenResource.updateOpts" class="default"
         ng-click="printSpecimenLabels()" title="{{'specimens.tooltip.print' | translate}}">
         <span class="fa fa-print"></span>
         <span translate="common.buttons.print">Print</span>
       </button>
-      <button ng-if="!!visit.id" show-if-allowed="specimenResource.deleteOpts" class="default"
+      <button ng-if="!!visit.id" show-if-allowed="visitResource.deleteOpts" class="default"
         ng-click="deleteVisit()">
         <span class="fa fa-trash"></span>
         <span translate="common.buttons.delete">Delete</span>
       </button>
+
+      <os-plugin-hooks view-name="'visit-overview'" sec-name="'more-menu'"></os-plugin-hooks>
     </div>
     <div class="right">
       <button class="default" os-right-drawer-toggle ng-switch on="visitCtx.showActivity" ng-click="toggleShowActivity()">
@@ -73,10 +76,12 @@
         </div>
       </div>
 
-      <os-specimen-tree cp="cp" cpr="cpr" visit="visit" specimens="specimens"
-        allowed-ops="specimenAllowedOps" reload="reload()"
-        pending-spmns-disp-interval="pendingSpmnsDispInterval">
-      </os-specimen-tree>
+      <div ng-if="cpViewCtx.spmnReadAllowed">
+        <os-specimen-tree cp="cp" cpr="cpr" visit="visit" specimens="specimens"
+          allowed-ops="specimenAllowedOps" reload="reload()"
+          pending-spmns-disp-interval="pendingSpmnsDispInterval">
+        </os-specimen-tree>
+      </div>
     </div>
 
     <div class="os-col os-no-border" os-right-drawer open-width="34" style="position: static;">
@@ -129,7 +134,7 @@
 
     <li class="item">
       <strong class="key key-sm" translate="visits.clinical_diagnosis">Clinical Diagnosis</strong>
-      <span class="value value-md">{{visit.clinicalDiagnoses | osArrayJoin | osNoValue}}</span>
+      <span class="value value-md">{{visit.diagnosisList | osArrayJoin: joinCd | osNoValue}}</span>
     </li>
 
     <li class="item">

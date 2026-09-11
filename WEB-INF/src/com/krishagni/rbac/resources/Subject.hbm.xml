@@ -4,7 +4,8 @@
     "http://hibernate.sourceforge.net/hibernate-mapping-3.0.dtd">
 
 <hibernate-mapping>
-  <class name="com.krishagni.rbac.domain.Subject" table="CATISSUE_USER">
+  <class name="com.krishagni.rbac.domain.Subject" table="CATISSUE_USER"
+    entity-name="com.krishagni.rbac.domain.Subject">
 
     <id name="id" column="IDENTIFIER">
       <generator class="native">
@@ -32,7 +33,7 @@
         join s.accessList sa
       where
         s.id = :subjectId and
-        sa.resource = :resource and
+        sa.resource in (:resources) and
         sa.operation in (:operations)
     </query>
 
@@ -59,7 +60,7 @@
         left join sa.collectionProtocol cp
       where
         s.id = :subjectId and
-        sa.resource = :resource and
+        sa.resource in (:resources) and
         (cp.id is null or cp.id = :cpId) and
         sa.operation in (:operations)
     </query>
@@ -73,6 +74,17 @@
       where
         s.id = :subjectId and
         sa.resource = :resource and
+        sa.operation in (:operations)
+    </query>
+
+    <query name="getOpAccessList">
+      select
+        sa
+      from
+        com.krishagni.rbac.domain.Subject s
+        join s.accessList sa
+      where
+        s.id = :subjectId and
         sa.operation in (:operations)
     </query>
 
@@ -153,6 +165,21 @@
         (sa.cp_id is null or sa.cp_id = :cpId) and
         (sa.site_id is null or sa.site_id = cpSiteInst.siteId) and
         s.activity_status != 'Disabled'
+    </sql-query>
+
+    <sql-query name="getSiteSubjectIds">
+      <return-scalar column="subjectId" type="long"/>
+
+      select
+        distinct s.identifier as subjectId
+      from
+        catissue_user s
+        inner join rbac_subject_access_view rv on rv.subject_id = s.identifier
+        inner join catissue_institution i on i.identifier = s.institute_id
+      where
+        ((rv.site_id is null and i.identifier = :instituteId) or (rv.site_id is not null and rv.site_id = :siteId)) and
+        rv.resource_name = :resource and
+        rv.operation in (:operations)
     </sql-query>
   </class>  
 </hibernate-mapping>

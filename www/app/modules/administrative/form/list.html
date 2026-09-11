@@ -53,7 +53,7 @@
             <span translate="form.last_updated">Last Updated</span>
           </th>
           <th class="col">
-            <span translate="form.cp_count">CP Count</span>
+            <span translate="form.associations">Associations</span>
           </th>
           <th class="col">
             <span>&nbsp;</span>
@@ -61,7 +61,13 @@
         </tr>
       </thead>
       <tbody class="os-table-body">
-        <tr class="row" ng-repeat="form in formsList | filter:searchFormName" os-row-click="openForm(form)">
+        <tr class="row" ng-if="ctx.emptyState.empty || ctx.emptyState.loading">
+          <td class="col" colspan="100%">
+            <os-empty-list state="ctx.emptyState"></os-empty-list>
+          </td>
+        </tr>
+
+        <tr class="row" ng-repeat="form in formsList" os-row-click="openForm(form)">
           <td class="col os-click-esc">
             <div class="os-select-specimen-cb">
               <os-checkbox ng-change="ctx.checkList.toggleSelectItem($index)"
@@ -84,17 +90,25 @@
             <span>{{form.creationTime |  date:global.dateFmt}}</span>
           </td>
           <td class="col">
-            <span>{{form.cpCount == -1 ? ('form.all' | translate) : form.cpCount}}</span>
+            <span>{{form.associations}}</span>
           </td>
           <td class="col os-click-esc">
             <div class="btn-group btn-group-xs">
+              <button type="button" class="btn btn-default" ng-click="downloadForm(form)"
+                os-tooltip="{{'form.tooltip.download_xml' | translate}}" placement="bottom">
+                <span class="fa fa-download"></span>
+              </button>
               <button type="button" class="btn btn-default" ng-click="showFormContexts(form)"
-                title="{{'form.tooltip.attach_form_to_cp' | translate}}">
+                os-tooltip="{{'form.tooltip.attach_form_to_cp' | translate}}" placement="bottom">
                 <span class="fa fa-wrench"></span>
               </button>
-              <button type="button" class="btn btn-default" ng-click="confirmFormDeletion(form)" 
-                title="{{'form.tooltip.delete' | translate}}"> 
-                <i class="fa fa-trash-o"></i>
+              <button type="button" class="btn btn-default" ng-click="showRevisions(form)"
+                os-tooltip="{{'form.tooltip.revisions' | translate}}" placement="bottom">
+                <span class="fa fa-history"></span>
+              </button>
+              <button type="button" class="btn btn-default" ng-click="confirmFormDeletion(form)"
+                os-tooltip="{{'form.tooltip.delete' | translate}}" placement="bottom">
+                <span class="fa fa-trash-o"></span>
               </button>
             </div>
           </td>
@@ -112,6 +126,10 @@
     <button class="default" title="{{'form.tooltip.add' | translate}}" ui-sref="form-addedit({formId: ''})">
       <span class="fa fa-plus"></span>
       <span translate="common.buttons.create">Create</span>
+    </button>
+    <button class="default" title="{{'form.tooltip.import_zip' | translate}}" ui-sref="form-import">
+      <span class="fa fa-upload"></span>
+      <span translate="common.buttons.import">Import</span>
     </button>
     <os-help class="os-btns btn default" link="form_help_link"></os-help>
   </div>

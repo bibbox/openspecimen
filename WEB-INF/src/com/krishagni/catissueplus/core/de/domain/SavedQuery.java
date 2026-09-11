@@ -1,20 +1,33 @@
 package com.krishagni.catissueplus.core.de.domain;
 
+import java.util.Arrays;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
+import org.hibernate.envers.Audited;
 import org.hibernate.envers.NotAudited;
-
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Configurable;
 import com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.databind.ObjectMapper;
+
 import com.krishagni.catissueplus.core.administrative.domain.ScheduledJob;
 import com.krishagni.catissueplus.core.administrative.domain.User;
+import com.krishagni.catissueplus.core.biospecimen.domain.BaseEntity;
+import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
+import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolGroup;
+import com.krishagni.catissueplus.core.common.util.Utility;
+import com.krishagni.catissueplus.core.de.repository.DaoFactory;
 
-public class SavedQuery {
-	private Long id;
+import edu.common.dynamicextensions.query.QuerySpace;
 
+@Configurable
+@Audited
+public class SavedQuery extends BaseEntity {
 	private String title;
 
 	private User createdBy;
@@ -28,6 +41,12 @@ public class SavedQuery {
 	private Long lastRunCount;
 	
 	private Long cpId;
+
+	private CollectionProtocol cp;
+
+	private Long cpGroupId;
+
+	private CollectionProtocolGroup cpGroup;
 	
 	private String drivingForm;
 
@@ -48,21 +67,21 @@ public class SavedQuery {
 	private Set<QueryFolder> folders = new HashSet<>();
 
 	private Set<ScheduledJob> scheduledJobs = new HashSet<>();
+
+	private transient QuerySpace qs;
 	
 	private String wideRowMode = "DEEP";
 
 	private boolean outputColumnExprs;
 
+	private boolean caseSensitive = true;
+
 	private Date deletedOn;
 
-	public Long getId() {
-		return id;
-	}
+	@Autowired
+	@JsonIgnore
+	private DaoFactory daoFactory;
 
-	public void setId(Long id) {
-		this.id = id;
-	}
-	
 	public String getTitle() {
 		return title;
 	}
@@ -71,6 +90,7 @@ public class SavedQuery {
 		this.title = title;
 	}
 
+	@NotAudited
 	public Date getLastRunOn() {
 		return lastRunOn;
 	}
@@ -79,6 +99,7 @@ public class SavedQuery {
 		this.lastRunOn = lastRunOn;
 	}
 
+	@NotAudited
 	public Date getLastUpdated() {
 		return lastUpdated;
 	}
@@ -87,6 +108,7 @@ public class SavedQuery {
 		this.lastUpdated = lastUpdated;
 	}
 
+	@NotAudited
 	public User getCreatedBy() {
 		return createdBy;
 	}
@@ -95,6 +117,7 @@ public class SavedQuery {
 		this.createdBy = createdBy;
 	}
 
+	@NotAudited
 	public User getLastUpdatedBy() {
 		return lastUpdatedBy;
 	}
@@ -103,6 +126,7 @@ public class SavedQuery {
 		this.lastUpdatedBy = lastUpdatedBy;
 	}
 
+	@NotAudited
 	public Long getLastRunCount() {
 		return lastRunCount;
 	}
@@ -121,6 +145,36 @@ public class SavedQuery {
 		}
 
 		this.cpId = cpId;
+	}
+
+	@NotAudited
+	public CollectionProtocol getCp() {
+		return cp;
+	}
+
+	public void setCp(CollectionProtocol cp) {
+		this.cp = cp;
+	}
+
+	public Long getCpGroupId() {
+		return cpGroupId;
+	}
+
+	public void setCpGroupId(Long cpGroupId) {
+		if (cpGroupId != null && cpGroupId == -1L) {
+			cpGroupId = null;
+		}
+
+		this.cpGroupId = cpGroupId;
+	}
+
+	@NotAudited
+	public CollectionProtocolGroup getCpGroup() {
+		return cpGroup;
+	}
+
+	public void setCpGroup(CollectionProtocolGroup cpGroup) {
+		this.cpGroup = cpGroup;
 	}
 
 	public String getDrivingForm() {
@@ -174,7 +228,6 @@ public class SavedQuery {
 		this.reporting = reporting;
 	}
 
-	@NotAudited
 	public Set<Long> getSubQueries() {
 		return subQueries;
 	}
@@ -226,6 +279,14 @@ public class SavedQuery {
 		this.outputColumnExprs = outputColumnExprs;
 	}
 
+	public boolean isCaseSensitive() {
+		return caseSensitive;
+	}
+
+	public void setCaseSensitive(boolean caseSensitive) {
+		this.caseSensitive = caseSensitive;
+	}
+
 	public Date getDeletedOn() {
 		return deletedOn;
 	}
@@ -246,6 +307,7 @@ public class SavedQuery {
 		}
 		
 		query.cpId = cpId;
+		query.cpGroupId = cpGroupId;
 		query.selectList = selectList;
 		query.filters = filters;
 		query.queryExpression = queryExpression;
@@ -255,6 +317,7 @@ public class SavedQuery {
 		query.reporting = reporting;
 		query.wideRowMode = wideRowMode;
 		query.outputColumnExprs = outputColumnExprs;
+		query.caseSensitive = caseSensitive;
 		
 		try {
 			return getWriteMapper().writeValueAsString(query);
@@ -270,14 +333,15 @@ public class SavedQuery {
 	public void setQueryDefJson(String queryDefJson, boolean includeTitle) {
 		SavedQuery query = null;
 		try {
-			query = getReadMapper().readValue(queryDefJson, SavedQuery.class);
+			query = Utility.jsonToObject(queryDefJson, SavedQuery.class);
 		} catch (Exception e) {
-			throw new RuntimeException("Error marshalling JSON to saved query", e);
+			throw new RuntimeException("Error marshalling JSON to saved query: " + e.getMessage(), e);
 		}
 		if(includeTitle){
 			this.title = query.title;
 		}
 		this.cpId = (query.cpId != null && query.cpId == -1L) ? null : query.cpId;
+		this.cpGroupId = (query.cpGroupId != null && query.cpGroupId == -1L) ? null : query.cpGroupId;
 		this.selectList = query.selectList;
 		this.filters = query.filters;
 		this.queryExpression = query.queryExpression;
@@ -286,23 +350,37 @@ public class SavedQuery {
 		this.reporting = query.reporting;
 		this.wideRowMode = query.wideRowMode;
 		this.outputColumnExprs = query.outputColumnExprs;
+		this.caseSensitive = query.caseSensitive;
 	}
-	
+
+	public QuerySpace getQuerySpace() {
+		return qs;
+	}
+
+	public void setQuerySpace(QuerySpace qs) {
+		this.qs = qs;
+	}
+
 	public String getAql() {
-		return AqlBuilder.getInstance().getQuery(selectList, filters, queryExpression, havingClause);
+		return AqlBuilder.getInstance().getQuery(this, new Filter[0]);
 	}
 	
 	public String getAql(Filter[] conjunctionFilters) {
-		return AqlBuilder.getInstance().getQuery(selectList, filters, conjunctionFilters, queryExpression, havingClause);
+		return AqlBuilder.getInstance().getQuery(this, conjunctionFilters);
 	}
 
 	public String getAql(String conjunction) {
-		return AqlBuilder.getInstance().getQuery(selectList, filters, conjunction, queryExpression, havingClause);
+		return AqlBuilder.getInstance().getQuery(this, conjunction);
+	}
+
+	public String getAql(String conjunction, String orderBy) {
+		return AqlBuilder.getInstance().getQuery(this, conjunction, orderBy);
 	}
 	
 	public void update(SavedQuery query) {
 		setTitle(query.getTitle());
 		setCpId(query.getCpId());
+		setCpGroupId(query.getCpGroupId());
 		setDrivingForm(query.getDrivingForm());
 		setLastUpdatedBy(query.getLastUpdatedBy());
 		setLastUpdated(query.getLastUpdated());
@@ -314,6 +392,7 @@ public class SavedQuery {
 		setReporting(query.getReporting());
 		setWideRowMode(query.getWideRowMode());
 		setOutputColumnExprs(query.isOutputColumnExprs());
+		setCaseSensitive(query.isCaseSensitive());
 	}
 	
 	@Override
@@ -352,20 +431,36 @@ public class SavedQuery {
 		copy.selectList = curateSelectList(copy.selectList);
 		return copy;
 	}
-		
-	private ObjectMapper getReadMapper() {
-		return new ObjectMapper();
+
+	public boolean canUpdateOrDelete(User user) {
+		if (user == null || getCreatedBy().isSysUser()) {
+			return false;
+		} else if (user.isAdmin()) {
+			return true;
+		} else if (user.isInstituteAdmin()) {
+			return getCreatedBy() != null && user.getInstitute().equals(getCreatedBy().getInstitute());
+		} else if (user.equals(getCreatedBy())) {
+			return true;
+		} else {
+			return daoFactory.getSavedQueryDao().isQuerySharedWithUser(getId(), user.getId(), true);
+		}
 	}
-	
+
+	@Override
+	protected Set<String> getAuditStringInclusionProps() {
+		return Arrays.stream(new String[] {
+			"id", "title", "cpId", "cpGroupId", "queryDefJson", "deletedOn", "subQueries", "dependentQueries"
+		}).collect(Collectors.toSet());
+	}
+
 	private ObjectMapper getWriteMapper() {
 		ObjectMapper mapper = new ObjectMapper();
-		mapper.setVisibilityChecker(
+		return mapper.setVisibility(
 			mapper.getSerializationConfig().getDefaultVisibilityChecker()
 				.withFieldVisibility(Visibility.ANY)
 				.withGetterVisibility(Visibility.NONE)
 				.withSetterVisibility(Visibility.NONE)
 				.withCreatorVisibility(Visibility.NONE));
-		return mapper;		
 	}
 
 	private Object[] curateSelectList(Object[] selectList) {

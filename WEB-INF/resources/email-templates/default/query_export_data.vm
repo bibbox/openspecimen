@@ -1,5 +1,5 @@
 #set ( $apiUrl= "$appUrl/rest/ng/query/export?fileId=$filename" )
-#set ( $downloadUrl= "$appUrl/#/file-download?downloadUrl=$urlEncoder.encode($apiUrl)" )
+#set ( $downloadUrl= "$appUrl/ui-app/#/download-file?downloadUrl=$urlEncoder.encode($apiUrl)" )
 
 <table cellspacing="0" cellpadding="0" border="0" width="100%" style="border-spacing:0;border-collapse:separate">
   <tbody>
@@ -20,7 +20,7 @@
                   #end
 
                   <br>
-                  <a href="$downloadUrl">$apiUrl</a>
+                  <a href="$downloadUrl">$downloadUrl</a>
                   <br/><br/>
                   The link will be valid for 30 days
                   <br/><br/>
@@ -38,6 +38,6 @@
       <td>
         #parse( $footer )
       </td>
-    <tr>
+    </tr>
   </tbody>
 </table>

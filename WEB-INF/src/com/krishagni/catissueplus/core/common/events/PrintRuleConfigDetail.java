@@ -6,11 +6,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import org.codehaus.jackson.map.annotate.JsonSerialize;
+import com.fasterxml.jackson.annotation.JsonInclude;
 
 import com.krishagni.catissueplus.core.common.domain.PrintRuleConfig;
 
-@JsonSerialize(include = JsonSerialize.Inclusion.NON_NULL)
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class PrintRuleConfigDetail {
 	private Long id;
 
@@ -28,7 +28,9 @@ public class PrintRuleConfigDetail {
 
 	private String description;
 
-	private Map<String, String> rule;
+	private Map<String, Object> rule;
+
+	private Integer sortOrder;
 
 	public Long getId() {
 		return id;
@@ -94,14 +96,21 @@ public class PrintRuleConfigDetail {
 		this.description = description;
 	}
 
-	public Map<String, String> getRule() {
+	public Map<String, Object> getRule() {
 		return rule;
 	}
 
-	public void setRule(Map<String, String> rule) {
+	public void setRule(Map<String, Object> rule) {
 		this.rule = rule;
 	}
 
+	public Integer getSortOrder() {
+		return sortOrder;
+	}
+
+	public void setSortOrder(Integer sortOrder) {
+		this.sortOrder = sortOrder;
+	}
 	public static PrintRuleConfigDetail from(PrintRuleConfig rule) {
 		PrintRuleConfigDetail detail = new PrintRuleConfigDetail();
 
@@ -114,6 +123,7 @@ public class PrintRuleConfigDetail {
 		detail.setActivityStatus(rule.getActivityStatus());
 		detail.setDescription(rule.getDescription());
 		detail.setRule(rule.getRuleDef(true));
+		detail.setSortOrder(rule.getSortOrder());
 		return detail;
 	}
 

@@ -13,26 +13,41 @@
         <udn>fromContainer</udn>
         <caption>#getMessage("transfer_event_from_container")</caption>
         <column>FROM_STORAGE_CONTAINER_ID</column>
+        <recordUrl>#/object-state-params-resolver?stateName=ContainerDetail.Overview&amp;objectName=storage_container&amp;key=name&amp;value={{$value}}</recordUrl>
       </storageContainer>
+
+      <textField>
+        <name>fromRow</name>
+        <udn>fromRow</udn>
+        <caption>#getMessage("transfer_event_from_row")</caption>
+        <column>FROM_ROW</column>
+      </textField>
+
+      <textField>
+        <name>fromCol</name>
+        <udn>fromCol</udn>
+        <caption>#getMessage("transfer_event_from_col")</caption>
+        <column>FROM_COL</column>
+      </textField>
 
       <numberField>
         <name>fromDimensionTwo</name>
         <udn>fromDimensionTwo</udn>
-        <caption>#getMessage("transfer_event_dim_two")</caption>
-        <column>FROM_POSITION_DIMENSION_Two</column>
+        <caption>#getMessage("transfer_event_from_dim_two")</caption>
+        <column>FROM_POSITION_DIMENSION_TWO</column>
       </numberField>
 
       <numberField>
         <name>fromDimensionOne</name>
         <udn>fromDimensionOne</udn>
-        <caption>#getMessage("transfer_event_dim_one")</caption>
+        <caption>#getMessage("transfer_event_from_dim_one")</caption>
         <column>FROM_POSITION_DIMENSION_ONE</column>
       </numberField>
 
       <numberField>
         <name>fromPosition</name>
         <udn>fromPosition</udn>
-        <caption>#getMessage("transfer_event_position")</caption>
+        <caption>#getMessage("transfer_event_from_position")</caption>
         <column>FROM_POSITION</column>
       </numberField>
     </row>
@@ -43,29 +58,43 @@
         <udn>toContainer</udn>
         <caption>#getMessage("transfer_event_to_container")</caption>
         <column>TO_STORAGE_CONTAINER_ID</column>
+        <recordUrl>#/object-state-params-resolver?stateName=ContainerDetail.Overview&amp;objectName=storage_container&amp;key=name&amp;value={{$value}}</recordUrl>
       </storageContainer>
+
+      <textField>
+        <name>toRow</name>
+        <udn>toRow</udn>
+        <caption>#getMessage("transfer_event_to_row")</caption>
+        <column>TO_ROW</column>
+      </textField>
+
+      <textField>
+        <name>toCol</name>
+        <udn>toCol</udn>
+        <caption>#getMessage("transfer_event_to_col")</caption>
+        <column>TO_COL</column>
+      </textField>
 
       <numberField>
         <name>toDimensionTwo</name>
         <udn>toDimensionTwo</udn>
-        <caption>#getMessage("transfer_event_dim_two")</caption>
+        <caption>#getMessage("transfer_event_to_dim_two")</caption>
         <column>TO_POSITION_DIMENSION_Two</column>
       </numberField>
 
       <numberField>
         <name>toDimensionOne</name>
         <udn>toDimensionOne</udn>
-        <caption>#getMessage("transfer_event_dim_one")</caption>
+        <caption>#getMessage("transfer_event_to_dim_one")</caption>
         <column>TO_POSITION_DIMENSION_ONE</column>
       </numberField>
 
       <numberField>
         <name>toPosition</name>
         <udn>toPosition</udn>
-        <caption>#getMessage("transfer_event_position")</caption>
+        <caption>#getMessage("transfer_event_to_position")</caption>
         <column>TO_POSITION</column>
       </numberField>
-
     </row>
 
     <row>
@@ -89,6 +118,19 @@
         <default>current_date</default>
         <mandatory>true</mandatory>
       </datePicker>
+    </row>
+
+    <row>
+      <dropDown>
+        <name>status</name>
+        <udn>status</udn>
+        <caption>#getMessage("transfer_event_storage_status")</caption>
+        <column>STORAGE_STATUS</column>
+        <options>
+          <option><value>CHECK-IN</value></option>
+          <option><value>CHECK-OUT</value></option>
+        </options>
+      </dropDown>
     </row>
 
     <row>

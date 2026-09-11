@@ -4,9 +4,10 @@
 }
 
 .os-form-association .os-modal-body {
-  height: 530px;
   display: flex;
   flex-direction: column;
+  max-height: calc(100vh - 160px);
+  overflow-y: auto;
 }
 
 .os-form-association-list {
@@ -24,6 +25,13 @@
 }
 .os-form-association-form .os-select-container {
   margin: 10px 0;
+}
+
+.os-association-revisions-tab {
+  max-height: 350px;
+  overflow-y: scroll;
+  margin: 0px -20px;
+  padding: 0px 20px;
 }
 
 .os-tag {
@@ -58,11 +66,13 @@
 
 
 .os-extn-form.de-form-submitting,
+ng-form.os-form-submitting,
 form.os-form-submitting {
   position: relative;
 }
 
 .os-extn-form.de-form-submitting:before,
+ng-form.os-form-submitting:before,
 form.os-form-submitting:before {
   position: absolute;
   width: 100%;
@@ -74,6 +84,7 @@ form.os-form-submitting:before {
 }
 
 .os-extn-form.de-form-submitting:after,
+ng-form.os-form-submitting:after,
 form.os-form-submitting:after {
   position: fixed;
   top: 40px;
@@ -84,4 +95,67 @@ form.os-form-submitting:after {
   padding: 5px 12px;
   background: #ffc;
   border: 1px solid #ddd;
+}
+
+/* Patient data entry */
+.os-pde-container {
+  position: absolute;
+  top: 40px;
+  bottom: 0px;
+  width: 100%;
+  background: #fff;
+  z-index: 5;
+}
+
+.os-pde-home {
+  position: relative;
+  height: 100%;
+  width: 100%;
+  overflow: auto;
+}
+
+.os-pde-home:after {
+  content: ' ';
+  display: block;
+  clear: both;
+}
+
+.os-pde-home .os-page-header {
+  top: 0px;
+  height: 56px;
+}
+
+.os-pde-home .os-page-header+.container {
+  top: 57px;
+}
+
+.os-pde-container .os-extn-form .modal-footer .btn-default,
+.os-pde-container .os-extn-form .modal-footer .btn-warning,
+.os-pde-container .os-extn-form .modal-footer .btn-info {
+  display: none;
+}
+
+@media only screen
+  and (min-device-width: 375px)
+  and (max-device-width: 812px) {
+
+  .os-pde-home {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .os-pde-home .os-page-header {
+    height: auto!important;
+    position: initial;
+  }
+
+  .os-pde-home .os-page-header .os-page-header-content h3 {
+    font-size: 16px;
+    white-space: pre-wrap;
+  }
+
+  .os-pde-home .os-page-header+.container {
+    flex: 1;
+    position: initial;
+  }
 }

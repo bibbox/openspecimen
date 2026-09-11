@@ -4,7 +4,9 @@
     "http://hibernate.sourceforge.net/hibernate-mapping-3.0.dtd">
 
 <hibernate-mapping auto-import="false">
-  <class name="com.krishagni.catissueplus.core.administrative.domain.DistributionProtocol" table="CATISSUE_DISTRIBUTION_PROTOCOL">
+  <class name="com.krishagni.catissueplus.core.administrative.domain.DistributionProtocol" table="CATISSUE_DISTRIBUTION_PROTOCOL"
+    entity-name="com.krishagni.catissueplus.core.administrative.domain.DistributionProtocol">
+
     <id name="id" column="IDENTIFIER" type="long" unsaved-value="null">
       <generator class="native">
         <param name="sequence">CATISSUE_DISTRI_PROT_SEQ</param>
@@ -39,6 +41,13 @@
     <many-to-one name="orderExtnForm" column="ORDER_EXTN_FORM_ID"/>
 
     <property name="disableEmailNotifs" column="DISABLE_EMAIL_NOTIFS"/>
+
+    <property name="attachmentType" column="ATTACHMENT_TYPE">
+      <type name="org.hibernate.type.EnumType">
+        <param name="enumClass">com.krishagni.catissueplus.core.administrative.domain.DistributionProtocol$NotifAttachmentType</param>
+        <param name="type">12</param>
+      </type>
+    </property>
 
     <property name="orderItemLabelFormat" column="ORDER_ITEM_LABEL_FORMAT"/>
 
@@ -106,9 +115,11 @@
         com.krishagni.catissueplus.core.administrative.domain.DistributionProtocol dp
         join dp.distributionOrders do
         join do.orderItems orderItem
+        join orderItem.specimen spmn
       where
         dp.id in (:dpIds) and
-        do.status = 'EXECUTED'
+        do.status = 'EXECUTED' and
+        spmn.activityStatus != 'Disabled'
       group by
         dp.id
     </query>
@@ -143,17 +154,46 @@
             inner join catissue_consent_tier_response resp on resp.coll_prot_reg_id = reg.identifier
             inner join catissue_consent_tier cp_ct on cp_ct.identifier = resp.consent_tier_id
             inner join os_dp_consent_tiers dp_ct on dp_ct.consent_stmt_id = cp_ct.consent_stmt_id
+            inner join catissue_permissible_value resp_pv on resp_pv.identifier = resp.response_id
           where
             s.identifier in (:specimenIds) and
             dp_ct.dp_id = :dpId and
             dp_ct.activity_status = 'Active' and
             cp_ct.activity_status = 'Active' and
-            resp.response = 'Yes'
+            resp_pv.value = 'Yes'
           group by
             s.identifier
           having
             count(resp.identifier) = :respCount
         )
+    </sql-query>
+
+    <sql-query name="unlinkCustomForm">
+      update catissue_distribution_protocol set order_extn_form_id = null where order_extn_form_id = :formId
+    </sql-query>
+
+    <sql-query name="getDependents">
+      <return-scalar column="dp_id" type="long" />
+      <return-scalar column="specimen" type="int" />
+      <return-scalar column="storage_container" type="int" />
+      <return-scalar column="distribution_order" type="int" />
+
+      select
+        dp.identifier as dp_id,
+        count(distinct sp.identifier) as specimen,
+        count(distinct cont.identifier) as storage_container,
+        count(distinct o.identifier) as distribution_order
+      from
+        catissue_distribution_protocol dp
+        left join os_spmn_reserved_events rs on rs.dp_id = dp.identifier
+        left join catissue_specimen sp on sp.identifier = rs.specimen_id and sp.reserved_event_id = rs.identifier and sp.activity_status != 'Disabled'
+        left join os_stor_container_dps dp_cont on dp_cont.dp_id = dp.identifier
+        left join os_storage_containers cont on cont.identifier = dp_cont.storage_container_id and cont.activity_status != 'Disabled'
+        left join os_orders o on o.distribution_protocol_id = dp.identifier and o.activity_status != 'Disabled'
+      where
+        dp.identifier = :dpId
+      group by
+        dp.identifier
     </sql-query>
   </class>
 </hibernate-mapping>

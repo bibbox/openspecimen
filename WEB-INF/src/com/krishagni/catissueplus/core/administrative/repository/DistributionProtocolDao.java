@@ -39,4 +39,8 @@ public interface DistributionProtocolDao extends Dao<DistributionProtocol> {
 	List<String> getNonConsentingSpecimens(Long dpId, List<Long> specimenIds, int stmtsCount);
 
 	void saveReservedEvents(Collection<SpecimenReservedEvent> events);
+
+	void unlinkCustomForm(Long formId);
+
+	Map<String, Integer> getDependents(Long dpId);
 }

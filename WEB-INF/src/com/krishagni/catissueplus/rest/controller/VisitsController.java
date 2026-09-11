@@ -6,8 +6,8 @@ import java.io.InputStream;
 import java.util.List;
 import java.util.Map;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 import org.apache.commons.io.IOUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -63,25 +63,50 @@ public class VisitsController {
 	
 	@Autowired
 	private FormService formSvc;
-	
-	
+
 	@RequestMapping(method = RequestMethod.GET)
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody
 	public List<VisitDetail> getVisits(
-		@RequestParam(value = "cprId", required = true)
+		@RequestParam(value = "cprId")
 		Long cprId,
 
 		@RequestParam(value = "includeStats", required = false, defaultValue = "false") 
-		boolean includeStats) {
+		boolean includeStats,
+
+		@RequestParam(value = "sortByDates", required = false, defaultValue = "false")
+		boolean sortByDates) {
 		
 		VisitsListCriteria crit = new VisitsListCriteria()
 			.cprId(cprId)
-			.includeStat(includeStats);
+			.includeStat(includeStats)
+			.sortByDates(sortByDates);
 
 		ResponseEvent<List<VisitDetail>> resp = cprSvc.getVisits(request(crit));
 		resp.throwErrorIfUnsuccessful();
 		return resp.getPayload();
+	}
+
+	@RequestMapping(method = RequestMethod.GET, value = "/list")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public List<VisitDetail> getVisits(
+		@RequestParam(value = "name", required = false)
+		List<String> names,
+
+		@RequestParam(value = "includeExtensions", required = false, defaultValue = "false")
+		boolean includeExtensions,
+
+		@RequestParam(value = "startAt", required = false, defaultValue = "0")
+		int startAt,
+
+		@RequestParam(value = "maxResults", required = false, defaultValue = "100")
+		int maxResults
+	) {
+		VisitsListCriteria crit = new VisitsListCriteria()
+			.names(names).includeExtensions(includeExtensions)
+			.startAt(startAt).maxResults(maxResults);
+		return ResponseEvent.unwrap(visitService.getVisits(RequestEvent.wrap(crit)));
 	}
 
 	@RequestMapping(method = RequestMethod.GET, value="/bynamespr")
@@ -145,7 +170,7 @@ public class VisitsController {
 		@PathVariable("id") 
 		Long visitId, 
 		
-		@PathVariable("file") 
+		@RequestParam("file")
 		MultipartFile file)
 	throws IOException {
 		ResponseEvent<String> resp = null;

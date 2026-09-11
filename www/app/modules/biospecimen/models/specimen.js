@@ -43,6 +43,10 @@ angular.module('os.biospecimen.models.specimen', ['os.common.models', 'os.biospe
     Specimen.listByLabels = function(labels) {
       return Specimen.query({label: labels});
     };
+
+    Specimen.search = function(criteria) {
+      return $http.post(Specimen.url() + 'search', criteria).then(Specimen.modelArrayRespTransform);
+    };
     
     Specimen.flatten = function(specimens, parent, depth, pooledSpecimen, opts) {
       var result = [];
@@ -54,7 +58,7 @@ angular.module('os.biospecimen.models.specimen', ['os.common.models', 'os.biospe
       angular.forEach(specimens, function(specimen) {
         var depthIncrStep = 1;
         var hasChildren = (!!specimen.children && specimen.children.length > 0);
-        if (opts && opts.hideDerivatives && !specimen.reqId && specimen.lineage == 'Derived' && hasChildren &&
+        if (opts && opts.hideDerivatives && specimen.lineage == 'Derived' && hasChildren &&
           specimen.children.every(function(a) { return a.lineage == 'Aliquot'; })) {
           depthIncrStep = 0;
           specimen.$$invisibleN = true;
@@ -64,17 +68,11 @@ angular.module('os.biospecimen.models.specimen', ['os.common.models', 'os.biospe
 
         specimen.depth = depth || 0;
         specimen.parent = specimen.parent || parent;
-        specimen.pooledSpecimen = specimen.pooledSpecimen || pooledSpecimen;
-
-        var hasSpecimensPool = false;
-        if (depth == 0) {
-          hasSpecimensPool = !!specimen.specimensPool && specimen.specimensPool.length > 0;
-          if (hasSpecimensPool) {
-            result = result.concat(Specimen.flatten(specimen.specimensPool, specimen, depth + 1, specimen, opts));
-          }
+        if (specimen.parent && (specimen.parent.status == 'Missed Collection' || specimen.parent.status == 'Not Collected')) {
+          specimen.status = specimen.parent.status;
         }
 
-        specimen.hasChildren = hasSpecimensPool || hasChildren;
+        specimen.hasChildren = hasChildren;
         if (hasChildren) {
           result = result.concat(Specimen.flatten(specimen.children, specimen, depth + depthIncrStep, undefined, opts));
         }
@@ -84,20 +82,18 @@ angular.module('os.biospecimen.models.specimen', ['os.common.models', 'os.biospe
         }
 
         specimen.hasOnlyPendingChildren = hasOnlyPendingChildren(specimen.children);
-        if (specimen.hasOnlyPendingChildren) {
-          specimen.hasOnlyPendingChildren = hasOnlyPendingChildren(specimen.specimensPool);
-        }
-
-        if (hasSpecimensPool) {
-          specimen.$$childrenHaveImg = hasImage(specimen.specimensPool);
-        }
-
         if (!specimen.$$childrenHaveImg && hasChildren) {
           specimen.$$childrenHaveImg = hasImage(specimen.children);
         }
+
+        specimen.pooledSpecimen = specimen.specimensPool && specimen.specimensPool.length > 0;
       });
 
       return result;
+    };
+
+    Specimen.toSpecimenAttrs = function(sr) {
+      return new Specimen(toSpecimenAttrs(angular.copy(sr)));
     };
 
     Specimen.save = function(specimens) {
@@ -106,7 +102,15 @@ angular.module('os.biospecimen.models.specimen', ['os.common.models', 'os.biospe
 
     //Update specimens in bulk with same detail
     Specimen.bulkEdit = function(detail) {
-      return $http.put(Specimen.url() + "bulk-update", detail).then(Specimen.modelArrayRespTransform);
+      return $http.put(Specimen.url() + "bulk-update", detail).then(
+        function(resp) {
+          if (resp.data) {
+            return Specimen.modelArrayRespTransform(resp);
+          }
+
+          return null;
+        }
+      );
     }
 
     //Update specimens in bulk by providing detail for each
@@ -158,8 +162,13 @@ angular.module('os.biospecimen.models.specimen', ['os.common.models', 'os.biospe
       );
     }
 
-    Specimen.getByIds = function(ids, includeExtensions) {
-      return Specimen.query({id: ids, includeExtensions: includeExtensions});
+    Specimen.getByIds = function(ids, includeExtensions, minimalInfo) {
+      return Specimen.search({
+        ids: ids,
+        includeExtensions: includeExtensions || false,
+        minimalInfo: minimalInfo || false,
+        maxResults: ids.length
+      });
     }
 
     Specimen.prototype.getType = function() {
@@ -312,7 +321,7 @@ angular.module('os.biospecimen.models.specimen', ['os.common.models', 'os.biospe
 
       if (this.receivedEvent.user && this.receivedEvent.user.id == eventData.user.id) {
         eventData.user = this.receivedEvent.user;
-      } else {
+      } else if (eventData.user && eventData.user.id > 0) {
         var that = this;
         User.getById(eventData.user.id).then(
           function(user) {
@@ -327,6 +336,7 @@ angular.module('os.biospecimen.models.specimen', ['os.common.models', 'os.biospe
     function toSpecimenAttrs(sr) {
       sr.reqId = sr.id;
       sr.reqLabel = sr.name;
+      sr.reqCode = sr.code;
       sr.poolSpecimen = !!sr.pooledSpecimenReqId;
 
       if (sr.lineage == 'New' && !sr.poolSpecimen) {
@@ -388,7 +398,8 @@ angular.module('os.biospecimen.models.specimen', ['os.common.models', 'os.biospe
         function(e1, e2) { 
           var t1 = e1.time || 0;
           var t2 = e2.time || 0;
-          return t2 - t1;
+          var diff = t2 - t1;
+          return diff != 0 ? diff : (e2.id - e1.id);
         }
       );
       return eventsList;
@@ -398,6 +409,7 @@ angular.module('os.biospecimen.models.specimen', ['os.common.models', 'os.biospe
       return $http.put(Specimen.url() + '/' + specimen.$id() + '/status', statusSpec).then(
         function(result) {
           specimen.activityStatus = result.data.activityStatus;
+          specimen.availabilityStatus = result.data.availabilityStatus;
           return specimen;
         }
       );

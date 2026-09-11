@@ -2,7 +2,9 @@ angular.module('os.administrative.models.setting', ['os.common.models'])
   .factory('Setting', function(osModel, $http) {
     function init(props) {
       if (props.type == 'FILE' && !!props.value) {
-        props.value = props.value.substring(props.value.indexOf('_') + 1);
+        if (props.value.indexOf('classpath:') != 0) {
+          props.value = props.value.substring(props.value.indexOf('_') + 1);
+        }
       }
     }
 
@@ -57,8 +59,8 @@ angular.module('os.administrative.models.setting', ['os.common.models'])
       );
     }
 
-    Setting.getFileUploadUrl = function() {
-      return Setting.url() + "files";
+    Setting.getFileUploadUrl = function(module, property) {
+      return Setting.url() + "files?module=" + module + "&property=" + property;
     }
 
     Setting.getPasswordSettings = function () {

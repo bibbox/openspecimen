@@ -7,6 +7,11 @@
     <name>com.krishagni.catissueplus.core.biospecimen.events.CollectionProtocolEventDetail</name>
 
     <field>
+      <caption>#getMessage("cpe_identifier")</caption>
+      <attribute>id</attribute>
+    </field>
+
+    <field>
       <caption>#getMessage("cpe_cp_short_title")</caption>
       <attribute>cpShortTitle</attribute>
     </field>
@@ -20,7 +25,17 @@
       <caption>#getMessage("cpe_point")</caption>
       <attribute>eventPoint</attribute>
     </field>
-    
+
+    <field>
+      <caption>#getMessage("cpe_point_unit")</caption>
+      <attribute>eventPointUnit</attribute>
+    </field>
+
+    <field>
+      <caption>#getMessage("cpe_sort_order")</caption>
+      <attribute>sortOrder</attribute>
+    </field>
+
     <field>
       <caption>#getMessage("cpe_label")</caption>
       <attribute>eventLabel</attribute>
@@ -40,7 +55,7 @@
       <caption>#getMessage("cpe_default_site")</caption>
       <attribute>defaultSite</attribute>
     </field>
-    
+
     <field>
       <caption>#getMessage("cpe_activity_status")</caption>
       <attribute>activityStatus</attribute>

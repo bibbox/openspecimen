@@ -27,27 +27,25 @@ public class SpecimenFreezeThawEventFilter implements FormDataFilter {
 			}
 
 			if (input.getRecordId() != null) {
-				// could be insert post filter or update pre/post filter
-
-				if (!appData.containsKey("newFreezeThawEvent")) {
-					//
-					// only insert post filter will have newFreezeThawEvent
-					// therefore the current invocation is for update pre/post filter
-					//
-					return input;
-				}
-			} else {
-				appData.put("newFreezeThawEvent", true);
+				return input;
 			}
 
-
+			appData.put("newFreezeThawEvent", true);
 			Long specimenId = Utility.numberToLong(appData.get("objectId"));
 			if (specimenId == null) {
 				return input;
 			}
 
 			ControlValue incrFreezeThaw = input.getFieldValue("incrementFreezeThaw");
-			boolean increment = incrFreezeThaw == null ? false : incrFreezeThaw.getControl().fromString((String)incrFreezeThaw.getValue());
+			boolean increment = false;
+			if (incrFreezeThaw != null) {
+				if (incrFreezeThaw.getValue() instanceof Boolean) {
+					increment = (Boolean) incrFreezeThaw.getValue();
+				} else {
+					increment = incrFreezeThaw.getControl().fromString((String)incrFreezeThaw.getValue());
+				}
+			}
+
 			if (increment) {
 				Specimen specimen = daoFactory.getSpecimenDao().getById(specimenId);
 				Integer existingCount = specimen.getFreezeThawCycles();

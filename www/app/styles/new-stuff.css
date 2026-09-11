@@ -2,7 +2,7 @@
 .os-new-stuff-btn {
   background: #5cb85c;
   border-radius: 4px;
-  padding: 10px!important;
+  padding: 5px!important;
 }
 
 .os-new-stuff {
@@ -37,8 +37,7 @@
 
 .os-new-stuff .content {
   padding: 10px 0px;
-  border-bottom: 1px solid #ddd;
-  max-height: 300px;
+  max-height: 320px;
   overflow-y: auto;
 }
 

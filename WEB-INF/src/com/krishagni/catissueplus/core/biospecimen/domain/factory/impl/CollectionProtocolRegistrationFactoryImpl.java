@@ -1,10 +1,11 @@
 
 package com.krishagni.catissueplus.core.biospecimen.domain.factory.impl;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 
 import com.krishagni.catissueplus.core.administrative.domain.Site;
 import com.krishagni.catissueplus.core.administrative.domain.factory.SiteErrorCode;
+import com.krishagni.catissueplus.core.biospecimen.domain.BaseEntity;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolRegistration;
 import com.krishagni.catissueplus.core.biospecimen.domain.Participant;
@@ -17,9 +18,12 @@ import com.krishagni.catissueplus.core.biospecimen.events.CollectionProtocolRegi
 import com.krishagni.catissueplus.core.biospecimen.events.ParticipantDetail;
 import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
 import com.krishagni.catissueplus.core.common.errors.ActivityStatusErrorCode;
+import com.krishagni.catissueplus.core.common.errors.CommonErrorCode;
 import com.krishagni.catissueplus.core.common.errors.ErrorType;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.util.Status;
+import com.krishagni.catissueplus.core.de.domain.DeObject;
+import com.krishagni.catissueplus.core.de.events.ExtensionDetail;
 
 
 public class CollectionProtocolRegistrationFactoryImpl implements CollectionProtocolRegistrationFactory {
@@ -43,8 +47,12 @@ public class CollectionProtocolRegistrationFactoryImpl implements CollectionProt
 	@Override
 	public CollectionProtocolRegistration createCpr(CollectionProtocolRegistration existing, CollectionProtocolRegistrationDetail detail) {
 		OpenSpecimenException ose = new OpenSpecimenException(ErrorType.USER_ERROR);
+		if (detail.getParticipant() == null) {
+			detail.setParticipant(new ParticipantDetail());
+		}
 		
 		CollectionProtocolRegistration cpr = new CollectionProtocolRegistration();
+		cpr.setId(existing != null ? existing.getId() : detail.getId());
 		cpr.setForceDelete(detail.isForceDelete());
 		cpr.setOpComments(detail.getOpComments());
 
@@ -55,7 +63,9 @@ public class CollectionProtocolRegistrationFactoryImpl implements CollectionProt
 		setExternalSubjectId(detail, existing, cpr, ose);
 		setSite(detail, existing, cpr, ose);
 		setActivityStatus(detail, existing, cpr, ose);
+		setDataEntryStatus(detail, existing, cpr, ose);
 		setParticipant(detail, existing, cpr, ose);
+		setExtension(detail, existing, cpr, ose);
 
 		ose.checkAndThrow();
 		return cpr;
@@ -123,11 +133,6 @@ public class CollectionProtocolRegistrationFactoryImpl implements CollectionProt
 			return;
 		}
 
-		if (cpr.getCollectionProtocol() != null && !cpr.getCollectionProtocol().getRepositories().contains(site)) {
-			ose.addError(CprErrorCode.NOT_CP_SITE, site.getName(), cpr.getCollectionProtocol().getShortTitle());
-			return;
-		}
-
 		cpr.setSite(site);
 	}
 
@@ -168,38 +173,67 @@ public class CollectionProtocolRegistrationFactoryImpl implements CollectionProt
 		}
 	}
 
+	private void setDataEntryStatus(CollectionProtocolRegistrationDetail detail, CollectionProtocolRegistration cpr, OpenSpecimenException ose) {
+		String deStatus = detail.getDataEntryStatus();
+		if (StringUtils.isBlank(deStatus)) {
+			cpr.setDataEntryStatus(BaseEntity.DataEntryStatus.COMPLETE);
+		} else {
+			try {
+				cpr.setDataEntryStatus(BaseEntity.DataEntryStatus.valueOf(deStatus));
+			} catch (Exception e) {
+				ose.addError(CommonErrorCode.INVALID_INPUT, "Invalid data entry status: " + deStatus);
+			}
+		}
+	}
+
+	private void setDataEntryStatus(
+		CollectionProtocolRegistrationDetail detail,
+		CollectionProtocolRegistration existing,
+		CollectionProtocolRegistration cpr,
+		OpenSpecimenException ose) {
+
+		if (existing == null || detail.isAttrModified("dataEntryStatus")) {
+			setDataEntryStatus(detail, cpr, ose);
+		} else {
+			cpr.setDataEntryStatus(existing.getDataEntryStatus());
+		}
+
+		if (cpr.getDataEntryStatus() == BaseEntity.DataEntryStatus.DRAFT &&
+			cpr.getCollectionProtocol() != null && !cpr.getCollectionProtocol().draftDataEntryEnabled()) {
+			ose.addError(CprErrorCode.DRAFT_NOT_ALLOWED, cpr.getCollectionProtocol().getShortTitle());
+		}
+	}
+
 	private void setCollectionProtocol(
 			CollectionProtocolRegistrationDetail detail,
-			CollectionProtocolRegistration cpr, 			 
+			CollectionProtocolRegistration cpr,
 			OpenSpecimenException ose) {
 				
 		Long cpId = detail.getCpId();
 		String title = detail.getCpTitle();
 		String shortTitle = detail.getCpShortTitle();
 		
-		CollectionProtocol protocol = null;
+		CollectionProtocol cp = null;
 		if (cpId != null) {
-			protocol = daoFactory.getCollectionProtocolDao().getById(detail.getCpId());
+			cp = daoFactory.getCollectionProtocolDao().getById(detail.getCpId());
 		} else if (StringUtils.isNotBlank(title)) {
-			protocol = daoFactory.getCollectionProtocolDao().getCollectionProtocol(title);
+			cp = daoFactory.getCollectionProtocolDao().getCollectionProtocol(title);
 		} else if (StringUtils.isNotBlank(shortTitle)) {
-			protocol = daoFactory.getCollectionProtocolDao().getCpByShortTitle(shortTitle);
+			cp = daoFactory.getCollectionProtocolDao().getCpByShortTitle(shortTitle);
 		} else {
 			ose.addError(CprErrorCode.CP_REQUIRED);
 			return;
 		} 
 		
-		if (protocol == null) {
+		if (cp == null) {
 			ose.addError(CpErrorCode.NOT_FOUND);
-			return;
-		}
-		
-		if (!Status.ACTIVITY_STATUS_ACTIVE.getStatus().equals(protocol.getActivityStatus())) {
+		} else if (Status.isClosedStatus(cp.getActivityStatus())) {
+			ose.addError(CprErrorCode.CP_CLOSED);
+		} else if (!Status.isActiveStatus(cp.getActivityStatus())) {
 			ose.addError(CpErrorCode.NOT_FOUND);
-			return;
 		}
-		
-		cpr.setCollectionProtocol(protocol);
+
+		cpr.setCollectionProtocol(cp);
 	}
 
 	private void setCollectionProtocol(
@@ -247,6 +281,10 @@ public class CollectionProtocolRegistrationFactoryImpl implements CollectionProt
 			participantDetail.setCpId(cpr.getCollectionProtocol().getId());
 		}
 
+		if (cpr.getDataEntryStatus() != null) {
+			participantDetail.setDataEntryStatus(cpr.getDataEntryStatus().name());
+		}
+
 		Participant participant;
 		if (participantDetail.getId() == null || participantDetail.getId() == -1L) {
 			//
@@ -273,4 +311,31 @@ public class CollectionProtocolRegistrationFactoryImpl implements CollectionProt
 		cpr.setParticipant(participant);
 	}
 
+	private void setExtension(CollectionProtocolRegistrationDetail detail, CollectionProtocolRegistration existing, CollectionProtocolRegistration cpr, OpenSpecimenException ose) {
+		if (existing == null || detail.isAttrModified("dataEntryStatus")) {
+			if (StringUtils.isBlank(detail.getDataEntryStatus())) {
+				cpr.setDataEntryStatus(BaseEntity.DataEntryStatus.COMPLETE);
+			} else {
+				try {
+					cpr.setDataEntryStatus(BaseEntity.DataEntryStatus.valueOf(detail.getDataEntryStatus()));
+				} catch (Exception e) {
+					ose.addError(CommonErrorCode.INVALID_INPUT, "Invalid data entry status: " + detail.getDataEntryStatus());
+				}
+			}
+		} else {
+			cpr.setDataEntryStatus(existing.getDataEntryStatus());
+		}
+
+		if (existing == null || detail.getParticipant().isAttrModified("extensionDetail")) {
+			ExtensionDetail input = detail.getParticipant().getExtensionDetail();
+			if (input == null) {
+				input = new ExtensionDetail();
+			}
+
+			DeObject extension = DeObject.createExtension(input, cpr);
+			cpr.setExtension(extension);
+		} else {
+			cpr.setExtension(existing.getExtension());
+		}
+	}
 }

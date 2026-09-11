@@ -1,14 +1,19 @@
 package com.krishagni.catissueplus.rest.controller;
 
 import java.io.File;
+import java.time.Instant;
+import java.util.Calendar;
 import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -20,6 +25,7 @@ import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.ResponseStatus;
 
 import com.krishagni.catissueplus.core.administrative.domain.ScheduledJob;
+import com.krishagni.catissueplus.core.administrative.domain.ScheduledJobRun;
 import com.krishagni.catissueplus.core.administrative.events.JobExportDetail;
 import com.krishagni.catissueplus.core.administrative.events.JobRunsListCriteria;
 import com.krishagni.catissueplus.core.administrative.events.ScheduledJobDetail;
@@ -29,6 +35,7 @@ import com.krishagni.catissueplus.core.administrative.services.ScheduledJobServi
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
 import com.krishagni.catissueplus.core.common.events.ResponseEvent;
 import com.krishagni.catissueplus.core.common.util.Utility;
+import com.krishagni.catissueplus.core.exporter.services.ExportService;
 
 @Controller
 @RequestMapping("/scheduled-jobs")
@@ -39,6 +46,9 @@ public class ScheduledJobsController {
 	
 	@Autowired
 	private HttpServletRequest httpReq;
+
+	@Autowired
+	private ExportService exportSvc;
 	
 	@RequestMapping(method = RequestMethod.GET)
 	@ResponseStatus(HttpStatus.OK)
@@ -114,17 +124,28 @@ public class ScheduledJobsController {
 	public List<ScheduledJobRunDetail> getJobRuns(
 		@PathVariable(value = "jobId")
 		Long jobId,
-			
-		@RequestParam(value = "startAt", required = false, defaultValue = "0")
-		int startAt,
-			
+
+		@RequestParam(value = "fromDate", required = false)
+		@DateTimeFormat(pattern = "yyyy-MM-dd HH:mm", fallbackPatterns = {"yyyy-MM-dd'T'HH:mm:ss.SSSX"})
+		Instant fromDate,
+
+		@RequestParam(value = "toDate", required = false)
+		@DateTimeFormat(pattern = "yyyy-MM-dd HH:mm", fallbackPatterns = {"yyyy-MM-dd'T'HH:mm:ss.SSSX"})
+		Instant toDate,
+
+		@RequestParam(value = "status", required = false)
+		ScheduledJobRun.Status status,
+
 		@RequestParam(value = "maxResults", required = false, defaultValue = "100")
 		int maxResults) {
-		
+
 		JobRunsListCriteria criteria = new JobRunsListCriteria()
-			.startAt(startAt)
-			.maxResults(maxResults)
-			.scheduledJobId(jobId);
+			.jobId(jobId)
+			.fromDate(fromDate != null ? Date.from(fromDate) : null)
+			.toDate(toDate != null ? Date.from(toDate) : null)
+			.status(status)
+			.startAt(0)
+			.maxResults(maxResults);
 		return response(jobSvc.getJobRuns(request(criteria)));
 	}
 	
@@ -167,10 +188,16 @@ public class ScheduledJobsController {
 		Long runId,
 			
 		HttpServletResponse httpResp) {
-		
+
+		Date startTime = Calendar.getInstance().getTime();
 		JobExportDetail detail = response(jobSvc.getJobResultFile(request(runId)));
 		File file = detail.getFile();
 		Utility.sendToClient(httpResp, file.getName(), file);
+
+		Map<String, String> params = new HashMap<>();
+		params.put("jobId", detail.getJobRun().getJobId().toString());
+		params.put("runId", detail.getJobRun().getId().toString());
+		exportSvc.saveJob("scheduled_job_report", startTime, params);
 	}
 
 	private <T> RequestEvent<T> request(T payload) {

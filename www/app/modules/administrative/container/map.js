@@ -64,6 +64,9 @@ angular.module('os.administrative.container.map', ['os.common.box', 'os.administ
           var opts = ContainerUtil.getOpts(scope.container, allowClick, allowClick && showAddMarker);
           opts.occupants = scope.occupancyMap;
           BoxLayoutUtil.drawLayout(element, opts);
+          if (!showAddMarker) {
+            element.addClass('os-color-coded-spmns');
+          }
 
           $compile(element)(scope);
         });

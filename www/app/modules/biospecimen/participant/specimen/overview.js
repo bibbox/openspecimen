@@ -1,16 +1,18 @@
 
 angular.module('os.biospecimen.specimen.overview', ['os.biospecimen.models'])
   .controller('SpecimenOverviewCtrl', function(
-    $scope, $rootScope, $modal, hasDict, cpr, visit, specimen, showSpmnActivity,
-    osRightDrawerSvc, Specimen, SpecimenLabelPrinter, Util, ExtensionsUtil) {
+    $scope, $rootScope, $modal, hasDict, userRole, cpr, visit, specimen, showSpmnActivity,
+    osRightDrawerSvc, Specimen, SpecimenLabelPrinter, Util, ExtensionsUtil, ParticipantSpecimensViewState) {
 
     function init() {
       if (hasDict) {
-        ExtensionsUtil.createExtensionFieldMap(specimen);
+        ExtensionsUtil.createExtensionFieldMap(cpr.participant, hasDict);
+        ExtensionsUtil.createExtensionFieldMap(visit, hasDict);
+        ExtensionsUtil.createExtensionFieldMap(specimen, hasDict);
       }
 
       $scope.spmnCtx = {
-        obj: {cpr: cpr, visit: visit, specimen: specimen},
+        obj: {cpr: cpr, visit: visit, specimen: specimen, userRole: userRole},
         inObjs: ['specimen', 'calcSpecimen',],
         exObjs: ['specimen.events'],
         watcher: ['specimen.storageLocation', 'specimen.collectionEvent.user', 'specimen.receivedEvent.user'],
@@ -66,6 +68,67 @@ angular.module('os.biospecimen.specimen.overview', ['os.biospecimen.models'])
 
     $scope.toggleShowActivity = function() {
       $scope.spmnCtx.showActivity = !$scope.spmnCtx.showActivity;
+    }
+
+    $scope.checkout = function(specimen) {
+      $modal.open({
+        templateUrl: 'modules/biospecimen/participant/specimen/checkout.html',
+        controller: function($scope, $modalInstance) {
+          var spmn = $scope.specimen = new Specimen({
+            id: specimen.id,
+            storageLocation: null,
+            transferTime: new Date().getTime(),
+            checkout: true
+          });
+
+          $scope.checkout = function() {
+            spmn.$saveOrUpdate().then(
+              function(saved) {
+                specimen.storageLocation = saved.storageLocation;
+                specimen.checkedOut = saved.checkedOut;
+                specimen.checkoutPosition = saved.checkoutPosition;
+                ParticipantSpecimensViewState.specimensUpdated($scope, {inline: true});
+                loadActivities();
+                $modalInstance.dismiss('cancel');
+              }
+            );
+          }
+
+          $scope.cancel = function() {
+            $modalInstance.dismiss('cancel');
+          }
+        }
+      });
+    }
+
+    $scope.checkin = function(specimen) {
+      $modal.open({
+        templateUrl: 'modules/biospecimen/participant/specimen/checkin.html',
+        controller: function($scope, $modalInstance) {
+          var spmn = $scope.specimen = new Specimen({
+            id: specimen.id,
+            storageLocation: specimen.checkoutPosition,
+            transferTime: new Date().getTime()
+          });
+
+          $scope.checkin = function() {
+            spmn.$saveOrUpdate().then(
+              function(saved) {
+                specimen.storageLocation = saved.storageLocation;
+                specimen.checkedOut = saved.checkedOut;
+                specimen.checkoutPosition = saved.checkoutPosition;
+                ParticipantSpecimensViewState.specimensUpdated($scope, {inline: true});
+                loadActivities();
+                $modalInstance.dismiss('cancel');
+              }
+            );
+          }
+
+          $scope.cancel = function() {
+            $modalInstance.dismiss('cancel');
+          }
+        }
+      });
     }
 
     $scope.printSpecimenLabels = function() {

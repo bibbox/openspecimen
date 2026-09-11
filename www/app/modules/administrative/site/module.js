@@ -11,25 +11,18 @@ angular.module('os.administrative.site',
     $stateProvider
       .state('site-list', {
         url: '/sites?filters',
-        templateUrl: 'modules/administrative/site/list.html',
-        controller: 'SiteListCtrl',
+        template: '<div></div>',
+        controller: function(VueApp) {
+          VueApp.setVueView('sites/-1');
+        },
         parent: 'signed-in'
       })
       .state('site-addedit', {
         url: '/site-addedit/:siteId',
-        templateUrl: 'modules/administrative/site/addedit.html',
-        resolve: {
-          site: function($stateParams, Site) {
-            if ($stateParams.siteId) {
-              return Site.getById($stateParams.siteId);
-            }
-            return new Site();
-          },
-          extensionCtxt: function(Site) {
-            return Site.getExtensionCtxt();
-          }
+        template: '<div></div>',
+        controller: function($stateParams, VueApp) {
+          VueApp.setVueView('site-addedit/' + (+$stateParams.siteId > 0 ? +$stateParams.siteId : -1));
         },
-        controller: 'SiteAddEditCtrl',
         parent: 'signed-in'
       })
       .state('site-import', {
@@ -42,7 +35,7 @@ angular.module('os.administrative.site',
               breadcrumbs: [{state: 'site-list', title: 'site.list'}],
               objectType: 'site',
               title: 'site.bulk_import',
-              onSuccess: {state: 'site-list'}
+              onSuccess: {state: 'site-import-jobs'}
             };
           }
         },
@@ -65,13 +58,10 @@ angular.module('os.administrative.site',
       })
       .state('site-detail', {
         url: '/sites/:siteId',
-        templateUrl: 'modules/administrative/site/detail.html',
-        resolve: {
-          site: function($stateParams, Site) {
-            return Site.getById($stateParams.siteId);
-          }
+        template: '<div>New UI</div>',
+        controller: function($stateParams, VueApp) {
+          VueApp.setVueView('sites/' + $stateParams.siteId + '/detail/overview');
         },
-        controller: 'SiteDetailCtrl',
         parent: 'signed-in'
       })
       .state('site-detail.overview', {

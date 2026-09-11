@@ -33,7 +33,7 @@ public class ParticipantAnonymizer implements Anonymizer<CollectionProtocolRegis
 
 	@Override
 	public void anonymize(CollectionProtocolRegistration cpr) {
-		anonymize(cpr.getParticipant());
+		anonymize(cpr, cpr.getParticipant());
 		cpr.getVisits().forEach(this::anonymize);
 
 		if (StringUtils.isNotBlank(cpr.getSignedConsentDocumentName())) {
@@ -45,7 +45,7 @@ public class ParticipantAnonymizer implements Anonymizer<CollectionProtocolRegis
 		anonymizeFormRecords(cpr.getId(), "Participant");
 	}
 
-	private void anonymize(Participant p) {
+	private void anonymize(CollectionProtocolRegistration cpr, Participant p) {
 		p.setFirstName(null);
 		p.setLastName(null);
 		p.setMiddleName(null);
@@ -53,10 +53,14 @@ public class ParticipantAnonymizer implements Anonymizer<CollectionProtocolRegis
 		p.setDeathDate(null);
 		p.setEmpi(null);
 		p.setUid(null);
+		p.setEmailAddress(null);
+		p.setEmailOptIn(null);
+		p.setPhoneNumber(null);
+		p.setTextOptIn(null);
 
 		p.getPmis().forEach(pmi -> pmi.setMedicalRecordNumber(null));
-		if (p.getExtension() != null) {
-			p.getExtension().anonymize();
+		if (cpr.getExtension() != null) {
+			cpr.getExtension().anonymize();
 		}
 	}
 

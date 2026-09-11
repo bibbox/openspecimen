@@ -59,7 +59,23 @@ public enum UserErrorCode implements ErrorCode {
 
 	NOT_FOUND_IN_OS_DOMAIN,
 
-	INACTIVE;
+	INACTIVE,
+
+	ONE_OR_MORE_NOT_FOUND,
+
+	INVALID_IP,
+
+	IP_REQ,
+
+	INVALID_PRINTER_NAME,
+
+	LOCAL_ACC_SIGNUP_NA,
+
+	EMAIL_SELF_UPDATE_NA,
+
+	OS_DOMAIN_API_ONLY,
+
+	API_USER_IMPERSONATION_NA;
 	
 	public String code() {
 		return "USER_" + this.name();

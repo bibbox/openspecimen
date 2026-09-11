@@ -13,10 +13,15 @@
         <input os-md-input type="text" ng-model="userFilterOpts.loginName" class="form-control"
           placeholder="{{'user.login_name' | translate}}">
       </div>
-      <div class="form-group" show-if-admin>
+      <div class="form-group" ng-if="!ctx.group" show-if-admin>
         <os-institutes ng-model="userFilterOpts.institute" md-type="true"
           placeholder="{{'user.institute' | translate}}">
         </os-institutes>
+      </div>
+      <div class="form-group" ng-if="!ctx.group">
+        <os-select os-md-input ng-model="userFilterOpts.group" list="ctx.groups" refresh="searchGroups"
+          select-prop="name" display-prop="name" placeholder="{{'user.group' | translate}}">
+        </os-select>
       </div>
       <div class="form-group">
         <os-select os-md-input ng-model="userFilterOpts.activityStatus" list="activityStatuses"

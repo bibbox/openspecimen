@@ -1,17 +1,12 @@
 package com.krishagni.rbac.domain;
 
-public class Operation {
-	private Long id;
-	
+import org.hibernate.envers.Audited;
+
+import com.krishagni.catissueplus.core.biospecimen.domain.BaseEntity;
+
+@Audited
+public class Operation extends BaseEntity {
 	private String name;
-
-	public Long getId() {
-		return id;
-	}
-
-	public void setId(Long id) {
-		this.id = id;
-	}
 
 	public String getName() {
 		return name;

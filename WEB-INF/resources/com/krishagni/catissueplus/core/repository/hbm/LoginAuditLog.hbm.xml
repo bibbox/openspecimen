@@ -4,9 +4,8 @@
     "http://hibernate.sourceforge.net/hibernate-mapping-3.0.dtd">
 
 <hibernate-mapping>
-  <class
-    name="com.krishagni.catissueplus.core.auth.domain.LoginAuditLog"
-    table="OS_LOGIN_AUDIT_LOGS">
+  <class name="com.krishagni.catissueplus.core.auth.domain.LoginAuditLog" table="OS_LOGIN_AUDIT_LOGS"
+    entity-name="com.krishagni.catissueplus.core.auth.domain.LoginAuditLog">
     
     <id name="id" column="IDENTIFIER">
       <generator class="native">
@@ -14,7 +13,9 @@
       </generator>
     </id>
     
-    <many-to-one name="user" column="USER_ID" not-null="true"/>	
+    <many-to-one name="user" column="USER_ID" not-null="true"/>
+
+    <many-to-one name="impersonatedBy" column="IMPERSONATED_BY" />
 
     <property name="ipAddress" column="IP_ADDRESS" not-null="true"/>
 
@@ -33,32 +34,18 @@
       from LoginAuditLog where user.id = :userId order by id desc
     </query>
 
-    <sql-query name="getActiveUsersCount">
-      <return-scalar column="usersCnt" type="int"/>
+    <sql-query name="getLoginActiveTime">
+      <return-scalar column="auditLogId" type="long"/>
+      <return-scalar column="lastActiveTime" type="timestamp"/>
 
       select
-        count(distinct u.identifier) as usersCnt
+        login_audit_log_id as auditLogId, max(call_end_time) as lastActiveTime
       from
-        os_login_audit_logs log
-        inner join catissue_user u on log.user_id = u.identifier
+        os_user_api_calls_log
       where
-        log.is_login_successful = 1 and
-        log.login_time between :fromDate and :toDate and
-        (:instituteId is null or u.institute_id = :instituteId)
-    </sql-query>
-
-    <sql-query name="getLoginsCount">
-      <return-scalar column="usersCnt" type="int"/>
-
-      select
-        count(*) as usersCnt
-      from
-        os_login_audit_logs log
-        inner join catissue_user u on log.user_id = u.identifier
-      where
-        log.is_login_successful = :loginSuccessful and
-        log.login_time between :fromDate and :toDate and
-        (:instituteId is null or u.institute_id = :instituteId)
+        login_audit_log_id in (:auditLogIds)
+      group by
+        login_audit_log_id
     </sql-query>
   </class>
 </hibernate-mapping>

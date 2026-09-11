@@ -9,7 +9,6 @@ import java.util.Map;
 import org.apache.commons.lang3.ObjectUtils;
 import org.hibernate.envers.AuditTable;
 import org.hibernate.envers.Audited;
-import org.hibernate.proxy.HibernateProxyHelper;
 
 import com.krishagni.catissueplus.core.biospecimen.domain.BaseEntity;
 
@@ -49,9 +48,13 @@ public class DpDistributionSite extends BaseEntity {
 	@Override
 	public int hashCode() {
 		int prime = 31;
-		return prime + 
-			getDistributionProtocol().hashCode() + 
-			getInstitute().hashCode() +
+		if (getDistributionProtocol() == null && getInstitute() == null && getSite() == null) {
+			return super.hashCode();
+		}
+
+		return prime +
+			(getDistributionProtocol() == null ? 0 : getDistributionProtocol().hashCode()) +
+			(getInstitute() == null ? 0 : getInstitute().hashCode()) +
 			(getSite() == null ? 0 : getSite().hashCode());
 	}
 	
@@ -61,8 +64,7 @@ public class DpDistributionSite extends BaseEntity {
 			return true;
 		}
 		
-		if (obj == null	|| 
-			getClass() != HibernateProxyHelper.getClassWithoutInitializingProxy(obj)) {
+		if (obj == null	|| getClass() != getClassWithoutInitializingProxy(obj)) {
 			return false;
 		}
 		

@@ -2,6 +2,7 @@ package com.krishagni.catissueplus.core.init;
 
 import java.io.File;
 import java.io.OutputStream;
+import java.nio.charset.Charset;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
@@ -11,12 +12,10 @@ import java.util.Date;
 import java.util.List;
 import java.util.Properties;
 
-import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
-import org.apache.commons.lang.StringUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -25,10 +24,12 @@ import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionTemplate;
 
+
 import com.krishagni.catissueplus.core.biospecimen.ConfigParams;
 import com.krishagni.catissueplus.core.biospecimen.domain.Visit;
 import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
 import com.krishagni.catissueplus.core.common.service.ConfigurationService;
+import com.krishagni.catissueplus.core.common.util.LogUtil;
 import com.krishagni.catissueplus.core.common.util.Utility;
 import com.krishagni.openspecimen.core.migration.domain.Migration.Status;
 import com.krishagni.openspecimen.core.migration.domain.Migration.Version;
@@ -36,8 +37,8 @@ import com.krishagni.openspecimen.core.migration.events.MigrationDetail;
 import com.krishagni.openspecimen.core.migration.services.MigrationService;
 
 public class MigrateSurgicalPathologyReports implements InitializingBean {
-	
-	private static Log logger = LogFactory.getLog(MigrateSurgicalPathologyReports.class);
+
+	private static final LogUtil logger = LogUtil.getLogger(MigrateSurgicalPathologyReports.class);
 
 	private PlatformTransactionManager txnMgr;
 	
@@ -172,7 +173,7 @@ public class MigrateSurgicalPathologyReports implements InitializingBean {
 							OutputStream outputStream = null;
 							try {
 								File sprFile = getSprFile(detail.getVisitId());
-								FileUtils.writeStringToFile(sprFile, detail.getReportContent());
+								FileUtils.writeStringToFile(sprFile, detail.getReportContent(), Charset.defaultCharset());
 								
 								String sprName = detail.getVisitName() + ".txt"; 
 								boolean sprLocked = SPR_LOCKED.equals(detail.getActivityStatus());
@@ -273,19 +274,18 @@ public class MigrateSurgicalPathologyReports implements InitializingBean {
 
 	private List<SprDetail> getSprDetailsFromTable(final String getSprDetailsSql, final int maxResult) {
 		return jdbcTemplate.query(
-				getSprDetailsSql,
-				new Object[] {maxResult},
-				new RowMapper<SprDetail>() {
-					public SprDetail mapRow(ResultSet rs, int rowNum) throws SQLException {
-						SprDetail sprDetail = new SprDetail();
-						sprDetail.setVisitId(rs.getLong("visitId"));
-						sprDetail.setVisitName(rs.getString("visitName"));
-						sprDetail.setActivityStatus(rs.getString("activityStatus"));
-						sprDetail.setReportContent(rs.getString("reportContent"));
-						sprDetail.setReportId(rs.getLong("reportId"));
-						return sprDetail;
-					}
-			 });					
+			getSprDetailsSql,
+			(rs, rowNum) -> {
+				SprDetail sprDetail = new SprDetail();
+				sprDetail.setVisitId(rs.getLong("visitId"));
+				sprDetail.setVisitName(rs.getString("visitName"));
+				sprDetail.setActivityStatus(rs.getString("activityStatus"));
+				sprDetail.setReportContent(rs.getString("reportContent"));
+				sprDetail.setReportId(rs.getLong("reportId"));
+				return sprDetail;
+			},
+			maxResult
+		);
 	}
 	
 	private File getSprFile(Long visitId) {

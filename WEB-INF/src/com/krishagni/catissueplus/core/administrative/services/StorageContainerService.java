@@ -8,10 +8,13 @@ import java.util.function.Supplier;
 import com.krishagni.catissueplus.core.administrative.domain.ContainerStoreList;
 import com.krishagni.catissueplus.core.administrative.domain.StorageContainer;
 import com.krishagni.catissueplus.core.administrative.events.AutoFreezerReportDetail;
+import com.krishagni.catissueplus.core.administrative.events.BoxDetail;
 import com.krishagni.catissueplus.core.administrative.events.ContainerDefragDetail;
 import com.krishagni.catissueplus.core.administrative.events.ContainerHierarchyDetail;
 import com.krishagni.catissueplus.core.administrative.events.ContainerQueryCriteria;
 import com.krishagni.catissueplus.core.administrative.events.ContainerReplicationDetail;
+import com.krishagni.catissueplus.core.administrative.events.ContainerTransferEventDetail;
+import com.krishagni.catissueplus.core.administrative.events.FindPlacesCriteria;
 import com.krishagni.catissueplus.core.administrative.events.PositionsDetail;
 import com.krishagni.catissueplus.core.administrative.events.PrintContainerLabelDetail;
 import com.krishagni.catissueplus.core.administrative.events.ReservePositionsOp;
@@ -21,6 +24,7 @@ import com.krishagni.catissueplus.core.administrative.events.StorageContainerSum
 import com.krishagni.catissueplus.core.administrative.events.StorageLocationSummary;
 import com.krishagni.catissueplus.core.administrative.events.TenantDetail;
 import com.krishagni.catissueplus.core.administrative.events.VacantPositionsOp;
+import com.krishagni.catissueplus.core.administrative.repository.ContainerReportCriteria;
 import com.krishagni.catissueplus.core.administrative.repository.StorageContainerListCriteria;
 import com.krishagni.catissueplus.core.biospecimen.events.FileDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.SpecimenInfo;
@@ -43,9 +47,15 @@ public interface StorageContainerService {
 	
 	ResponseEvent<List<StorageContainerPositionDetail>> getOccupiedPositions(RequestEvent<Long> req);
 
+	ResponseEvent<List<StorageContainerSummary>> getTopLevelContainersUtilisation(RequestEvent<StorageContainerListCriteria> req);
+
+	ResponseEvent<List<StorageContainerSummary>> getUtilisationMap(RequestEvent<Long> req);
+
 	ResponseEvent<List<SpecimenInfo>> getSpecimens(RequestEvent<SpecimenListCriteria> req);
 
 	ResponseEvent<Long> getSpecimensCount(RequestEvent<SpecimenListCriteria> req);
+
+	ResponseEvent<Map<String, Integer>> getSpecimensCountByType(RequestEvent<Long> req);
 
 	ResponseEvent<QueryDataExportResult> getSpecimensReport(RequestEvent<ContainerQueryCriteria> req);
 	
@@ -54,10 +64,18 @@ public interface StorageContainerService {
 	ResponseEvent<StorageContainerDetail> updateStorageContainer(RequestEvent<StorageContainerDetail> req);
 	
 	ResponseEvent<StorageContainerDetail> patchStorageContainer(RequestEvent<StorageContainerDetail> req);
+
+	ResponseEvent<List<StorageContainerSummary>> patchStorageContainers(RequestEvent<List<StorageContainerDetail>> req);
 	
 	ResponseEvent<Boolean> isAllowed(RequestEvent<TenantDetail> req);
 	
 	ResponseEvent<ExportedFileDetail> exportMap(RequestEvent<ContainerQueryCriteria> req);
+
+	ResponseEvent<ExportedFileDetail> exportEmptyPositions(RequestEvent<ContainerQueryCriteria> req);
+
+	ResponseEvent<ExportedFileDetail> exportUtilisation(RequestEvent<ContainerReportCriteria> req);
+
+	ResponseEvent<ExportedFileDetail> exportUtilisationMap(RequestEvent<ContainerQueryCriteria> req);
 	
 	ResponseEvent<List<StorageContainerPositionDetail>> assignPositions(RequestEvent<PositionsDetail> req);
 		
@@ -70,6 +88,12 @@ public interface StorageContainerService {
 	ResponseEvent<List<StorageContainerSummary>> createContainerHierarchy(RequestEvent<ContainerHierarchyDetail> req);
 
 	ResponseEvent<List<StorageContainerSummary>> createMultipleContainers(RequestEvent<List<StorageContainerDetail>> req);
+
+	ResponseEvent<List<ContainerTransferEventDetail>> getTransferEvents(RequestEvent<ContainerQueryCriteria> req);
+
+	ResponseEvent<ExportedFileDetail> exportTransferEvents(RequestEvent<ContainerReportCriteria> req);
+
+	ResponseEvent<List<StorageContainerSummary>> findEmptyPlaces(RequestEvent<FindPlacesCriteria> req);
 
 	//
 	// printing
@@ -94,9 +118,9 @@ public interface StorageContainerService {
 	//
 	// defrag
 	//
-	ResponseEvent<ContainerDefragDetail> defragment(RequestEvent<ContainerDefragDetail> req);
+	ResponseEvent<ExportedFileDetail> defragment(RequestEvent<ContainerDefragDetail> req);
 
-	ResponseEvent<FileDetail> getDefragReport(RequestEvent<String> req);
+	ResponseEvent<FileDetail> getReport(RequestEvent<String> req);
 
 	//
 	// Mostly present to implement UI tree for faster access
@@ -116,6 +140,19 @@ public interface StorageContainerService {
 
 	ResponseEvent<List<StorageLocationSummary>> getVacantPositions(RequestEvent<VacantPositionsOp> req);
 
+	ResponseEvent<Map<String, Object>> unblockCheckoutPositions(RequestEvent<List<SpecimenInfo>> req);
+
+	//
+	// Box APIs
+	//
+	ResponseEvent<Map<String, Object>> addBoxSpecimens(RequestEvent<BoxDetail> req);
+
+	ResponseEvent<Map<String, Object>> updateBoxSpecimens(RequestEvent<BoxDetail> req);
+
+	ResponseEvent<List<SpecimenInfo>> getMissingSpecimens(RequestEvent<BoxDetail> req);
+
+	ResponseEvent<ExportedFileDetail> getMissingSpecimensReport(RequestEvent<BoxDetail> req);
+
 	//
 	// Auto freezer APIs
 	//
@@ -129,4 +166,6 @@ public interface StorageContainerService {
 	StorageContainer createStorageContainer(StorageContainer base, StorageContainerDetail input);
 
 	StorageContainer createSiteContainer(Long siteId, String siteName);
+
+	boolean toggleStarredContainer(Long containerId, boolean starred);
 }

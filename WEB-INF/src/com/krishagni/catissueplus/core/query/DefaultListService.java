@@ -41,11 +41,22 @@ public class DefaultListService implements ListService {
 	public ResponseEvent<ListDetail> getList(RequestEvent<Map<String, Object>> req) {
 		try {
 			Map<String, Object> params = req.getPayload();
+			ListConfig cfg = getListConfig(params);
 			ListDetail list = listGenerator.getList(
-				getListConfig(params),
+				cfg,
 				(List<Column>)params.get("filters"),
 				(Column)params.get("orderBy")
 			);
+
+			if (cfg.getFixedColumnsGenerator() != null) {
+				Map<String, Object> resp = cfg.getFixedColumnsGenerator().apply(params, list.getRows());
+				if (resp != null && Boolean.TRUE.equals(resp.getOrDefault("noFixedColumns", false))) {
+					list.setFixedColumns(null);
+				} else if (resp != null) {
+					list.setRows((List<Row>) resp.get("rows"));
+				}
+			}
+
 			return ResponseEvent.response(list);
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);

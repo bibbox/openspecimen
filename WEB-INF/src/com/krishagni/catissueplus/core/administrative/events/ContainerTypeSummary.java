@@ -1,5 +1,6 @@
 package com.krishagni.catissueplus.core.administrative.events;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -15,9 +16,9 @@ public class ContainerTypeSummary extends AttributeModifiedSupport {
 
 	private String nameFormat;
 	
-	private int noOfColumns;
+	private Integer noOfColumns;
 	
-	private int noOfRows;
+	private Integer noOfRows;
 
 	private String positionLabelingMode;
 
@@ -29,7 +30,11 @@ public class ContainerTypeSummary extends AttributeModifiedSupport {
 
 	private Double temperature;
 
+	private BigDecimal rate;
+
 	private boolean storeSpecimenEnabled;
+
+	private Long capacity;
 
 	private String activityStatus;
 
@@ -57,19 +62,19 @@ public class ContainerTypeSummary extends AttributeModifiedSupport {
 		this.nameFormat = nameFormat;
 	}
 
-	public int getNoOfColumns() {
+	public Integer getNoOfColumns() {
 		return noOfColumns;
 	}
 
-	public void setNoOfColumns(int noOfColumns) {
+	public void setNoOfColumns(Integer noOfColumns) {
 		this.noOfColumns = noOfColumns;
 	}
 
-	public int getNoOfRows() {
+	public Integer getNoOfRows() {
 		return noOfRows;
 	}
 
-	public void setNoOfRows(int noOfRows) {
+	public void setNoOfRows(Integer noOfRows) {
 		this.noOfRows = noOfRows;
 	}
 
@@ -113,12 +118,28 @@ public class ContainerTypeSummary extends AttributeModifiedSupport {
 		this.temperature = temperature;
 	}
 
+	public BigDecimal getRate() {
+		return rate;
+	}
+
+	public void setRate(BigDecimal rate) {
+		this.rate = rate;
+	}
+
 	public boolean isStoreSpecimenEnabled() {
 		return storeSpecimenEnabled;
 	}
 
 	public void setStoreSpecimenEnabled(boolean storeSpecimenEnabled) {
 		this.storeSpecimenEnabled = storeSpecimenEnabled;
+	}
+
+	public Long getCapacity() {
+		return capacity;
+	}
+
+	public void setCapacity(Long capacity) {
+		this.capacity = capacity;
 	}
 
 	public String getActivityStatus() {
@@ -140,7 +161,9 @@ public class ContainerTypeSummary extends AttributeModifiedSupport {
 		detail.setColumnLabelingScheme(containerType.getColumnLabelingScheme());
 		detail.setRowLabelingScheme(containerType.getRowLabelingScheme());
 		detail.setTemperature(containerType.getTemperature());
+		detail.setRate(containerType.getRate());
 		detail.setStoreSpecimenEnabled(containerType.isStoreSpecimenEnabled());
+		detail.setCapacity(containerType.getCapacity());
 		detail.setActivityStatus(containerType.getActivityStatus());
 	}
 	

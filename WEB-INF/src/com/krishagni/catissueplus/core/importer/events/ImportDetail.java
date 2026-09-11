@@ -14,6 +14,8 @@ public class ImportDetail {
 
 	private String timeFormat;
 
+	private String timeZone;
+
 	private String fieldSeparator;
 
 	private String inputFileId;
@@ -21,6 +23,10 @@ public class ImportDetail {
 	private Map<String, String> objectParams = new HashMap<>();
 
 	private boolean atomic;
+
+	private boolean offlineQueue;
+
+	private boolean validateColumns;
 
 	public String getObjectType() {
 		return objectType;
@@ -62,6 +68,14 @@ public class ImportDetail {
 		this.timeFormat = timeFormat;
 	}
 
+	public String getTimeZone() {
+		return timeZone;
+	}
+
+	public void setTimeZone(String timeZone) {
+		this.timeZone = timeZone;
+	}
+
 	public String getFieldSeparator() {
 		return fieldSeparator;
 	}
@@ -92,5 +106,21 @@ public class ImportDetail {
 
 	public void setAtomic(boolean atomic) {
 		this.atomic = atomic;
+	}
+
+	public boolean isOfflineQueue() {
+		return offlineQueue;
+	}
+
+	public void setOfflineQueue(boolean offlineQueue) {
+		this.offlineQueue = offlineQueue;
+	}
+
+	public boolean isValidateColumns() {
+		return validateColumns;
+	}
+
+	public void setValidateColumns(boolean validateColumns) {
+		this.validateColumns = validateColumns;
 	}
 }

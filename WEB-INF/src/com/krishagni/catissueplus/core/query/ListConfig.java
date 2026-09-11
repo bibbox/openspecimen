@@ -2,6 +2,10 @@ package com.krishagni.catissueplus.core.query;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.function.BiFunction;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 public class ListConfig {
 	private Long cpId;
@@ -18,11 +22,15 @@ public class ListConfig {
 
 	private boolean hideEmptyColumns;
 
+	private List<String> icons = new ArrayList<>();
+
 	private List<Column> orderBy = new ArrayList<>();
 
 	private List<Column> filters = new ArrayList<>();
 
 	private List<Column> hiddenColumns = new ArrayList<>();
+
+	private List<Column> fixedColumns;
 
 	private int startAt = 0;
 
@@ -31,6 +39,9 @@ public class ListConfig {
 	private boolean includeCount = true;
 
 	private Column primaryColumn;
+
+	@JsonIgnore
+	private BiFunction<Map<String, Object>, List<Row>, Map<String, Object>> fixedColumnsGenerator;
 
 	public Long getCpId() {
 		return cpId;
@@ -112,6 +123,22 @@ public class ListConfig {
 		this.hiddenColumns = hiddenColumns;
 	}
 
+	public List<String> getIcons() {
+		return icons;
+	}
+
+	public void setIcons(List<String> icons) {
+		this.icons = icons;
+	}
+
+	public List<Column> getFixedColumns() {
+		return fixedColumns;
+	}
+
+	public void setFixedColumns(List<Column> fixedColumns) {
+		this.fixedColumns = fixedColumns;
+	}
+
 	public int getStartAt() {
 		return startAt;
 	}
@@ -142,5 +169,13 @@ public class ListConfig {
 
 	public void setPrimaryColumn(Column primaryColumn) {
 		this.primaryColumn = primaryColumn;
+	}
+
+	public BiFunction<Map<String, Object>, List<Row>, Map<String, Object>>  getFixedColumnsGenerator() {
+		return fixedColumnsGenerator;
+	}
+
+	public void setFixedColumnsGenerator(BiFunction<Map<String, Object>, List<Row>, Map<String, Object>>  fixedColumnsGenerator) {
+		this.fixedColumnsGenerator = fixedColumnsGenerator;
 	}
 }

@@ -13,12 +13,15 @@ import com.krishagni.catissueplus.core.biospecimen.domain.CpConsentTier;
 import com.krishagni.catissueplus.core.biospecimen.domain.CpWorkflowConfig;
 import com.krishagni.catissueplus.core.biospecimen.domain.SpecimenRequirement;
 import com.krishagni.catissueplus.core.biospecimen.events.CollectionProtocolSummary;
+import com.krishagni.catissueplus.core.biospecimen.events.CollectionProtocolSiteSummary;
 import com.krishagni.catissueplus.core.common.access.SiteCpPair;
 import com.krishagni.catissueplus.core.common.repository.Dao;
 
 public interface CollectionProtocolDao extends Dao<CollectionProtocol> {
 
 	public List<CollectionProtocolSummary> getCollectionProtocols(CpListCriteria criteria);
+
+	List<CollectionProtocol> getCollectionProtocolsList(CpListCriteria crit);
 
 	public List<Long> getAllCpIds();
 
@@ -44,6 +47,10 @@ public interface CollectionProtocolDao extends Dao<CollectionProtocol> {
 	
 	public Set<SiteCpPair> getSiteCps(Collection<Long> cpIds);
 
+	List<CollectionProtocolSiteSummary> getActiveSiteCps(Long instituteId, Long siteId, Long cpId, Long lastId, int maxResults);
+
+	public boolean isCpAffiliatedToUserInstitute(Long cpId, Long userId);
+
 	public CollectionProtocolEvent getCpe(Long cpeId);
 	
 	public List<CollectionProtocolEvent> getCpes(Collection<Long> cpeIds);
@@ -62,6 +69,8 @@ public interface CollectionProtocolDao extends Dao<CollectionProtocol> {
 	
 	public void saveCpe(CollectionProtocolEvent cpe, boolean flush);
 
+	public int getAllVisitsCount(Long cpeId);
+
 	public SpecimenRequirement getSpecimenRequirement(Long requirementId);
 	
 	public SpecimenRequirement getSrByCode(String code);
@@ -79,4 +88,12 @@ public interface CollectionProtocolDao extends Dao<CollectionProtocol> {
 	public int getConsentRespsCount(Long consentId);
 
 	public boolean anyBarcodingEnabledCpExists();
+
+	public List<String> getDependentContainers(Long cpId, Collection<Long> siteIds);
+
+	Long getCustomFieldRecordId(Long cpId, Long formId, Long formCtxtId);
+
+	Map<Long, Long> getCustomFieldRecordIds(Collection<Long> cpIds, Long formId, Long formCtxtId);
+
+	int insertCustomFieldRecordId(Long cpId, Long formId, Long formCtxtId, Long recordId);
 }

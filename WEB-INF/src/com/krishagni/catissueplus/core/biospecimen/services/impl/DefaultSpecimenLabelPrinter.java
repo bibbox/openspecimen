@@ -10,12 +10,10 @@ import java.util.stream.Collectors;
 
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.factory.InitializingBean;
-import org.springframework.context.ApplicationListener;
 import org.springframework.security.web.util.matcher.IpAddressMatcher;
 
+import com.krishagni.catissueplus.core.administrative.domain.PermissibleValue;
 import com.krishagni.catissueplus.core.administrative.domain.Site;
 import com.krishagni.catissueplus.core.administrative.domain.User;
 import com.krishagni.catissueplus.core.biospecimen.ConfigParams;
@@ -23,17 +21,18 @@ import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
 import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
 import com.krishagni.catissueplus.core.biospecimen.domain.SpecimenLabelPrintRule;
 import com.krishagni.catissueplus.core.biospecimen.events.FileDetail;
+import com.krishagni.catissueplus.core.common.Pair;
 import com.krishagni.catissueplus.core.common.PlusTransactional;
 import com.krishagni.catissueplus.core.common.domain.LabelPrintRule;
 import com.krishagni.catissueplus.core.common.domain.LabelTmplToken;
 import com.krishagni.catissueplus.core.common.domain.PrintRuleConfig;
-import com.krishagni.catissueplus.core.common.events.OpenSpecimenEvent;
 import com.krishagni.catissueplus.core.common.service.ChangeLogService;
 import com.krishagni.catissueplus.core.common.service.ConfigurationService;
+import com.krishagni.catissueplus.core.common.util.LogUtil;
 import com.krishagni.catissueplus.core.common.util.Utility;
 
-public class DefaultSpecimenLabelPrinter extends AbstractLabelPrinter<Specimen> implements InitializingBean, ApplicationListener<OpenSpecimenEvent> {
-	private static final Log logger = LogFactory.getLog(DefaultSpecimenLabelPrinter.class);
+public class DefaultSpecimenLabelPrinter extends AbstractLabelPrinter<Specimen> implements InitializingBean {
+	private static final LogUtil logger = LogUtil.getLogger(DefaultSpecimenLabelPrinter.class);
 
 	private ConfigurationService cfgSvc;
 
@@ -49,6 +48,10 @@ public class DefaultSpecimenLabelPrinter extends AbstractLabelPrinter<Specimen> 
 
 	@Override
 	protected boolean isApplicableFor(LabelPrintRule rule, Specimen specimen, User user, String ipAddr) {
+		if (StringUtils.isBlank(specimen.getLabel()) || specimen.isMissedOrNotCollected()) {
+			return false;
+		}
+
 		SpecimenLabelPrintRule spmnLabelPrintRule = (SpecimenLabelPrintRule) rule;
 		return spmnLabelPrintRule.isApplicableFor(specimen, user, ipAddr);
 	}
@@ -66,6 +69,11 @@ public class DefaultSpecimenLabelPrinter extends AbstractLabelPrinter<Specimen> 
 	@Override
 	protected String getItemLabel(Specimen specimen) {
 		return specimen.getLabel();
+	}
+
+	@Override
+	protected Long getItemId(Specimen specimen) {
+		return specimen.getId();
 	}
 
 	@Override
@@ -139,8 +147,8 @@ public class DefaultSpecimenLabelPrinter extends AbstractLabelPrinter<Specimen> 
 		SpecimenLabelPrintRule rule = new SpecimenLabelPrintRule();
 		rule.setCps(getCps(ruleLineFields[idx++]));
 		rule.setVisitSite(getSite(ruleLineFields[idx++]));
-		rule.setSpecimenClass(ruleLineFields[idx++]);
-		rule.setSpecimenType(ruleLineFields[idx++]);
+		idx++;
+		rule.setSpecimenTypes(getSpecimenTypes(ruleLineFields[idx++]));
 		rule.setUsers(getUsers(ruleLineFields[idx++]));
 
 		if (!ruleLineFields[idx++].equals("*")) {
@@ -159,7 +167,12 @@ public class DefaultSpecimenLabelPrinter extends AbstractLabelPrinter<Specimen> 
 			tokens.add(token);
 		}
 
-		rule.setDataTokens(tokens);
+		List<Pair<LabelTmplToken, List<String>>> dataTokens = new ArrayList<>();
+		for (LabelTmplToken token : tokens) {
+			dataTokens.add(Pair.make(token, new ArrayList<>()));
+		}
+
+		rule.setDataTokens(dataTokens);
 		rule.setLabelDesign(ruleLineFields[idx++]);
 		rule.setPrinterName(ruleLineFields[idx++]);
 		rule.setCmdFilesDir(ruleLineFields[idx++]);
@@ -208,6 +221,14 @@ public class DefaultSpecimenLabelPrinter extends AbstractLabelPrinter<Specimen> 
 		return daoFactory.getSiteDao().getSiteByName(siteName);
 	}
 
+	private List<PermissibleValue> getSpecimenTypes(String typesList) {
+		if (StringUtils.isBlank(typesList) || typesList.trim().equals("*")) {
+			return Collections.emptyList();
+		}
+
+		return daoFactory.getPermissibleValueDao().getPvs("specimen_type", Utility.csvToStringList(typesList));
+	}
+
 	private List<User> getUsers(String usersList) {
 		if (StringUtils.isBlank(usersList) || usersList.trim().equals("*")) {
 			return Collections.emptyList();
@@ -218,8 +239,6 @@ public class DefaultSpecimenLabelPrinter extends AbstractLabelPrinter<Specimen> 
 
 	private SpecimenLabelPrintRule replaceWildcardsWithNull(SpecimenLabelPrintRule rule) {
 		rule.setLineage(replaceWildcardWithNull(rule.getLineage()));
-		rule.setSpecimenClass(replaceWildcardWithNull(rule.getSpecimenClass()));
-		rule.setSpecimenType(replaceWildcardWithNull(rule.getSpecimenType()));
 		rule.setLabelType(replaceWildcardWithNull(rule.getLabelType()));
 		rule.setLabelDesign(replaceWildcardWithNull(rule.getLabelDesign()));
 		rule.setPrinterName(replaceWildcardWithNull(rule.getPrinterName()));

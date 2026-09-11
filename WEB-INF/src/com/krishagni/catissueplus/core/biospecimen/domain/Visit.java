@@ -7,21 +7,27 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import org.apache.commons.collections.CollectionUtils;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.hibernate.envers.AuditTable;
 import org.hibernate.envers.Audited;
 import org.hibernate.envers.NotAudited;
+import org.hibernate.envers.RelationTargetAuditMode;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Configurable;
 import org.springframework.beans.factory.annotation.Qualifier;
 
+import com.krishagni.catissueplus.core.administrative.domain.PermissibleValue;
 import com.krishagni.catissueplus.core.administrative.domain.Site;
 import com.krishagni.catissueplus.core.administrative.domain.User;
+import com.krishagni.catissueplus.core.biospecimen.ConfigParams;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol.SpecimenLabelPrePrintMode;
+import com.krishagni.catissueplus.core.biospecimen.domain.factory.CpErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.CpeErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.SpecimenErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.VisitErrorCode;
@@ -29,11 +35,15 @@ import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
 import com.krishagni.catissueplus.core.biospecimen.services.SpecimenService;
 import com.krishagni.catissueplus.core.biospecimen.services.VisitService;
 import com.krishagni.catissueplus.core.common.CollectionUpdater;
+import com.krishagni.catissueplus.core.common.OpenSpecimenAppCtxProvider;
+import com.krishagni.catissueplus.core.common.access.AccessCtrlMgr;
 import com.krishagni.catissueplus.core.common.domain.PrintItem;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.DependentEntityDetail;
 import com.krishagni.catissueplus.core.common.service.LabelGenerator;
+import com.krishagni.catissueplus.core.common.service.LabelPrinter;
 import com.krishagni.catissueplus.core.common.service.impl.EventPublisher;
+import com.krishagni.catissueplus.core.common.util.ConfigUtil;
 import com.krishagni.catissueplus.core.common.util.Status;
 import com.krishagni.catissueplus.core.common.util.Utility;
 import com.krishagni.catissueplus.core.de.services.impl.FormUtil;
@@ -58,9 +68,9 @@ public class Visit extends BaseExtensionEntity {
 	
 	private Date visitDate;
 
-	private Set<String> clinicalDiagnoses = new HashSet<>();
+	private Set<PermissibleValue> clinicalDiagnoses = new HashSet<>();
 
-	private String clinicalStatus;
+	private PermissibleValue clinicalStatus;
 
 	private String activityStatus;
 
@@ -84,11 +94,11 @@ public class Visit extends BaseExtensionEntity {
 	
 	private String defNameTmpl;
 
-	private String missedReason;
+	private PermissibleValue missedReason;
 
 	private User missedBy;
 	
-	private String cohort;
+	private PermissibleValue cohort;
 	
 	@Autowired
 	@Qualifier("visitNameGenerator")
@@ -112,6 +122,8 @@ public class Visit extends BaseExtensionEntity {
 	private transient boolean updated;
 
 	private transient boolean statusChanged;
+
+	private transient Map<Long, Map<String, String>> kitLabels;
 	
 	public static String getEntityName() {
 		return ENTITY_NAME;
@@ -133,19 +145,21 @@ public class Visit extends BaseExtensionEntity {
 		this.visitDate = visitDate;
 	}
 
-	public Set<String> getClinicalDiagnoses() {
+	@Audited(targetAuditMode = RelationTargetAuditMode.NOT_AUDITED)
+	public Set<PermissibleValue> getClinicalDiagnoses() {
 		return clinicalDiagnoses;
 	}
 
-	public void setClinicalDiagnoses(Set<String> clinicalDiagnoses) {
+	public void setClinicalDiagnoses(Set<PermissibleValue> clinicalDiagnoses) {
 		this.clinicalDiagnoses = clinicalDiagnoses;
 	}
 
-	public String getClinicalStatus() {
+	@Audited(targetAuditMode = RelationTargetAuditMode.NOT_AUDITED)
+	public PermissibleValue getClinicalStatus() {
 		return clinicalStatus;
 	}
 
-	public void setClinicalStatus(String clinicalStatus) {
+	public void setClinicalStatus(PermissibleValue clinicalStatus) {
 		this.clinicalStatus = clinicalStatus;
 	}
 
@@ -231,7 +245,7 @@ public class Visit extends BaseExtensionEntity {
 	}
 	
 	public Set<Specimen> getTopLevelSpecimens() {
-		return Utility.nullSafeStream(getSpecimens()).filter(s -> s.isPrimary() && !s.isPoolSpecimen()).collect(Collectors.toSet());
+		return Utility.nullSafeStream(getSpecimens()).filter(Specimen::isPrimary).collect(Collectors.toSet());
 	}
 
 	public Collection<Specimen> getOrderedTopLevelSpecimens() {
@@ -254,11 +268,12 @@ public class Visit extends BaseExtensionEntity {
 		this.defNameTmpl = defNameTmpl;
 	}
 
-	public String getMissedReason() {
+	@Audited(targetAuditMode = RelationTargetAuditMode.NOT_AUDITED)
+	public PermissibleValue getMissedReason() {
 		return missedReason;
 	}
 
-	public void setMissedReason(String missedVisitReason) {
+	public void setMissedReason(PermissibleValue missedVisitReason) {
 		this.missedReason = missedVisitReason;
 	}
 
@@ -270,11 +285,12 @@ public class Visit extends BaseExtensionEntity {
 		this.missedBy = missedBy;
 	}
 
-	public String getCohort() {
+	@Audited(targetAuditMode = RelationTargetAuditMode.NOT_AUDITED)
+	public PermissibleValue getCohort() {
 		return cohort;
 	}
 
-	public void setCohort(String cohort) {
+	public void setCohort(PermissibleValue cohort) {
 		this.cohort = cohort;
 	}
 
@@ -312,6 +328,14 @@ public class Visit extends BaseExtensionEntity {
 
 	public void setStatusChanged(boolean statusChanged) {
 		this.statusChanged = statusChanged;
+	}
+
+	public Map<Long, Map<String, String>> getKitLabels() {
+		return kitLabels;
+	}
+
+	public void setKitLabels(Map<Long, Map<String, String>> kitLabels) {
+		this.kitLabels = kitLabels;
 	}
 
 	public boolean isCompleted() {
@@ -368,8 +392,19 @@ public class Visit extends BaseExtensionEntity {
 		if (checkDependency) {
 			ensureNoActiveChildObjects();
 		}
-		
+
+		Boolean hasDeleteSpmnRights = getRegistration().getHasDeleteSpecimenRights();
 		for (Specimen specimen : getSpecimens()) {
+			if (specimen.isActiveOrClosed() && specimen.isCollected()) {
+				if (hasDeleteSpmnRights == null) {
+					AccessCtrlMgr.getInstance().ensureDeleteSpecimenRights(specimen);
+					if (!getCollectionProtocol().storageSiteBasedAccessRightsEnabled()) {
+						hasDeleteSpmnRights = true;
+						getRegistration().setHasDeleteSpecimenRights(true);
+					}
+				}
+			}
+
 			specimen.disable(checkDependency);
 		}
 		
@@ -390,8 +425,8 @@ public class Visit extends BaseExtensionEntity {
 		
 		setName(visit.getName());
 		setClinicalStatus(visit.getClinicalStatus());
-		setCpEvent(visit.getCpEvent());
-		setRegistration(visit.getRegistration());
+		updateEvent(visit.getCpEvent());
+		updateRegistration(visit.getRegistration());
 		setSite(visit.getSite());
 		updateStatus(visit.getStatus());		
 		setComments(visit.getComments());
@@ -404,16 +439,12 @@ public class Visit extends BaseExtensionEntity {
 		setExtension(visit.getExtension());
 		CollectionUpdater.update(getClinicalDiagnoses(), visit.getClinicalDiagnoses());
 		setUpdated(true);
+
 	}
 
 	public void updateSprName(String sprName) {
 		setSprName(sprName);
 	}	
-	
-	public void addSpecimen(Specimen specimen) {
-		specimen.setVisit(this);
-		getSpecimens().add(specimen);
-	}
 	
 	public CollectionProtocol getCollectionProtocol() {
 		return registration.getCollectionProtocol();
@@ -428,7 +459,11 @@ public class Visit extends BaseExtensionEntity {
 		if (StringUtils.isBlank(visitNameFmt)) {
 			visitNameFmt = defNameTmpl;
 		}
-		
+
+		if (StringUtils.isBlank(visitNameFmt)) {
+			throw OpenSpecimenException.userError(VisitErrorCode.NAME_FMT_NOT_SPECIFIED);
+		}
+
 		setName(labelGenerator.generateLabel(visitNameFmt, this));
 	}
 	
@@ -459,16 +494,6 @@ public class Visit extends BaseExtensionEntity {
 
 		if (Specimen.isMissed(status) || Specimen.isNotCollected(status)) {
 			createSpecimens(status);
-		} else if (Specimen.isPending(status)) {
-			for (Specimen specimen : topLevelSpmns) {
-				if (!specimen.isPooled()) {
-					continue;
-				}
-
-				for (Specimen poolSpmn : specimen.getSpecimensPool()) {
-					poolSpmn.updateCollectionStatus(status);
-				}
-			}
 		}
 	}
 
@@ -572,12 +597,63 @@ public class Visit extends BaseExtensionEntity {
 	}
 
 	@Override
+	public Long getRecordId(Long formId, Long formCtxtId) {
+		return daoFactory.getVisitsDao().getCustomFieldRecordId(getId(), formId, formCtxtId);
+	}
+
+	@Override
+	public boolean saveOrUpdateRecordEntry(boolean insert, Long formId, Long formCtxtId, Long recordId) {
+		if (insert && recordId != null) {
+			daoFactory.getVisitsDao().insertCustomFieldRecordId(getId(), formId, formCtxtId, recordId);
+		}
+
+		return true;
+	}
+
+	@Override
+	public Map<Long, Long> getRecordIds(Collection<Long> visitIds, Long formId, Long formCtxtId) {
+		return daoFactory.getVisitsDao().getCustomFieldRecordIds(visitIds, formId, formCtxtId);
+	}
+
+	@Override
 	public Long getCpId() {
+		if (getCollectionProtocol() == null) {
+			throw OpenSpecimenException.userError(CpErrorCode.REQ_OR_INV);
+		}
+
 		return getCollectionProtocol().getId();
 	}
 
 	public boolean hasCollectedSpecimens() {
 		return getSpecimens().stream().anyMatch(s -> s.isActiveOrClosed() && s.isCollected());
+	}
+
+	public String getDescription() {
+		String desc = "";
+		if (StringUtils.isNotBlank(getName())) {
+			desc = getName() + ", ";
+		}
+
+		if (getCpEvent() != null) {
+			desc += getCpEvent().getEventLabel();
+			if (StringUtils.isNotBlank(getCpEvent().getCode())) {
+				desc += ", " + getCpEvent().getCode();
+			}
+		} else {
+			desc += "Unplanned";
+		}
+
+		if (getId() != null) {
+			desc += ", " + getId();
+		}
+
+		return desc;
+	}
+
+	public static LabelPrinter<Visit> getLabelPrinter() {
+		String beanName = ConfigUtil.getInstance().getStrSetting(
+			ConfigParams.MODULE, ConfigParams.VISIT_LABEL_PRINTER, "defaultVisitLabelPrinter");
+		return (LabelPrinter<Visit>) OpenSpecimenAppCtxProvider.getAppCtx().getBean(beanName);
 	}
 
 	private void ensureNoActiveChildObjects() {
@@ -598,41 +674,25 @@ public class Visit extends BaseExtensionEntity {
 	}
 
 	private void createSpecimens(String status) {
-		Set<SpecimenRequirement> anticipated = getCpEvent().getTopLevelAnticipatedSpecimens();
+		Set<SpecimenRequirement> anticipated;
+		if (getCpEvent() == null) {
+			anticipated = new HashSet<>();
+		} else {
+			anticipated = getCpEvent().getTopLevelAnticipatedSpecimens();
+		}
+
 		for (Specimen specimen : getTopLevelSpecimens()) {
 			if (specimen.getSpecimenRequirement() != null) {
 				anticipated.remove(specimen.getSpecimenRequirement());
 			}
-
-			addOrUpdatePoolSpmns(specimen, status);
 		}
 
 		for (SpecimenRequirement sr : anticipated) {
 			Specimen specimen = sr.getSpecimen();
 			specimen.setVisit(this);
-			specimen.updateCollectionStatus(status);
+			specimen.setPrimarySpecimen(specimen);
 			addSpecimen(specimen);
-			addOrUpdatePoolSpmns(specimen, status);
-		}
-	}
-
-	private void addOrUpdatePoolSpmns(Specimen specimen, String status) {
-		if (!specimen.isPooled()) {
-			return;
-		}
-
-		SpecimenRequirement sr = specimen.getSpecimenRequirement();
-		Set<SpecimenRequirement> anticipated = new HashSet<>(sr.getSpecimenPoolReqs());
-		for (Specimen poolSpecimen : specimen.getSpecimensPool()) {
-			poolSpecimen.updateCollectionStatus(status);
-			anticipated.remove(poolSpecimen.getSpecimenRequirement());
-		}
-
-		for (SpecimenRequirement poolSpecimenReq : anticipated) {
-			Specimen poolSpecimen = poolSpecimenReq.getSpecimen();
-			poolSpecimen.setVisit(this);
-			specimen.addPoolSpecimen(poolSpecimen);
-			poolSpecimen.updateCollectionStatus(status);
+			specimen.updateCollectionStatus(status);
 		}
 	}
 
@@ -643,22 +703,13 @@ public class Visit extends BaseExtensionEntity {
 
 		Specimen specimen = sr.getSpecimen();
 		specimen.setParentSpecimen(parent);
+		specimen.setPrimarySpecimen(parent != null ? parent.getPrimarySpecimen() : specimen);
 		specimen.setVisit(this);
 		specimen.setCollectionStatus(Specimen.PENDING);
+		specimen.updateAvailableStatus();
+		specimen.setKitLabelsIfEmpty();
 		specimen.setLabelIfEmpty();
-
 		addSpecimen(specimen);
-		daoFactory.getSpecimenDao().saveOrUpdate(specimen);
-		EventPublisher.getInstance().publish(new SpecimenSavedEvent(specimen));
-
-		for (SpecimenRequirement poolSr : sr.getOrderedSpecimenPoolReqs()) {
-			Specimen poolSpmn = createPendingSpecimen(poolSr, null);
-			if (poolSpmn == null) {
-				continue;
-			}
-
-			specimen.addPoolSpecimen(poolSpmn);
-		}
 
 		for (SpecimenRequirement childSr : sr.getOrderedChildRequirements()) {
 			Specimen childSpmn = createPendingSpecimen(childSr, specimen);
@@ -670,6 +721,13 @@ public class Visit extends BaseExtensionEntity {
 		}
 
 		return specimen;
+	}
+
+	private void addSpecimen(Specimen specimen) {
+		getSpecimens().add(specimen);
+		daoFactory.getSpecimenDao().saveOrUpdate(specimen, true);
+		specimen.addOrUpdateExtension();
+		EventPublisher.getInstance().publish(new SpecimenSavedEvent(specimen));
 	}
 
 	private List<PrintItem<Specimen>> getSpecimenPrintItems(Collection<Specimen> specimens) {
@@ -693,6 +751,52 @@ public class Visit extends BaseExtensionEntity {
 
 			default:
 				return false;
+		}
+	}
+
+	private void updateEvent(CollectionProtocolEvent newEvent) {
+		CollectionProtocolEvent existingEvent = getCpEvent();
+		setCpEvent(newEvent);
+
+		if (Objects.equals(existingEvent, newEvent)) {
+			return;
+		}
+
+		List<SpecimenRequirement> newEventSrs = newEvent != null ? newEvent.getOrderedTopLevelAnticipatedSpecimens() : Collections.emptyList();
+		for (Specimen spmn : getOrderedTopLevelSpecimens()) {
+			SpecimenRequirement matchingReq = null;
+			if (spmn.getSpecimenRequirement() != null) {
+				matchingReq = spmn.getSpecimenRequirement().getMatchingReq(newEventSrs);
+			}
+
+			spmn.updateRequirement(matchingReq);
+		}
+	}
+
+	private void updateRegistration(CollectionProtocolRegistration newCpr) {
+		CollectionProtocolRegistration existingCpr = getRegistration();
+		setRegistration(newCpr);
+
+		if (existingCpr.equals(newCpr)) {
+			return;
+		}
+
+		if (existingCpr.getCollectionProtocol().equals(newCpr.getCollectionProtocol())) {
+			return;
+		}
+
+		Collection<SpecimenRequirement> eventReqs = getCpEvent() != null ? getCpEvent().getOrderedTopLevelAnticipatedSpecimens() : Collections.emptyList();
+		for (Specimen specimen : getSpecimens()) {
+			specimen.setCollectionProtocol(newCpr.getCollectionProtocol());
+		}
+
+		for (Specimen specimen : getOrderedTopLevelSpecimens()) { // TODO: This block appears duplicate
+			SpecimenRequirement newReq = null;
+			if (specimen.getSpecimenRequirement() != null) {
+				newReq = specimen.getSpecimenRequirement().getMatchingReq(eventReqs);
+			}
+
+			specimen.updateRequirement(newReq);
 		}
 	}
 }

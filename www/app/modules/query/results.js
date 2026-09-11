@@ -1,19 +1,33 @@
 
 angular.module('os.query.results', ['os.query.models'])
   .filter('osFacetRange', function() {
-    return function(input) {
-      var in0 = angular.isDefined(input[0]);
-      var in1 = angular.isDefined(input[1]);
+    return function(input, facet) {
+      var in0 = input[0] != undefined && input[0] != null && input[0] != '';
+      var in1 = input[1] != undefined && input[1] != null && input[1] != '';
+
       if (in0 && in1) {
-        return input[0] + " - " + input[1];
+        return facet.relOp == 'eq' ? '= ' + input[0] : input[0] + " - " + input[1];
       } else if (in0) {
-        return '>= ' + input[0];
+        return (facet.relOp == 'gt' ? '> ' : '>= ') + input[0];
       } else if (in1) {
-        return '<= ' + input[1];
+        return (facet.relOp == 'lt' ? '< ' : '<= ') + input[1];
       } else {
-        return 'Err';
+        return facet.relOp == 'between' ? 'Any' : 'Err';
       }
     }
+  })
+  .filter('osQueryDate', function($filter) {
+    return function(input) {
+      if (typeof input != 'string') {
+        return input;
+      }
+
+      if (input.indexOf('T') != -1) {
+        return $filter('date')(input, ui.os.global.dateTimeFmt);
+      } else {
+        return $filter('date')(input, ui.os.global.dateFmt);
+      }
+    };
   })
   .controller('QueryResultsCtrl', function(
     $scope, $state, $stateParams, $modal, $document, $timeout, $interpolate, currentUser,
@@ -21,7 +35,7 @@ angular.module('os.query.results', ['os.query.models'])
 
     var STR_FACETED_OPS = ['eq', 'qin', 'exists', 'any'];
 
-    var RANGE_FACETED_OPS = ['le', 'ge', 'eq', 'between', 'exists', 'any'];
+    var RANGE_FACETED_OPS = ['lt', 'le', 'gt', 'ge', 'eq', 'between', 'exists', 'any'];
 
     var currResults = {};
 
@@ -75,6 +89,14 @@ angular.module('os.query.results', ['os.query.models'])
         counters: {waiting: true, error: false},
       }
 
+      $scope.$on('ngGridEventDigestGridParent',
+        function() {
+          /* Patented idea.
+             This is to trigger a digest cycle when user changes the selection by
+             using up and down arrow keys. */
+          $timeout(function() { }, 0);
+        }
+      );
       executeQuery($stateParams.editMode);
     }
 
@@ -143,14 +165,14 @@ angular.module('os.query.results', ['os.query.models'])
       var qc = $scope.queryCtx;
       $scope.showAddToSpecimenList = showAddToSpecimenList();
       $scope.resultsCtx.waitingForRecords = true;
-      $scope.resultsCtx.error = false;
+      $scope.resultsCtx.error = $scope.resultsCtx.moreData = false;
 
       currResults = {};
 
       var aql = getAql(true, true);
       var outputIsoFmt = (qc.reporting.type != 'crosstab');
-      var opts = {outputColumnExprs: qc.outputColumnExprs};
-      QueryExecutor.getRecords(qc.id, qc.selectedCp.id, aql, qc.wideRowMode || 'DEEP', outputIsoFmt, opts).then(
+      var opts = {outputColumnExprs: qc.outputColumnExprs, caseSensitive: qc.caseSensitive};
+      QueryExecutor.getRecords(qc.id, qc.selectedCp, aql, qc.wideRowMode || 'DEEP', outputIsoFmt, opts).then(
         function(result) {
           currResults = result;
           $scope.resultsCtx.waitingForRecords = false;
@@ -163,9 +185,10 @@ angular.module('os.query.results', ['os.query.models'])
           }
         },
 
-        function() {
-          $scope.resultsCtx.waitForRecords = false;
+        function(error) {
+          $scope.resultsCtx.waitingForRecords = false;
           $scope.resultsCtx.error = true;
+          $scope.resultsCtx.errorData = error.data;
         }
       );
 
@@ -218,11 +241,13 @@ angular.module('os.query.results', ['os.query.models'])
           if (!!filter.expr) {
             var tObj = filter.tObj = QueryUtil.getTemporalExprObj(filter.expr);
             filter.op = QueryUtil.getOpBySymbol(tObj.op);
-            if (tObj.op == 'between') {
-              var rhs = tObj.rhs.trim();
-              filter.value = JSON.parse('[' + rhs.substring(1, rhs.length - 1) + ']');
-            } else {
-              filter.value = tObj.rhs;
+            var rhs = tObj.rhs && tObj.rhs.trim();
+            if (rhs) {
+              if (tObj.op == 'between') {
+                filter.value = JSON.parse('[' + rhs.substring(1, rhs.length - 1) + ']');
+              } else {
+                filter.value = tObj.rhs;
+              }
             }
 
             type = 'INTEGER';
@@ -267,11 +292,15 @@ angular.module('os.query.results', ['os.query.models'])
 
       if (isRangeType) {
         var value = undefined;
-        switch (filter.op.name) {
-          case 'eq': value = [filter.value, filter.value]; break;
-          case 'le': value = [undefined, filter.value]; break;
-          case 'ge': value = [filter.value, undefined]; break;
-          case 'between': value = filter.value; break;
+        if (filter.value) {
+          switch (filter.op.name) {
+            case 'eq': value = [filter.value, filter.value]; break;
+            case 'lt': value = [undefined, filter.value]; break;
+            case 'le': value = [undefined, filter.value]; break;
+            case 'gt': value = [filter.value, undefined]; break;
+            case 'ge': value = [filter.value, undefined]; break;
+            case 'between': value = filter.value; break;
+          }
         }
 
         if (value) {
@@ -294,6 +323,7 @@ angular.module('os.query.results', ['os.query.models'])
         caption: !!filter.expr || !!filter.desc ? filter.desc : filter.field.caption,
         dataType: type,
         isRange: isRangeType,
+        relOp: isRangeType && filter.op && filter.op.name,
         expr: !!filter.expr ? filter.expr : (filter.form.name + "." + filter.field.name),
         type: type,
         values: values,
@@ -312,14 +342,14 @@ angular.module('os.query.results', ['os.query.models'])
 
       var q = undefined;
       if (!!searchTerm) {
-        q = QueryExecutor.getFacetValues($scope.queryCtx.selectedCp.id, [facet.expr], searchTerm, criteria);
+        q = QueryExecutor.getFacetValues($scope.queryCtx.selectedCp, [facet.expr], searchTerm, criteria);
       }
 
       if (!q) {
         if (facet.valuesQ) {
           q = facet.valuesQ;
         } else {
-          q = facet.valuesQ = QueryExecutor.getFacetValues($scope.queryCtx.selectedCp.id, [facet.expr], undefined, criteria);
+          q = facet.valuesQ = QueryExecutor.getFacetValues($scope.queryCtx.selectedCp, [facet.expr], undefined, criteria);
         }
       }
 
@@ -330,6 +360,7 @@ angular.module('os.query.results', ['os.query.models'])
               return {value: value, selected: false}
             }
           );
+          facet.dbRows = result[0].dbRows;
           facet.searchValues = !!searchTerm;
 
           var selectedValues = facet.selectedValues;
@@ -351,7 +382,7 @@ angular.module('os.query.results', ['os.query.models'])
       var counters = $scope.resultsCtx.counters;
       counters.waiting = true;
       counters.error = false;
-      QueryExecutor.getCount(qc.id, qc.selectedCp.id, aql).then(
+      QueryExecutor.getCount(qc.id, qc.selectedCp, aql, qc.caseSensitive).then(
         function(result) {
           counters.waiting = false;
           angular.extend(counters, result);
@@ -401,12 +432,12 @@ angular.module('os.query.results', ['os.query.models'])
     function preparePivotTable(result) {
       $scope.resultsCtx.rows = result.rows;
       $scope.resultsCtx.columnLabels = result.columnLabels;
+      $scope.resultsCtx.moreData = (result.dbRowsCount >= 10000);
 
       var numGrpCols = $scope.queryCtx.reporting.params.groupRowsBy.length;
       for (var i = 0; i < numGrpCols; ++i) {
         result.columnLabels[i] = removeSeparator(result.columnLabels[i]);
       }
-
       var numValueCols = $scope.queryCtx.reporting.params.summaryFields.length;
       var numRollupCols = numValueCols;
       var rollupExclFields = $scope.queryCtx.reporting.params.rollupExclFields;
@@ -455,25 +486,33 @@ angular.module('os.query.results', ['os.query.models'])
           var columnLabel = removeSeparator(columnLabel);
           var width = getColumnWidth(columnLabel);
 
+          var isDateColumn = (result.columnTypes[idx] == 'DATE');
           var cellTemplate = null;
           if (result.columnUrls[idx]) {
             var link, linkTxt;
-            if (result.columnUrls[idx] == 'true') {
-              link = '{{row.getProperty(col.field)}}';
+            if (result.columnUrls[idx] == 'true' || result.columnUrls[idx] == 'url_value') {
+              link = '{{row.entity[col.field]}}';
               linkTxt = 'Click here';
             } else {
               link = '{{cellUrl(row, col,' + idx + ')}}'
-              linkTxt = '{{row.getProperty(col.field)}}';
+              linkTxt = '{{row.entity[col.field]}}';
             }
 
-            cellTemplate = '<div class="ngCellText" ng-class="col.colIndex()">' +
+            cellTemplate = '<div class="ngCellText" ng-class="col.colIndex()" title="' + linkTxt + '">' +
                            '  <a href="' + link + '" target="_blank">' +
                                 linkTxt +
                            '  </a>' +
                            '</div>';
+          } else if (isDateColumn) {
+            cellTemplate = '<div class="ngCellText" ng-class="col.colIndex()" title="{{row.entity[col.field]}}">' +
+                           '  <span>{{row.entity[col.field] | osQueryDate}}</span>' +
+                           '</div>';
+          } else {
+            cellTemplate = '<div class="ngCellText" ng-class="col.colIndex()" title="{{row.entity[col.field]}}">' +
+                           '  <span>{{row.entity[col.field]}}</span>' +
+                           '</div>';
           }
 
-          var isDateColumn = (result.columnTypes[idx] == 'DATE');
           colDefs.push({
             field:        "col" + idx,
             instance:     columnInstance(columnLabel).instance,
@@ -484,7 +523,7 @@ angular.module('os.query.results', ['os.query.models'])
             showSummary:  showColSummary,
             summary:      summaryRow[idx],
             sortFn:       getSortFn(result.columnTypes[idx]),
-            cellFilter:   isDateColumn ? "date: global.dateTimeFmt" : undefined
+            cellFilter:   isDateColumn ? "osQueryDate" : undefined /* unused */
           });
         }
       );
@@ -521,7 +560,7 @@ angular.module('os.query.results', ['os.query.models'])
       var formattedRows = [];
       for (var i = 0; i < rows.length; ++i) {
         var formattedRow = {hidden:{}};
-        for (var j = 0; j < rows[i].length; ++j) {
+        for (var j = 0; j < rows[i].length && j < labels.length; ++j) {
           if (labels[j].charAt(0) == '$') {
             var colInstance = columnInstance(labels[j]);
             if (!formattedRow['hidden'][colInstance.instance]) {
@@ -562,7 +601,7 @@ angular.module('os.query.results', ['os.query.models'])
 
     function getSelectedSpecimens() {
       return $scope.selectedRows.map(function(row) {
-        return {id: row.hidden[0].$specimenId};
+        return {id: row.hidden[0].$specimenId, cpId: row.hidden[0].$cpId};
       });
     };
 
@@ -611,7 +650,18 @@ angular.module('os.query.results', ['os.query.models'])
       $state.go('query-addedit', {queryId: $scope.queryCtx.id});
     }
 
+    $scope.showFacetSearch = function() {
+      $scope.resultsCtx.showFacetSearch = true;
+    }
+
+    $scope.hideFacetSearch = function() {
+      $scope.resultsCtx.showFacetSearch = false;
+      $scope.resultsCtx.facetSearchTerm = undefined;
+    }
+
+
     $scope.defineView = function() {
+      var prevCaseSensitive = $scope.queryCtx.caseSensitive;
       var mi = $modal.open({
         templateUrl: 'modules/query/define-view.html',
         controller: 'DefineViewCtrl',
@@ -627,7 +677,7 @@ angular.module('os.query.results', ['os.query.models'])
         function(queryCtx) {
           $scope.queryCtx = queryCtx;
           QueryUtil.disableCpSelection(queryCtx);
-          loadRecords(false, false);
+          loadRecords(false, (prevCaseSensitive != queryCtx.caseSensitive));
         }
       );
     }
@@ -646,8 +696,8 @@ angular.module('os.query.results', ['os.query.models'])
 
       var alert = Alerts.info('queries.export_initiated', {}, false);  
       var aql = getAql(false);
-      var opts = {outputColumnExprs: qc.outputColumnExprs};
-      QueryExecutor.exportQueryResultsData(qc.id, qc.selectedCp.id, aql, qc.wideRowMode || 'DEEP', opts).then(
+      var opts = {outputColumnExprs: qc.outputColumnExprs, caseSensitive: qc.caseSensitive};
+      QueryExecutor.exportQueryResultsData(qc.id, qc.selectedCp, aql, qc.wideRowMode || 'DEEP', opts).then(
         function(result) {
           Alerts.remove(alert);
           if (result.completed) {
@@ -736,13 +786,13 @@ angular.module('os.query.results', ['os.query.models'])
             filter.op = QueryUtil.getOp('between');
           } else if (validMin && !validMax) {
             filter.value = minMax[0];
-            filter.op = QueryUtil.getOp('ge');
+            filter.op = QueryUtil.getOp(facet.relOp == 'gt' ? 'gt' : 'ge');
           } else if (!validMin && validMax) {
             filter.value = minMax[1];
-            filter.op = QueryUtil.getOp('le');
+            filter.op = QueryUtil.getOp(facet.relOp == 'lt' ? 'lt' : 'le');
           } else {
             filter.value = undefined;
-            filter.op = QueryUtil.getOp('any');
+            filter.op = QueryUtil.getOp(facet.relOp || 'any');
           }
 
           if (!filter.tObj) {
@@ -757,6 +807,8 @@ angular.module('os.query.results', ['os.query.models'])
           } else if (angular.isDefined(filter.value)) {
             filter.expr += filter.value;
           }
+
+          facet.selectedValues = filter.value;
         } else {
           filter.op = QueryUtil.getOp('qin');
 
@@ -816,7 +868,8 @@ angular.module('os.query.results', ['os.query.models'])
     }
 
     $scope.searchFacetValue = function(facet) {
-      if (facet.values.length < 500 && !facet.searchValues) {
+      var valuesCount = (facet.dbRows != null && facet.dbRows != undefined) ? facet.dbRows : facet.values.length;
+      if (valuesCount < 500 && !facet.searchValues) {
         return;
       }
 

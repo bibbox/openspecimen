@@ -56,15 +56,14 @@ angular.module('openspecimen')
     }
 
     function addCategoryTimeAxis(options) {
-      options.scales = {
-        xAxes: [{
-          type: 'time',
-          time: {
-            parser: ui.os.global.shortDateFmt.toUpperCase() + ' HH:mm',
-            displayFormat: ui.os.global.dateFmt.toUpperCase()
-          }
-        }]
-      };
+      options.scales = options.scales || {};
+      options.scales.xAxes = [{
+        type: 'time',
+        time: {
+          parser: ui.os.global.shortDateFmt.toUpperCase() + ' HH:mm',
+          displayFormat: ui.os.global.dateFmt.toUpperCase()
+        }
+      }]
     }
 
     return {
@@ -84,6 +83,16 @@ angular.module('openspecimen')
 
         if (showLegends.indexOf(type) != -1) {
           scope.options.legend = {display: true, position: 'bottom'};
+        }
+
+        var options = scope.options = scope.options || {};
+        if (options.type != 'doughnut' && options.type != 'pie') {
+          var scales = options.scales = options.scales || {};
+          scales.yAxes = [{
+            ticks: {
+              beginAtZero: true
+            }
+          }];
         }
 
         scope.override = [];
@@ -118,6 +127,8 @@ angular.module('openspecimen')
 
             if (scope.data.categoryType == 'DATE') {
               addCategoryTimeAxis(scope.options);
+            } else {
+              scope.options.scales.xAxes = [];
             }
           }
         );

@@ -1,30 +1,36 @@
 package com.krishagni.catissueplus.core.biospecimen.domain.factory.impl;
 
-import static com.krishagni.catissueplus.core.biospecimen.domain.factory.SrErrorCode.*;
-import static com.krishagni.catissueplus.core.common.PvAttributes.*;
-import static com.krishagni.catissueplus.core.common.service.PvValidator.isValid;
-
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
-import org.apache.commons.collections.CollectionUtils;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.lang3.StringUtils;
 
+import com.krishagni.catissueplus.core.administrative.domain.PermissibleValue;
 import com.krishagni.catissueplus.core.administrative.domain.User;
 import com.krishagni.catissueplus.core.biospecimen.ConfigParams;
 import com.krishagni.catissueplus.core.biospecimen.domain.AliquotSpecimensRequirement;
+import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol.SpecimenLabelAutoPrintMode;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolEvent;
 import com.krishagni.catissueplus.core.biospecimen.domain.DerivedSpecimenRequirement;
+import com.krishagni.catissueplus.core.biospecimen.domain.LabService;
 import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
 import com.krishagni.catissueplus.core.biospecimen.domain.SpecimenRequirement;
+import com.krishagni.catissueplus.core.biospecimen.domain.SpecimenRequirementService;
+import com.krishagni.catissueplus.core.biospecimen.domain.Visit;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.CpErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.CpeErrorCode;
+import com.krishagni.catissueplus.core.biospecimen.domain.factory.CpeFactory;
+import com.krishagni.catissueplus.core.biospecimen.domain.factory.LabServiceErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.SpecimenRequirementFactory;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.SrErrorCode;
-import com.krishagni.catissueplus.core.biospecimen.events.SpecimenPoolRequirements;
+import com.krishagni.catissueplus.core.biospecimen.events.CollectionProtocolEventDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.SpecimenRequirementDetail;
+import com.krishagni.catissueplus.core.biospecimen.events.SrServiceDetail;
 import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
 import com.krishagni.catissueplus.core.common.errors.ActivityStatusErrorCode;
 import com.krishagni.catissueplus.core.common.errors.ErrorCode;
@@ -36,11 +42,42 @@ import com.krishagni.catissueplus.core.common.util.ConfigUtil;
 import com.krishagni.catissueplus.core.common.util.NumUtil;
 import com.krishagni.catissueplus.core.common.util.Status;
 
+import static com.krishagni.catissueplus.core.biospecimen.domain.factory.SrErrorCode.ANATOMIC_SITE_REQUIRED;
+import static com.krishagni.catissueplus.core.biospecimen.domain.factory.SrErrorCode.COLLECTOR_NOT_FOUND;
+import static com.krishagni.catissueplus.core.biospecimen.domain.factory.SrErrorCode.COLL_CONT_REQUIRED;
+import static com.krishagni.catissueplus.core.biospecimen.domain.factory.SrErrorCode.COLL_PROC_REQUIRED;
+import static com.krishagni.catissueplus.core.biospecimen.domain.factory.SrErrorCode.CONCENTRATION_MUST_BE_POSITIVE;
+import static com.krishagni.catissueplus.core.biospecimen.domain.factory.SrErrorCode.CPE_REQUIRED;
+import static com.krishagni.catissueplus.core.biospecimen.domain.factory.SrErrorCode.INVALID_ANATOMIC_SITE;
+import static com.krishagni.catissueplus.core.biospecimen.domain.factory.SrErrorCode.INVALID_COLL_CONT;
+import static com.krishagni.catissueplus.core.biospecimen.domain.factory.SrErrorCode.INVALID_COLL_PROC;
+import static com.krishagni.catissueplus.core.biospecimen.domain.factory.SrErrorCode.INVALID_LABEL_FMT;
+import static com.krishagni.catissueplus.core.biospecimen.domain.factory.SrErrorCode.INVALID_LATERALITY;
+import static com.krishagni.catissueplus.core.biospecimen.domain.factory.SrErrorCode.INVALID_PATHOLOGY_STATUS;
+import static com.krishagni.catissueplus.core.biospecimen.domain.factory.SrErrorCode.INVALID_QTY;
+import static com.krishagni.catissueplus.core.biospecimen.domain.factory.SrErrorCode.INVALID_SPECIMEN_CLASS;
+import static com.krishagni.catissueplus.core.biospecimen.domain.factory.SrErrorCode.INVALID_SPECIMEN_TYPE;
+import static com.krishagni.catissueplus.core.biospecimen.domain.factory.SrErrorCode.LATERALITY_REQUIRED;
+import static com.krishagni.catissueplus.core.biospecimen.domain.factory.SrErrorCode.PARENT_REQ_REQUIRED;
+import static com.krishagni.catissueplus.core.biospecimen.domain.factory.SrErrorCode.PATHOLOGY_STATUS_REQUIRED;
+import static com.krishagni.catissueplus.core.biospecimen.domain.factory.SrErrorCode.RECEIVER_NOT_FOUND;
+import static com.krishagni.catissueplus.core.biospecimen.domain.factory.SrErrorCode.SPECIMEN_CLASS_REQUIRED;
+import static com.krishagni.catissueplus.core.biospecimen.domain.factory.SrErrorCode.SPECIMEN_TYPE_REQUIRED;
+import static com.krishagni.catissueplus.core.common.PvAttributes.COLL_PROC;
+import static com.krishagni.catissueplus.core.common.PvAttributes.CONTAINER;
+import static com.krishagni.catissueplus.core.common.PvAttributes.PATH_STATUS;
+import static com.krishagni.catissueplus.core.common.PvAttributes.SPECIMEN_ANATOMIC_SITE;
+import static com.krishagni.catissueplus.core.common.PvAttributes.SPECIMEN_CLASS;
+import static com.krishagni.catissueplus.core.common.PvAttributes.SPECIMEN_LATERALITY;
+import static com.krishagni.catissueplus.core.common.service.PvValidator.isValid;
+
 public class SpecimenRequirementFactoryImpl implements SpecimenRequirementFactory {
 
 	private DaoFactory daoFactory;
 	
 	private LabelGenerator specimenLabelGenerator;
+
+	private CpeFactory cpeFactory;
 
 	public DaoFactory getDaoFactory() {
 		return daoFactory;
@@ -58,6 +95,10 @@ public class SpecimenRequirementFactoryImpl implements SpecimenRequirementFactor
 		this.specimenLabelGenerator = specimenLabelGenerator;
 	}
 
+	public void setCpeFactory(CpeFactory cpeFactory) {
+		this.cpeFactory = cpeFactory;
+	}
+
 	@Override
 	public SpecimenRequirement createSpecimenRequirement(SpecimenRequirementDetail detail) {
 		SpecimenRequirement requirement = new SpecimenRequirement();
@@ -68,6 +109,8 @@ public class SpecimenRequirementFactoryImpl implements SpecimenRequirementFactor
 		requirement.setLineage(Specimen.NEW);
 		requirement.setLabelPrintCopies(detail.getLabelPrintCopies());
 		requirement.setSortOrder(detail.getSortOrder());
+		requirement.setDefaultCustomFieldValues(detail.getDefaultCustomFieldValues());
+		requirement.setPreBarcodedTube(detail.isPreBarcodedTube());
 
 		setCpe(detail, requirement, ose);
 		setCode(detail, requirement, ose);
@@ -85,7 +128,7 @@ public class SpecimenRequirementFactoryImpl implements SpecimenRequirementFactor
 		setCollectionProcedure(detail, requirement, ose);
 		setCollectionContainer(detail, requirement, ose);
 		setReceiver(detail, requirement, ose);
-		setSpecimenPoolReqs(detail, requirement, ose);
+		setServices(detail, requirement, ose);
 		setActivityStatus(detail, requirement, ose);
 
 		ose.checkAndThrow();
@@ -122,6 +165,9 @@ public class SpecimenRequirementFactoryImpl implements SpecimenRequirementFactor
 		derived.setLineage(Specimen.DERIVED);
 		derived.setName(req.getName());
 		derived.setLabelPrintCopies(req.getLabelPrintCopies());
+		derived.setSortOrder(req.getSortOrder());
+		derived.setDefaultCustomFieldValues(req.getDefaultCustomFieldValues());
+		derived.setPreBarcodedTube(req.isPreBarcodedTube());
 
 		setSpecimenClass(req.getSpecimenClass(), derived, ose);
 		setSpecimenType(req.getSpecimenClass(), req.getType(), derived, ose);
@@ -134,6 +180,7 @@ public class SpecimenRequirementFactoryImpl implements SpecimenRequirementFactor
 		setLabelFormat(req.getLabelFmt(), derived, ose);
 		setLabelAutoPrintMode(req.getLabelAutoPrintMode(), derived, ose);
 		setCode(req.getCode(), derived, ose);
+		setServices(req.getServices(), derived, ose);
 		setActivityStatus(StringUtils.EMPTY, derived, ose);
 
 		ose.checkAndThrow();
@@ -142,12 +189,15 @@ public class SpecimenRequirementFactoryImpl implements SpecimenRequirementFactor
 	}
 	
 	@Override
-	public SpecimenRequirement createForUpdate(String lineage, SpecimenRequirementDetail req) {
+	public SpecimenRequirement createForUpdate(SpecimenRequirement existingSr, SpecimenRequirementDetail req) {
 		SpecimenRequirement sr = new SpecimenRequirement();
 		sr.setName(req.getName());
 		sr.setSortOrder(req.getSortOrder());
 		sr.setLabelPrintCopies(req.getLabelPrintCopies());
-		sr.setLineage(lineage);
+		sr.setLineage(existingSr.getLineage());
+		sr.setCollectionProtocolEvent(existingSr.getCollectionProtocolEvent());
+		sr.setDefaultCustomFieldValues(req.getDefaultCustomFieldValues());
+		sr.setPreBarcodedTube(req.isPreBarcodedTube());
 		
 		//
 		// Specimen class and type are set here so that properties dependent on these can
@@ -162,23 +212,24 @@ public class SpecimenRequirementFactoryImpl implements SpecimenRequirementFactor
 		setLabelAutoPrintMode(req, sr, ose);
 		setCode(req, sr, ose);
 		setConcentration(req, sr, ose);
+		setServices(req, sr, ose);
 		setActivityStatus(req, sr, ose);
 
-		if (!lineage.equals(Specimen.ALIQUOT)) {
+		if (existingSr.isPrimary() || existingSr.isDerivative()) {
 			setPathologyStatus(req, sr, ose);
 			setAnatomicSite(req, sr, ose);
 			setLaterality(req, sr, ose);
 		}
 
-		if (lineage.equals(Specimen.NEW)) {
+		if (existingSr.isPrimary()) {
 			setCollector(req, sr, ose);
 			setCollectionProcedure(req, sr, ose);
 			setCollectionContainer(req, sr, ose);
 			setReceiver(req, sr, ose);
 		}
 
-		ose.checkAndThrow();	
-		return sr;		
+		ose.checkAndThrow();
+		return sr;
 	}
 	
 	@Override
@@ -220,6 +271,7 @@ public class SpecimenRequirementFactoryImpl implements SpecimenRequirementFactor
 		ose.checkAndThrow();
 
 		List<SpecimenRequirement> aliquots = new ArrayList<>();
+		Set<SpecimenRequirementService> srServices = getServices(req.getServices(), ose);
 		for (int i = 0; i < req.getNoOfAliquots(); ++i) {
 			SpecimenRequirement aliquot = parent.copy();
 			aliquot.setLabelFormat(null);
@@ -227,47 +279,24 @@ public class SpecimenRequirementFactoryImpl implements SpecimenRequirementFactor
 			setStorageType(req.getStorageType(), aliquot, ose);
 			setLabelFormat(req.getLabelFmt(), aliquot, ose);
 			setLabelAutoPrintMode(req.getLabelAutoPrintMode(), aliquot, ose);
+
+			aliquot.getServices().clear(); // clear the services copied from parent
+			srServices.forEach(aliquot::addService);
+
 			aliquot.setLabelPrintCopies(req.getLabelPrintCopies());
 			aliquot.setInitialQuantity(req.getQtyPerAliquot());
+			aliquot.setSortOrder(req.getSortOrder());
 			aliquot.setParentSpecimenRequirement(parent);
-			aliquots.add(aliquot);
-			
+			aliquot.setDefaultCustomFieldValues(req.getDefaultCustomFieldValues());
+			aliquot.setPreBarcodedTube(req.isPreBarcodedTube());
+
 			ose.checkAndThrow();
+			aliquots.add(aliquot);
 		}
 
 		return aliquots;
 	}
 	
-	@Override
-	public List<SpecimenRequirement> createSpecimenPoolReqs(SpecimenPoolRequirements req) {
-		OpenSpecimenException ose = new OpenSpecimenException(ErrorType.USER_ERROR);
-
-		Long pooledSpmnReqId = req.getPooledSpecimenReqId();
-		if (pooledSpmnReqId == null) {
-			ose.addError(POOLED_SPMN_REQ);
-			throw ose;
-		}
-
-		SpecimenRequirement pooledSpecimenReq = daoFactory.getSpecimenRequirementDao().getById(pooledSpmnReqId);
-		if (pooledSpecimenReq == null) {
-			ose.addError(POOLED_SPMN_REQ_NOT_FOUND, pooledSpmnReqId);
-			throw ose;
-		}
-
-		if (pooledSpecimenReq.getParentSpecimenRequirement() != null || pooledSpecimenReq.getPooledSpecimenRequirement() != null) {
-			ose.addError(INVALID_POOLED_SPMN, pooledSpmnReqId);
-			throw ose;
-		}
-
-		List<SpecimenRequirement> specimenPoolReqs = new ArrayList<>();
-		for (SpecimenRequirementDetail detail : req.getSpecimenPoolReqs()) {
-			specimenPoolReqs.add(createSpecimenPoolReq(pooledSpecimenReq, detail, ose));
-			ose.checkAndThrow();
-		}
-
-		return specimenPoolReqs;
-	}
-
 	private void setCode(SpecimenRequirementDetail detail, SpecimenRequirement sr, OpenSpecimenException ose) {
 		setCode(detail.getCode(), sr, ose);
 	}
@@ -322,8 +351,10 @@ public class SpecimenRequirementFactoryImpl implements SpecimenRequirementFactor
 	}
 	
 	private void setSpecimenClass(String specimenClass, SpecimenRequirement sr, OpenSpecimenException ose) {
-		ensureNotEmptyAndValid(SPECIMEN_CLASS, specimenClass, SPECIMEN_CLASS_REQUIRED, INVALID_SPECIMEN_CLASS, ose);
-		sr.setSpecimenClass(specimenClass);
+		PermissibleValue classPv = getPv(
+			SPECIMEN_CLASS, specimenClass, false,
+			SPECIMEN_CLASS_REQUIRED, INVALID_SPECIMEN_CLASS, ose);
+		sr.setSpecimenClass(classPv);
 	}
 	
 	private void setSpecimenType(SpecimenRequirementDetail detail, SpecimenRequirement sr, OpenSpecimenException ose) {
@@ -331,17 +362,10 @@ public class SpecimenRequirementFactoryImpl implements SpecimenRequirementFactor
 	}
 	
 	private void setSpecimenType(String specimenClass, String type, SpecimenRequirement sr, OpenSpecimenException ose) {
-		if (StringUtils.isBlank(type)) {
-			ose.addError(SPECIMEN_TYPE_REQUIRED);
-			return;
-		}
-		
-		if (!isValid(SPECIMEN_CLASS, specimenClass, type)) {
-			ose.addError(INVALID_SPECIMEN_TYPE);
-			return;
-		}
-				
-		sr.setSpecimenType(type);		
+		PermissibleValue typePv = getPv(
+			SPECIMEN_CLASS, specimenClass, type,
+			SPECIMEN_TYPE_REQUIRED, INVALID_SPECIMEN_TYPE, ose);
+		sr.setSpecimenType(typePv);
 	}
 	
 	private void setAnatomicSite(SpecimenRequirementDetail detail, SpecimenRequirement sr, OpenSpecimenException ose) {
@@ -357,8 +381,10 @@ public class SpecimenRequirementFactoryImpl implements SpecimenRequirementFactor
 			return;
 		}
 
-		ensureNotEmptyAndValid(SPECIMEN_ANATOMIC_SITE, anatomicSite, true, ANATOMIC_SITE_REQUIRED, INVALID_ANATOMIC_SITE, ose);
-		sr.setAnatomicSite(anatomicSite);
+		PermissibleValue site = getPv(
+			SPECIMEN_ANATOMIC_SITE, anatomicSite, true,
+			ANATOMIC_SITE_REQUIRED, INVALID_ANATOMIC_SITE, ose);
+		sr.setAnatomicSite(site);
 	}
 	
 	private void setLaterality(SpecimenRequirementDetail detail, SpecimenRequirement sr, OpenSpecimenException ose) {
@@ -374,8 +400,7 @@ public class SpecimenRequirementFactoryImpl implements SpecimenRequirementFactor
 			return;
 		}
 
-		ensureNotEmptyAndValid(SPECIMEN_LATERALITY, laterality, LATERALITY_REQUIRED, INVALID_LATERALITY, ose);
-		sr.setLaterality(laterality);
+		sr.setLaterality(getPv(SPECIMEN_LATERALITY, laterality, false, LATERALITY_REQUIRED, INVALID_LATERALITY, ose));
 	}
 
 	private void setPathologyStatus(SpecimenRequirementDetail detail, SpecimenRequirement sr, OpenSpecimenException ose) {
@@ -391,8 +416,7 @@ public class SpecimenRequirementFactoryImpl implements SpecimenRequirementFactor
 			return;
 		}
 
-		ensureNotEmptyAndValid(PATH_STATUS, pathology, PATHOLOGY_STATUS_REQUIRED, INVALID_PATHOLOGY_STATUS, ose);
-		sr.setPathologyStatus(pathology);
+		sr.setPathologyStatus(getPv(PATH_STATUS, pathology, false, PATHOLOGY_STATUS_REQUIRED, INVALID_PATHOLOGY_STATUS, ose));
 	}
 	
 	private void setStorageType(SpecimenRequirementDetail detail, SpecimenRequirement sr, OpenSpecimenException ose) {
@@ -426,7 +450,7 @@ public class SpecimenRequirementFactoryImpl implements SpecimenRequirementFactor
 	private void setConcentration(SpecimenRequirementDetail detail, SpecimenRequirement sr, OpenSpecimenException ose) {
 		setConcentration(detail.getConcentration(), sr, ose);
 	}
-	
+
 	private void setConcentration(BigDecimal concentration, SpecimenRequirement sr, OpenSpecimenException ose) {
 		if (concentration != null && NumUtil.lessThanZero(concentration)) {
 			ose.addError(CONCENTRATION_MUST_BE_POSITIVE);
@@ -441,15 +465,17 @@ public class SpecimenRequirementFactoryImpl implements SpecimenRequirementFactor
 	}
 
 	private void setCollectionProcedure(SpecimenRequirementDetail detail, SpecimenRequirement sr, OpenSpecimenException ose) {
-		String collProc = detail.getCollectionProcedure();
-		ensureNotEmptyAndValid(COLL_PROC, collProc, COLL_PROC_REQUIRED, INVALID_COLL_PROC, ose);
-		sr.setCollectionProcedure(collProc);
+		PermissibleValue procedure = getPv(
+			COLL_PROC, detail.getCollectionProcedure(), false,
+			COLL_PROC_REQUIRED, INVALID_COLL_PROC, ose);
+		sr.setCollectionProcedure(procedure);
 	}
 
 	private void setCollectionContainer(SpecimenRequirementDetail detail, SpecimenRequirement sr, OpenSpecimenException ose) {
-		String collCont = detail.getCollectionContainer();
-		ensureNotEmptyAndValid(CONTAINER, collCont, COLL_CONT_REQUIRED, INVALID_COLL_CONT, ose);		
-		sr.setCollectionContainer(collCont);
+		PermissibleValue container = getPv(
+			CONTAINER, detail.getCollectionContainer(), false,
+			COLL_CONT_REQUIRED, INVALID_COLL_CONT, ose);
+		sr.setCollectionContainer(container);
 	}
 
 	private void setReceiver(SpecimenRequirementDetail detail, SpecimenRequirement sr, OpenSpecimenException ose) {
@@ -463,21 +489,59 @@ public class SpecimenRequirementFactoryImpl implements SpecimenRequirementFactor
 		
 		CollectionProtocolEvent cpe = null;
 		Object key = null;
-		if (eventId != null) {
+		if (eventId != null && eventId > 0) {
 			cpe = daoFactory.getCollectionProtocolDao().getCpe(eventId);
 			key = eventId;
 		} else if (StringUtils.isNotBlank(cpShortTitle) && StringUtils.isNotBlank(eventLabel)) {
 			cpe = daoFactory.getCollectionProtocolDao().getCpeByShortTitleAndEventLabel(cpShortTitle, eventLabel);
 			key = eventLabel;
+		} else {
+			if (detail.getCpId() != null) {
+				CollectionProtocol cp = daoFactory.getCollectionProtocolDao().getById(detail.getCpId());
+				if (cp != null && cp.isSpecimenCentric()) {
+					cpe = getEventFor(cp);
+				}
+			} else if (StringUtils.isNotBlank(detail.getCpShortTitle())) {
+				CollectionProtocol cp = daoFactory.getCollectionProtocolDao().getCpByShortTitle(detail.getCpShortTitle());
+				if (cp != null && cp.isSpecimenCentric()) {
+					cpe = getEventFor(cp);
+				}
+			}
 		}
 
-		if (key == null) {
-			ose.addError(CPE_REQUIRED);
-		} else if (cpe == null) {
-			ose.addError(CpeErrorCode.NOT_FOUND, key, 1);
+		if (cpe == null) {
+			if (key == null) {
+				ose.addError(CPE_REQUIRED);
+			} else {
+				ose.addError(CpeErrorCode.NOT_FOUND, key, 1);
+			}
 		}
-		
+
 		sr.setCollectionProtocolEvent(cpe);
+	}
+
+	private CollectionProtocolEvent getEventFor(CollectionProtocol cp) {
+		String eventName = cp.getEventName();
+		CollectionProtocolEvent cpe = daoFactory.getCollectionProtocolDao().getCpeByEventLabel(cp.getId(), eventName);
+		if (cpe != null) {
+			return cpe;
+		}
+
+		CollectionProtocolEventDetail eventInput = new CollectionProtocolEventDetail();
+		eventInput.setEventLabel(eventName);
+		eventInput.setCode(eventName);
+		eventInput.setCpId(cp.getId());
+		eventInput.setCpShortTitle(cp.getShortTitle());
+		cpe = cpeFactory.createCpe(eventInput);
+		cp.addCpe(cpe);
+		daoFactory.getCollectionProtocolDao().saveCpe(cpe);
+
+		Visit visit = daoFactory.getVisitsDao().getByName(cp.getVisitName());
+		if (visit != null) {
+			visit.setCpEvent(cpe);
+		}
+
+		return cpe;
 	}
 
 	private void setActivityStatus(SpecimenRequirementDetail detail, SpecimenRequirement sr, OpenSpecimenException ose) {
@@ -494,31 +558,69 @@ public class SpecimenRequirementFactoryImpl implements SpecimenRequirementFactor
 		}
 	}
 
-	private void setSpecimenPoolReqs(SpecimenRequirementDetail detail, SpecimenRequirement sr, OpenSpecimenException ose) {
-		if (sr.getParentSpecimenRequirement() != null ||
-			sr.getPooledSpecimenRequirement() != null ||
-			CollectionUtils.isEmpty(detail.getSpecimensPool())) {
-			return;
-		}
-
-		for (SpecimenRequirementDetail specimenPoolReqDetail : detail.getSpecimensPool()) {
-			sr.getSpecimenPoolReqs().add(createSpecimenPoolReq(sr, specimenPoolReqDetail, ose));
-			ose.checkAndThrow();
-		}
+	private void setServices(SpecimenRequirementDetail detail, SpecimenRequirement sr, OpenSpecimenException ose) {
+		setServices(detail.getServices(), sr, ose);
 	}
 
-	private SpecimenRequirement createSpecimenPoolReq(SpecimenRequirement pooledSpmnReq, SpecimenRequirementDetail req, OpenSpecimenException ose) {
-		SpecimenRequirement specimenPoolReq = pooledSpmnReq.copy();
-		setInitialQty(req, specimenPoolReq, ose);
-		setCode(req, specimenPoolReq, ose);
-		setLabelAutoPrintMode(req, specimenPoolReq, ose);
-		specimenPoolReq.setLabelPrintCopies(req.getLabelPrintCopies());
-		specimenPoolReq.setPooledSpecimenRequirement(pooledSpmnReq);
-		return specimenPoolReq;
+	private void setServices(List<SrServiceDetail> services, SpecimenRequirement sr, OpenSpecimenException ose) {
+		Set<SpecimenRequirementService> srServices = getServices(services, ose);
+		srServices.forEach(srSvc -> srSvc.setRequirement(sr));
+		sr.setServices(srServices);
 	}
 
-	private String ensureNotEmptyAndValid(String attr, String value, ErrorCode req, ErrorCode invalid, OpenSpecimenException ose) {
-		return ensureNotEmptyAndValid(attr, value, false, req, invalid, ose);
+	private Set<SpecimenRequirementService> getServices(List<SrServiceDetail> services, OpenSpecimenException ose) {
+		Set<SpecimenRequirementService> result = new HashSet<>();
+		if (CollectionUtils.isEmpty(services)) {
+			return result;
+		}
+
+		Set<LabService> seen = new HashSet<>();
+		for (SrServiceDetail input : services) {
+			if (StringUtils.isBlank(input.getServiceCode())) {
+				continue;
+			}
+
+			LabService service = daoFactory.getLabServiceDao().getByCode(input.getServiceCode());
+			if (service == null) {
+				ose.addError(LabServiceErrorCode.NOT_FOUND, input.getServiceCode());
+			} else if (seen.add(service)) {
+				SpecimenRequirementService srSvc = new SpecimenRequirementService();
+				srSvc.setId(input.getId());
+				srSvc.setService(service);
+				srSvc.setUnits(input.getUnits() != 0 ? input.getUnits() : 1);
+				result.add(srSvc);
+			}
+		}
+
+		return result;
+	}
+
+	private PermissibleValue getPv(String attr, String value, boolean leafNode, ErrorCode req, ErrorCode invalid, OpenSpecimenException ose) {
+		if (StringUtils.isBlank(value)) {
+			ose.addError(req);
+			return null;
+		}
+
+		PermissibleValue pv = daoFactory.getPermissibleValueDao().getPv(attr, value, leafNode);
+		if (pv == null) {
+			ose.addError(invalid, value);
+		}
+
+		return pv;
+	}
+
+	private PermissibleValue getPv(String attr, String parentValue, String value, ErrorCode req, ErrorCode invalid, OpenSpecimenException ose) {
+		if (StringUtils.isBlank(value)) {
+			ose.addError(req);
+			return null;
+		}
+
+		PermissibleValue pv = daoFactory.getPermissibleValueDao().getPv(attr, parentValue, value);
+		if (pv == null) {
+			ose.addError(invalid, value);
+		}
+
+		return pv;
 	}
 
 	private String ensureNotEmptyAndValid(String attr, String value, boolean leafCheck, ErrorCode req, ErrorCode invalid, OpenSpecimenException ose) {

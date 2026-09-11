@@ -4,8 +4,8 @@
   "http://hibernate.sourceforge.net/hibernate-mapping-3.0.dtd">
 
 <hibernate-mapping auto-import="false">
-
-  <class name="com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolEvent" table="CATISSUE_COLL_PROT_EVENT">
+  <class name="com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolEvent" table="CATISSUE_COLL_PROT_EVENT"
+    entity-name="com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolEvent">
 
     <id name="id" column="IDENTIFIER">
       <generator class="native">
@@ -26,6 +26,8 @@
       </type>
     </property>
 
+    <property name="sortOrder" column="SORT_ORDER"/>
+
     <many-to-one
       name="collectionProtocol"
       class="com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol"
@@ -40,18 +42,9 @@
       lazy="false"
       column="DEFAULT_SITE_ID"/>
 
-    <property name="clinicalDiagnosis" column="CLINICAL_DIAGNOSIS"/>
+    <many-to-one name="clinicalDiagnosis" column="CLINICAL_DIAGNOSIS_ID" lazy="false" fetch="join"/>
 
-    <property name="clinicalStatus" column="CLINICAL_STATUS"/>
-
-    <property name="visitNamePrintMode" column="VISIT_NAME_PRINT_MODE">
-      <type name="org.hibernate.type.EnumType">
-        <param name="enumClass">com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol$VisitNamePrintMode</param>
-        <param name="type">12</param>
-      </type>
-    </property>
-
-    <property name="visitNamePrintCopies" column="VISIT_NAME_PRINT_COPIES"/>
+    <many-to-one name="clinicalStatus" column="CLINICAL_STATUS_ID" lazy="false" fetch="join"/>
 
     <property name="activityStatus" column="ACTIVITY_STATUS"/>
 
@@ -71,9 +64,10 @@
       table="CATISSUE_SPECIMEN_COLL_GROUP"
       lazy="true"
       inverse="true"
-      cascade="save-update">
+      cascade="persist,merge">
       <key column="COLLECTION_PROTOCOL_EVENT_ID"/>
       <one-to-many class="com.krishagni.catissueplus.core.biospecimen.domain.Visit"/>
+      <filter name="activeEntity"/>
     </set>
 
     <filter name="activeEntity"/>
@@ -94,6 +88,16 @@
       where
         cp.shortTitle = :shortTitle and
         cpe.code = :code
+    </query>
+
+    <query name="getAllVisitsCount">
+      select
+        count(visit.id)
+      from
+        com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolEvent cpe
+        join cpe.specimenCollectionGroups visit
+      where
+        cpe.id = :cpeId
     </query>
   </class>
 </hibernate-mapping>

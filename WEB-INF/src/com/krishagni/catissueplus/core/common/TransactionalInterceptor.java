@@ -12,33 +12,38 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.commons.io.IOUtils;
-import org.apache.commons.lang.StringUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.apache.commons.lang3.StringUtils;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.annotation.Pointcut;
+import org.springframework.core.NestedExceptionUtils;
 import org.springframework.dao.DataAccessException;
+import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import com.krishagni.catissueplus.core.common.errors.CommonErrorCode;
 import com.krishagni.catissueplus.core.common.errors.ErrorType;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.ResponseEvent;
 import com.krishagni.catissueplus.core.common.util.AuthUtil;
 import com.krishagni.catissueplus.core.common.util.ConfigUtil;
 import com.krishagni.catissueplus.core.common.util.EmailUtil;
+import com.krishagni.catissueplus.core.common.util.LogUtil;
 import com.krishagni.catissueplus.core.common.util.UnhandledExceptionUtil;
+
+import edu.common.dynamicextensions.napi.FormException;
 
 @Aspect
 public class TransactionalInterceptor {
-	private static final Log logger = LogFactory.getLog(TransactionalInterceptor.class);
+	private static final LogUtil logger = LogUtil.getLogger(TransactionalInterceptor.class);
 
 	private PlatformTransactionManager transactionManager;
 	
@@ -74,16 +79,25 @@ public class TransactionalInterceptor {
 	}
 
 	private Object doWork(ProceedingJoinPoint pjp, boolean rollback) {
+		Map<String, Object> originalError = new HashMap<>();
+
 		try {
-			return doWork0(pjp, rollback);
+			return doWork0(pjp, rollback, originalError);
 		} catch (DataAccessException dae) {
 			throw OpenSpecimenException.serverError(dae.getCause() != null ? dae.getCause() : dae);
+		} catch (CannotCreateTransactionException te) {
+			String rootCause = NestedExceptionUtils.getMostSpecificCause(te).getMessage();
+			throw OpenSpecimenException.serverError(CommonErrorCode.DB_CONN_ERROR, rootCause);
 		} catch (Throwable t) {
-			if (t instanceof OpenSpecimenException) {
-				OpenSpecimenException ose = (OpenSpecimenException) t;
-				if (ose.getErrorType() == ErrorType.USER_ERROR) {
+			OpenSpecimenException ose = t instanceof OpenSpecimenException ? (OpenSpecimenException) t : null;
+			if (ose != null) {
+				if (ose.getErrorType() == ErrorType.USER_ERROR || ose.getExceptionId() != null) {
 					throw ose;
 				}
+			} else if (t instanceof FormException fe) {
+				throw OpenSpecimenException.userError(CommonErrorCode.FORM_ERROR, fe.getError());
+			} else if (!originalError.isEmpty()) {
+				return originalError.get("error");
 			}
 
 			logger.error("Error doing work inside " + pjp.getSignature(), t);
@@ -92,7 +106,7 @@ public class TransactionalInterceptor {
 		}
 	}
 
-	private Object doWork0(ProceedingJoinPoint pjp, boolean rollback) {
+	private Object doWork0(ProceedingJoinPoint pjp, boolean rollback, Map<String, Object> originalError) {
 		return txTmpl.execute(new TransactionCallback<Object>() {
 			@Override
 			public Object doInTransaction(TransactionStatus status) {
@@ -102,13 +116,15 @@ public class TransactionalInterceptor {
 					}
 
 					Object result = pjp.proceed();
-					if (result instanceof ResponseEvent) {
-						ResponseEvent<?> resp = (ResponseEvent<?>)result;
+					if (result instanceof ResponseEvent<?> resp) {
+						if (resp.getError() != null) {
+							originalError.put("error", resp);
+						}
+
 						if (!resp.isSuccessful() && !resp.isForceTxCommitEnabled()) {
 							status.setRollbackOnly();
 							if (resp.isSystemError() || resp.isUnknownError()) {
 								logger.error("Error doing work inside " + pjp.getSignature(), resp.getError().getException());
-
 								OpenSpecimenException ose = resp.getError();
 								Long exceptionId = handleServerError(ose.getException(), pjp.getArgs());
 								ose.setExceptionId(exceptionId);
@@ -122,6 +138,13 @@ public class TransactionalInterceptor {
 				} catch (OpenSpecimenException ose) {
 					status.setRollbackOnly();
 					throw ose;
+				} catch (FormException fe) {
+					if (fe.getCause() != null && fe.getCause() != fe) {
+						logger.error("Error encountered when doing form ops: " + fe.getMessage(), fe);
+					}
+
+					status.setRollbackOnly();
+					throw OpenSpecimenException.userError(CommonErrorCode.FORM_ERROR, fe.getError());
 				} catch (Throwable t) {
 					logger.error("Error doing work inside " + pjp.getSignature(), t);
 					status.setRollbackOnly();
@@ -164,7 +187,10 @@ public class TransactionalInterceptor {
 		PrintStream ps = null;
 		File tmpFile = null;
 		try {
-			tmpFile = File.createTempFile("exception_" + sdf.format(Calendar.getInstance().getTime()), ".log");
+			int count = errorCount.incrementAndGet();
+			tmpFile = new File(
+				ConfigUtil.getInstance().getTempDir(),
+				"exception_" + sdf.format(Calendar.getInstance().getTime()) + "_" + count + ".log");
 			ps = new PrintStream(tmpFile);
 			t.printStackTrace(ps);
 			return tmpFile;
@@ -264,6 +290,8 @@ public class TransactionalInterceptor {
 	//
 	// Error notification variables
 	//
+	private static AtomicInteger errorCount = new AtomicInteger(0);
+
 	private static SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMdd_HHmmss");
 
 	private static Map<StackTraceElement, List<Long>> errorNotifTimes = new HashMap<>();

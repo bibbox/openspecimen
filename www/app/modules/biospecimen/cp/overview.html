@@ -1,30 +1,40 @@
 <div>
   <div class="os-page-commands">
     <div class="left">
-      <button show-if-allowed="cpResource.updateOpts" class="default" title="{{'cp.tooltip.edit' | translate}}"
-        ui-sref="cp-addedit({cpId:cp.id})">
+      <button show-if-allowed="cpResource.updateOpts" class="default" ui-sref="cp-addedit({cpId: cp.id})">
         <span class="fa fa-pencil"></span>
         <span translate="common.buttons.edit">Edit</span>
+      </button>
+      <button show-if-allowed="cpResource.updateOpts" class="default"
+        ng-click="confirmPublish()" ng-if="cp.draftMode && cpVersioningEnabled">
+        <span class="fa fa-check"></span>
+        <span translate="cp.menu_options.publish">Publish</span>
       </button>
       <button show-if-allowed="cpResource.createOpts" class="default" ui-sref="cp-addedit({cpId:cp.id, mode:'copy'})">
         <span class="fa fa-copy"></span>
         <span translate="cp.menu_options.clone">Clone</span>
       </button>
+      <span ng-show="cp.activityStatus != 'Closed'">
+        <button show-if-allowed="cpResource.updateOpts" class="default" ng-click="closeCp()">
+          <span class="fa fa-ban"></span>
+          <span translate="cp.menu_options.close">Close</span>
+        </button>
+      </span>
+      <span ng-show="cp.activityStatus == 'Closed'">
+        <button show-if-allowed="cpResource.updateOpts" class="default" ng-click="reopenCp()">
+          <span class="fa fa-check"></span>
+          <span translate="common.buttons.reopen">Reopen</span>
+        </button>
+      </span>
       <button show-if-allowed="cpResource.deleteOpts" class="default" ng-click="deleteCp()">
         <span class="fa fa-trash"></span>
         <span translate="cp.menu_options.delete">Delete</span>
       </button>
-      <a href="{{downloadUri}}" class="btn default" target="_blank">
-        <span class="fa fa-download"></span>
-        <span translate="cp.menu_options.export">Export</span>
-      </a>
-      <button class="default" title="{{'cp.view_participants' | translate}}"
-        ui-sref="participant-list({cpId: cp.id})" ng-if="!cp.specimenCentric">
+      <button class="default" ui-sref="participant-list({cpId: cp.id})" ng-if="!cp.specimenCentric">
         <span class="fa fa-group"></span>
         <span translate="cp.view_participants">View Participants</span>
       </button>
-      <button class="default" title="{{'cp.view_specimens' | translate}}"
-        ui-sref="cp-specimens({cpId: cp.id})" ng-if="cp.specimenCentric">
+      <button class="default" ui-sref="cp-specimens({cpId: cp.id})" ng-if="cp.specimenCentric">
         <span class="fa fa-flask"></span>
         <span translate="cp.view_specimens">View Specimens</span>
       </button>
@@ -34,18 +44,74 @@
           <span class="fa fa-caret-down"></span>
         </button>
         <ul class="dropdown-menu">
+          <li show-if-allowed="cpResource.importOpts">
+            <a ui-sref="cp-detail.settings.import-events">
+              <span class="fa fa-list-alt"></span>
+              <span translate="cp.import_events">Events</span>
+            </a>
+          </li>
+
+          <li show-if-allowed="cpResource.importOpts">
+            <a ui-sref="cp-detail.settings.import-srs">
+              <span class="fa fa-flask"></span>
+              <span translate="cp.import_reqs">Specimen Requirements</span>
+            </a>
+          </li>
+
+          <li show-if-allowed="cpResource.importOpts">
+            <a ui-sref="cp-detail.settings.import-jobs">
+              <span class="fa fa-list"></span>
+              <span translate="bulk_imports.view_jobs">View Past Imports</span>
+            </a>
+          </li>
+
+          <li class="divider" show-if-allowed="cpResource.importOpts"></li>
+
+          <li show-if-allowed="cpResource.importOpts">
+            <a href="{{downloadUri}}" target="_blank" rel="noopener">
+              <span class="fa fa-calendar"></span>
+              <span translate="cp.export_cp">Collection Protocol (JSON)</span>
+            </a>
+          </li>
+
+          <li show-if-allowed="cpResource.importOpts">
+            <a ng-click="exportCpCsv()">
+              <span class="fa fa-calendar"></span>
+              <span translate="cp.export_cp_csv">Collection Protocol (CSV)</span>
+            </a>
+          </li>
+
+          <li show-if-allowed="cpResource.importOpts">
+            <a ng-click="exportEvents()">
+              <span class="fa fa-list-alt"></span>
+              <span translate="cp.export_events">Events (CSV)</span>
+            </a>
+          </li>
+
+          <li show-if-allowed="cpResource.importOpts">
+            <a ng-click="exportReqs()">
+              <span class="fa fa-flask"></span>
+              <span translate="cp.export_reqs">Specimen Requirements (CSV)</span>
+            </a>
+          </li>
+
+          <li class="divider" show-if-allowed="cpResource.importOpts"></li>
+
           <li>
-            <a href="{{workflowUri}}" target="_blank">
-              <span class="fa fa-download"></span>
+            <a href="{{workflowUri}}" target="_blank" rel="noopener">
+              <span class="fa fa-file-code-o"></span>
               <span translate="cp.export_workflows">Export Workflows</span>
             </a>
           </li>
+
           <li show-if-allowed="cpResource.updateOpts">
             <a ui-sref="cp-detail.settings.import-workflows">
-              <span class="fa fa-upload"></span>
+              <span class="fa fa-file-code-o"></span>
               <span translate="cp.import_workflows">Import Workflows</span>
             </a>
           </li>
+
+          <os-plugin-hooks view-name="'cp-overview'" sec-name="'more-menu'"></os-plugin-hooks>
         </ul>
       </div>
       <os-help class="os-btns btn default" link="cp_setup_help_link"></os-help>
@@ -122,7 +188,7 @@
           <strong class="key key-sm" translate="cp.repositories">Sites</strong>
           <span class="value value-md">
             <span ng-repeat="site in cp.cpSites">
-              {{site.siteName}} <span ng-if="codingEnabled && !!site.code">({{site.code}})</span>, 
+              <span>{{site.siteName}}</span><span ng-show="codingEnabled && !!site.code"> ({{site.code}})</span><span ng-show="!$last">, </span>
             </span>
           </span>
         </li>
@@ -140,12 +206,12 @@
             </span>
             <span ng-switch-default>
               <span ng-if="cp.sopDocumentUrl">
-                <a ng-href="{{cp.sopDocumentUrl}}" target="_blank">
+                <a ng-href="{{cp.sopDocumentUrl}}" target="_blank" rel="noopener">
                   <span>{{cp.sopDocumentUrl}}</span>
                 </a>
               </span>
               <span ng-if="cp.sopDocumentName">
-                <a ng-href="{{cp.getSopDocDownloadUrl()}}" target="_blank">
+                <a ng-href="{{cp.getSopDocDownloadUrl()}}" target="_blank" rel="noopener">
                   <span>{{cp.$$sopDocDispName}}</span>
                 </a>
               </span>
@@ -153,14 +219,14 @@
           </span>
         </li>
 
-        <li class="item">
+        <li class="item" ng-if="!cp.specimenCentric">
           <strong class="key key-sm" translate="cp.store_sprs">Store Pathology Reports?</strong>
           <span class="value value-md">
             {{cp.storeSprEnabled | osBoolValue: 'common.yes': 'common.no': 'common.use_system_setting'}}
           </span>
         </li>
 
-        <li class="item" ng-if="cp.storeSprEnabled || (cp.storeSprEnabled == undefined && sysStoreSpr)">
+        <li class="item" ng-if="!cp.specimenCentric && (cp.storeSprEnabled || (cp.storeSprEnabled == undefined && sysStoreSpr))">
           <strong class="key key-sm" translate="cp.extract_spr_text">Extract Text from SPR PDF docs?</strong>
           <span class="value value-md" ng-switch on="cp.extractSprText">
             <span ng-switch-when="true" translate="common.yes">Yes</span>

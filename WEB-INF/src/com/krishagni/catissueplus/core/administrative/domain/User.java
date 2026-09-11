@@ -2,6 +2,7 @@
 package com.krishagni.catissueplus.core.administrative.domain;
 
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
@@ -10,7 +11,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.hibernate.envers.Audited;
 import org.hibernate.envers.NotAudited;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,6 +20,7 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.web.util.matcher.IpAddressMatcher;
 
 import com.krishagni.catissueplus.core.administrative.domain.factory.UserErrorCode;
 import com.krishagni.catissueplus.core.auth.domain.AuthDomain;
@@ -26,6 +28,7 @@ import com.krishagni.catissueplus.core.biospecimen.domain.BaseEntity;
 import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.DependentEntityDetail;
+import com.krishagni.catissueplus.core.common.util.AuthUtil;
 import com.krishagni.catissueplus.core.common.util.ConfigUtil;
 import com.krishagni.catissueplus.core.common.util.Status;
 import com.krishagni.catissueplus.core.common.util.Utility;
@@ -79,12 +82,34 @@ public class User extends BaseEntity implements UserDetails {
 	private Type type;
 
 	private Boolean manageForms;
-	
+
+	private Boolean manageWfs;
+
+	private Boolean managePrintJobs;
+
+	private String timeZone;
+
+	private Boolean dnd;
+
+	private Boolean apiUser;
+
+	private String ipRange;
+
+	private boolean forcePasswordReset;
+
+	private PermissibleValue defaultPrinter;
+
+	private boolean downloadLabelsPrintFile;
+
 	private Set<Password> passwords = new HashSet<>();
 
 	private Set<SubjectRole> roles = new HashSet<>();
 
 	private Set<SubjectAccess> acl = new HashSet<>();
+
+	private Set<UserGroup> groups = new HashSet<>();
+
+	private transient boolean impersonated;
 	
 	@Autowired 
 	private DaoFactory daoFactory;
@@ -224,7 +249,7 @@ public class User extends BaseEntity implements UserDetails {
 	}
 	
 	public boolean canManageForms() {
-		return manageForms != null ? manageForms : false;
+		return isAdmin() || isInstituteAdmin() || (!isContact() && Boolean.TRUE.equals(manageForms));
 	}
 
 	public Boolean getManageForms() {
@@ -233,6 +258,90 @@ public class User extends BaseEntity implements UserDetails {
 
 	public void setManageForms(Boolean manageForms) {
 		this.manageForms = manageForms;
+	}
+
+	public boolean canManageWfs() {
+		return isAdmin() || isInstituteAdmin() || (!isContact() && Boolean.TRUE.equals(manageWfs));
+	}
+
+	public Boolean getManageWfs() {
+		return manageWfs;
+	}
+
+	public void setManageWfs(Boolean manageWfs) {
+		this.manageWfs = manageWfs;
+	}
+
+	public boolean canManagePrintJobs() {
+		return isAdmin() || (!isContact() && Boolean.TRUE.equals(managePrintJobs));
+	}
+
+	public Boolean getManagePrintJobs() {
+		return managePrintJobs;
+	}
+
+	public void setManagePrintJobs(Boolean managePrintJobs) {
+		this.managePrintJobs = managePrintJobs;
+	}
+
+	public String getTimeZone() {
+		return timeZone;
+	}
+
+	public void setTimeZone(String timeZone) {
+		this.timeZone = timeZone;
+	}
+
+	public boolean isDndEnabled() {
+		return Boolean.TRUE.equals(getDnd());
+	}
+
+	public Boolean getDnd() {
+		return dnd;
+	}
+
+	public void setDnd(Boolean dnd) {
+		this.dnd = dnd;
+	}
+
+	public boolean isApiUser() {
+		return apiUser != null && apiUser;
+	}
+
+	public void setApiUser(Boolean apiUser) {
+		this.apiUser = apiUser;
+	}
+
+	public String getIpRange() {
+		return ipRange;
+	}
+
+	public void setIpRange(String ipRange) {
+		this.ipRange = ipRange;
+	}
+
+	public boolean isForcePasswordReset() {
+		return forcePasswordReset;
+	}
+
+	public void setForcePasswordReset(boolean forcePasswordReset) {
+		this.forcePasswordReset = forcePasswordReset;
+	}
+
+	public PermissibleValue getDefaultPrinter() {
+		return defaultPrinter;
+	}
+
+	public void setDefaultPrinter(PermissibleValue defaultPrinter) {
+		this.defaultPrinter = defaultPrinter;
+	}
+
+	public boolean isDownloadLabelsPrintFile() {
+		return downloadLabelsPrintFile;
+	}
+
+	public void setDownloadLabelsPrintFile(boolean downloadLabelsPrintFile) {
+		this.downloadLabelsPrintFile = downloadLabelsPrintFile;
 	}
 
 	@NotAudited
@@ -260,6 +369,23 @@ public class User extends BaseEntity implements UserDetails {
 
 	public void setAcl(Set<SubjectAccess> acl) {
 		this.acl = acl;
+	}
+
+	@NotAudited
+	public Set<UserGroup> getGroups() {
+		return groups;
+	}
+
+	public void setGroups(Set<UserGroup> groups) {
+		this.groups = groups;
+	}
+
+	public boolean isImpersonated() {
+		return impersonated;
+	}
+
+	public void setImpersonated(boolean impersonated) {
+		this.impersonated = impersonated;
 	}
 
 	@Override
@@ -294,6 +420,15 @@ public class User extends BaseEntity implements UserDetails {
 		return this.activityStatus.equals(Status.ACTIVITY_STATUS_ACTIVE.getStatus());
 	}
 
+	public boolean isOpenSpecimenUser() {
+		AuthDomain authDomain = getAuthDomain();
+		if (authDomain != null) {
+			return authDomain.getName().equals(DEFAULT_AUTH_DOMAIN);
+		}
+
+		return false;
+	}
+
 	public void update(User user) {
 		setType(user.getType());
 
@@ -310,15 +445,23 @@ public class User extends BaseEntity implements UserDetails {
 		setEmailAddress(user.getEmailAddress());
 		setPhoneNumber(user.getPhoneNumber());
 		setComments(user.getComments());
+		setTimeZone(user.getTimeZone());
+		setDnd(user.isDndEnabled());
 
 		if (!isContact()) {
 			setAuthDomain(user.getAuthDomain());
 			setLoginName(user.getLoginName());
 			setManageForms(user.canManageForms());
+			setManageWfs(user.canManageWfs());
+			setManagePrintJobs(user.canManagePrintJobs());
+			setApiUser(user.isApiUser());
+			setIpRange(user.getIpRange());
+			setDefaultPrinter(user.getDefaultPrinter());
+			setDownloadLabelsPrintFile(user.isDownloadLabelsPrintFile());
 		}
 	}
 
-	public void changePassword(String newPassword) {
+	public void changePassword(String newPassword, User changedBy, String ipAddress) {
 		if (isContact()) {
 			return;
 		}
@@ -333,11 +476,16 @@ public class User extends BaseEntity implements UserDetails {
 		}
 
 		setPassword(passwordEncoder.encode(newPassword));
+		if (isLocked() || isExpired()) {
+			setActivityStatus(Status.ACTIVITY_STATUS_ACTIVE.getStatus());
+		}
 
 		Password password = new Password();
-		password.setUpdationDate(new Date());
+		password.setUpdationDate(Calendar.getInstance().getTime());
+		password.setUpdatedBy(changedBy);
 		password.setUser(this);
 		password.setPassword(getPassword());
+		password.setIpAddress(ipAddress);
 		getPasswords().add(password);
 		if (isExpired()) {
 			setActivityStatus(Status.ACTIVITY_STATUS_ACTIVE.getStatus());
@@ -389,6 +537,33 @@ public class User extends BaseEntity implements UserDetails {
 		return name.toString();
 	}
 
+	public String formattedName(boolean includeEmailLoginId) {
+		String result = formattedName();
+		if (!includeEmailLoginId) {
+			return result;
+		}
+
+		StringBuilder emailLoginId = new StringBuilder();
+		if (StringUtils.isNotBlank(getEmailAddress())) {
+			emailLoginId.append(getEmailAddress());
+			if (StringUtils.isNotBlank(getLoginName())) {
+				emailLoginId.append(" / ");
+			}
+		}
+
+		if (StringUtils.isNotBlank(getLoginName())) {
+			emailLoginId.append(getLoginName());
+		}
+
+		if (result.isEmpty()) {
+			result = emailLoginId.toString();
+		} else if (emailLoginId.length() > 0) {
+			result = result + " (" + emailLoginId.toString() + ")";
+		}
+
+		return result;
+	}
+
 	public boolean isSysUser() {
 		return SYS_USER.equals(getLoginName());
 	}
@@ -415,6 +590,30 @@ public class User extends BaseEntity implements UserDetails {
 
 	public boolean isDisabled() {
 		return Status.ACTIVITY_STATUS_DISABLED.getStatus().equals(getActivityStatus());
+	}
+
+	public boolean isAllowedAccessFrom(String ipAddress) {
+		if (!isApiUser()) {
+			return true;
+		}
+
+		if (getIpRange().equals("*")) {
+			return true;
+		}
+
+		String[] addresses = getIpRange().split(",");
+		for (String allowed : addresses) {
+			allowed = allowed.trim();
+			if (allowed.isEmpty()) {
+				continue;
+			}
+
+			if (new IpAddressMatcher(allowed).matches(ipAddress)) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	private boolean isValidPasswordPattern(String password) {

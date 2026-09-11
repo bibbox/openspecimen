@@ -4,142 +4,168 @@ package com.krishagni.catissueplus.core.biospecimen.repository.impl;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 
-import org.apache.commons.lang.StringUtils;
-import org.hibernate.Criteria;
-import org.hibernate.Query;
-import org.hibernate.criterion.Disjunction;
-import org.hibernate.criterion.ProjectionList;
-import org.hibernate.criterion.Projections;
-import org.hibernate.criterion.Restrictions;
+import org.apache.commons.lang3.StringUtils;
 
 import com.krishagni.catissueplus.core.biospecimen.domain.Participant;
+import com.krishagni.catissueplus.core.biospecimen.domain.ParticipantMedicalIdentifier;
 import com.krishagni.catissueplus.core.biospecimen.events.PmiDetail;
 import com.krishagni.catissueplus.core.biospecimen.repository.ParticipantDao;
+import com.krishagni.catissueplus.core.common.repository.AbstractCriteria;
 import com.krishagni.catissueplus.core.common.repository.AbstractDao;
+import com.krishagni.catissueplus.core.common.repository.Criteria;
+import com.krishagni.catissueplus.core.common.repository.Disjunction;
+import com.krishagni.catissueplus.core.common.repository.SubQuery;
+import com.krishagni.catissueplus.core.common.util.ConfigUtil;
 
 public class ParticipantDaoImpl extends AbstractDao<Participant> implements ParticipantDao {
 	
 	@Override
-	@SuppressWarnings("unchecked")
-	public Participant getByUid(String uid) {		
-		List<Participant> participants = sessionFactory.getCurrentSession()
-				.getNamedQuery(GET_BY_UID)
-				.setString("uid", uid.toLowerCase())
-				.list();
-		return participants == null || participants.isEmpty() ? null : participants.iterator().next();
+	public Participant getByUid(String uid) {
+		Criteria<Participant> query = createCriteria(Participant.class, "p");
+		if (isMySQL()) {
+			query.add(query.eq("p.uid", uid));
+		} else {
+			query.add(query.eq(query.lower("p.uid"), uid.toLowerCase()));
+		}
+
+		return query.uniqueResult();
 	}
 	
 	@Override
-	@SuppressWarnings("unchecked")
 	public Participant getByEmpi(String empi) {
-		List<Participant> participants = sessionFactory.getCurrentSession()
-				.getNamedQuery(GET_BY_EMPI)
-				.setString("empi", empi.toLowerCase())
-				.list();
-		return participants == null || participants.isEmpty() ? null : participants.iterator().next();
+		Criteria<Participant> query = createCriteria(Participant.class, "p");
+		if (isMySQL()) {
+			query.add(query.eq("p.empi", empi));
+		} else {
+			query.add(query.eq(query.lower("p.empi"), empi.toLowerCase()));
+		}
+
+		return query.uniqueResult();
 	}
 
 	@Override
-	@SuppressWarnings("unchecked")	
 	public List<Participant> getByLastNameAndBirthDate(String lname, Date dob) {
-		ZonedDateTime zdt = ZonedDateTime.ofInstant(dob.toInstant(), ZoneId.systemDefault());
+		ZonedDateTime zdt = ZonedDateTime.ofInstant(new Date(dob.getTime()).toInstant(), ZoneId.systemDefault());
 		Date dobStart     = Date.from(zdt.with(LocalTime.MIN).toInstant());
 		Date dobEnd       = Date.from(zdt.with(LocalTime.MAX).toInstant());
 
-		return sessionFactory.getCurrentSession()
-				.getNamedQuery(GET_BY_LNAME_AND_DOB)
-				.setString("lname", lname.toLowerCase())
-				.setTimestamp("dobStart", dobStart)
-				.setTimestamp("dobEnd", dobEnd)
-				.list();
+		Criteria<Participant> query = createCriteria(Participant.class, "p");
+		if (isMySQL()) {
+			query.add(query.eq("p.lastName", lname));
+		} else {
+			query.add(query.eq(query.lower("p.lastName"), lname.toLowerCase()));
+		}
+
+		return query.add(query.between("p.birthDate", dobStart, dobEnd)).list();
 	}
 
 	@Override
-	@SuppressWarnings("unchecked")	
 	public List<Participant> getByPmis(List<PmiDetail> pmis) {
-		Criteria query = getByPmisQuery(pmis);
-		if (query == null) {
+		Criteria<Participant> query = createCriteria(Participant.class, "p");
+		SubQuery<Long> subQuery = getByPmisQuery(pmis, query);
+		if (subQuery == null) {
 			return Collections.emptyList();
 		}
-		
-		return query.list();
+
+		return query.add(query.in("p.id", subQuery)).list();
 	}
 	
 	@Override
-	@SuppressWarnings("unchecked")
 	public List<Long> getParticipantIdsByPmis(List<PmiDetail> pmis) {
-		Criteria query = getByPmisQuery(pmis);
-		if (query == null) {
+		Criteria<Long> query = createCriteria(Participant.class, Long.class, "p");
+		SubQuery<Long> subQuery = getByPmisQuery(pmis, query);
+		if (subQuery == null) {
 			return Collections.emptyList();
 		}
-		
-		ProjectionList projs = Projections.projectionList().add(Projections.property("id"));
-		query.setProjection(projs);
-		return query.list();
+
+		return query.select("p.id").add(query.in("p.id", subQuery)).list();
 	}
 	
 	@Override
 	public boolean isUidUnique(String uid) {
-		Query query = sessionFactory.getCurrentSession().getNamedQuery(GET_PARTICIPANT_ID_BY_UID);
-		query.setString("uid", uid.toLowerCase());
-		return query.list().isEmpty();
+		Criteria<Participant> query = createCriteria(Participant.class, "p");
+		if (isMySQL()) {
+			query.add(query.eq("p.uid", uid));
+		} else {
+			query.add(query.eq(query.lower("p.uid"), uid.toLowerCase()));
+		}
+
+		return query.getCount("p.id") == 0L;
 	}
 
 	@Override
 	public boolean isPmiUnique(String siteName, String mrn) {
-		Query query = sessionFactory.getCurrentSession().getNamedQuery(GET_PMI_ID_BY_SITE_MRN);
-		query.setString("siteName", siteName.toLowerCase());
-		query.setString("mrn", mrn.toLowerCase());
-		return query.list().isEmpty();
+		Criteria<ParticipantMedicalIdentifier> query = createCriteria(ParticipantMedicalIdentifier.class, "pmi")
+			.join("pmi.site", "site");
+
+		if (isMySQL()) {
+			query.add(query.eq("site.name", siteName))
+				.add(query.eq("pmi.medicalRecordNumber", mrn));
+		} else {
+			query.add(query.eq(query.lower("site.name"), siteName.toLowerCase()))
+				.add(query.eq(query.lower("pmi.medicalRecordNumber"), mrn.toLowerCase()));
+		}
+
+		return query.getCount("pmi.id") == 0L;
 	}
-	
+
+	@Override
+	public List<Participant> getByPhoneNumber(String phoneNumber) {
+		Criteria<Participant> query = createCriteria(Participant.class, "participant");
+
+		String defIsdCode = ConfigUtil.getInstance().getStrSetting("common", "default_isd_code", "+1");
+		List<String> phoneNumbers = new ArrayList<>();
+		phoneNumbers.add(phoneNumber);
+		if (phoneNumber.startsWith("+")) {
+			if (phoneNumber.startsWith(defIsdCode)) {
+				phoneNumber = phoneNumber.substring(defIsdCode.length());
+				phoneNumbers.add(phoneNumber);
+			}
+		} else {
+			phoneNumbers.add(defIsdCode + phoneNumber);
+		}
+
+		return query.add(query.in("participant.phoneNumber", phoneNumbers)).list();
+	}
+
 	@Override
 	public Class<Participant> getType() {
 		return Participant.class;
 	}
 	
-	private Criteria getByPmisQuery(List<PmiDetail> pmis) {
-		Criteria query = sessionFactory.getCurrentSession().createCriteria(Participant.class)
-				.createAlias("pmis", "pmi")
-				.createAlias("pmi.site", "site");
-		
-		Disjunction junction = Restrictions.disjunction();
-		
+	private SubQuery<Long> getByPmisQuery(List<PmiDetail> pmis, AbstractCriteria<?, ?> mainQuery) {
+		SubQuery<Long> query = mainQuery.createSubQuery(Participant.class, "p")
+			.distinct().select("p.id")
+			.join("p.pmis", "pmi")
+			.join("pmi.site", "site");
+
+		Disjunction junction = query.disjunction();
 		boolean added = false;
 		for (PmiDetail pmi : pmis) {
 			if (StringUtils.isBlank(pmi.getSiteName()) || StringUtils.isBlank(pmi.getMrn())) {
 				continue;
 			}
-			
-			junction.add(
-					Restrictions.and(
-							Restrictions.ilike("pmi.medicalRecordNumber", pmi.getMrn()),
-							Restrictions.ilike("site.name", pmi.getSiteName())));
-			
+
+			if (isMySQL()) {
+				junction.add(query.and(
+					query.eq("pmi.medicalRecordNumber", pmi.getMrn()),
+					query.eq("site.name", pmi.getSiteName())
+				));
+			} else {
+				junction.add(query.and(
+					query.eq(query.lower("pmi.medicalRecordNumber"), pmi.getMrn().toLowerCase()),
+					query.eq(query.lower("site.name"), pmi.getSiteName().toLowerCase())
+				));
+			}
+
 			added = true;
 		}
-		
-		if (!added) {
-			return null;
-		}
-		
-		return query.add(junction);						
-		
+
+		return added ? query.add(junction) : null;
 	}
-
-	private static final String FQN = Participant.class.getName();
-
-	private static final String GET_PARTICIPANT_ID_BY_UID = FQN + ".getParticipantIdByUid";
-
-	private static final String GET_PMI_ID_BY_SITE_MRN = FQN + ".getPmiIdBySiteMrn";
-	
-	private static final String GET_BY_UID = FQN + ".getByUid";
-	
-	private static final String GET_BY_EMPI = FQN + ".getByEmpi";
-	
-	private static final String GET_BY_LNAME_AND_DOB = FQN + ".getByLnameAndDob";
 }

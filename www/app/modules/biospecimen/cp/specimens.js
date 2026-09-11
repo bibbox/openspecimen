@@ -1,8 +1,8 @@
 
 angular.module('os.biospecimen.cp.specimens', ['os.biospecimen.models'])
   .controller('CpSpecimensCtrl', function(
-    $scope, $state, $stateParams, $timeout, $modal,
-    cp, events, specimenRequirements, aliquotQtyReq,
+    $scope, $state, $stateParams, $timeout, $modal, $injector,
+    cp, events, specimenRequirements, aliquotQtyReq, barcodingEnabled,
     Specimen, SpecimenRequirement, PvManager, Alerts, Util) {
 
     if (!$stateParams.eventId && !!events && events.length > 0) {
@@ -16,6 +16,7 @@ angular.module('os.biospecimen.cp.specimens', ['os.biospecimen.models'])
       $scope.eventId = $stateParams.eventId;
       $scope.selectEvent({id: $stateParams.eventId});
       $scope.selectedEvent = events.find(function(evt) { return evt.id == $stateParams.eventId; });
+      $scope.barcodingEnabled = barcodingEnabled;
 
       $scope.specimenRequirements = Specimen.flatten(specimenRequirements);
       $scope.aliquotQtyReq = aliquotQtyReq;
@@ -42,6 +43,7 @@ angular.module('os.biospecimen.cp.specimens', ['os.biospecimen.models'])
         }
       );
 
+      angular.forEach(reqs, function(req) { req.children = sortReqs(req.children); });
       return reqs;
     }
 
@@ -94,7 +96,7 @@ angular.module('os.biospecimen.cp.specimens', ['os.biospecimen.models'])
         parent.children.push(child);
       });
 
-      $scope.specimenRequirements = Specimen.flatten(specimenRequirements);
+      $scope.specimenRequirements = Specimen.flatten(sortReqs(specimenRequirements));
     };
 
     var pvsLoaded = false;
@@ -110,18 +112,17 @@ angular.module('os.biospecimen.cp.specimens', ['os.biospecimen.models'])
     };
     
     function loadLabelAutoPrintModes() {
-      $scope.spmnLabelAutoPrintModes = [];
+      $scope.primaryLabelAutoPrintModes = [];
+      $scope.childLabelAutoPrintModes   = [];
+
       PvManager.loadPvs('specimen-label-auto-print-modes').then(
         function(pvs) {
-          if ($scope.cp.spmnLabelPrePrintMode != 'NONE') {
-            $scope.spmnLabelAutoPrintModes = pvs;
-          } else {
-            $scope.spmnLabelAutoPrintModes = pvs.filter(
-      	      function(pv) {
-      	        return pv.name != 'PRE_PRINT';
-      	      }
-      	    );
+          if ($scope.cp.spmnLabelPrePrintMode == 'NONE' && !$injector.has('Supply')) {
+            pvs = pvs.filter(function(pv) { return pv.name != 'PRE_PRINT'; });
           }
+
+          $scope.primaryLabelAutoPrintModes = pvs;
+          $scope.childLabelAutoPrintModes = pvs.filter(function(pv) { return pv.name != 'ON_RECEIVE'; });
         }
       );
     }
@@ -158,31 +159,9 @@ angular.module('os.biospecimen.cp.specimens', ['os.biospecimen.models'])
 
     $scope.showAddSr = function() {
       $scope.view = 'addedit_sr';
-      $scope.sr = new SpecimenRequirement({eventId: $scope.eventId});
+      $scope.sr = new SpecimenRequirement({eventId: $scope.eventId, cpShortTitle: cp.shortTitle, cpId: cp.id});
       loadPvs();
     };
-
-    $scope.onCreatePooledSpmnsClick = function(createPooledSpmn) {
-      if (createPooledSpmn) {
-        $scope.sr.specimensPool = [
-          new SpecimenRequirement({eventId: $scope.eventId})
-        ];
-      } else {
-        $scope.sr.specimensPool = undefined;
-      }
-    }
-
-    $scope.addSpecimenPoolReq = function() {
-      $scope.sr.specimensPool.push(new SpecimenRequirement({eventId: $scope.eventId}));
-    }
-
-    $scope.removeSpecimenPoolReq = function(poolSpmn) {
-      var idx = $scope.sr.specimensPool.indexOf(poolSpmn);
-      $scope.sr.specimensPool.splice(idx, 1);
-      if ($scope.sr.specimensPool.length == 0) {
-        $scope.addSpecimenPoolReq();
-      }
-    }
 
     $scope.showEditSr = function(sr) {
       $scope.specimensCount = 0;
@@ -234,6 +213,7 @@ angular.module('os.biospecimen.cp.specimens', ['os.biospecimen.models'])
         function(result) {
           addToSrList(result);
           $scope.view = 'list_sr';
+          cp.draftMode = true;
         }
       );
     };
@@ -244,6 +224,7 @@ angular.module('os.biospecimen.cp.specimens', ['os.biospecimen.models'])
         function(result) {
           updateSrList(result);
           $scope.revertEdit();
+          cp.draftMode = true;
         }
       );
     };
@@ -275,8 +256,14 @@ angular.module('os.biospecimen.cp.specimens', ['os.biospecimen.models'])
         return;
       }
 
-      $scope.childReq = { $$storedInRepo: true, storageType: 'Manual' };
       $scope.parentSr = sr;
+      $scope.childReq = {
+        cpShortTitle: cp.shortTitle,
+        specimenClass: sr.specimenClass,
+        type: sr.type,
+        $$storedInRepo: true,
+        storageType: 'Manual'
+      };
       $scope.view = 'addedit_aliquot';
       loadPvs();
     };
@@ -305,6 +292,7 @@ angular.module('os.biospecimen.cp.specimens', ['os.biospecimen.models'])
           $scope.childReq = {};
           $scope.parentSr = undefined;
           $scope.view = 'list_sr';
+          cp.draftMode = true;
         }
       );
     };
@@ -335,6 +323,7 @@ angular.module('os.biospecimen.cp.specimens', ['os.biospecimen.models'])
           $scope.childReq = {};
           $scope.parentSr = undefined;
           $scope.view = 'list_sr';
+          cp.draftMode = true;
         }
       );
     };
@@ -342,7 +331,7 @@ angular.module('os.biospecimen.cp.specimens', ['os.biospecimen.models'])
     $scope.showCreatePoolSpecimen = function(sr) {
       $scope.parentSr = sr;
       $scope.view = 'addedit_pool';
-      $scope.poolReq = new SpecimenRequirement({eventId: $scope.eventId});
+      $scope.poolReq = new SpecimenRequirement({cpShortTitle: cp.shortTitle, eventId: $scope.eventId});
     };
 
     $scope.showEditPooledSpmn = function(sr) {
@@ -361,6 +350,7 @@ angular.module('os.biospecimen.cp.specimens', ['os.biospecimen.models'])
           $scope.parentSr = undefined;
           $scope.view = 'list_sr';
           $scope.specimenRequirements = Specimen.flatten(specimenRequirements);
+          cp.draftMode = true;
         }
       );
     };
@@ -382,6 +372,7 @@ angular.module('os.biospecimen.cp.specimens', ['os.biospecimen.models'])
           } else {
             addToSrList(result);
           }
+          cp.draftMode = true;
         }
       );
     };
@@ -393,6 +384,7 @@ angular.module('os.biospecimen.cp.specimens', ['os.biospecimen.models'])
           sr.delete().then(
             function() {
               deleteFromSrList(sr);
+              cp.draftMode = true;
             }
           );
         }
@@ -409,10 +401,23 @@ angular.module('os.biospecimen.cp.specimens', ['os.biospecimen.models'])
           removeUiProps(toClose).$saveOrUpdate().then(
             function(result) {
               updateSrList(result);
+              cp.draftMode = true;
             }
           );
         }
       });
+    }
+
+    $scope.reopenSr = function(sr) {
+      var toOpen = cloneSr(sr);
+      toOpen.activityStatus = 'Active';
+
+      removeUiProps(toOpen).$saveOrUpdate().then(
+        function(result) {
+          updateSrList(result);
+          cp.draftMode = true;
+        }
+      );
     }
 
     init();

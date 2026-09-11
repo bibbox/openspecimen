@@ -1,4 +1,4 @@
-#set ( $url = "$appUrl/#/orders/${order.id}/overview" )
+#set ( $url = "$appUrl/ui-app/#/orders/${order.id}/overview" )
 
 <table cellspacing="0" cellpadding="0" border="0" width="100%" style="border-spacing:0;border-collapse:separate">
   <tbody>
@@ -19,13 +19,17 @@
                   #end
                   <br><br>
                   A brief description of the order:
-                  <br><br>
+                  <br>
                 </p>
               </td>
             </tr>
             <tr>
               <td>
                 <table>
+                  <tr>
+                    <td> Order Number </td>
+                    <td> : $order.id </td>
+                  </tr>
                   <tr>
                     <td> Order Name </td>
                     <td> : $order.name </td>
@@ -38,7 +42,7 @@
                   <tr>
                     <td> Request </td>
                     <td> :
-                      <a href="$appUrl/#/specimen-requests/$order.request.id/overview?catalogId=$order.request.catalogId">
+                      <a href="$appUrl/ui-app/#/sc-admin/catalogs/$order.request.catalogId/requests/$order.request.id/overview">
                         #$order.request.id
                       </a>
                     </td>
@@ -77,8 +81,16 @@
                 </table>
               </td>
             </tr>
+            #if ( $order.comments && $order.comments.trim().length() > 0 )
             <tr>
-              <td style="height:5px;line-height:5px;">&nbsp;</td>
+              <td>
+                <div style="margin-top: 20px;"> <b> <u> Sender Comments </u> </b> </div>
+                <pre style="font-family: inherit; margin-top: 5px;">$order.comments.trim()</pre>
+              </td>
+            </tr>
+            #end
+            <tr>
+              <td> <br> </td>
             </tr>
             <tr>
               <td style="border-collapse:collapse;padding-bottom:10px">

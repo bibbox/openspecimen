@@ -1,11 +1,13 @@
 
 angular.module('os.administrative.setting.list', ['os.administrative.models'])
   .controller('SettingsListCtrl', function(
-    $scope, $state, $stateParams, $sce, $filter, Setting, SettingUtil, Alerts) {
+    $rootScope, $scope, $state, $stateParams, $sce, $filter, Setting, SettingUtil, Alerts) {
+
+    var fileCtx;
 
     function init() {
       $scope.isEdit = false;
-      $scope.fileCtx = {
+      fileCtx = $scope.fileCtx = {
         ctrl: {},
         uploadUrl: $sce.trustAsResourceUrl(Setting.getFileUploadUrl())
       };
@@ -36,6 +38,10 @@ angular.module('os.administrative.setting.list', ['os.administrative.models'])
           angular.extend($scope.existingSetting, resp);
           $scope.isEdit = false;
           SettingUtil.clearSetting(resp.module, resp.name, resp);
+
+          if (resp.module == 'common' && ['date_format', 'de_date_format', 'time_format'].indexOf(resp.name) > -1) {
+            $rootScope.loadLocale();
+          }
         }
       );
     }
@@ -45,6 +51,7 @@ angular.module('os.administrative.setting.list', ['os.administrative.models'])
       $scope.existingSetting = setting;
       $scope.setting = angular.copy(setting);
       $scope.setting.value = '';
+      fileCtx.uploadUrl = $sce.trustAsResourceUrl(Setting.getFileUploadUrl(setting.module, setting.name));
     }
     
     $scope.cancel = function() {

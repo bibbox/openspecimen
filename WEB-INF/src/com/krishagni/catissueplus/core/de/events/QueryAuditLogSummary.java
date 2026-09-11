@@ -4,12 +4,12 @@ import java.util.Date;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import org.codehaus.jackson.map.annotate.JsonSerialize;
+import com.fasterxml.jackson.annotation.JsonInclude;
 
 import com.krishagni.catissueplus.core.common.events.UserSummary;
 import com.krishagni.catissueplus.core.de.domain.QueryAuditLog;
 
-@JsonSerialize(include=JsonSerialize.Inclusion.NON_NULL)
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class QueryAuditLogSummary {	
 	private Long id;
 	
@@ -26,6 +26,8 @@ public class QueryAuditLogSummary {
 	private String runType;
 	
 	private Long recordCount;
+
+	private String error;
 
 	public Long getId() {
 		return id;
@@ -91,6 +93,14 @@ public class QueryAuditLogSummary {
 		this.recordCount = recordCount;
 	}
 
+	public String getError() {
+		return error;
+	}
+
+	public void setError(String error) {
+		this.error = error;
+	}
+
 	public static <T extends QueryAuditLogSummary> T copyTo(QueryAuditLog log, T result) {
 		result.setId(log.getId());
 
@@ -104,6 +114,7 @@ public class QueryAuditLogSummary {
 		result.setTimeOfExecution(log.getTimeOfExecution());
 		result.setTimeToFinish(log.getTimeToFinish());
 		result.setRecordCount(log.getRecordCount());
+		result.setError(log.getError());
 		return result;
 	}
 

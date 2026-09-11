@@ -4,15 +4,27 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class ImportObjectDetail<T> {
+	private String objectName;
+
 	private String id;
 
 	private T object;
 	
 	private boolean create;
+
+	private String type;
 	
 	private Map<String, String> params = new HashMap<>();
 
 	private String uploadedFilesDir;
+
+	public String getObjectName() {
+		return objectName;
+	}
+
+	public void setObjectName(String objectName) {
+		this.objectName = objectName;
+	}
 
 	public String getId() {
 		return id;
@@ -37,7 +49,15 @@ public class ImportObjectDetail<T> {
 	public void setCreate(boolean create) {
 		this.create = create;
 	}
-	
+
+	public String getType() {
+		return type;
+	}
+
+	public void setType(String type) {
+		this.type = type;
+	}
+
 	public Map<String, String> getParams() {
 		return params;
 	}

@@ -7,7 +7,7 @@ angular.module('os.biospecimen.participant.specimen-tree',
   .directive('osSpecimenTree', function(
     $state, $stateParams, $modal, $timeout, $rootScope, $q, $injector,
     CpConfigSvc, CollectSpecimensSvc, Visit, Specimen, SpecimenLabelPrinter, SpecimensHolder,
-    ExtensionsUtil, DistributionOrder, DistributionProtocol, Alerts, SpecimenUtil) {
+    ExtensionsUtil, DistributionOrder, DistributionProtocol, Alerts, SpecimenUtil, AuthorizationService) {
 
     var allowedDps = undefined;
 
@@ -80,7 +80,7 @@ angular.module('os.biospecimen.participant.specimen-tree',
 
     function isAnyPendingSelected(specimens) {
       for (var i = 0; i < specimens.length; ++i) {
-        if (specimens[i].selected && specimens[i].status != 'Collected') {
+        if (specimens[i].selected && isPending(specimens[i])) {
           return true;
         }
       }
@@ -91,7 +91,7 @@ angular.module('os.biospecimen.participant.specimen-tree',
     function isAnyPendingDescendantSelected(specimen) {
       if (!!specimen.specimensPool) {
         for (var i = 0; i < specimen.specimensPool.length; ++i) {
-          if (specimen.specimensPool[i].selected && specimen.specimensPool[i].status != 'Collected') {
+          if (specimen.specimensPool[i].selected && isPending(specimen.specimensPool[i])) {
             return true;
           }
         }
@@ -102,7 +102,7 @@ angular.module('os.biospecimen.participant.specimen-tree',
       }
 
       for (var i = 0; i < specimen.children.length; ++i) {
-        if (specimen.children[i].selected && specimen.children[i].status != 'Collected') {
+        if (specimen.children[i].selected && isPending(specimen.children[i])) {
           return true;
         }
 
@@ -113,6 +113,14 @@ angular.module('os.biospecimen.participant.specimen-tree',
 
       return false;
     };
+
+    function isPending(spmn) {
+      return !spmn.status || spmn.status == 'Pending';
+    }
+
+    function isMissedOrNotCollected(spmn) {
+      return spmn.status == 'Missed Collection' || spmn.status == 'Not Collected';
+    }
 
     function getState() {
       return {state: $state.current, params: $stateParams};
@@ -160,7 +168,7 @@ angular.module('os.biospecimen.participant.specimen-tree',
       return dispCutOff.getTime() < Date.now();
     }
 
-    function hideOldPendingSpmns(specimens, interval) {
+    function hideOldPendingSpmns(cp, specimens, refDate, interval) {
       var result = true, visitsMap = {};
 
       angular.forEach(specimens,
@@ -174,11 +182,16 @@ angular.module('os.biospecimen.participant.specimen-tree',
             return;
           }
 
-          if (!visitsMap.hasOwnProperty(specimen.visitId)) {
-            visitsMap[specimen.visitId] = isOldVisit(specimen.visitDate, interval);
+          if (!cp.specimenCentric) {
+            if (!visitsMap.hasOwnProperty(specimen.visitId)) {
+              visitsMap[specimen.visitId] = isOldVisit(specimen.visitDate, interval);
+            }
+
+            specimen.$$hideN = visitsMap[specimen.visitId];
+          } else {
+            specimen.$$hideN = isOldVisit(refDate, interval);
           }
 
-          specimen.$$hideN = visitsMap[specimen.visitId];
           if (result && (!specimen.status || specimen.status == 'Pending')) {
             result = specimen.$$hideN;
           }
@@ -230,7 +243,7 @@ angular.module('os.biospecimen.participant.specimen-tree',
 
       angular.forEach(scope.specimens,
         function(spmn) {
-          ExtensionsUtil.createExtensionFieldMap(spmn);
+          ExtensionsUtil.createExtensionFieldMap(spmn, true);
         }
       );
 
@@ -280,8 +293,19 @@ angular.module('os.biospecimen.participant.specimen-tree',
 
       var opts = {hideDerivatives: treeCfg.hideDerivatives};
       scope.specimens = Specimen.flatten(scope.specimenTree, undefined, undefined, undefined, opts);
+      scope.showAliquotType = (treeCfg.hideDerivatives == true);
       openSpecimenTree(scope.specimens, null, treeCfg);
-      scope.hidePendingSpmns = hideOldPendingSpmns(scope.specimens, scope.pendingSpmnsDispInterval);
+      scope.hidePendingSpmns = hideOldPendingSpmns(
+        scope.cp, scope.specimens, scope.refDate, scope.pendingSpmnsDispInterval);
+
+
+      var sites = scope.cp.cpSites.map(function(cpSite) { return cpSite.siteName; });
+      scope.updateAllowed = AuthorizationService.isAllowed({
+        cp: scope.cp.shortTitle,
+        sites: sites,
+        resources: ['Specimen'],
+        operations: ['Update']
+      });
 
       if ($injector.has('sdeFieldsSvc')) {
         initSdeTreeFields(scope, cpDict, treeCfg);
@@ -338,14 +362,19 @@ angular.module('os.biospecimen.participant.specimen-tree',
           return;
         }
 
-        var specimensToCollect = [];
+        var specimensToCollect = [], missedSpmns = [];
         angular.forEach(scope.specimens, function(specimen) {
-          if ((!specimen.selected || specimen.status == 'Collected') && !isAnyPendingDescendantSelected(specimen)) {
+          if ((!specimen.selected || !isPending(specimen)) && !isAnyPendingDescendantSelected(specimen)) {
+            return;
+          }
+
+          if (isMissedOrNotCollected(specimen) || (specimen.parent && missedSpmns.indexOf(specimen.parent) != -1)) {
+            missedSpmns.push(specimen);
             return;
           }
 
           if (specimen.parent && specimen.parent.$$invisibleN) {
-            if (specimen.parent.status != 'Collected') {
+            if (isPending(specimen.parent)) {
               specimen.parent.selected = true;
             }
 
@@ -362,7 +391,7 @@ angular.module('os.biospecimen.participant.specimen-tree',
 
         var onlyCollected = true;
         for (var i = 0; i < specimensToCollect.length; ++i) {
-          if (specimensToCollect[i].status != 'Collected') {
+          if (isPending(specimensToCollect[i])) {
             onlyCollected = false;
             break;
           }
@@ -495,6 +524,7 @@ angular.module('os.biospecimen.participant.specimen-tree',
         specimenTree: '=specimens',
         allowedOps: '=',
         reload: '&reload',
+        refDate: '=',
         pendingSpmnsDispInterval: '=?'
       },
 
@@ -504,7 +534,7 @@ angular.module('os.biospecimen.participant.specimen-tree',
 
       link: function(scope, element, attrs) {
         var cpDictQ  = CpConfigSvc.getDictionary(scope.cp.id, []);
-        var treeCfgQ = CpConfigSvc.getWorkflowData(scope.cp.id, 'specimenTree', {});
+        var treeCfgQ = CpConfigSvc.getSpecimenTreeCfg(scope.cp.id);
         $q.all([cpDictQ, treeCfgQ]).then(
           function(resps) {
             linker(scope, element, attrs, resps[0] || [], resps[1]);
@@ -514,45 +544,33 @@ angular.module('os.biospecimen.participant.specimen-tree',
     }
   })
 
-  .directive('osTreeNodeStatus', function($translate) {
+  .directive('osSpecimenStatusIcon', function($parse, SpecimenUtil) {
+    return {
+      restrict: 'E',
+
+      replace: true,
+
+      template: '<span class="fa fa-circle"></span>',
+
+      link: function(scope, element, attrs) {
+        var spmn = $parse(attrs.specimen)(scope);
+        var result = SpecimenUtil.getStatusCss(spmn);
+        element.addClass(result.css);
+        element.attr('title', result.tooltip);
+      }
+    }
+  })
+
+  .directive('osTreeNodeStatus', function($parse, SpecimenUtil) {
 
     return {
       restrict: 'A',
 
-      scope: {
-        specimen: '=osTreeNodeStatus'
-      },
-
       link: function(scope, element, attrs) {
-        var specimen = scope.specimen, status = '';
-        if (specimen.status == 'Collected') {
-          if (specimen.activityStatus == 'Closed' && !specimen.distributionStatus) {
-            status = 'closed';
-          } else if (specimen.distributionStatus == 'Distributed') {
-            status = specimen.availableQty > 0 ? 'part-distributed' : 'distributed';
-          } else if (specimen.distributionStatus == 'Returned') {
-            status = 'returned';
-          } else if (specimen.reserved) {
-            status = 'reserved';
-          } else if (!specimen.storageLocation.name) {
-            status = 'virtual';
-          } else if (!specimen.reqId) {
-            status = 'unplanned';
-          } else {
-            status = 'collected';
-          }
-        } else if (specimen.status == 'Missed Collection') {
-          status = 'missed';
-        } else if (specimen.status == 'Not Collected') {
-          status = 'not-collected';
-        } else if (!specimen.status || specimen.status == 'Pending') {
-          status = 'pending';
-        }
-
-        element.addClass('os-status-' + status);
-
-        var key = $translate.instant('specimens.tree_node_statuses.' + status);
-        element.attr('title', key);
+        var spmn = $parse(attrs.osTreeNodeStatus)(scope);
+        var result = SpecimenUtil.getStatusCss(spmn);
+        element.addClass(result.css);
+        element.attr('title', result.tooltip);
       }
     }
   });

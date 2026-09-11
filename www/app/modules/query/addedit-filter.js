@@ -4,6 +4,10 @@ angular.module('os.query.addeditfilter', ['os.query.models'])
       QueryUtil.onOpSelect($scope.queryLocal.currFilter);
     };
 
+    function isUndef(value) {
+      return value == undefined || value == null || (typeof value == 'string' && value.trim() == '');
+    }
+
     $scope.disableAddEditFilterBtn = function() {
       var filter = $scope.queryLocal.currFilter;
       if (!!filter.expr && !!filter.desc) {
@@ -19,9 +23,24 @@ angular.module('os.query.addeditfilter', ['os.query.models'])
             return !filter.value || filter.value.length == 0;
           }
         } else if (filter.value) {
+          if (op == 'between') {
+            if (filter.value instanceof Array && filter.value.length == 2 &&
+                !isUndef(filter.value[0]) && !isUndef(filter.value[1])) {
+              return false;
+            } else {
+              if (!filter.parameterized) {
+                return true;
+              } else {
+                return !(filter.value instanceof Array && filter.value.length == 2 &&
+                  isUndef(filter.value[0]) && isUndef(filter.value[1]));
+              }
+            }
+          }
+
           return false;
         } else {
-          return true;
+          var type = filter.field.type;
+          return !filter.parameterized || (type != 'DATE' && type != 'INTEGER' && type != 'FLOAT');
         }
       } else {
         return true;
@@ -113,7 +132,12 @@ angular.module('os.query.addeditfilter', ['os.query.models'])
       //
       var selectField = '$temporal.' + filter.id;
       for (var i = 0; i < ql.selectedFields.length; ++i) { 
-        if (ql.selectedFields[i] == selectField) {
+        var field = ql.selectedFields[i];
+        if (typeof field != 'string' && field) {
+          field = field.name;
+        }
+
+        if (field == selectField) {
           ql.selectedFields.splice(i, 1);
           break;
         }
@@ -174,6 +198,7 @@ angular.module('os.query.addeditfilter', ['os.query.models'])
             form.getFields().then(
               function() {
                 var fieldsAdvise = QueryUtil.getFieldsAdvise(form);
+                fieldsAdvise.push({label: fieldName, value: fieldName});
                 response($scope.temporalFilterOpts.methods.filter(fieldsAdvise, fieldName));
               }
             );

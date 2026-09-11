@@ -9,6 +9,8 @@ public class FormDataRevisionDetail {
 
 	private Date time;
 
+	private String ipAddress;
+
 	private UserSummary user;
 
 	private String op;
@@ -20,6 +22,8 @@ public class FormDataRevisionDetail {
 	private Long entityId;
 
 	private Long recordId;
+
+	private String data;
 
 	public Long getId() {
 		return id;
@@ -35,6 +39,14 @@ public class FormDataRevisionDetail {
 
 	public void setTime(Date time) {
 		this.time = time;
+	}
+
+	public String getIpAddress() {
+		return ipAddress;
+	}
+
+	public void setIpAddress(String ipAddress) {
+		this.ipAddress = ipAddress;
 	}
 
 	public UserSummary getUser() {
@@ -83,5 +95,13 @@ public class FormDataRevisionDetail {
 
 	public void setRecordId(Long recordId) {
 		this.recordId = recordId;
+	}
+
+	public String getData() {
+		return data;
+	}
+
+	public void setData(String data) {
+		this.data = data;
 	}
 }

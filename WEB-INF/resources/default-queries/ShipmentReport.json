@@ -29,7 +29,7 @@
     "CollectionProtocol.shortTitle",
     "Participant.ppid",
     "SpecimenCollectionGroup.collectionProtocolEvent.collectionPointLabel",
-    "SpecimenCollectionGroup.clinicalDiagnosis",
+    "SpecimenCollectionGroup.clinicalDiagnoses.value",
     "SpecimenCollectionGroup.site",
     "Specimen.label",
     "Specimen.type",

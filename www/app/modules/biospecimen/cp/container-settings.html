@@ -25,6 +25,12 @@
           </div>
         </div>
 
+        <div class="form-group" ng-if="!!contSettingsCtx.cp.containerSelectionStrategy">
+          <div class="col-xs-offset-3 col-xs-6">
+            <i>{{'cp.container.auto_alloc_hints.' + contSettingsCtx.cp.containerSelectionStrategy | translate}}</i>
+          </div>
+        </div>
+
         <div class="form-group clearfix">
           <div class="col-xs-offset-3 col-xs-6 os-text-checkbox">
             <div class="checkbox">
@@ -33,6 +39,12 @@
             <div class="message os-ctrl-padding-top">
               <span translate="cp.container.store_aliquots_same_box">Store aliquots in same box</span>
             </div>
+          </div>
+        </div>
+
+        <div class="form-group" ng-if="contSettingsCtx.cp.aliquotsInSameContainer">
+          <div class="col-xs-offset-3 col-xs-6">
+            <i translate="cp.container.auto_alloc_hints.aliquots-in-same-box"></i>
           </div>
         </div>
 
@@ -57,8 +69,18 @@
           <strong class="key key-sm" translate="cp.container.auto_alloc">Auto Allocation</strong>
           <span class="value value-md">
             <span>{{contSettingsCtx.strategy}}</span>
-            <span ng-if="contSettingsCtx.cp.aliquotsInSameContainer">
+            <span ng-show="contSettingsCtx.cp.aliquotsInSameContainer">
               (<span translate="cp.container.store_aliquots_same_box">Store aliquots in same box</span>)
+            </span>
+          </span>
+        </li>
+
+        <li class="item" ng-show="!!contSettingsCtx.cp.containerSelectionStrategy">
+          <strong class="key key-sm"></strong>
+          <span class="value value-md">
+            {{'cp.container.auto_alloc_hints.' + contSettingsCtx.cp.containerSelectionStrategy | translate}}
+            <span ng-show="contSettingsCtx.cp.aliquotsInSameContainer"
+              translate="cp.container.auto_alloc_hints.aliquots-in-same-box">
             </span>
           </span>
         </li>

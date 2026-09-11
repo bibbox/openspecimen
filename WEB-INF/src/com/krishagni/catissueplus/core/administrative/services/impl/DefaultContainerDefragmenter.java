@@ -1,10 +1,11 @@
 package com.krishagni.catissueplus.core.administrative.services.impl;
 
 import java.io.File;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -64,7 +65,7 @@ public class DefaultContainerDefragmenter implements ContainerDefragmenter {
 	@Override
 	public int defragment(StorageContainer container) {
 		try {
-			createWriter(container.getName());
+			createWriter(container);
 
 			List<Long> leafContainers = getLeafContainers(container.getId());
 			for (Long leafContainerId : leafContainers) {
@@ -88,7 +89,11 @@ public class DefaultContainerDefragmenter implements ContainerDefragmenter {
 	private List<Long> getLeafContainers(Long containerId) {
 		StorageContainer container = daoFactory.getStorageContainerDao().getById(containerId);
 		if (container == null) {
-			throw OpenSpecimenException.userError(StorageContainerErrorCode.NOT_FOUND, containerId);
+			throw OpenSpecimenException.userError(StorageContainerErrorCode.NOT_FOUND, containerId, 1);
+		}
+
+		if (container.isArchived()) {
+			return Collections.emptyList();
 		}
 
 		List<Long> result = new ArrayList<>();
@@ -97,6 +102,10 @@ public class DefaultContainerDefragmenter implements ContainerDefragmenter {
 	}
 
 	private void getLeafContainers(StorageContainer container, List<Long> result) {
+		if (container.isArchived()) {
+			return;
+		}
+
 		if (!container.isDimensionless() && container.isStoreSpecimenEnabled() && container.getChildContainers().isEmpty()) {
 			result.add(container.getId());
 			return;
@@ -124,12 +133,12 @@ public class DefaultContainerDefragmenter implements ContainerDefragmenter {
 
 		StorageContainer container = getContainer(containerId);
 		List<StorageContainerPosition> positions = container.getOccupiedPositions().stream()
-			.sorted((p1, p2) -> p1.getPosition().compareTo(p2.getPosition()))
-			.collect(Collectors.toList());
+			.sorted(Comparator.comparing(StorageContainerPosition::getPosition))
+			.toList();
 
 		info = new ContainerInfo();
 		info.emptyPositions      = container.emptyPositionsOrdinals().stream()
-			.sorted((p1, p2) -> p1.compareTo(p2))
+			.sorted(Integer::compareTo)
 			.collect(Collectors.toList());
 		info.occupiedPositionIds = positions.stream()
 			.filter(p -> !p.isBlocked())
@@ -283,7 +292,7 @@ public class DefaultContainerDefragmenter implements ContainerDefragmenter {
 	private StorageContainer getContainer(Long id) {
 		StorageContainer container = daoFactory.getStorageContainerDao().getById(id);
 		if (container == null) {
-			throw OpenSpecimenException.userError(StorageContainerErrorCode.NOT_FOUND, id);
+			throw OpenSpecimenException.userError(StorageContainerErrorCode.NOT_FOUND, id, 1);
 		}
 
 		return container;
@@ -322,24 +331,35 @@ public class DefaultContainerDefragmenter implements ContainerDefragmenter {
 		return positions.stream().map(StorageContainerPosition::getOccupyingSpecimen).allMatch(container::canContain);
 	}
 
-	private void createWriter(String containerName) {
-		String currLocation = msg("specimen_current_location");
-		String location = msg("specimen_location");
-		String container = msg("container");
-		String row = msg("specimen_location_row");
-		String col = msg("specimen_location_column");
-		String pos = msg("specimen_location_position");
+	private void createWriter(StorageContainer container) {
+		String nameLabel         = msg("storage_container_name");
+		String barcodeLabel      = msg("container_barcode");
+		String displayNameLabel  = msg("storage_container_display_name");
+		String siteLabel         = msg("container_site");
+
+		String currLocationLabel = msg("specimen_current_location");
+		String locationLabel     = msg("specimen_location");
+		String containerLabel    = msg("container");
+		String containerBarcode  = msg("specimen_location_container_barcode");
+		String rowLabel          = msg("specimen_location_row");
+		String colLabel          = msg("specimen_location_column");
+		String posLabel          = msg("specimen_location_position");
 
 		writer = CsvFileWriter.createCsvFileWriter(outputFile);
 		writer.writeNext(new String[] { "#" + msg("common_exported_by"), AuthUtil.getCurrentUser().formattedName() });
 		writer.writeNext(new String[] { "#" + msg("common_exported_on"), Utility.getDateTimeString(Calendar.getInstance().getTime())});
-		writer.writeNext(new String[] { "#" + container, containerName });
+		writer.writeNext(new String[] { "#" + nameLabel, container.getName() });
+		writer.writeNext(new String[] { "#" + barcodeLabel, container.getBarcode() });
+		writer.writeNext(new String[] { "#" + displayNameLabel, container.getDisplayName() });
+		writer.writeNext(new String[] { "#" + siteLabel, container.getSite().getName() });
 		writer.writeNext(new String[] { "#" });
 
 		writer.writeNext(new String[] {
 			msg("specimen_identifier"), msg("specimen_label"), msg("specimen_barcode"),
-			currLocation + "#" + container, currLocation + "#" + row, currLocation + "#" + col, currLocation + "#" + pos,
-			location + "#" + container, location + "#" + row, location + "#" + col, location + "#" + pos
+			currLocationLabel + "#" + displayNameLabel, currLocationLabel + "#" + containerLabel, currLocationLabel + "#" + containerBarcode,
+			currLocationLabel + "#" + rowLabel, currLocationLabel + "#" + colLabel, currLocationLabel + "#" + posLabel,
+			locationLabel + "#" + displayNameLabel, locationLabel + "#" + containerLabel, locationLabel + "#" + containerBarcode,
+			locationLabel + "#" + rowLabel, locationLabel + "#" + colLabel, locationLabel + "#" + posLabel
 		});
 	}
 
@@ -352,11 +372,12 @@ public class DefaultContainerDefragmenter implements ContainerDefragmenter {
 		++movedSpmnsCnt;
 		writer.writeNext(new String[] {
 			spmn.getId().toString(), spmn.getLabel(), spmn.getBarcode(),
-			srcContainer.getName(), srcPos.getPosTwo(), srcPos.getPosOne(), srcPos.getPosition().toString(),
-			tgtContainer.getName(), tgtRow, tgtCol, String.valueOf(tgtPos)
+			srcContainer.getDisplayName(), srcContainer.getName(), srcContainer.getBarcode(),
+			srcPos.getPosTwo(), srcPos.getPosOne(), srcPos.getPosition().toString(),
+			tgtContainer.getDisplayName(), tgtContainer.getName(), tgtContainer.getBarcode(),
+			tgtRow, tgtCol, String.valueOf(tgtPos)
 		});
 		flush();
-
 	}
 
 	private void flush() {
@@ -365,11 +386,7 @@ public class DefaultContainerDefragmenter implements ContainerDefragmenter {
 		}
 
 		if (movedSpmnsCnt % 50 == 0) {
-			try {
-				writer.flush();
-			} catch (IOException ioe) {
-				throw OpenSpecimenException.serverError(ioe);
-			}
+			writer.flush();
 		}
 	}
 

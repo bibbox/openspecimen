@@ -45,8 +45,6 @@ public class ConfigParams {
 
 	public static final String CP_SOP_DOCS_DIR           = "cp_sop_doc_dir";
 
-	public static final String CP_SOP_DOC                = "cp_sop_doc";
-
 	public static final String SYS_WORKFLOWS             = "sys_workflows";
 
 	public static final String SYS_RPT_SETTINGS          = "sys_cp_rpt_settings";
@@ -67,11 +65,33 @@ public class ConfigParams {
 
 	public static final String SPMN_BARCODE_FORMAT       = "specimen_barcode_format";
 
+	public static final String SPMN_ADDL_LABEL_FORMAT    = "specimen_addl_label_format";
+
 	public static final String ALIQUOT_LABEL_FORMAT      = "aliquot_label_format";
 
 	public static final String VISITS_LOOKUP_FLOW        = "visits_lookup_flow";
 
 	public static final String ALIQUOT_QTY_REQ           = "mandatory_aliquot_qty";
+
+	public static final String VISIT_NAME_FMT            = "visit_name_format";
+
+	public static final String UNPLANNED_VISIT_NAME_FMT  = "unplanned_visit_name_format";
+
+	public static final String PDE_LINK_AGE              = "pde_link_age";
+
+	public static final String EXT_PARTICIPANT_SITES     = "ext_participant_sites";
+
+	public static final String SET_QTY_TO_ZERO           = "zero_disposed_spmn_qty";
+
+	public static final String CP_VERSIONING_ENABLED     = "cp_versioning_enabled";
+
+	public static final String PP_SHIPMENT_RECV_QUALITY  = "pre_print_ship_recv_quality";
+
+	public static final String MAX_SPMNS_UPDATE_LIMIT    = "max_spmns_update_limit";
+
+	public static final String MAX_CHILDREN_LIMIT        = "max_child_specimens_limit";
+
+	public static final String INACTIVE_PICK_LIST_LIMIT  = "pick_list_max_inactive_days";
 
 	public static String getConsentsDirPath() {
 		String path = ConfigUtil.getInstance().getStrSetting(MODULE, CONSENTS_DIR, null);

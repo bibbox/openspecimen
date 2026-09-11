@@ -5,6 +5,8 @@ import java.io.OutputStream;
 import java.util.List;
 import java.util.function.BiConsumer;
 
+import com.krishagni.catissueplus.core.common.events.EntityQueryCriteria;
+import com.krishagni.catissueplus.core.common.events.ExportedFileDetail;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
 import com.krishagni.catissueplus.core.common.events.ResponseEvent;
 import com.krishagni.catissueplus.core.common.events.UserSummary;
@@ -13,7 +15,7 @@ import com.krishagni.catissueplus.core.de.events.ExecuteSavedQueryOp;
 import com.krishagni.catissueplus.core.de.events.FacetDetail;
 import com.krishagni.catissueplus.core.de.events.GetFacetValuesOp;
 import com.krishagni.catissueplus.core.de.events.ListFolderQueriesCriteria;
-import com.krishagni.catissueplus.core.de.events.ListQueryAuditLogsCriteria;
+import com.krishagni.catissueplus.core.de.events.QueryAuditLogsListCriteria;
 import com.krishagni.catissueplus.core.de.events.ListSavedQueriesCriteria;
 import com.krishagni.catissueplus.core.de.events.QueryAuditLogDetail;
 import com.krishagni.catissueplus.core.de.events.QueryAuditLogSummary;
@@ -31,6 +33,8 @@ import edu.common.dynamicextensions.query.QueryResultData;
 
 public interface QueryService {	
 	ResponseEvent<SavedQueriesList> getSavedQueries(RequestEvent<ListSavedQueriesCriteria> req);
+
+	ResponseEvent<Long> getSavedQueriesCount(RequestEvent<ListSavedQueriesCriteria> req);
 
 	ResponseEvent<SavedQueryDetail> getSavedQuery(RequestEvent<Long> req);
 
@@ -60,7 +64,7 @@ public interface QueryService {
 
 	ResponseEvent<List<QueryFolderSummary>> getUserFolders(RequestEvent<?> req);
 
-	ResponseEvent<QueryFolderDetails> getFolder(RequestEvent<Long> req);
+	ResponseEvent<QueryFolderDetails> getFolder(RequestEvent<EntityQueryCriteria> req);
 
 	ResponseEvent<QueryFolderDetails> createFolder(RequestEvent<QueryFolderDetails> req);
 
@@ -70,6 +74,8 @@ public interface QueryService {
 
 	ResponseEvent<SavedQueriesList> getFolderQueries(RequestEvent<ListFolderQueriesCriteria> req);
 
+	ResponseEvent<Long> getFolderQueriesCount(RequestEvent<ListFolderQueriesCriteria> req);
+
 	ResponseEvent<List<SavedQuerySummary>> updateFolderQueries(RequestEvent<UpdateFolderQueriesOp> req);
 
 	ResponseEvent<List<UserSummary>> shareFolder(RequestEvent<ShareQueryFolderOp> req);
@@ -77,11 +83,17 @@ public interface QueryService {
 	//
 	// query audit logs related APIs
 	//
-	ResponseEvent<Long> getAuditLogsCount(RequestEvent<ListQueryAuditLogsCriteria> req);
+	ResponseEvent<Long> getAuditLogsCount(RequestEvent<QueryAuditLogsListCriteria> req);
 
-	ResponseEvent<List<QueryAuditLogSummary>> getAuditLogs(RequestEvent<ListQueryAuditLogsCriteria> req);
+	ResponseEvent<List<QueryAuditLogSummary>> getAuditLogs(RequestEvent<QueryAuditLogsListCriteria> req);
 
 	ResponseEvent<QueryAuditLogDetail> getAuditLog(RequestEvent<Long> req);
+
+	ResponseEvent<File> getAuditLogDiagnosticFile(RequestEvent<Long> req);
+
+	ResponseEvent<ExportedFileDetail> exportAuditLogs(RequestEvent<QueryAuditLogsListCriteria> req);
+
+	ResponseEvent<File> getExportedAuditLogsFile(RequestEvent<String> req);
 
 	//
 	// query export APIs
@@ -95,7 +107,11 @@ public interface QueryService {
 		String filename();
 
 		void headers(OutputStream out);
-	}	
+	}
+
+	interface ExtendedExportProcessor extends ExportProcessor {
+		void output(QueryResultData data, OutputStream out);
+	}
 
 	QueryDataExportResult exportQueryData(ExecuteQueryEventOp opDetail, ExportProcessor processor);
 
@@ -105,4 +121,8 @@ public interface QueryService {
 	// internal use
 	// 
 	String insertCustomQueryForms(String dirName) ;
+
+	void registerQuerySpaceProvider(QuerySpaceProvider qsProvider);
+
+	boolean toggleStarredQuery(Long queryId, boolean starred);
 }

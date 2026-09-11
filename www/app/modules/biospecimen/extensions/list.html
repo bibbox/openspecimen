@@ -1,6 +1,14 @@
 
 <div class="clearfix">
-  <div class="col-xs-3 os-forms-list">
+  <div class="col-xs-8" ng-if="forms.length == 0">
+    <div class="os-alert-container show inline">
+      <div class="alert alert-info">
+        <span translate="extensions.no_extensions"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-xs-3 os-forms-list" ng-if="forms.length > 0">
     <div class="list-group">
       <div class="list-group-item os-section-hdr">
         <span translate="extensions.list">Forms</span>
@@ -35,7 +43,7 @@
     </div>
   </div>
 
-  <div class="col-xs-9">
+  <div class="col-xs-9" ng-if="forms.length > 0">
     <div ng-switch on="fctx.inited">
       <div ng-switch-when="true" ng-switch on="!!fctx.record">
         <div ng-switch-when="true">
@@ -56,6 +64,9 @@
   <div class="panel panel-default">
     <div class="panel-heading" ng-switch on="!selectedForm.sysForm">
       <span>Record #{{fctx.record.id}}</span>
+      <span class="os-status-pending" ng-show="fctx.record.appData.formStatus == 'DRAFT'">
+        <span translate="extensions.draft">Draft</span>
+      </span>
       <span ng-switch-when="true" ng-if="extnOpts.isEntityActive" show-if-allowed="extnOpts.update" class="os-btns">
         <button class="btn btn-primary" ui-sref="{{extnState}}addedit({formId: selectedForm.formId,
           recordId: fctx.record.id, formCtxId: selectedForm.formCtxtId})">
@@ -70,6 +81,11 @@
           formCtxId: selectedForm.formCtxtId})" ng-if="selectedForm.multiRecord">
           <span class="fa fa-plus"></span>
           <span translate="common.buttons.add_another"></span>
+        </button>
+        <button class="btn btn-default" ng-if="selectedForm.survey && selectedForm.multiRecord"
+          ng-click="switchToSurveyMode(selectedForm.survey)">
+          <span class="fa fa-plus"></span>
+          <span translate="extensions.survey_mode">Survey Mode</span>
         </button>
       </span>
       <span ng-switch-when="false" class="btn os-status-info" style="margin-bottom: 0px;"
@@ -95,6 +111,12 @@
           <span class="fa fa-plus"></span>
           <span ng-if="selectedForm.records.length >= 1" translate="common.buttons.add_another"></span>
           <span ng-if="selectedForm.records.length == 0" translate="common.buttons.add"></span>
+        </button>
+
+        <button class="btn btn-default" ng-if="selectedForm.survey"
+          ng-click="switchToSurveyMode(selectedForm.survey)">
+          <span class="fa fa-plus"></span>
+          <span translate="extensions.survey_mode">Survey Mode</span>
         </button>
       </span>
       <span ng-switch-when="false" class="btn os-status-info" style="margin-bottom: 0px;"
@@ -125,10 +147,13 @@
         </thead>
         <tbody class="os-table-body">
           <tr class="row" ng-repeat="record in selectedForm.records" os-row-click="showRecord(record)">
-            <td class="col">
+            <td class="col os-key-values">
               <a ui-sref="{{extnState}}list({formId: record.formId, recordId: record.recordId, formCtxtId: record.fcId})">
                 <span>#{{record.recordId}}</span>
               </a>
+              <span class="value os-status-pending" style="padding: 4px;" ng-if="record.formStatus == 'DRAFT'">
+                <span translate="common.draft">Draft</span>
+              </span>
             </td>
             <td class="col">
               <span>{{record.user | osUserDisplayName}}</span>
@@ -137,7 +162,7 @@
               <span>{{record.updateTime | date: global.dateTimeFmt}}</span>
             </td>
             <td class="col col-xs-1 os-click-esc">
-              <span ng-if="extnOpts.isEntityActive">
+              <span ng-if="extnOpts.isEntityActive && !selectedForm.sysForm">
                 <button show-if-allowed="extnOpts.update" class="btn btn-xs btn-default"
                   ui-sref="{{extnState}}addedit({formId: record.formId, recordId: record.recordId, formCtxId: record.fcId})">
                   <span class="fa fa-pencil"></span>

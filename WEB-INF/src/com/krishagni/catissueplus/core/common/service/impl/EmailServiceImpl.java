@@ -1,9 +1,9 @@
 package com.krishagni.catissueplus.core.common.service.impl;
 
 import java.io.File;
+import java.io.UnsupportedEncodingException;
 import java.net.URL;
 import java.net.URLEncoder;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -19,21 +19,11 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import javax.mail.Address;
-import javax.mail.BodyPart;
-import javax.mail.Header;
-import javax.mail.Message;
-import javax.mail.internet.InternetAddress;
-import javax.mail.internet.MimeMessage;
-import javax.mail.internet.MimeMultipart;
-
 import org.apache.commons.lang3.BooleanUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.core.io.FileSystemResource;
-import org.springframework.integration.mail.ImapMailReceiver;
+import org.springframework.integration.mail.inbound.ImapMailReceiver;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.JavaMailSenderImpl;
 import org.springframework.mail.javamail.MimeMessageHelper;
@@ -41,19 +31,35 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
 import com.krishagni.catissueplus.core.common.OpenSpecimenAppCtxProvider;
+import com.krishagni.catissueplus.core.common.Pair;
 import com.krishagni.catissueplus.core.common.PlusTransactional;
 import com.krishagni.catissueplus.core.common.domain.Email;
+import com.krishagni.catissueplus.core.common.domain.factory.EmailErrorCode;
+import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.service.ConfigChangeListener;
 import com.krishagni.catissueplus.core.common.service.ConfigurationService;
 import com.krishagni.catissueplus.core.common.service.EmailProcessor;
 import com.krishagni.catissueplus.core.common.service.EmailService;
 import com.krishagni.catissueplus.core.common.service.TemplateService;
+import com.krishagni.catissueplus.core.common.util.AuthUtil;
 import com.krishagni.catissueplus.core.common.util.ConfigUtil;
+import com.krishagni.catissueplus.core.common.util.LogUtil;
 import com.krishagni.catissueplus.core.common.util.MessageUtil;
+import com.krishagni.catissueplus.core.common.util.Status;
 import com.krishagni.catissueplus.core.common.util.Utility;
+import com.krishagni.rbac.common.errors.RbacErrorCode;
+
+import jakarta.mail.Address;
+import jakarta.mail.BodyPart;
+import jakarta.mail.Header;
+import jakarta.mail.Message;
+import jakarta.mail.MessagingException;
+import jakarta.mail.internet.InternetAddress;
+import jakarta.mail.internet.MimeMessage;
+import jakarta.mail.internet.MimeMultipart;
 
 public class EmailServiceImpl implements EmailService, ConfigChangeListener, InitializingBean {
-	private static final Log logger = LogFactory.getLog(EmailServiceImpl.class);
+	private static final LogUtil logger = LogUtil.getLogger(EmailServiceImpl.class);
 	
 	private static final String MODULE = "email";
 	
@@ -156,12 +162,17 @@ public class EmailServiceImpl implements EmailService, ConfigChangeListener, Ini
 
 	@Override
 	public boolean sendEmail(String emailTmplKey, String[] to, String[] bcc, File[] attachments, Map<String, Object> props) {
-		return sendEmail(emailTmplKey, null, to, bcc, attachments, props);
+		return sendEmail(emailTmplKey, null, null, to, bcc, attachments, props);
 	}
 
 	@Override
 	public boolean sendEmail(String emailTmplKey, String emailTmpl, String[] to, Map<String, Object> props) {
-		return sendEmail(emailTmplKey, emailTmpl, to, null, null, props);
+		return sendEmail(emailTmplKey, null, emailTmpl, to, null, null, props);
+	}
+
+	@Override
+	public boolean sendEmail(String emailTmplKey, String tmplSubj, String tmplContent, String[] to, Map<String, Object> props) {
+		return sendEmail(emailTmplKey, tmplSubj, tmplContent, to, null , null, props);
 	}
 
 	@Override
@@ -169,6 +180,7 @@ public class EmailServiceImpl implements EmailService, ConfigChangeListener, Ini
 		return sendEmail(mail, null);
 	}
 
+	@Override
 	public boolean sendEmail(Email mail, Map<String, Object> props) {
 		try {
 			if (!isEmailNotifEnabled()) {
@@ -176,57 +188,37 @@ public class EmailServiceImpl implements EmailService, ConfigChangeListener, Ini
 				return false;
 			}
 
-			if (props == null) {
-				props = Collections.emptyMap();
-			}
-
-
-			MimeMessage mimeMessage;
-			Map<String, String> replyToHeaders = (Map<String, String>) props.get("$replyToHeaders");
-			if (replyToHeaders != null && !replyToHeaders.isEmpty()) {
-				MimeMessage parent = mailSender.createMimeMessage();
-				for (Map.Entry<String, String> header : replyToHeaders.entrySet()) {
-					parent.setHeader(header.getKey(), header.getValue());
-				}
-
-				mimeMessage = (MimeMessage) parent.reply(false, true);
-			} else {
-				mimeMessage = mailSender.createMimeMessage();
-			}
-
-			MimeMessageHelper message = new MimeMessageHelper(mimeMessage, true, "UTF-8"); // true = multipart
-			message.setSubject(mail.getSubject());
-
-			String[] toRcpts = filterEmailIds("To", mail.getToAddress());
+			boolean ignoreDnd = (Boolean) props.getOrDefault("ignoreDnd", false);
+			String[] toRcpts = filterEmailIds("To", mail.getToAddress(), ignoreDnd);
 			if (toRcpts.length == 0) {
+				logger.info("Not sending email, as there are no recipients in the To field");
 				return false;
 			}
 
-			message.setTo(toRcpts);
-			
-			if (mail.getBccAddress() != null) {
-				message.setBcc(filterEmailIds("Bcc", mail.getBccAddress()));
-			}
-			
-			if (mail.getCcAddress() != null) {
-				message.setCc(filterEmailIds("Cc", mail.getCcAddress()));
-			}
-			
-			message.setText(mail.getBody(), true); // true = isHtml
-			message.setFrom(getAccountId());
-			
-			if (mail.getAttachments() != null) {
-				for (File attachment: mail.getAttachments()) {
-					FileSystemResource file = new FileSystemResource(attachment);
-					message.addAttachment(file.getFilename(), file);
+			mail.setToAddress(toRcpts);
+			mail.setBccAddress(filterEmailIds("Bcc", mail.getBccAddress(), ignoreDnd));
+			mail.setCcAddress(filterEmailIds("Cc", mail.getCcAddress(), ignoreDnd));
+
+			MimeMessage mimeMessage = createMessage(mail, props);
+			SendMailTask sendTask = new SendMailTask(mimeMessage);
+			boolean result = true;
+			if (!(Boolean) props.getOrDefault("$synchronous", false)) {
+				logger.info("Invoking task executor to send the e-mail asynchronously: " + mimeMessage.getSubject());
+				taskExecutor.submit(sendTask);
+				result = true;
+			} else {
+				logger.warn("Sending e-mail synchronously: " + mimeMessage.getSubject());
+				sendTask.run();
+				if (StringUtils.isNotBlank(sendTask.getError())) {
+					props.put("$error", sendTask.getError());
+					result = false;
 				}
 			}
 
-			logger.info("Invoking task executor to send e-mail asynchronously: " + mimeMessage.getSubject());
-			taskExecutor.submit(new SendMailTask(mimeMessage));
-			return true;
+			return result;
 		} catch (Exception e) {
 			logger.error("Error sending e-mail", e);
+			props.put("$error", e.getMessage());
 			return false;
 		}
 	}
@@ -243,18 +235,36 @@ public class EmailServiceImpl implements EmailService, ConfigChangeListener, Ini
 		}
 	}
 
-	private boolean sendEmail(String tmplKey, String tmplContent, String[] to, String[] bcc, File[] attachments, Map<String, Object> props) {
-		if (!isEmailNotifEnabled()) {
-			return false;
+	@Override
+	public void sendTestEmail() {
+		if (!AuthUtil.isAdmin()) {
+			throw OpenSpecimenException.userError(RbacErrorCode.ADMIN_RIGHTS_REQUIRED);
 		}
 
-		boolean emailEnabled = cfgSvc.getBoolSetting("notifications", "email_" + tmplKey, true);
-		if (!emailEnabled) {
-			return false;
+		if (!isEmailNotifEnabled()) {
+			throw OpenSpecimenException.userError(EmailErrorCode.NOTIFS_ARE_DISABLED);
+		}
+
+		if (StringUtils.isEmpty(getAdminEmailId())) {
+			throw OpenSpecimenException.userError(EmailErrorCode.ADMIN_EMAIL_REQ);
+		}
+
+		String[] adminEmailId = new String[] {getAdminEmailId()};
+		Map<String, Object> props = new HashMap<>();
+		props.put("$synchronous", true);
+		boolean status = sendEmail("test_email", null, null, adminEmailId, null, null, props);
+		if (!status) {
+			throw OpenSpecimenException.userError(EmailErrorCode.UNABLE_TO_SEND, props.get("$error"));
+		}
+	}
+
+	@Override
+	public Email getEmail(String tmplKey, String tmplSubj, String tmplContent, String[] to, String[] bcc, File[] attachments, Map<String, Object> props) {
+		if (props == null) {
+			props = new HashMap<>();
 		}
 
 		String adminEmailId = getAdminEmailId();
-
 		if (StringUtils.isNotBlank(tmplContent)) {
 			props.put("templateContent", tmplContent);
 		} else {
@@ -265,9 +275,8 @@ public class EmailServiceImpl implements EmailService, ConfigChangeListener, Ini
 		props.put("appUrl", getAppUrl());
 		props.put("adminEmailAddress", adminEmailId);
 		props.put("adminPhone", cfgSvc.getStrSetting("email", "admin_phone_no", "Not Specified"));
-		props.put("dateFmt", new SimpleDateFormat(ConfigUtil.getInstance().getDateTimeFmt()));
 		props.put("urlEncoder", URLEncoder.class);
-		String subject = getSubject(tmplKey, (Object[]) props.get("$subject"));
+		String subject = StringUtils.isNotBlank(tmplSubj) ? tmplSubj : getSubject(tmplKey, (Object[]) props.get("$subject"));
 		String content = templateService.render(getBaseTmpl(), props);
 
 		Email email = new Email();
@@ -282,11 +291,47 @@ public class EmailServiceImpl implements EmailService, ConfigChangeListener, Ini
 			email.setCcAddress(new String[] { adminEmailId });
 		}
 
+		return email;
+	}
+
+	private boolean sendEmail(String tmplKey, String tmplSubj, String tmplContent, String[] to, String[] bcc, File[] attachments, Map<String, Object> props) {
+		if (!isEmailNotifEnabled()) {
+			logger.info("Notifications disabled at the system level");
+			return false;
+		}
+
+		boolean emailEnabled = cfgSvc.getBoolSetting("notifications", "email_" + tmplKey, true);
+		if (!emailEnabled) {
+			logger.info("Notifications disabled for: " + tmplKey);
+			return false;
+		}
+
+		if (props == null) {
+			props = new HashMap<>();
+		}
+
+		Email email = getEmail(tmplKey, tmplSubj, tmplContent, to, bcc, attachments, props);
 		return sendEmail(email, props);
 	}
-	
-	private String getSubject(String subjKey, Object[] subjParams) {
-		return getSubjectPrefix() + MessageUtil.getInstance().getMessage(subjKey.toLowerCase() + "_subj", subjParams);
+
+	private String getTemplate(String tmplKey) {
+		String localeTmpl = TEMPLATE_SOURCE + Locale.getDefault().toString() + "/" + tmplKey + ".vm";
+		URL url = this.getClass().getClassLoader().getResource(localeTmpl);
+		if (url == null) {
+			localeTmpl = TEMPLATE_SOURCE + "default/" + tmplKey + ".vm";
+		}
+
+		return localeTmpl;
+	}
+
+	private String getSubject(String subject, Object[] params) {
+		String key = subject.toLowerCase() + "_subj";
+		String message = MessageUtil.getInstance().getMessage(key, "not_found_subj", params);
+		if (!message.equals("not_found_subj")) {
+			subject = message;
+		}
+
+		return getSubjectPrefix() + subject;
 	}
 
 	private String getSubjectPrefix() {
@@ -297,9 +342,74 @@ public class EmailServiceImpl implements EmailService, ConfigChangeListener, Ini
 		return "[" + subjectPrefix.trim() + "]: ";
 	}
 
+	private MimeMessage createMessage(Email mail, Map<String, Object> props)
+	throws MessagingException, UnsupportedEncodingException {
+		if (props == null) {
+			props = Collections.emptyMap();
+		}
+
+		MimeMessage mimeMessage;
+		Map<String, String> replyToHeaders = (Map<String, String>) props.get("$replyToHeaders");
+		if (replyToHeaders != null && !replyToHeaders.isEmpty()) {
+			MimeMessage parent = mailSender.createMimeMessage();
+			for (Map.Entry<String, String> header : replyToHeaders.entrySet()) {
+				parent.setHeader(header.getKey(), header.getValue());
+			}
+
+			mimeMessage = (MimeMessage) parent.reply(false, true);
+		} else {
+			mimeMessage = mailSender.createMimeMessage();
+		}
+
+		MimeMessageHelper message = new MimeMessageHelper(mimeMessage, true, "UTF-8"); // true = multipart
+		message.setSubject(mail.getSubject());
+
+		message.setTo(mail.getToAddress());
+		if (mail.getBccAddress() != null) {
+			message.setBcc(mail.getBccAddress());
+		}
+
+		if (mail.getCcAddress() != null) {
+			message.setCc(mail.getCcAddress());
+		}
+
+		message.setText(mail.getBody(), true); // true = isHtml
+		message.setFrom(getFromEmailId());
+
+		String fromDisplayName = (String) props.getOrDefault("$fromDisplayName", null);
+		String fromId = (String) props.getOrDefault("$fromEmailId", null);
+		if (StringUtils.isBlank(fromDisplayName)) {
+			fromDisplayName = fromId;
+		}
+
+		if (StringUtils.isNotBlank(fromId)) {
+			message.setFrom(new InternetAddress(fromId, fromDisplayName));
+			message.setReplyTo(new InternetAddress(fromId, fromDisplayName));
+		} else if (StringUtils.isNotBlank(fromDisplayName)) {
+			message.setFrom(new InternetAddress(getFromEmailId(), fromDisplayName));
+			message.setReplyTo(new InternetAddress(getFromEmailId(), fromDisplayName));
+		}
+
+		if (mail.getAttachments() != null) {
+			Map<String, String> names = Collections.emptyMap();
+			if (props != null && props.get("$attachments") instanceof Map) {
+				names = (Map<String, String>) props.get("$attachments");
+			}
+
+			for (File attachment: mail.getAttachments()) {
+				String filename = names.getOrDefault(attachment.getName(), attachment.getName());
+				message.addAttachment(filename, new FileSystemResource(attachment));
+			}
+		}
+
+		return mimeMessage;
+	}
+
 	private class SendMailTask implements Runnable {
 		private MimeMessage mimeMessage;
 		
+		private String error;
+
 		public SendMailTask(MimeMessage mimeMessage) {
 			this.mimeMessage = mimeMessage;
 		}
@@ -310,9 +420,14 @@ public class EmailServiceImpl implements EmailService, ConfigChangeListener, Ini
 				logger.info("Sending email '" + mimeMessage.getSubject() + "' to " + rcpts);
 				mailSender.send(mimeMessage);
 				logger.info("Email '" + mimeMessage.getSubject() + "' sent to " + rcpts);
-			} catch(Exception e) {
+			} catch (Exception e) {
 				logger.error("Error sending e-mail ", e);
+				this.error = e.getMessage();
 			}
+		}
+
+		public String getError() {
+			return this.error;
 		}
 
 		private String toString(Address[] addresses) {
@@ -320,16 +435,6 @@ public class EmailServiceImpl implements EmailService, ConfigChangeListener, Ini
 		}
 	}
 
-	private String getTemplate(String tmplKey) {
-		String localeTmpl = TEMPLATE_SOURCE + Locale.getDefault().toString() + "/" + tmplKey + ".vm";
-		URL url = this.getClass().getClassLoader().getResource(localeTmpl);
-		if (url == null) {
-			localeTmpl = TEMPLATE_SOURCE + "default/" + tmplKey + ".vm";			
-		}
-		
-		return localeTmpl;
-	}
-	
 	private String getBaseTmpl() {
 		return getTemplate(BASE_TMPL);
 	}
@@ -338,19 +443,34 @@ public class EmailServiceImpl implements EmailService, ConfigChangeListener, Ini
 		return getTemplate(FOOTER_TMPL);
 	}
 
-	private String[] filterEmailIds(String field, String[] emailIds) {
+	private String[] filterEmailIds(String field, String[] emailIds, boolean ignoreDnd) {
 		String[] validEmailIds = filterInvalidEmails(emailIds);
 		if (validEmailIds.length == 0) {
 			logger.error("Invalid email IDs in " + field + " : " + toString(emailIds));
 			return validEmailIds;
 		}
 
-		String[] nonContactEmailIds = filterContactEmails(validEmailIds);
-		if (nonContactEmailIds.length == 0) {
-			logger.debug("Only contact email IDs in " + field + " : " + toString(validEmailIds));
+		String[] filteredEmailIds = filterEmailIds(validEmailIds, ignoreDnd);
+		String ignoredEmailIds = Stream.of(validEmailIds)
+			.filter(emailId -> Stream.of(filteredEmailIds).noneMatch(emailId::equals))
+			.collect(Collectors.joining(", "));
+		if (!ignoredEmailIds.isEmpty()) {
+			logger.info("Not sending email to users who are either archived or have enabled DND: " + ignoredEmailIds);
 		}
 
-		return nonContactEmailIds;
+		return filteredEmailIds;
+	}
+
+	private String[] filterEmailIds(String[] emailIds, boolean ignoreDnd) {
+		Map<String, Pair<Boolean, String>> settings = getEmailIdDnds(emailIds);
+		return Arrays.stream(emailIds)
+			.filter(
+				emailId -> {
+					Pair<Boolean, String> status = settings.getOrDefault(emailId, Pair.make(false, "Active"));
+					return (ignoreDnd || !Boolean.TRUE.equals(status.first())) && !Status.isClosedOrDisabledStatus(status.second());
+				}
+			)
+			.toArray(String[]::new);
 	}
 
 	private String[] filterInvalidEmails(String[] emailIds) {
@@ -362,14 +482,8 @@ public class EmailServiceImpl implements EmailService, ConfigChangeListener, Ini
 	}
 
 	@PlusTransactional
-	private String[] filterContactEmails(String[] emailIds) {
-		try {
-			Map<String, String> emailIdTypes = daoFactory.getUserDao().getEmailIdUserTypes(Arrays.asList(emailIds));
-			return Arrays.stream(emailIds).filter(emailId -> !"CONTACT".equals(emailIdTypes.get(emailId))).toArray(String[]::new);
-		} catch (Throwable t) {
-			logger.error("Error filtering contact email IDs", t);
-			return emailIds;
-		}
+	private Map<String, Pair<Boolean, String>> getEmailIdDnds(String[] validEmailIds) {
+		return daoFactory.getUserDao().getEmailIdStatuses(Arrays.asList(validEmailIds));
 	}
 
 	private String toString(String[] arr) {
@@ -471,11 +585,25 @@ public class EmailServiceImpl implements EmailService, ConfigChangeListener, Ini
 			}
 		}
 
-		String text = getText(message);
-		text = text.replaceAll("\r\n", "\n")
-			.replaceAll(STRIP_EMAIL_REPLY_PATTERN, "")
-			.trim();
-		email.setBody(text);
+		String text = getText(message).replaceAll("\r\n", "\n");
+		List<String> lines = new ArrayList<>();
+		for (String line : text.split("\n")) {
+			line = line.trim();
+			if (line.trim().startsWith(">")) {
+				continue;
+			}
+
+			if (line.startsWith("On ")) {
+				int idx = line.lastIndexOf(" wrote:");
+				if (idx > -1) {
+					line = line.substring(idx + " wrote:".length());
+				}
+			}
+
+			lines.add(line);
+		}
+
+		email.setBody(String.join("\n", lines));
 		return email;
 	}
 
@@ -515,6 +643,10 @@ public class EmailServiceImpl implements EmailService, ConfigChangeListener, Ini
 	
 	private String getAccountPassword() {
 		return cfgSvc.getStrSetting(MODULE, "account_password");
+	}
+
+	private String getFromEmailId() {
+		return cfgSvc.getStrSetting(MODULE, "from_email_id", getAccountId());
 	}
 	
 	private String getSmtpHost() {
@@ -564,9 +696,4 @@ public class EmailServiceImpl implements EmailService, ConfigChangeListener, Ini
 	private Integer getPollInterval() {
 		return cfgSvc.getIntSetting(MODULE, "imap_poll_interval", 5);
 	}
-
-	private final static String STRIP_EMAIL_REPLY_PATTERN =
-		"(?m)"   + // turn on multi-line regex matching
-		"^>.*$|" + // any line starting with > is ignored
-		"^On\\s+.*\\s+wrote:"; // strip On Wed, Mar 6, 2019 at 11:25 AM XYZ wrote:
 }

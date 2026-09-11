@@ -79,12 +79,24 @@
             </span>
           </li>
 
-          <li class="item" ng-show="!cp.specimenCentric">
+          <li class="item">
+            <strong class="key key-sm" translate="cp.zero_out_qty">Zero out quantity</strong>
+            <span class="value value-md">
+              {{settingCtx.cp.setQtyToZero | osBoolValue: 'common.yes': 'common.no': 'common.use_system_setting'}}
+            </span>
+          </li>
+
+          <!-- li class="item" ng-show="!cp.specimenCentric">
             <strong class="key key-sm" translate="cp.bulk_part_reg_allowed">Bulk Participant Registration Allowed</strong>
             <span class="value value-md" ng-switch on="settingCtx.cp.bulkPartRegEnabled">
               <span ng-switch-when="true" translate="common.enabled">Enabled</span>
               <span ng-switch-default translate="common.disabled">Disabled</span>
             </span>
+          </li -->
+
+          <li class="item">
+            <strong class="key key-sm" translate="cp.specimen_addl_label_fmt">Additional Label Format</strong>
+            <span class="value value-md">{{settingCtx.cp.additionalLabelFmt | osNoValue}}</span>
           </li>
 
           <li class="item">
@@ -97,6 +109,16 @@
           <li class="item">
             <strong class="key key-sm" translate="cp.specimen_barcode_fmt">Barcode Format</strong>
             <span class="value value-md">{{settingCtx.cp.specimenBarcodeFmt | osNoValue}}</span>
+          </li>
+
+          <li class="item">
+            <strong class="key key-sm" translate="cp.label_seq_key">Label Sequence Key</strong>
+            <span class="value value-md">{{'cp.label_seq_keys.' + settingCtx.cp.labelSequenceKey | translate}}</span>
+          </li>
+
+          <li class="item" ng-show="settingCtx.hasSupplies">
+            <strong class="key key-sm" translate="cp.kit_labels">Kit Labels</strong>
+            <span class="value value-md">{{settingCtx.cp.kitLabelsEnabled | osBoolValue: 'common.enabled' : 'common.disabled' : 'common.not_specified'}}</span>
           </li>
 
           <li class="item" ng-show="!cp.specimenCentric">
@@ -113,22 +135,18 @@
               {{'cp.spmn_label_pre_print_modes.' + settingCtx.cp.spmnLabelPrePrintMode | translate}}
             </span>
           </li>
-        </ul>
-      </div>
 
-      <div class="os-section os-line-section" ng-if="!cp.specimenCentric">
-        <strong class="key key-sm" translate="cp.visit_print_settings">Visit Print Settings</strong>
-        <ul class="os-key-values os-one-col">
           <li class="item">
-            <strong class="key key-sm" translate="cp.when_to_print">When to Print</strong>
+            <strong class="key key-sm" translate="cp.storage_site_update_rights">Storage Site based Update Checks</strong>
             <span class="value value-md">
-              {{'cp.visit_name_print_modes.' + settingCtx.cp.visitNamePrintMode | translate}}
+              {{settingCtx.cp.storageSiteBasedAccess | osBoolValue: 'common.enabled' : 'common.disabled' : 'common.disabled'}}
             </span>
           </li>
-
           <li class="item">
-            <strong class="key key-sm" translate="cp.copies">Copies</strong>
-            <span class="value value-md">{{settingCtx.cp.visitNamePrintCopies | osNoValue}}</span>
+            <strong class="key key-sm" translate="cp.draft_data_entry">Draft Data Entry</strong>
+            <span class="value value-md">
+              {{settingCtx.cp.draftDataEntry | osBoolValue: 'common.enabled' : 'common.disabled' : 'common.disabled'}}
+            </span>
           </li>
         </ul>
       </div>
@@ -282,7 +300,28 @@
         </div>
       </div>
 
-      <div class="form-group" ng-if="!cp.specimenCentric">
+      <div class="form-group">
+        <label class="control-label col-xs-3">
+          <span translate="cp.zero_out_qty">Zero Out Quantity</span>
+        </label>
+        <div class="col-xs-6">
+          <label class="radio-inline">
+            <input type="radio" name="zeroOut" ng-model="settingCtx.cp.setQtyToZero" ng-value="true">
+            <span translate="common.yes">Yes</span>
+          </label>
+          <label class="radio-inline">
+            <input type="radio" name="zeroOut" ng-model="settingCtx.cp.setQtyToZero" ng-value="false">
+            <span translate="common.no">No</span>
+          </label>
+          <label class="radio-inline" ng-click="settingCtx.cp.setQtyToZero = null">
+            <input type="radio" name="zeroOut" ng-model="settingCtx.cp.setQtyToZero"
+              ng-checked="settingCtx.cp.setQtyToZero == null || settingCtx.cp.setQtyToZero == undefined">
+            <span translate="common.use_system_setting"></span>
+          </label>
+        </div>
+      </div>
+
+      <!-- div class="form-group" ng-if="!cp.specimenCentric">
         <label class="control-label col-xs-3">
           <span translate="cp.bulk_part_reg_allowed">Bulk Registrations</span>
         </label>
@@ -295,6 +334,16 @@
             <input type="radio" name="bulkPartReg" ng-model="settingCtx.cp.bulkPartRegEnabled" ng-value="false">
             <span translate="common.disabled">Disabled</span>
           </label>
+        </div>
+      </div -->
+
+      <div class="form-group">
+        <label class="control-label col-xs-3">
+          <span translate="cp.specimen_addl_label_fmt">Additional Label Format</span>
+        </label>
+        <div class="col-xs-6">
+          <input name="addlLabelFmt" type="text" ng-model="settingCtx.cp.additionalLabelFmt"
+            class="form-control" placeholder="{{'cp.specimen_addl_label_fmt' | translate}}">
         </div>
       </div>
 
@@ -325,6 +374,38 @@
         </div>
       </div>
 
+      <div class="form-group">
+        <label class="control-label col-xs-3">
+          <span translate="cp.label_seq_key">Label Sequence Key</span>
+        </label>
+        <div class="col-xs-6">
+          <label class="radio-inline">
+            <input type="radio" name="labelSeqKey" ng-model="settingCtx.cp.labelSequenceKey" ng-value="'ID'">
+            <span translate="cp.label_seq_keys.ID">Record Identifier</span>
+          </label>
+          <label class="radio-inline">
+            <input type="radio" name="labelSeqKey" ng-model="settingCtx.cp.labelSequenceKey" ng-value="'LABEL'">
+            <span translate="cp.label_seq_keys.LABEL">Record Label</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="form-group" ng-if="settingCtx.hasSupplies">
+        <label class="control-label col-xs-3">
+          <span translate="cp.kit_labels">Kit Labels</span>
+        </label>
+        <div class="col-xs-6">
+          <label class="radio-inline">
+            <input type="radio" name="kitLabels" ng-model="settingCtx.cp.kitLabelsEnabled" ng-value="true">
+            <span translate="common.enabled">Enabled</span>
+          </label>
+          <label class="radio-inline">
+            <input type="radio" name="kitLabels" ng-model="settingCtx.cp.kitLabelsEnabled" ng-value="false">
+            <span translate="common.disabled">Disabled</span>
+          </label>
+        </div>
+      </div>
+
       <div class="form-group" ng-if="!cp.specimenCentric">
         <label class="control-label col-xs-3">
           <span translate="cp.on_visit_completion">On Visit Completion</span>
@@ -348,7 +429,7 @@
           <span translate="cp.pre_print_spmn_labels">Pre-print Labels</span>
         </label>
         <div class="col-xs-6">
-          <label class="radio-inline" ng-repeat="prePrintMode in settingCtx.spmnLabelPrePrintModes">
+          <label class="os-cp-print-modes radio-inline" ng-repeat="prePrintMode in settingCtx.spmnLabelPrePrintModes">
             <input type="radio" name="spmnLblPrePrintMode" ng-model="settingCtx.cp.spmnLabelPrePrintMode"
               ng-value="prePrintMode.name" ng-change="onPrePrintModeChange()">
             <span>{{prePrintMode.displayName}}</span>
@@ -357,31 +438,37 @@
         </div>
       </div>
 
-      <div class="os-section-divider" ng-if="!cp.specimenCentric">
-        <span translate="cp.visit_print_settings">Visit Print Settings</span>
-      </div>
-
-      <div class="form-group" ng-if="!cp.specimenCentric">
+      <div class="form-group">
         <label class="control-label col-xs-3">
-          <span translate="cp.when_to_print">When to Print</span>
+          <span translate="cp.storage_site_update_rights">Storage Site based Update Checks</span>
         </label>
         <div class="col-xs-6">
-          <label class="radio-inline" ng-repeat="printMode in settingCtx.visitNamePrintModes">
-            <input type="radio" name="visitNamePrintMode" ng-model="settingCtx.cp.visitNamePrintMode"
-              ng-value="printMode.name">
-            <span>{{printMode.displayName}}</span>
+          <label class="radio-inline">
+            <input type="radio" name="storageSiteUpdateChecks" ng-model="settingCtx.cp.storageSiteBasedAccess"
+              ng-value="true">
+            <span translate="common.enabled">Enabled</span>
+          </label>
+          <label class="radio-inline">
+            <input type="radio" name="storageSiteUpdateChecks" ng-model="settingCtx.cp.storageSiteBasedAccess"
+              ng-value="false">
+            <span translate="common.disabled">Disabled</span>
           </label>
         </div>
       </div>
 
-      <div class="form-group" ng-if="!cp.specimenCentric">
+      <div class="form-group">
         <label class="control-label col-xs-3">
-          <span translate="cp.copies">Copies</span>
+          <span translate="cp.draft_data_entry">Draft Data Entry</span>
         </label>
         <div class="col-xs-6">
-          <input name="visitNamePrintCopies" type="text" ng-model="settingCtx.cp.visitNamePrintCopies"
-            class="form-control" placeholder="{{'cp.copies' | translate}}" ng-pattern="/^[0-9]+$/">
-          <div os-field-error field="lsForm.visitNamePrintCopies"></div>
+          <label class="radio-inline">
+            <input type="radio" name="draftDataEntry" ng-model="settingCtx.cp.draftDataEntry" ng-value="true">
+            <span translate="common.enabled">Enabled</span>
+          </label>
+          <label class="radio-inline">
+            <input type="radio" name="draftDataEntry" ng-model="settingCtx.cp.draftDataEntry" ng-value="false">
+            <span translate="common.disabled">Disabled</span>
+          </label>
         </div>
       </div>
 
@@ -409,10 +496,17 @@
         <label class="col-xs-3 control-label">
           <span>{{'cp.spmn_lineages.' + setting.lineage | translate}}</span>
         </label>
-        <div class="col-xs-3">
-          <os-select ng-model="setting.printMode" list="settingCtx.spmnLabelAutoPrintModes"
-            display-prop="displayName" select-prop="name">
-          </os-select>
+        <div class="col-xs-3" ng-switch on="setting.lineage">
+          <div ng-switch-when="New">
+            <os-select ng-model="setting.printMode" list="settingCtx.primaryLabelAutoPrintModes"
+              display-prop="displayName" select-prop="name">
+            </os-select>
+          </div>
+          <div ng-switch-default>
+            <os-select ng-model="setting.printMode" list="settingCtx.childLabelAutoPrintModes"
+              display-prop="displayName" select-prop="name">
+            </os-select>
+          </div>
         </div>
         <div class="col-xs-3">
           <input name="copies" type="text" ng-model="setting.copies" class="form-control" ng-pattern="/^[0-9]+$/">

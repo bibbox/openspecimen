@@ -30,6 +30,14 @@ public class ListUtil {
 		id.setCaption("specimenId");
 		cfg.setPrimaryColumn(id);
 
+		Column visitId = new Column();
+		visitId.setExpr("SpecimenCollectionGroup.id");
+		visitId.setCaption("visitId");
+
+		Column cprId = new Column();
+		cprId.setExpr("Participant.id");
+		cprId.setCaption("cprId");
+
 		Column type = new Column();
 		type.setExpr("Specimen.type");
 		type.setCaption("specimenType");
@@ -38,10 +46,27 @@ public class ListUtil {
 		specimenClass.setExpr("Specimen.class");
 		specimenClass.setCaption("specimenClass");
 
+		Column availabilityStatus = new Column();
+		availabilityStatus.setExpr("Specimen.availabilityStatus");
+		availabilityStatus.setCaption("availabilityStatus");
+
+		Column cpId = new Column();
+		cpId.setExpr("CollectionProtocol.id");
+		cpId.setCaption("cpId");
+
+		Column cpShortTitle = new Column();
+		cpShortTitle.setExpr("CollectionProtocol.shortTitle");
+		cpShortTitle.setCaption("cpShortTitle");
+
 		List<Column> hiddenColumns = new ArrayList<>();
 		hiddenColumns.add(id);
 		hiddenColumns.add(type);
 		hiddenColumns.add(specimenClass);
+		hiddenColumns.add(availabilityStatus);
+		hiddenColumns.add(cpId);
+		hiddenColumns.add(cpShortTitle);
+		hiddenColumns.add(cprId);
+		hiddenColumns.add(visitId);
 		cfg.setHiddenColumns(hiddenColumns);
 		return cfg;
 	}

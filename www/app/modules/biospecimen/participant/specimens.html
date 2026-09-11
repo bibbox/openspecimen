@@ -4,7 +4,7 @@
   <div class="panel-heading">
     <span translate="{{title}}">Specimens</span>
     <div class="os-action-btns" ng-if="visit.status != 'Missed Collection' && visit.status != 'Not Collected'">
-      <button ng-if="selection.anyPending && (!allowedOps || allowedOps.update)"
+      <button ng-if="cpr.hasConsented && selection.anyPending && (!allowedOps || allowedOps.update)"
         class="btn btn-primary" ng-click="collectSpecimens()">
         <span class="fa fa-plus"></span>
         <span translate="specimens.buttons.collect"> Collect </span>
@@ -13,7 +13,7 @@
       <os-assign-to-spmn-list ng-if="selection.any" on-add-to-list="addSpecimensToSpecimenList(list)">
       </os-assign-to-spmn-list>
 
-      <os-specimen-ops ng-if="selection.any" cp="cp" cpr="cpr" specimens="getSelectedSpecimens(anyStatus)"
+      <os-specimen-ops ng-if="selection.any" cp="cp" cpr="cpr" visit="visit" specimens="getSelectedSpecimens(anyStatus)"
         init-list="initTree()" dropdown-right>
       </os-specimen-ops>
 
@@ -60,7 +60,7 @@
           </tr>
         </thead>
         <tbody class="os-table-body" os-imaging>
-          <tr class="row title" ng-class="{'selected': specimen.selected, 'os-pool-specimen': !!specimen.pooledSpecimen}"
+          <tr class="row title" ng-class="{'selected': specimen.selected, 'os-pooled-specimen': !!specimen.pooledSpecimen}"
             ng-repeat="specimen in specimens | openedTreeNodes" ng-if="!specimen.$$hideN">
             <td class="col col-xs-5">
               <div class="clearfix">
@@ -80,28 +80,22 @@
 
                     <a ui-sref="specimen-detail.overview({eventId: specimen.eventId, visitId: specimen.visitId,
                        specimenId: specimen.id, srId: specimen.reqId})">
-                      <os-specimen-desc cp="cp" specimen="specimen" show-req-label="true"></os-specimen-desc>
+                      <os-specimen-desc cp="cp" specimen="specimen" show-req-label="true"
+                        show-aliquot-type="showAliquotType">
+                      </os-specimen-desc>
                     </a>
                   </div>
                 </div>
               </div>
             </td>
-            <td class="col col-xs-4 os-word-break" ng-switch on="!!specimen.label">
-              <span ng-switch-when="true">{{specimen.label}}</span>
-              <span ng-switch-default>
-                <span ng-if="!!specimen.reqLabel">{{specimen.reqLabel}}</span>
-                <span ng-if="!specimen.reqLabel" translate="pvs.not_specified"></span>
-              </span>
+            <td class="col col-xs-4 os-word-break">
+              <span>{{specimen.label | osNoValue}}</span>
             </td>
-            <td class="col col-xs-3 os-word-break" ng-switch on="!!specimen.storageLocation.name">
-              <span ng-switch-when="true">
-                <os-disp-storage-position position="specimen.storageLocation"></os-disp-storage-position>
-              </span>
-              <span ng-switch-when="false">
-                <span ng-switch on="specimen.storageType != 'Virtual' && (!specimen.status || specimen.status == 'Pending')">
-                  <span ng-switch-when="true">&nbsp;</span>
-                  <span ng-switch-when="false" translate="specimens.virtually_located">Virtual</span>
-                </span>
+            <td class="col col-xs-3 os-word-break">
+              <os-disp-storage-position position="specimen.storageLocation" ng-show="!specimen.checkoutPosition">
+              </os-disp-storage-position>
+              <span class="os-specimen-checked-out" ng-show="specimen.checkoutPosition">
+                <span translate="specimens.checked_out">Checked Out</span>
               </span>
             </td>
           </tr>
@@ -126,7 +120,7 @@
           </tr>
         </thead>
         <tbody class="os-table-body">
-          <tr class="row title" ng-class="{'selected': specimen.selected, 'os-pool-specimen': !!specimen.pooledSpecimen}"
+          <tr class="row title" ng-class="{'selected': specimen.selected, 'os-pooled-specimen': !!specimen.pooledSpecimen}"
             ng-repeat="specimen in specimens | openedTreeNodes" ng-if="!specimen.$$hideN">
             <td class="col os-word-break" ng-repeat="field in specimen.$$treeFields">
               <div class="clearfix" ng-if="$index == 0">
@@ -145,7 +139,9 @@
                       {eventId: specimen.eventId, visitId: specimen.visitId, specimenId: specimen.id, srId: specimen.reqId})"
                       ng-switch on="field.type == 'specimen-description'">
                       <span ng-switch-when="true">
-                        <os-specimen-desc cp="cp" specimen="specimen" show-req-label="true"></os-specimen-desc>
+                        <os-specimen-desc cp="cp" specimen="specimen" show-req-label="true"
+                          show-aliquot-type="showAliquotType">
+                        </os-specimen-desc>
                       </span>
                       <span ng-switch-when="false">
                         {{field.value | osNoValue}}
@@ -156,7 +152,9 @@
               </div>
               <div ng-if="$index > 0" ng-switch on="field.type == 'specimen-description'">
                 <span ng-switch-when="true">
-                  <os-specimen-desc cp="cp" specimen="specimen" show-req-label="true"></os-specimen-desc>
+                  <os-specimen-desc cp="cp" specimen="specimen" show-req-label="true"
+                    show-aliquot-type="showAliquotType">
+                  </os-specimen-desc>
                 </span>
                 <span ng-switch-when="false">
                   {{field.value | osNoValue}}

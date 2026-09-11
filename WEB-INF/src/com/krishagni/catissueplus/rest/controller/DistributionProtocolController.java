@@ -8,8 +8,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -70,6 +70,9 @@ public class DistributionProtocolController {
 			@RequestParam(value = "receivingInstitute", required = false)
 			String receivingInstitute,
 
+			@RequestParam(value = "receivingSite", required = false)
+			String receivingSite,
+
 			@RequestParam(value = "cp", required = false)
 			String cpShortTitle,
 			
@@ -84,6 +87,9 @@ public class DistributionProtocolController {
 
 			@RequestParam(value = "excludeExpiredDps", required = false, defaultValue = "false")
 			boolean excludeExpiredDps,
+
+			@RequestParam(value = "orderByStarred", required = false, defaultValue = "false")
+			boolean orderByStarred,
 			
 			@RequestParam(value = "activityStatus", required = false)
 			String activityStatus) {
@@ -96,9 +102,11 @@ public class DistributionProtocolController {
 			.piId(piId)
 			.irbIdLike(irbId)
 			.receivingInstitute(receivingInstitute)
+			.receivingSite(receivingSite)
 			.cpShortTitle(cpShortTitle)
 			.includeStat(includeStats)
 			.excludeExpiredDps(excludeExpiredDps)
+			.orderByStarred(orderByStarred)
 			.activityStatus(activityStatus);
 		
 		ResponseEvent<List<DistributionProtocolDetail>> resp = dpSvc.getDistributionProtocols(getRequest(criteria));
@@ -124,6 +132,9 @@ public class DistributionProtocolController {
 
 			@RequestParam(value = "receivingInstitute", required = false)
 			String receivingInstitute,
+
+			@RequestParam(value = "receivingSite", required = false)
+			String receivingSite,
 			
 			@RequestParam(value = "activityStatus", required = false)
 			String activityStatus) {
@@ -134,6 +145,7 @@ public class DistributionProtocolController {
 			.piId(piId)
 			.irbIdLike(irbId)
 			.receivingInstitute(receivingInstitute)
+			.receivingSite(receivingSite)
 			.activityStatus(activityStatus);
 		
 		ResponseEvent<Long> resp = dpSvc.getDistributionProtocolsCount(getRequest(criteria));
@@ -144,7 +156,7 @@ public class DistributionProtocolController {
 	@RequestMapping(method = RequestMethod.GET, value = "/{id}")
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody
-	public DistributionProtocolDetail getDistributionProtocol(@PathVariable Long id) {
+	public DistributionProtocolDetail getDistributionProtocol(@PathVariable("id") Long id) {
 		ResponseEvent<DistributionProtocolDetail> resp = dpSvc.getDistributionProtocol(getRequest(id));
 		resp.throwErrorIfUnsuccessful();
 		return resp.getPayload();
@@ -163,7 +175,7 @@ public class DistributionProtocolController {
 	@RequestMapping(method = RequestMethod.PUT, value = "/{id}")
 	@ResponseBody
 	@ResponseStatus(HttpStatus.OK)
-	public DistributionProtocolDetail updateDistributionProtocol(@PathVariable Long id,
+	public DistributionProtocolDetail updateDistributionProtocol(@PathVariable("id") Long id,
 			@RequestBody DistributionProtocolDetail detail) {
 		detail.setId(id);
 		ResponseEvent<DistributionProtocolDetail> resp = dpSvc.updateDistributionProtocol(getRequest(detail));
@@ -174,7 +186,7 @@ public class DistributionProtocolController {
 	@RequestMapping(method = RequestMethod.GET, value = "/{id}/dependent-entities")
 	@ResponseBody
 	@ResponseStatus(HttpStatus.OK)
-	public List<DependentEntityDetail> getDependentEntities(@PathVariable Long id) {
+	public List<DependentEntityDetail> getDependentEntities(@PathVariable("id") Long id) {
 		RequestEvent<Long> req = new RequestEvent<Long>(id);
 		ResponseEvent<List<DependentEntityDetail>> resp = dpSvc.getDependentEntities(req);
 		resp.throwErrorIfUnsuccessful();
@@ -185,7 +197,7 @@ public class DistributionProtocolController {
 	@RequestMapping(method = RequestMethod.DELETE, value = "/{id}")
 	@ResponseBody
 	@ResponseStatus(HttpStatus.OK)
-	public DistributionProtocolDetail deleteDistributionProtocol(@PathVariable Long id) {
+	public DistributionProtocolDetail deleteDistributionProtocol(@PathVariable("id") Long id) {
 		return deleteDistributionProtocols(new Long[]{id}).get(0);
 	}
 
@@ -417,6 +429,20 @@ public class DistributionProtocolController {
 		ResponseEvent<DpConsentTierDetail> resp  = dpSvc.deleteConsentTier(getRequest(dpConsent));
 		resp.throwErrorIfUnsuccessful();
 		return resp.getPayload();
+	}
+
+	@RequestMapping(method = RequestMethod.POST, value = "/{id}/labels")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public Map<String, Boolean> addLabel(@PathVariable("id") Long dpId) {
+		return Collections.singletonMap("status", dpSvc.toggleStarredDp(dpId, true));
+	}
+
+	@RequestMapping(method = RequestMethod.DELETE, value = "/{id}/labels")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public Map<String, Boolean> removeLabel(@PathVariable("id") Long dpId) {
+		return Collections.singletonMap("status", dpSvc.toggleStarredDp(dpId, false));
 	}
 
 	private <T> RequestEvent<T> getRequest(T payload) {

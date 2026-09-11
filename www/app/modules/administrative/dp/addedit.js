@@ -17,6 +17,18 @@ angular.module('os.administrative.dp.addedit', ['os.administrative.models', 'os.
       $scope.all_sites = $translate.instant('dp.all_sites');
       loadDistInstSites();
       setDefaultDistInst();
+
+      $scope.attachmentTypes = []
+      $translate('common.none').then(
+        function() {
+          $scope.attachmentTypes = [
+            {name: 'NONE',       caption: $translate.instant('dp.attachment_types.NONE')},
+            {name: 'CSV_REPORT', caption: $translate.instant('dp.attachment_types.CSV_REPORT')},
+            {name: 'MANIFEST',   caption: $translate.instant('dp.attachment_types.MANIFEST')},
+            {name: 'BOTH',       caption: $translate.instant('dp.attachment_types.BOTH')}
+          ]
+        }
+      );
     }
 
     function loadQueries(searchTerm) {
@@ -195,3 +207,4 @@ angular.module('os.administrative.dp.addedit', ['os.administrative.models', 'os.
 
     init();
   });
+

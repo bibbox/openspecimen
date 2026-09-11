@@ -1,19 +1,25 @@
 package com.krishagni.catissueplus.core.common.domain;
 
+import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
+import org.hibernate.envers.Audited;
 import com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
+
 import com.krishagni.catissueplus.core.administrative.domain.Institute;
 import com.krishagni.catissueplus.core.administrative.domain.User;
 import com.krishagni.catissueplus.core.biospecimen.domain.BaseEntity;
 import com.krishagni.catissueplus.core.common.domain.factory.LabelPrintRuleFactory;
 import com.krishagni.catissueplus.core.common.util.Status;
 
+@Audited
 public class PrintRuleConfig extends BaseEntity {
 	private String objectType;
 
@@ -28,6 +34,8 @@ public class PrintRuleConfig extends BaseEntity {
 	private String description;
 
 	private LabelPrintRule rule;
+
+	private Integer sortOrder;
 
 	public String getObjectType() {
 		return objectType;
@@ -94,9 +102,9 @@ public class PrintRuleConfig extends BaseEntity {
 	}
 
 	public void setRuleDefJson(String ruleDefJson) {
-		Map<String, String> rule;
+		Map<String, Object> rule;
 		try {
-			rule = getReadMapper().readValue(ruleDefJson, new TypeReference<HashMap<String,Object>>() {});
+			rule = getReadMapper().readValue(ruleDefJson, new TypeReference<HashMap<String, Object>>() {});
 		} catch (Exception e) {
 			throw new RuntimeException("Error marshalling JSON to print rule", e);
 		}
@@ -104,19 +112,27 @@ public class PrintRuleConfig extends BaseEntity {
 		setRuleDef(rule);
 	}
 
-	public Map<String, String> getRuleDef() {
+	public Map<String, Object> getRuleDef() {
 		return getRuleDef(false);
 	}
 
-	public Map<String, String> getRuleDef(boolean ufn) {
+	public Map<String, Object> getRuleDef(boolean ufn) {
 		return getRule().toDefMap(ufn);
 	}
 
-	public void setRuleDef(Map<String, String> rule) {
+	public void setRuleDef(Map<String, Object> rule) {
 		LabelPrintRuleFactory factory = LabelPrintRuleFactoryRegistrar.getInstance().getFactory(objectType);
 		if (factory != null) {
 			setRule(factory.createLabelPrintRule(rule, false));
 		}
+	}
+
+	public Integer getSortOrder() {
+		return sortOrder;
+	}
+
+	public void setSortOrder(Integer sortOrder) {
+		this.sortOrder = sortOrder;
 	}
 
 	public void update(PrintRuleConfig rule) {
@@ -127,10 +143,21 @@ public class PrintRuleConfig extends BaseEntity {
 		setRule(rule.getRule());
 		setActivityStatus(rule.getActivityStatus());
 		setDescription(rule.getDescription());
+		setSortOrder(rule.getSortOrder());
 	}
 
 	public void delete() {
 		setActivityStatus(Status.ACTIVITY_STATUS_DISABLED.getStatus());
+	}
+
+	@Override
+	protected Set<String> getAuditStringInclusionProps() {
+		return Arrays.stream(
+			new String[] {
+				"id", "objectType", "description", "institute",
+				"updatedBy", "updatedOn", "ruleDefJson", "activityStatus", "sortOrder"
+			}
+		).collect(Collectors.toSet());
 	}
 
 	private ObjectMapper getReadMapper() {
@@ -139,16 +166,11 @@ public class PrintRuleConfig extends BaseEntity {
 
 	private ObjectMapper getWriteMapper() {
 		ObjectMapper mapper = new ObjectMapper().configure(SerializationFeature.FAIL_ON_EMPTY_BEANS, false);
-		mapper.setVisibilityChecker(
+		return mapper.setVisibility(
 			mapper.getSerializationConfig().getDefaultVisibilityChecker()
 				.withFieldVisibility(Visibility.ANY)
 				.withGetterVisibility(Visibility.NONE)
 				.withSetterVisibility(Visibility.NONE)
 				.withCreatorVisibility(Visibility.NONE));
-		return mapper;
-	}
-
-	private boolean isDisabled() {
-		return Status.ACTIVITY_STATUS_DISABLED.getStatus().equals(getActivityStatus());
 	}
 }

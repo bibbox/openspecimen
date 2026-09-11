@@ -5,15 +5,18 @@ import java.io.Serializable;
 import java.util.Collection;
 import java.util.Date;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
-import org.apache.commons.lang.StringUtils;
-
+import org.apache.commons.lang3.StringUtils;
 import com.fasterxml.jackson.annotation.JsonFilter;
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 import com.krishagni.catissueplus.core.administrative.domain.User;
 import com.krishagni.catissueplus.core.common.util.Utility;
 
 @JsonFilter("withoutId")
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class UserSummary implements Serializable {
 	
 	private static final long serialVersionUID = -8113791999197573026L;
@@ -32,6 +35,8 @@ public class UserSummary implements Serializable {
 	
 	private String emailAddress;
 
+	private Long instituteId;
+
 	private String instituteName;
 
 	private String primarySite;
@@ -39,14 +44,28 @@ public class UserSummary implements Serializable {
 	private Boolean admin;
 	
 	private Boolean instituteAdmin;
+
+	private String phoneNumber;
 	
 	private Boolean manageForms;
+
+	private Boolean manageWfs;
+
+	private Boolean managePrintJobs;
+
+	private Boolean downloadLabelsPrintFile;
+
+	private Boolean apiUser;
 
 	private int cpCount;
 
 	private Date creationDate;
 
 	private String activityStatus;
+
+	private Boolean impersonated;
+
+	private Integer daysBeforePasswordExpiry;
 
 	public Long getId() {
 		return id;
@@ -104,6 +123,14 @@ public class UserSummary implements Serializable {
 		this.emailAddress = emailAddress;
 	}
 
+	public Long getInstituteId() {
+		return instituteId;
+	}
+
+	public void setInstituteId(Long instituteId) {
+		this.instituteId = instituteId;
+	}
+
 	public String getInstituteName() {
 		return instituteName;
 	}
@@ -136,12 +163,52 @@ public class UserSummary implements Serializable {
 		this.instituteAdmin = instituteAdmin;
 	}
 
+	public String getPhoneNumber() {
+		return phoneNumber;
+	}
+
+	public void setPhoneNumber(String phoneNumber) {
+		this.phoneNumber = phoneNumber;
+	}
+
 	public Boolean getManageForms() {
 		return manageForms;
 	}
 
 	public void setManageForms(Boolean manageForms) {
 		this.manageForms = manageForms;
+	}
+
+	public Boolean getManageWfs() {
+		return manageWfs;
+	}
+
+	public void setManageWfs(Boolean manageWfs) {
+		this.manageWfs = manageWfs;
+	}
+
+	public Boolean getManagePrintJobs() {
+		return managePrintJobs;
+	}
+
+	public void setManagePrintJobs(Boolean managePrintJobs) {
+		this.managePrintJobs = managePrintJobs;
+	}
+
+	public Boolean getDownloadLabelsPrintFile() {
+		return downloadLabelsPrintFile;
+	}
+
+	public void setDownloadLabelsPrintFile(Boolean downloadLabelsPrintFile) {
+		this.downloadLabelsPrintFile = downloadLabelsPrintFile;
+	}
+
+	public Boolean getApiUser() {
+		return apiUser;
+	}
+
+	public void setApiUser(Boolean apiUser) {
+		this.apiUser = apiUser;
 	}
 
 	public int getCpCount() {
@@ -168,6 +235,22 @@ public class UserSummary implements Serializable {
 		this.activityStatus = activityStatus;
 	}
 
+	public Boolean getImpersonated() {
+		return impersonated;
+	}
+
+	public void setImpersonated(Boolean impersonated) {
+		this.impersonated = Boolean.TRUE.equals(impersonated) ? true : null;
+	}
+
+	public Integer getDaysBeforePasswordExpiry() {
+		return daysBeforePasswordExpiry;
+	}
+
+	public void setDaysBeforePasswordExpiry(Integer daysBeforePasswordExpiry) {
+		this.daysBeforePasswordExpiry = daysBeforePasswordExpiry;
+	}
+
 	public String formattedName() {
 		StringBuilder name = new StringBuilder();
 		if (StringUtils.isNotBlank(firstName)) {
@@ -186,21 +269,32 @@ public class UserSummary implements Serializable {
 	}
 
 	public static UserSummary from(User user) {
+		if (user == null) {
+			return null;
+		}
+
 		UserSummary result = new UserSummary();
 		result.setId(user.getId());
 		result.setType(user.getType().name());
 		result.setFirstName(user.getFirstName());
 		result.setLastName(user.getLastName());
 		result.setLoginName(user.getLoginName());
-		result.setDomain(user.getAuthDomain().getName());
+		result.setDomain(user.getAuthDomain() != null ? user.getAuthDomain().getName() : null);
 		result.setEmailAddress(user.getEmailAddress());
 		result.setAdmin(user.isAdmin());
 		result.setInstituteAdmin(user.isInstituteAdmin());
 		result.setCreationDate(user.getCreationDate());
+		result.setPhoneNumber(user.getPhoneNumber());
 		result.setManageForms(user.getManageForms());
+		result.setManageWfs(user.canManageWfs());
+		result.setManagePrintJobs(user.canManagePrintJobs());
 		result.setActivityStatus(user.getActivityStatus());
+		result.setImpersonated(user.isImpersonated());
+		result.setDownloadLabelsPrintFile(user.isDownloadLabelsPrintFile());
+		result.setApiUser(user.isApiUser());
 
 		if (user.getInstitute() != null) {
+			result.setInstituteId(user.getInstitute().getId());
 			result.setInstituteName(user.getInstitute().getName());
 		}
 
@@ -212,6 +306,9 @@ public class UserSummary implements Serializable {
 	}
 	
 	public static List<UserSummary> from(Collection<User> users) {
-		return Utility.nullSafeStream(users).map(UserSummary::from).collect(Collectors.toList());
+		return Utility.nullSafeStream(users)
+			.filter(Objects::nonNull)
+			.map(UserSummary::from)
+			.collect(Collectors.toList());
 	}
 }

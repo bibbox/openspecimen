@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import com.krishagni.catissueplus.core.common.events.UserSummary;
 import com.krishagni.catissueplus.core.importer.domain.ImportJob;
@@ -28,6 +29,16 @@ public class ImportJobDetail {
 	private Date endTime;
 	
 	private Map<String, String> params;
+
+	private String displayName;
+
+	private String dateFormat;
+
+	private String timeFormat;
+
+	private String fieldSeparator;
+
+	private List<String> unmatchedColumns;
 
 	public Long getId() {
 		return id;
@@ -109,6 +120,46 @@ public class ImportJobDetail {
 		this.params = params;
 	}
 
+	public String getDisplayName() {
+		return displayName;
+	}
+
+	public void setDisplayName(String displayName) {
+		this.displayName = displayName;
+	}
+
+	public String getDateFormat() {
+		return dateFormat;
+	}
+
+	public void setDateFormat(String dateFormat) {
+		this.dateFormat = dateFormat;
+	}
+
+	public String getTimeFormat() {
+		return timeFormat;
+	}
+
+	public void setTimeFormat(String timeFormat) {
+		this.timeFormat = timeFormat;
+	}
+
+	public String getFieldSeparator() {
+		return fieldSeparator;
+	}
+
+	public void setFieldSeparator(String fieldSeparator) {
+		this.fieldSeparator = fieldSeparator;
+	}
+
+	public List<String> getUnmatchedColumns() {
+		return unmatchedColumns;
+	}
+
+	public void setUnmatchedColumns(List<String> unmatchedColumns) {
+		this.unmatchedColumns = unmatchedColumns;
+	}
+
 	public static ImportJobDetail from(ImportJob job) {
 		ImportJobDetail detail = new ImportJobDetail();
 		detail.setId(job.getId());
@@ -121,22 +172,28 @@ public class ImportJobDetail {
 		detail.setTotalRecords(job.getTotalRecords());
 		detail.setFailedRecords(job.getFailedRecords());
 		detail.setParams(job.getParams());
+		detail.setDisplayName(job.getDisplayName());
+		detail.setDateFormat(job.getDateFormat());
+		detail.setTimeFormat(job.getTimeFormat());
+		detail.setFieldSeparator(job.getFieldSeparator());
 		return detail;
 	}
 	
 	public static List<ImportJobDetail> from(List<ImportJob> jobs) {
-		List<ImportJobDetail> result = new ArrayList<ImportJobDetail>();
-		for (ImportJob job : jobs) {
-			result.add(ImportJobDetail.from(job));
-		}
-		
-		return result;
+		return jobs.stream().map(ImportJobDetail::from).collect(Collectors.toList());
 	}
 
-	public static ImportJobDetail txnSizeExceeded(int inputRecordsCnt) {
+	public static ImportJobDetail status(ImportJob.Status status, int inputRecordsCnt) {
 		ImportJobDetail detail = new ImportJobDetail();
-		detail.setStatus(ImportJob.Status.TXN_SIZE_EXCEEDED.name());
-		detail.setTotalRecords(new Long(inputRecordsCnt));
+		detail.setStatus(status.name());
+		detail.setTotalRecords((long) inputRecordsCnt);
+		return detail;
+	}
+
+	public static ImportJobDetail columnsMismatch(List<String> unmatchedColumns) {
+		ImportJobDetail detail = new ImportJobDetail();
+		detail.setStatus(ImportJob.Status.CSV_COLUMNS_MISMATCH.name());
+		detail.setUnmatchedColumns(new ArrayList<>(unmatchedColumns));
 		return detail;
 	}
 }

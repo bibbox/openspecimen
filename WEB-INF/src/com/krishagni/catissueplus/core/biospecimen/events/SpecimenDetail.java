@@ -1,31 +1,38 @@
 package com.krishagni.catissueplus.core.biospecimen.events;
 
+import java.io.Serial;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import org.codehaus.jackson.annotate.JsonIgnore;
-import org.codehaus.jackson.annotate.JsonProperty;
-import org.codehaus.jackson.map.annotate.JsonSerialize;
+import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.lang3.StringUtils;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
+import com.krishagni.catissueplus.core.administrative.domain.PermissibleValue;
 import com.krishagni.catissueplus.core.administrative.events.StorageLocationSummary;
 import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
 import com.krishagni.catissueplus.core.biospecimen.domain.SpecimenRequirement;
 import com.krishagni.catissueplus.core.biospecimen.domain.Visit;
+import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
 import com.krishagni.catissueplus.core.common.ListenAttributeChanges;
+import com.krishagni.catissueplus.core.common.OpenSpecimenAppCtxProvider;
+import com.krishagni.catissueplus.core.common.events.UserSummary;
 import com.krishagni.catissueplus.core.common.util.Utility;
+import com.krishagni.catissueplus.core.de.domain.DeObject;
 import com.krishagni.catissueplus.core.de.events.ExtensionDetail;
 
 @ListenAttributeChanges
 public class SpecimenDetail extends SpecimenInfo {
 
+	@Serial
 	private static final long serialVersionUID = -752005520158376620L;
 
 	private CollectionEventDetail collectionEvent;
@@ -33,8 +40,6 @@ public class SpecimenDetail extends SpecimenInfo {
 	private ReceivedEventDetail receivedEvent;
 	
 	private String labelFmt;
-	
-	private String labelAutoPrintMode;
 	
 	private Set<String> biohazards;
 	
@@ -44,11 +49,9 @@ public class SpecimenDetail extends SpecimenInfo {
 	
 	private List<SpecimenDetail> children;
 
-	private Long pooledSpecimenId;
-	
-	private String pooledSpecimenLabel;
+	private List<SpecimenInfo> specimensPool;
 
-	private List<SpecimenDetail> specimensPool;
+	private List<SpecimenInfo> pooledSpecimens;
 
 	//
 	// Properties required for auto-creation of containers
@@ -64,8 +67,6 @@ public class SpecimenDetail extends SpecimenInfo {
 	
 	private Boolean poolSpecimen;
 	
-	private String reqCode;
-
 	private ExtensionDetail extensionDetail;
 
 	private boolean reserved;
@@ -75,13 +76,15 @@ public class SpecimenDetail extends SpecimenInfo {
 	//
 	private boolean forceDelete;
 
-	private boolean printLabel;
-
 	private Integer incrParentFreezeThaw;
+
+	private UserSummary transferUser;
 
 	private Date transferTime;
 
 	private String transferComments;
+
+	private Boolean checkout;
 
 	private boolean autoCollectParents;
 
@@ -92,6 +95,19 @@ public class SpecimenDetail extends SpecimenInfo {
 	private Long dpId;
 
 	private StorageLocationSummary holdingLocation;
+
+	private boolean checkedOut;
+
+	private StorageLocationSummary checkoutPosition;
+
+	private String kitLabel;
+
+	private String kitBarcode;
+
+	private boolean update;
+
+	private Long ancestorId;
+
 
 	public CollectionEventDetail getCollectionEvent() {
 		return collectionEvent;
@@ -117,14 +133,6 @@ public class SpecimenDetail extends SpecimenInfo {
 		this.labelFmt = labelFmt;
 	}
 
-	public String getLabelAutoPrintMode() {
-		return labelAutoPrintMode;
-	}
-
-	public void setLabelAutoPrintMode(String labelAutoPrintMode) {
-		this.labelAutoPrintMode = labelAutoPrintMode;
-	}
-
 	public List<SpecimenDetail> getChildren() {
 		return children;
 	}
@@ -133,28 +141,20 @@ public class SpecimenDetail extends SpecimenInfo {
 		this.children = children;
 	}
 
-	public Long getPooledSpecimenId() {
-		return pooledSpecimenId;
-	}
-
-	public void setPooledSpecimenId(Long pooledSpecimenId) {
-		this.pooledSpecimenId = pooledSpecimenId;
-	}
-
-	public String getPooledSpecimenLabel() {
-		return pooledSpecimenLabel;
-	}
-
-	public void setPooledSpecimenLabel(String pooledSpecimenLabel) {
-		this.pooledSpecimenLabel = pooledSpecimenLabel;
-	}
-
-	public List<SpecimenDetail> getSpecimensPool() {
+	public List<SpecimenInfo> getSpecimensPool() {
 		return specimensPool;
 	}
 
-	public void setSpecimensPool(List<SpecimenDetail> specimensPool) {
+	public void setSpecimensPool(List<SpecimenInfo> specimensPool) {
 		this.specimensPool = specimensPool;
+	}
+
+	public List<SpecimenInfo> getPooledSpecimens() {
+		return pooledSpecimens;
+	}
+
+	public void setPooledSpecimens(List<SpecimenInfo> pooledSpecimens) {
+		this.pooledSpecimens = pooledSpecimens;
 	}
 
 	@JsonIgnore
@@ -230,14 +230,6 @@ public class SpecimenDetail extends SpecimenInfo {
 	public void setPoolSpecimen(Boolean poolSpecimen) {
 		this.poolSpecimen = poolSpecimen;
 	}
-	
-	public String getReqCode() {
-		return reqCode;
-	}
-
-	public void setReqCode(String reqCode) {
-		this.reqCode = reqCode;
-	}
 
 	@JsonIgnore
 	public boolean closeParent() {
@@ -268,20 +260,6 @@ public class SpecimenDetail extends SpecimenInfo {
 	public void setForceDelete(boolean forceDelete) {
 		this.forceDelete = forceDelete;
 	}
-	
-	//
-	// Do not serialise printLabel from interaction object to response JSON. Therefore @JsonIgnore
-	// However, deserialise, if present, from input request JSON to interaction object. Hence @JsonProperty
-	//
-	@JsonIgnore
-	public boolean isPrintLabel() {
-		return printLabel;
-	}
-
-	@JsonProperty
-	public void setPrintLabel(boolean printLabel) {
-		this.printLabel = printLabel;
-	}
 
 	@JsonIgnore
 	public Integer getIncrParentFreezeThaw() {
@@ -291,6 +269,16 @@ public class SpecimenDetail extends SpecimenInfo {
 	@JsonProperty
 	public void setIncrParentFreezeThaw(Integer incrParentFreezeThaw) {
 		this.incrParentFreezeThaw = incrParentFreezeThaw;
+	}
+
+	@JsonIgnore
+	public UserSummary getTransferUser() {
+		return transferUser;
+	}
+
+	@JsonProperty
+	public void setTransferUser(UserSummary transferUser) {
+		this.transferUser = transferUser;
 	}
 
 	@JsonIgnore
@@ -311,6 +299,16 @@ public class SpecimenDetail extends SpecimenInfo {
 	@JsonProperty
 	public void setTransferComments(String transferComments) {
 		this.transferComments = transferComments;
+	}
+
+	@JsonIgnore
+	public Boolean getCheckout() {
+		return checkout;
+	}
+
+	@JsonProperty
+	public void setCheckout(Boolean checkout) {
+		this.checkout = checkout;
 	}
 
 	@JsonIgnore
@@ -357,6 +355,64 @@ public class SpecimenDetail extends SpecimenInfo {
 		this.holdingLocation = holdingLocation;
 	}
 
+	public boolean isCheckedOut() {
+		return checkedOut;
+	}
+
+	public void setCheckedOut(boolean checkedOut) {
+		this.checkedOut = checkedOut;
+	}
+
+	public StorageLocationSummary getCheckoutPosition() {
+		return checkoutPosition;
+	}
+
+	public void setCheckoutPosition(StorageLocationSummary checkoutPosition) {
+		this.checkoutPosition = checkoutPosition;
+	}
+
+	public String getKitLabel() {
+		return kitLabel;
+	}
+
+	public void setKitLabel(String kitLabel) {
+		this.kitLabel = kitLabel;
+	}
+
+	public String getKitBarcode() {
+		return kitBarcode;
+	}
+
+	public void setKitBarcode(String kitBarcode) {
+		this.kitBarcode = kitBarcode;
+	}
+
+	public boolean isUpdate() {
+		return update;
+	}
+
+	public void setUpdate(boolean update) {
+		this.update = update;
+	}
+
+	public Long getAncestorId() {
+		return ancestorId;
+	}
+
+	public void setAncestorId(Long ancestorId) {
+		this.ancestorId = ancestorId;
+	}
+
+	@JsonIgnore
+	public String getLogKey() {
+		String result = getId().toString();
+		if (StringUtils.isNotBlank(getLabel())) {
+			result += " (" + getLabel() + ")";
+		}
+
+		return result;
+	}
+
 	public static SpecimenDetail from(Specimen specimen) {
 		return from(specimen, true, true);
 	}
@@ -368,6 +424,26 @@ public class SpecimenDetail extends SpecimenInfo {
 	public static SpecimenDetail from(Specimen specimen, boolean partial, boolean excludePhi, boolean excludeChildren) {
 		SpecimenDetail result = new SpecimenDetail();
 		SpecimenInfo.fromTo(specimen, result);
+
+		if (specimen.getPooledEvent() != null) {
+			result.setSpecimensPool(
+				specimen.getPooledEvent().getPoolItems().stream()
+					.filter(s -> !s.isDeleted())
+					.map(SpecimenInfo::from)
+					.sorted()
+					.collect(Collectors.toList())
+			);
+		}
+
+		if (specimen.isPoolItem() && CollectionUtils.isNotEmpty(specimen.getPoolItemEvents())) {
+			result.setPooledSpecimens(
+				specimen.getPoolItemEvents().stream()
+					.filter(e -> !e.getPooledSpecimen().isDeleted())
+					.map(e -> SpecimenInfo.from(e.getPooledSpecimen()))
+					.sorted()
+					.collect(Collectors.toList())
+			);
+		}
 		
 		SpecimenRequirement sr = specimen.getSpecimenRequirement();
 		if (!excludeChildren) {
@@ -378,17 +454,16 @@ public class SpecimenDetail extends SpecimenInfo {
 				sort(children);
 				result.setChildren(children);
 			} else {
-				if (sr.isPooledSpecimenReq()) {
-					result.setSpecimensPool(getSpecimens(specimen.getVisit(), sr.getSpecimenPoolReqs(), specimen.getSpecimensPool(), partial, excludePhi, excludeChildren));
+				List<SpecimenDetail> children = getSpecimens(
+					specimen.getVisit(), sr.getChildSpecimenRequirements(),
+					specimen.getChildCollection(),
+					partial, excludePhi, excludeChildren);
+				for (SpecimenDetail child : children) {
+					child.setParentId(result.getId());
+					child.setParentLabel(result.getLabel());
 				}
-				result.setPoolSpecimen(sr.isSpecimenPoolReq());
 
-				result.setChildren(getSpecimens(specimen.getVisit(), sr.getChildSpecimenRequirements(), specimen.getChildCollection(), partial, excludePhi, excludeChildren));
-			}
-
-			if (specimen.getPooledSpecimen() != null) {
-				result.setPooledSpecimenId(specimen.getPooledSpecimen().getId());
-				result.setPooledSpecimenLabel(specimen.getPooledSpecimen().getLabel());
+				result.setChildren(children);
 			}
 		}
 
@@ -396,29 +471,22 @@ public class SpecimenDetail extends SpecimenInfo {
 		// false to ensure we don't end up in infinite recurssion
 		//
 		result.setLabelFmt(specimen.getLabelTmpl(false));
-		if (sr != null && sr.getLabelAutoPrintModeToUse() != null) {
-			result.setLabelAutoPrintMode(sr.getLabelAutoPrintModeToUse().name());
-		}
-
 		result.setReqCode(sr != null ? sr.getCode() : null);
-		result.setBiohazards(new HashSet<>(specimen.getBiohazards()));
+		result.setBiohazards(PermissibleValue.toValueSet(specimen.getBiohazards()));
 		result.setComments(specimen.getComment());
 		result.setReserved(specimen.isReserved());
 
 		if (!partial) {
 			result.setExtensionDetail(ExtensionDetail.from(specimen.getExtension(), excludePhi));
-
-			if (specimen.isPrimary()) {
-				result.setCollectionEvent(CollectionEventDetail.from(specimen.getCollectionEvent()));
-				result.setReceivedEvent(ReceivedEventDetail.from(specimen.getReceivedEvent()));
-			} else {
-				result.setCollectionEvent(CollectionEventDetail.from(specimen.getCollRecvDetails()));
-				result.setReceivedEvent(ReceivedEventDetail.from(specimen.getCollRecvDetails()));
-			}
+			result.setCollectionEvent(CollectionEventDetail.from(specimen));
+			result.setReceivedEvent(ReceivedEventDetail.from(specimen));
 		}
 
 		result.setUid(specimen.getUid());
 		result.setParentUid(specimen.getParentUid());
+		result.setCheckedOut(specimen.getCheckoutPosition() != null);
+		result.setCheckoutPosition(StorageLocationSummary.from(specimen.getCheckoutPosition()));
+		result.setAncestorId(specimen.getAncestorId());
 		return result;
 	}
 	
@@ -427,20 +495,28 @@ public class SpecimenDetail extends SpecimenInfo {
 	}
 	
 	public static SpecimenDetail from(SpecimenRequirement anticipated) {
+		return SpecimenDetail.from(anticipated, false);
+	}
+
+	public static SpecimenDetail from(SpecimenRequirement anticipated, boolean excludeChildren) {
 		SpecimenDetail result = new SpecimenDetail();		
 		SpecimenInfo.fromTo(anticipated, result);
-		
-		if (anticipated.isPooledSpecimenReq()) {
-			result.setSpecimensPool(fromAnticipated(anticipated.getSpecimenPoolReqs()));
+		if (!excludeChildren) {
+			result.setChildren(fromAnticipated(anticipated.getChildSpecimenRequirements(), excludeChildren));
 		}
-		
-		result.setPoolSpecimen(anticipated.isSpecimenPoolReq());
-		result.setChildren(fromAnticipated(anticipated.getChildSpecimenRequirements()));
+
 		result.setLabelFmt(anticipated.getLabelTmpl());
 		if (anticipated.getLabelAutoPrintModeToUse() != null) {
 			result.setLabelAutoPrintMode(anticipated.getLabelAutoPrintModeToUse().name());
 		}
 		result.setReqCode(anticipated.getCode());
+
+		if (anticipated.getDefaultCustomFieldValues() != null && !anticipated.getDefaultCustomFieldValues().isEmpty()) {
+			Long cpId = anticipated.getCollectionProtocol().getId();
+			DeObject extn = DeObject.fromValueMap(cpId, Specimen.EXTN, anticipated.getDefaultCustomFieldValues());
+			result.setExtensionDetail(ExtensionDetail.from(extn, false, true));
+		}
+
 		return result;		
 	}
 
@@ -461,27 +537,58 @@ public class SpecimenDetail extends SpecimenInfo {
 			boolean partial,
 			boolean excludePhi,
 			boolean excludeChildren) {
+
+		if (visit != null && visit.getCpEvent() != null && visit.getCollectionProtocol().isKitLabelsEnabled()) {
+			if (visit.getKitLabels() == null) {
+				DaoFactory daoFactory = OpenSpecimenAppCtxProvider.getBean("biospecimenDaoFactory");
+				visit.setKitLabels(daoFactory.getSpecimenDao().getKitLabels(visit));
+			}
+		}
+
 		List<SpecimenDetail> result = Utility.stream(specimens)
 			.map(s -> SpecimenDetail.from(s, partial, excludePhi, excludeChildren))
 			.collect(Collectors.toList());
 
-		merge(visit, anticipated, result, null, getReqSpecimenMap(result));
+		merge(visit, anticipated, result, null, getReqSpecimenMap(result), excludeChildren);
 		SpecimenDetail.sort(result);
+
+		if (visit != null && visit.getKitLabels() != null) {
+			List<SpecimenDetail> workingList = new ArrayList<>(result);
+			while (!workingList.isEmpty()) {
+				SpecimenDetail spmn = workingList.remove(0);
+				if (StringUtils.isNotBlank(spmn.getKitLabel()) || spmn.getReqId() == null) {
+					continue;
+				}
+
+				if (visit.getKitLabels() != null) {
+					Map<String, String> kit = visit.getKitLabels().get(spmn.getReqId());
+					if (kit != null) {
+						spmn.setKitLabel(kit.get("label"));
+						spmn.setKitBarcode(kit.get("barcode"));
+					}
+				}
+
+				if (spmn.getChildren() != null) {
+					workingList.addAll(0, spmn.getChildren());
+				}
+			}
+		}
+
 		return result;
 	}
 
 	private static Map<Long, SpecimenDetail> getReqSpecimenMap(List<SpecimenDetail> specimens) {
-		Map<Long, SpecimenDetail> reqSpecimenMap = new HashMap<Long, SpecimenDetail>();
-						
-		List<SpecimenDetail> remaining = new ArrayList<SpecimenDetail>();
-		remaining.addAll(specimens);
-		
+		Map<Long, SpecimenDetail> reqSpecimenMap = new HashMap<>();
+
+		List<SpecimenDetail> remaining = new ArrayList<>(specimens);
 		while (!remaining.isEmpty()) {
 			SpecimenDetail specimen = remaining.remove(0);
 			Long srId = (specimen.getReqId() == null) ? -1 : specimen.getReqId();
 			reqSpecimenMap.put(srId, specimen);
-			
-			remaining.addAll(specimen.getChildren());
+
+			if (specimen.getChildren() != null) {
+				remaining.addAll(specimen.getChildren());
+			}
 		}
 		
 		return reqSpecimenMap;
@@ -492,14 +599,19 @@ public class SpecimenDetail extends SpecimenInfo {
 			Collection<SpecimenRequirement> anticipatedSpecimens, 
 			List<SpecimenDetail> result, 
 			SpecimenDetail currentParent,
-			Map<Long, SpecimenDetail> reqSpecimenMap) {
+			Map<Long, SpecimenDetail> reqSpecimenMap,
+			boolean excludeChildren) {
 		
 		for (SpecimenRequirement anticipated : anticipatedSpecimens) {
 			SpecimenDetail specimen = reqSpecimenMap.get(anticipated.getId());
+			if (specimen != null && excludeChildren) {
+				continue;
+			}
+
 			if (specimen != null) {
-				merge(visit, anticipated.getChildSpecimenRequirements(), result, specimen, reqSpecimenMap);
+				merge(visit, anticipated.getChildSpecimenRequirements(), result, specimen, reqSpecimenMap, excludeChildren);
 			} else if (!anticipated.isClosed()) {
-				specimen = SpecimenDetail.from(anticipated);
+				specimen = SpecimenDetail.from(anticipated, excludeChildren);
 				setVisitDetails(visit, specimen);
 
 				if (currentParent == null) {
@@ -517,16 +629,19 @@ public class SpecimenDetail extends SpecimenInfo {
 			return;
 		}
 
+		specimen.setCprId(visit.getRegistration().getId());
 		specimen.setVisitId(visit.getId());
 		specimen.setVisitName(visit.getName());
+		specimen.setVisitStatus(visit.getStatus());
 		specimen.setSprNo(visit.getSurgicalPathologyNumber());
 		specimen.setVisitDate(visit.getVisitDate());
 		Utility.nullSafeStream(specimen.getChildren()).forEach(child -> setVisitDetails(visit, child));
 	}
 
-	private static List<SpecimenDetail> fromAnticipated(Collection<SpecimenRequirement> anticipatedSpecimens) {
+	private static List<SpecimenDetail> fromAnticipated(Collection<SpecimenRequirement> anticipatedSpecimens, boolean excludeChildren) {
 		return Utility.nullSafeStream(anticipatedSpecimens)
 			.filter(anticipated -> !anticipated.isClosed())
-			.map(SpecimenDetail::from).collect(Collectors.toList());
+			.map(s -> SpecimenDetail.from(s, excludeChildren))
+			.collect(Collectors.toList());
 	}
 }

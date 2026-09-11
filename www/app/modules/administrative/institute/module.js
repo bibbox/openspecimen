@@ -11,8 +11,10 @@ angular.module('os.administrative.institute',
     $stateProvider
       .state('institute-list', {
         url: '/institutes?filters',
-        templateUrl: 'modules/administrative/institute/list.html',
-        controller: 'InstituteListCtrl',
+        template: '<div></div>',
+        controller: function($state, VueApp) {
+          VueApp.setVueView('institutes/-1');
+        },
         parent: 'signed-in'
       })
       .state('institute-addedit', {
@@ -39,7 +41,7 @@ angular.module('os.administrative.institute',
               breadcrumbs: [{state: 'institute-list', title: 'institute.list'}],
               objectType: 'institute',
               title: 'institute.bulk_import',
-              onSuccess: {state: 'institute-list'}
+              onSuccess: {state: 'institute-import-jobs'}
             };
           }
         },
@@ -62,13 +64,10 @@ angular.module('os.administrative.institute',
       })
       .state('institute-detail', {
         url: '/institutes/:instituteId',
-        templateUrl: 'modules/administrative/institute/detail.html',
-        resolve: {
-          institute: function($stateParams, Institute) {
-            return Institute.getById($stateParams.instituteId);
-          }
+        template: '<div>New UI</div>',
+        controller: function($stateParams, VueApp) {
+          VueApp.setVueView('institutes/' + $stateParams.instituteId + '/detail/overview');
         },
-        controller: 'InstituteDetailCtrl',
         parent: 'signed-in'
       })
       .state('institute-detail.overview', {

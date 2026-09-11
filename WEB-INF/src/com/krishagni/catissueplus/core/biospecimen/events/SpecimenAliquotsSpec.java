@@ -2,14 +2,21 @@ package com.krishagni.catissueplus.core.biospecimen.events;
 
 import java.math.BigDecimal;
 import java.util.Date;
+import java.util.List;
 
+import com.krishagni.catissueplus.core.administrative.events.StorageLocationSummary;
+import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
 import com.krishagni.catissueplus.core.common.events.UserSummary;
 import com.krishagni.catissueplus.core.de.events.ExtensionDetail;
 
 public class SpecimenAliquotsSpec {
+	private Long id; // workflow support
+
 	private Long parentId;
 	
 	private String parentLabel;
+
+	private String derivedReqCode;
 
 	private String cpShortTitle;
 	
@@ -41,7 +48,9 @@ public class SpecimenAliquotsSpec {
 
 	private String positionY;
 
-	private int position;
+	private Integer position;
+
+	private List<StorageLocationSummary> locations;
 
 	private Integer freezeThawCycles;
 
@@ -51,9 +60,31 @@ public class SpecimenAliquotsSpec {
 
 	private Boolean createDerived;
 
+	private Boolean keepDerivedOpen;
+
+	private Boolean useExistingDerived;
+
 	private Boolean printLabel;
 
+	private String comments;
+
 	private ExtensionDetail extensionDetail;
+
+	private boolean linkToReqs;
+
+	private String status;
+
+	private List<Long> reqIds;
+
+	private List<Long> ids;
+
+	public Long getId() {
+		return id;
+	}
+
+	public void setId(Long id) {
+		this.id = id;
+	}
 
 	public Long getParentId() {
 		return parentId;
@@ -69,6 +100,14 @@ public class SpecimenAliquotsSpec {
 
 	public void setParentLabel(String parentLabel) {
 		this.parentLabel = parentLabel;
+	}
+
+	public String getDerivedReqCode() {
+		return derivedReqCode;
+	}
+
+	public void setDerivedReqCode(String derivedReqCode) {
+		this.derivedReqCode = derivedReqCode;
 	}
 
 	public String getCpShortTitle() {
@@ -191,12 +230,20 @@ public class SpecimenAliquotsSpec {
 		this.positionY = positionY;
 	}
 
-	public int getPosition() {
+	public Integer getPosition() {
 		return position;
 	}
 
-	public void setPosition(int position) {
+	public void setPosition(Integer position) {
 		this.position = position;
+	}
+
+	public List<StorageLocationSummary> getLocations() {
+		return locations;
+	}
+
+	public void setLocations(List<StorageLocationSummary> locations) {
+		this.locations = locations;
 	}
 
 	public Integer getFreezeThawCycles() {
@@ -237,6 +284,34 @@ public class SpecimenAliquotsSpec {
 
 	public boolean createDerived() { return createDerived != null && createDerived; }
 
+	public Boolean getKeepDerivedOpen() {
+		return keepDerivedOpen;
+	}
+
+	public void setKeepDerivedOpen(Boolean keepDerivedOpen) {
+		this.keepDerivedOpen = keepDerivedOpen;
+	}
+
+	public boolean keepDerivedOpen() {
+		if (Specimen.PENDING.equals(getStatus())) {
+			return true;
+		}
+
+		return keepDerivedOpen != null && keepDerivedOpen;
+	}
+
+	public Boolean getUseExistingDerived() {
+		return useExistingDerived;
+	}
+
+	public void setUseExistingDerived(Boolean useExistingDerived) {
+		this.useExistingDerived = useExistingDerived;
+	}
+
+	public boolean useExistingDerived() {
+		return useExistingDerived != null && useExistingDerived;
+	}
+
 	public Boolean getPrintLabel() {
 		return printLabel;
 	}
@@ -247,6 +322,14 @@ public class SpecimenAliquotsSpec {
 
 	public boolean printLabel() { return printLabel != null && printLabel; }
 
+	public String getComments() {
+		return comments;
+	}
+
+	public void setComments(String comments) {
+		this.comments = comments;
+	}
+
 	public ExtensionDetail getExtensionDetail() {
 		return extensionDetail;
 	}
@@ -254,5 +337,36 @@ public class SpecimenAliquotsSpec {
 	public void setExtensionDetail(ExtensionDetail extensionDetail) {
 		this.extensionDetail = extensionDetail;
 	}
-	
+
+	public boolean isLinkToReqs() {
+		return linkToReqs;
+	}
+
+	public void setLinkToReqs(boolean linkToReqs) {
+		this.linkToReqs = linkToReqs;
+	}
+
+	public String getStatus() {
+		return status;
+	}
+
+	public void setStatus(String status) {
+		this.status = status;
+	}
+
+	public List<Long> getReqIds() {
+		return reqIds;
+	}
+
+	public void setReqIds(List<Long> reqIds) {
+		this.reqIds = reqIds;
+	}
+
+	public List<Long> getIds() {
+		return ids;
+	}
+
+	public void setIds(List<Long> ids) {
+		this.ids = ids;
+	}
 }

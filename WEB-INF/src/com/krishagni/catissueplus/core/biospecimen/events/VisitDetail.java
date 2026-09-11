@@ -5,15 +5,17 @@ import java.io.File;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
-import org.codehaus.jackson.annotate.JsonIgnore;
-import org.codehaus.jackson.map.annotate.JsonSerialize;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
+import com.krishagni.catissueplus.core.administrative.domain.PermissibleValue;
+import com.krishagni.catissueplus.core.administrative.events.PermissibleValueDetails;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolEvent;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolRegistration;
 import com.krishagni.catissueplus.core.biospecimen.domain.Visit;
@@ -24,19 +26,18 @@ import com.krishagni.catissueplus.core.common.events.UserSummary;
 import com.krishagni.catissueplus.core.common.util.Utility;
 import com.krishagni.catissueplus.core.de.events.ExtensionDetail;
 
-
-@JsonSerialize(include= JsonSerialize.Inclusion.NON_NULL)
+@JsonInclude(JsonInclude.Include.NON_NULL)
 @ListenAttributeChanges
 public class VisitDetail extends VisitSummary {
 	private Long cprId;
 
-	private String ppid;
-	
 	private String cpTitle;
 
 	private String cpShortTitle;
 
 	private Set<String> clinicalDiagnoses;
+
+	private List<PermissibleValueDetails> diagnosisList;
 	
 	private String clinicalStatus;
 
@@ -67,6 +68,8 @@ public class VisitDetail extends VisitSummary {
 	//
 	private boolean forceDelete;
 
+	private boolean lookupVisitsByName;
+
 	@JsonIgnore
 	File sprFile;
 
@@ -76,14 +79,6 @@ public class VisitDetail extends VisitSummary {
 
 	public void setCprId(Long cprId) {
 		this.cprId = cprId;
-	}
-
-	public String getPpid() {
-		return ppid;
-	}
-
-	public void setPpid(String ppid) {
-		this.ppid = ppid;
 	}
 
 	public String getCpTitle() {
@@ -108,6 +103,14 @@ public class VisitDetail extends VisitSummary {
 
 	public void setClinicalDiagnoses(Set<String> clinicalDiagnoses) {
 		this.clinicalDiagnoses = clinicalDiagnoses;
+	}
+
+	public List<PermissibleValueDetails> getDiagnosisList() {
+		return diagnosisList;
+	}
+
+	public void setDiagnosisList(List<PermissibleValueDetails> diagnosisList) {
+		this.diagnosisList = diagnosisList;
 	}
 
 	public String getClinicalStatus() {
@@ -214,12 +217,45 @@ public class VisitDetail extends VisitSummary {
 		this.forceDelete = forceDelete;
 	}
 
+	@JsonIgnore
+	public boolean isLookupVisitsByName() {
+		return lookupVisitsByName;
+	}
+
+	@JsonProperty
+	public void setLookupVisitsByName(boolean lookupVisitsByName) {
+		this.lookupVisitsByName = lookupVisitsByName;
+	}
+
 	public File getSprFile() {
 		return sprFile;
 	}
 
 	public void setSprFile(File sprFile) {
 		this.sprFile = sprFile;
+	}
+
+	public String getDescription() {
+		String result = "";
+		if (StringUtils.isBlank(getEventLabel())) {
+			result = "Unplanned Visit";
+		} else {
+			if (getEventPoint() != null) {
+				result += (getEventPoint() < 0 ? "-" : "") + "T" + Math.abs(getEventPoint());
+				result += (getEventPointUnit() != null ? getEventPointUnit().name().charAt(0) : "UNK") + ": ";
+			}
+
+			result += getEventLabel();
+			if (StringUtils.isNotBlank(getEventCode())) {
+				result += " (" + getEventCode() + ")";
+			}
+		}
+
+		if (getVisitDate() != null) {
+			result += " / " + Utility.getDateString(getVisitDate());
+		}
+
+		return result;
 	}
 
 	public static VisitDetail from(Visit visit) {
@@ -229,8 +265,9 @@ public class VisitDetail extends VisitSummary {
 	public static VisitDetail from(Visit visit, boolean partial, boolean excludePhi) {
 		VisitDetail detail = new VisitDetail();
 		detail.setActivityStatus(visit.getActivityStatus());
-		detail.setClinicalDiagnoses(new HashSet<>(visit.getClinicalDiagnoses()));
-		detail.setClinicalStatus(visit.getClinicalStatus());
+		detail.setClinicalDiagnoses(PermissibleValue.toValueSet(visit.getClinicalDiagnoses()));
+		detail.setDiagnosisList(PermissibleValueDetails.from(visit.getClinicalDiagnoses()));
+		detail.setClinicalStatus(PermissibleValue.getValue(visit.getClinicalStatus()));
 		detail.setStatus(visit.getStatus());
 		detail.setComments(visit.getComments());
 		detail.setId(visit.getId());
@@ -238,8 +275,8 @@ public class VisitDetail extends VisitSummary {
 		detail.setSprName(visit.getSprName());
 		detail.setSprLocked(visit.isSprLocked());
 		detail.setVisitDate(visit.getVisitDate());
-		detail.setMissedReason(visit.getMissedReason());
-		detail.setCohort(visit.getCohort());
+		detail.setMissedReason(PermissibleValue.getValue(visit.getMissedReason()));
+		detail.setCohort(PermissibleValue.getValue(visit.getCohort()));
 
 		if (excludePhi && StringUtils.isNotBlank(visit.getSurgicalPathologyNumber())) {
 			detail.setSurgicalPathologyNumber("###");
@@ -265,6 +302,7 @@ public class VisitDetail extends VisitSummary {
 		if (!visit.isUnplanned()) {
 			CollectionProtocolEvent cpe = visit.getCpEvent();
 			detail.setEventId(cpe.getId());
+			detail.setEventCode(cpe.getCode());
 			detail.setEventLabel(cpe.getEventLabel());
 			detail.setEventPoint(cpe.getEventPoint());
 			detail.setEventPointUnit(cpe.getEventPointUnit());
@@ -283,6 +321,7 @@ public class VisitDetail extends VisitSummary {
 	public static VisitDetail from(CollectionProtocolEvent event) {
 		VisitDetail detail = new VisitDetail();
 		detail.setEventId(event.getId());
+		detail.setEventCode(event.getCode());
 		detail.setEventLabel(event.getEventLabel());
 		detail.setEventPoint(event.getEventPoint());
 		detail.setEventPointUnit(event.getEventPointUnit());
@@ -291,10 +330,11 @@ public class VisitDetail extends VisitSummary {
 		detail.setCpTitle(event.getCollectionProtocol().getTitle());
 		detail.setCode(event.getCode());
 		detail.setSite(event.getDefaultSite() != null ? event.getDefaultSite().getName() : null);
-		detail.setClinicalStatus(event.getClinicalStatus());
+		detail.setClinicalStatus(PermissibleValue.getValue(event.getClinicalStatus()));
 
-		if (StringUtils.isNotBlank(event.getClinicalDiagnosis())) {
-			detail.setClinicalDiagnoses(Collections.singleton(event.getClinicalDiagnosis()));
+		if (event.getClinicalDiagnosis() != null) {
+			detail.setClinicalDiagnoses(PermissibleValue.toValueSet(Collections.singleton(event.getClinicalDiagnosis())));
+			detail.setDiagnosisList(PermissibleValueDetails.from(Collections.singleton(event.getClinicalDiagnosis())));
 		}
 
 		return detail;
@@ -314,7 +354,7 @@ public class VisitDetail extends VisitSummary {
 			}
 
 			Integer interval = Utility.getNoOfDays(visit.getEventPoint(), visit.getEventPointUnit());
-			if (interval < minEventPointInDays) {
+			if (interval != null && interval < minEventPointInDays) {
 				minEventPoint = visit.getEventPoint();
 				minEventPointInDays = interval;
 				minEventPointUnit = visit.getEventPointUnit();

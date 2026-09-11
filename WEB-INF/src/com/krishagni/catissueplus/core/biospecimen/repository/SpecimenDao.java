@@ -1,12 +1,16 @@
 
 package com.krishagni.catissueplus.core.biospecimen.repository;
 
+import java.math.BigDecimal;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import com.krishagni.catissueplus.core.biospecimen.domain.LabSpecimenService;
 import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
+import com.krishagni.catissueplus.core.biospecimen.domain.SpecimenPooledEvent;
+import com.krishagni.catissueplus.core.biospecimen.domain.SpecimenRequirement;
 import com.krishagni.catissueplus.core.biospecimen.domain.Visit;
 import com.krishagni.catissueplus.core.common.Pair;
 import com.krishagni.catissueplus.core.common.access.SiteCpPair;
@@ -18,10 +22,16 @@ public interface SpecimenDao extends Dao<Specimen> {
 	Integer getSpecimensCount(SpecimenListCriteria crit);
 
 	List<Long> getSpecimenIds(SpecimenListCriteria crit);
+
+	Long getMaxSpecimenId(SpecimenListCriteria crit);
 	
 	Specimen getByLabel(String label);
 
 	Specimen getByLabelAndCp(String cpShortTitle, String label);
+
+	Specimen getByAdditionalLabel(String label);
+
+	Specimen getByAdditionalLabelAndCp(String cpShortTitle, String label);
 
 	Specimen getByBarcode(String barcode);
 
@@ -62,4 +72,38 @@ public interface SpecimenDao extends Dao<Specimen> {
 	Map<Long, Long> getSpecimenStorageSite(Set<Long> specimenIds);
 
 	List<String> getNonCompliantSpecimens(SpecimenListCriteria crit);
+
+	Map<String, Object> getDeletedSpecimenInfo(Long specimenId);
+
+	int activateSpecimen(Long specimenId, boolean includeChildren);
+
+	void savedPooledEvent(SpecimenPooledEvent event);
+
+	List<Map<String, String>> getKitLabels(Visit visit, SpecimenRequirement sr);
+
+	Map<Long, Map<String, String>> getKitLabels(Visit visit);
+
+	List<Specimen> getDescendantSpecimens(List<Long> ancestorIds, String labelField, List<String> labels, String lineage, String status);
+
+	LabSpecimenService getLabSpecimenService(Long id);
+
+	List<LabSpecimenService> getLabSpecimenServices(Long specimenId);
+
+	List<LabSpecimenService> getLabSpecimenServices(Collection<Long> specimenIds);
+
+	Map<Long, Pair<String, BigDecimal>> getLabSpecimenServicesRate(Long specimenId);
+
+	Map<Long, Pair<String, BigDecimal>> getLabSpecimenServicesRate(List<Long> specimenIds);
+
+	void save(LabSpecimenService svc);
+
+	void delete(LabSpecimenService svc);
+
+	void deleteServices(Long specimenId);
+
+	Long getCustomFieldRecordId(Long specimenId, Long formId, Long formCtxtId);
+
+	Map<Long, Long> getCustomFieldRecordIds(Collection<Long> specimenIds, Long formId, Long formCtxtId);
+
+	int insertCustomFieldRecordId(Long specimenId, Long formId, Long formCtxtId, Long recordId);
 }

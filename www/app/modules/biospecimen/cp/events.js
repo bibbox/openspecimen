@@ -1,8 +1,8 @@
 
 angular.module('os.biospecimen.cp.events', ['os.biospecimen.models'])
   .controller('CpEventsCtrl', function(
-     $scope, $state, $stateParams,
-     cp, events, Alerts, CollectionProtocolEvent, PvManager, Util) {
+     $scope, $state, $stateParams, cp, events, mrnAccessRestriction,
+     Alerts, CollectionProtocolEvent, PvManager, Util) {
 
     var pvsLoaded = false;
 
@@ -12,6 +12,7 @@ angular.module('os.biospecimen.cp.events', ['os.biospecimen.models'])
       $scope.cp = cp;
       $scope.events = events;
       $scope.mode = undefined;
+      $scope.mrnAccessRestriction = mrnAccessRestriction;
          
       $scope.event = {};
       $scope.selected = {};
@@ -23,7 +24,6 @@ angular.module('os.biospecimen.cp.events', ['os.biospecimen.models'])
       }
 
       $scope.eventPointUnits     = PvManager.getPvs('interval-units');
-      $scope.visitNamePrintModes = PvManager.getPvs('visit-name-print-modes');
       pvsLoaded = true;
     }
 
@@ -80,6 +80,7 @@ angular.module('os.biospecimen.cp.events', ['os.biospecimen.models'])
           $scope.event = {};
           $scope.mode = undefined;
           loadSpecimenRequirements(result);
+          cp.draftMode = true;
         }
       );
     };
@@ -95,6 +96,7 @@ angular.module('os.biospecimen.cp.events', ['os.biospecimen.models'])
           }
           $scope.event = {};
           loadSpecimenRequirements(result);
+          cp.draftMode = true;
         }
       );
     };
@@ -111,6 +113,8 @@ angular.module('os.biospecimen.cp.events', ['os.biospecimen.models'])
               if (events.length > 0) {
                 $scope.selectEvent(events[0]);
               }
+
+              cp.draftMode = true;
             }
           );
         }
@@ -129,10 +133,24 @@ angular.module('os.biospecimen.cp.events', ['os.biospecimen.models'])
             function(closedEvt) {
               angular.extend(evt, closedEvt);
               loadSpecimenRequirements(evt, true);
+              cp.draftMode = true;
             }
           );
         }
       });
+    }
+
+    $scope.reopenEvent = function(evt) {
+      var toOpen = angular.copy(evt);
+      toOpen.activityStatus = 'Active';
+
+      toOpen.$saveOrUpdate().then(
+        function(openedEvt) {
+          angular.extend(evt, openedEvt);
+          loadSpecimenRequirements(evt, true);
+          cp.draftMode = true;
+        }
+      );
     }
 
     init();

@@ -10,8 +10,12 @@ public class RegistrationQueryCriteria {
 	private Long cprId;  
 	
 	private Long cpId;
+
+	private String cpShortTitle;
 	
 	private String ppid;
+
+	private String empi;
 
 	public Long getCprId() {
 		return cprId;
@@ -29,11 +33,27 @@ public class RegistrationQueryCriteria {
 		this.cpId = cpId;
 	}
 
+	public String getCpShortTitle() {
+		return cpShortTitle;
+	}
+
+	public void setCpShortTitle(String cpShortTitle) {
+		this.cpShortTitle = cpShortTitle;
+	}
+
 	public String getPpid() {
 		return ppid;
 	}
 
 	public void setPpid(String ppid) {
 		this.ppid = ppid;
+	}
+
+	public String getEmpi() {
+		return empi;
+	}
+
+	public void setEmpi(String empi) {
+		this.empi = empi;
 	}
 }

@@ -12,19 +12,26 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.hibernate.envers.AuditJoinTable;
 import org.hibernate.envers.Audited;
-import org.hibernate.envers.NotAudited;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Configurable;
 
 import com.krishagni.catissueplus.core.administrative.domain.User;
+import com.krishagni.catissueplus.core.administrative.domain.UserGroup;
+import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
 import com.krishagni.catissueplus.core.common.util.Utility;
 
 @Audited
+@Configurable
 public class SpecimenList extends BaseEntity {
 	private static final String ENTITY_NAME = "specimen_list";
 
 	private String name;
 	
 	private User owner;
+
+	private boolean defaultCart;
 
 	private String description;
 
@@ -33,10 +40,23 @@ public class SpecimenList extends BaseEntity {
 	private Date lastUpdatedOn;
 	
 	private Set<User> sharedWith = new HashSet<>();
+
+	private Set<UserGroup> sharedWithGroups = new HashSet<>();
 	
 	private Set<SpecimenListItem> specimens = new HashSet<>();
+
+	private Set<SpecimenListsFolder> folders = new HashSet<>();
 	
 	private Date deletedOn;
+
+	private Boolean sendDigestNotifs;
+
+	private String sourceEntityType;
+
+	private Long sourceEntityId;
+
+	@Autowired
+	private DaoFactory daoFactory;
 
 	public static String getEntityName() {
 		return ENTITY_NAME;
@@ -56,6 +76,14 @@ public class SpecimenList extends BaseEntity {
 
 	public void setOwner(User owner) {
 		this.owner = owner;
+	}
+
+	public boolean isDefaultCart() {
+		return defaultCart;
+	}
+
+	public void setDefaultCart(boolean defaultCart) {
+		this.defaultCart = defaultCart;
 	}
 
 	public String getDescription() {
@@ -82,7 +110,6 @@ public class SpecimenList extends BaseEntity {
 		this.lastUpdatedOn = lastUpdatedOn;
 	}
 
-	@NotAudited
 	public Set<User> getSharedWith() {
 		return sharedWith;
 	}
@@ -91,7 +118,21 @@ public class SpecimenList extends BaseEntity {
 		this.sharedWith = sharedWith;
 	}
 
-	@NotAudited
+	@AuditJoinTable(name = "OS_SPMN_LIST_SHARED_GRPS_AUD")
+	public Set<UserGroup> getSharedWithGroups() {
+		return sharedWithGroups;
+	}
+
+	public void setSharedWithGroups(Set<UserGroup> sharedWithGroups) {
+		this.sharedWithGroups = sharedWithGroups;
+	}
+
+	public Set<User> getAllSharedUsers() {
+		Set<User> users = new HashSet<>(getSharedWith());
+		getSharedWithGroups().forEach(g -> users.addAll(g.getUsers()));
+		return users;
+	}
+
 	public Set<SpecimenListItem> getSpecimens() {
 		return specimens;
 	}
@@ -99,13 +140,45 @@ public class SpecimenList extends BaseEntity {
 	public void setSpecimens(Set<SpecimenListItem> specimens) {
 		this.specimens = specimens;
 	}
-	
+
+	public Set<SpecimenListsFolder> getFolders() {
+		return folders;
+	}
+
+	public void setFolders(Set<SpecimenListsFolder> folders) {
+		this.folders = folders;
+	}
+
 	public Date getDeletedOn() {
 		return deletedOn;
 	}
 
 	public void setDeletedOn(Date deletedOn) {
 		this.deletedOn = deletedOn;
+	}
+
+	public Boolean getSendDigestNotifs() {
+		return sendDigestNotifs;
+	}
+
+	public void setSendDigestNotifs(Boolean sendDigestNotifs) {
+		this.sendDigestNotifs = sendDigestNotifs;
+	}
+
+	public String getSourceEntityType() {
+		return sourceEntityType;
+	}
+
+	public void setSourceEntityType(String sourceEntityType) {
+		this.sourceEntityType = sourceEntityType;
+	}
+
+	public Long getSourceEntityId() {
+		return sourceEntityId;
+	}
+
+	public void setSourceEntityId(Long sourceEntityId) {
+		this.sourceEntityId = sourceEntityId;
 	}
 
 	public void addSharedUsers(List<User> users) {
@@ -120,37 +193,34 @@ public class SpecimenList extends BaseEntity {
 	
 	public void updateSharedUsers(Collection<User> users) {
 		sharedWith.retainAll(users);
-
-		for (User user : users) {
-			if (!sharedWith.contains(user)) {
-				sharedWith.add(user);
-			}
-		}
-
+		sharedWith.addAll(users);
 		setLastUpdatedOn(Calendar.getInstance().getTime());
 	}
-		
+
+	public void updateSharedGroups(Collection<UserGroup> groups) {
+		sharedWithGroups.retainAll(groups);
+		sharedWithGroups.addAll(groups);
+		setLastUpdatedOn(Calendar.getInstance().getTime());
+	}
+
 	public boolean canUserAccess(Long userId) {
 		if (owner != null && userId.equals(owner.getId())) {
 			return true;
 		}
-		
-		boolean shared = false;
-		for (User user : sharedWith) {
-			if (user.getId().equals(userId)) {
-				shared = true;
-				break;
-			}			
-		}
-		
-		return shared;
-	}	
+
+		return daoFactory.getSpecimenListDao().isListSharedWithUser(getId(), userId);
+	}
 	
 	public void update(SpecimenList specimenList) {
-		setName(specimenList.getName());
+		if (!isDefaultCart()) {
+			setName(specimenList.getName());
+		}
+
 		setDescription(specimenList.getDescription());
 		updateSharedUsers(specimenList.getSharedWith());
+		updateSharedGroups(specimenList.getSharedWithGroups());
 		setLastUpdatedOn(Calendar.getInstance().getTime());
+		setSendDigestNotifs(specimenList.getSendDigestNotifs());
 	}
 
 	public void delete() {
@@ -163,20 +233,12 @@ public class SpecimenList extends BaseEntity {
 		return specimens.size();
 	}
 
-	public boolean isDefaultList(User user) {
-		return getDefaultListName(user).equals(getName());
-	}
-
-	public boolean isDefaultList() {
-		return isDefaultList(getOwner());
+	public String getDisplayName() {
+		return getName();
 	}
 
 	public static String getDefaultListName(User user) {
-		return getDefaultListName(user.getId());
-	}
-
-	public static String getDefaultListName(Long userId) {
-		return String.format("$$$$user_%d", userId);
+		return user.formattedName() + "'s Default Cart (" + user.getId() + ")";
 	}
 
 	public static List<Specimen> groupByAncestors(Collection<Specimen> spmns) {

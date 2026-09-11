@@ -4,8 +4,9 @@ import static com.krishagni.catissueplus.core.common.PvAttributes.CLINICAL_DIAG;
 import static com.krishagni.catissueplus.core.common.PvAttributes.CLINICAL_STATUS;
 import static com.krishagni.catissueplus.core.common.service.PvValidator.isValid;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 
+import com.krishagni.catissueplus.core.administrative.domain.PermissibleValue;
 import com.krishagni.catissueplus.core.administrative.domain.Site;
 import com.krishagni.catissueplus.core.administrative.domain.factory.SiteErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
@@ -43,6 +44,7 @@ public class CpeFactoryImpl implements CpeFactory {
 		setEventLabel(detail, cpe, ose);
 		setEventPoint(detail, cpe, ose);
 		setEventPointUnit(detail, cpe, ose);
+		setSortOrder(detail, cpe, ose);
 		setCode(detail, cpe, ose);
 		setCp(detail, cpe, ose);
 		setDefaultSite(detail, cpe, ose);
@@ -75,6 +77,18 @@ public class CpeFactoryImpl implements CpeFactory {
 			setEventPointUnit(detail, cpe, ose);
 		} else {
 			cpe.setEventPointUnit(existing.getEventPointUnit());
+		}
+
+		if (cpe.getEventPoint() != null && cpe.getEventPointUnit() == null) {
+			// scenario: the source has no event point and unit
+			// this check ensures the copy has both event point and unit
+			ose.addError(CpeErrorCode.POINT_UNIT_REQUIRED);
+		}
+
+		if (detail.getSortOrder() != null) {
+			setSortOrder(detail, cpe, ose);
+		} else {
+			cpe.setSortOrder(existing.getSortOrder());
 		}
 		
 		cpe.setCollectionProtocol(existing.getCollectionProtocol());
@@ -151,6 +165,10 @@ public class CpeFactoryImpl implements CpeFactory {
 		}
 	}
 
+	private void setSortOrder(CollectionProtocolEventDetail detail, CollectionProtocolEvent cpe, OpenSpecimenException ose) {
+		cpe.setSortOrder(detail.getSortOrder());
+	}
+
 
 	public void setCode(CollectionProtocolEventDetail detail, CollectionProtocolEvent cpe, OpenSpecimenException ose) {
 		if (StringUtils.isNotBlank(detail.getCode())) {
@@ -207,13 +225,14 @@ public class CpeFactoryImpl implements CpeFactory {
 		if (StringUtils.isBlank(clinicalDiagnosis)) {
 			return;
 		}
-		
-		if (!isValid(CLINICAL_DIAG, clinicalDiagnosis)) {
+
+		PermissibleValue cdPv = daoFactory.getPermissibleValueDao().getPv(CLINICAL_DIAG, clinicalDiagnosis);
+		if (cdPv == null) {
 			ose.addError(CpeErrorCode.INVALID_CLINICAL_DIAGNOSIS, clinicalDiagnosis);
 			return;
 		}
 		
-		cpe.setClinicalDiagnosis(clinicalDiagnosis);
+		cpe.setClinicalDiagnosis(cdPv);
 	}
 	
 	public void setClinicalStatus(CollectionProtocolEventDetail detail, CollectionProtocolEvent cpe, OpenSpecimenException ose) {
@@ -221,13 +240,14 @@ public class CpeFactoryImpl implements CpeFactory {
 		if (StringUtils.isBlank(clinicalStatus)) {
 			return;
 		}
-		
-		if (!isValid(CLINICAL_STATUS, clinicalStatus)) {
+
+		PermissibleValue statusPv = daoFactory.getPermissibleValueDao().getPv(CLINICAL_STATUS, clinicalStatus);
+		if (statusPv == null) {
 			ose.addError(CpeErrorCode.INVALID_CLINICAL_STATUS, clinicalStatus);
 			return;
 		}
 		
-		cpe.setClinicalStatus(clinicalStatus);
+		cpe.setClinicalStatus(statusPv);
 	}
 
 	private void setVisitNamePrintMode(CollectionProtocolEventDetail detail, CollectionProtocolEvent cpe, OpenSpecimenException ose) {
@@ -235,12 +255,17 @@ public class CpeFactoryImpl implements CpeFactory {
 			return;
 		}
 
-		VisitNamePrintMode printMode = null;
+		VisitNamePrintMode printMode;
 		try {
 			printMode = VisitNamePrintMode.valueOf(detail.getVisitNamePrintMode());
 		} catch (IllegalArgumentException iae) {
-			ose.addError(CpErrorCode.INVALID_VISIT_NAME_PRINT_MODE, detail.getVisitNamePrintMode());
-			return;
+			String mode = String.join("_", detail.getVisitNamePrintMode().split("\\s+")).toUpperCase();
+			try {
+				printMode = VisitNamePrintMode.valueOf(mode);
+			} catch (IllegalArgumentException iae1) {
+				ose.addError(CpErrorCode.INVALID_VISIT_NAME_PRINT_MODE, detail.getVisitNamePrintMode());
+				return;
+			}
 		}
 
 		cpe.setVisitNamePrintMode(printMode);

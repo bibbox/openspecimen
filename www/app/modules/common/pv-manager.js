@@ -68,23 +68,20 @@ angular.module('openspecimen')
       'Closed'
     ];
 
-    var visitNamePrintModes = [
-      {name: 'PRE_PRINT', displayKey:'cp.visit_name_print_modes.PRE_PRINT'},
-      {name: 'ON_COMPLETION', displayKey:'cp.visit_name_print_modes.ON_COMPLETION'},
-      {name: 'NONE', displayKey:'cp.visit_name_print_modes.NONE'}
-    ];
-
     var spmnLabelPrePrintModes = [
-      {name: 'ON_REGISTRATION', displayKey:'cp.spmn_label_pre_print_modes.ON_REGISTRATION'},
-      {name: 'ON_VISIT', displayKey:'cp.spmn_label_pre_print_modes.ON_VISIT'},
+      {name: 'ON_REGISTRATION', displayKey: 'cp.spmn_label_pre_print_modes.ON_REGISTRATION'},
+      {name: 'ON_VISIT',        displayKey: 'cp.spmn_label_pre_print_modes.ON_VISIT'},
       {name: 'ON_PRIMARY_COLL', displayKey: 'cp.spmn_label_pre_print_modes.ON_PRIMARY_COLL'},
-      {name: 'NONE', displayKey:'cp.spmn_label_pre_print_modes.NONE'}
+      {name: 'ON_PRIMARY_RECV', displayKey: 'cp.spmn_label_pre_print_modes.ON_PRIMARY_RECV'},
+      {name: 'ON_SHIPMENT_RECV',displayKey: 'cp.spmn_label_pre_print_modes.ON_SHIPMENT_RECV'},
+      {name: 'NONE',            displayKey: 'cp.spmn_label_pre_print_modes.NONE'}
     ];
 
     var spmnLabelAutoPrintModes = [
-      {name: 'PRE_PRINT', displayKey:'srs.spmn_label_auto_print_modes.PRE_PRINT'},
-      {name: 'ON_COLLECTION', displayKey:'srs.spmn_label_auto_print_modes.ON_COLLECTION'},
-      {name: 'NONE', displayKey:'srs.spmn_label_auto_print_modes.NONE'}
+      {name: 'PRE_PRINT',     displayKey: 'srs.spmn_label_auto_print_modes.PRE_PRINT'},
+      {name: 'ON_COLLECTION', displayKey: 'srs.spmn_label_auto_print_modes.ON_COLLECTION'},
+      {name: 'ON_RECEIVE',    displayKey: 'srs.spmn_label_auto_print_modes.ON_RECEIVE'},
+      {name: 'NONE',          displayKey: 'srs.spmn_label_auto_print_modes.NONE'}
     ];
 
     var intervalUnits = [
@@ -112,7 +109,6 @@ angular.module('openspecimen')
       'specimen-status': specimenStatuses,
       'container-position-labeling-schemes': positionLabelingSchemes,
       'activity-status': activityStatuses,
-      'visit-name-print-modes': visitNamePrintModes,
       'specimen-label-pre-print-modes': spmnLabelPrePrintModes,
       'specimen-label-auto-print-modes': spmnLabelAutoPrintModes,
       'interval-units': intervalUnits,
@@ -153,7 +149,7 @@ angular.module('openspecimen')
       return pvs.map(function(pv) { return transformfn(pv); });
     };
 
-    function loadPvs(attr, srchTerm, transformFn, incOnlyLeaf) {
+    function loadPvs(attr, srchTerm, transformFn, incOnlyLeaf, allStatuses, opts) {
       var pvId = pvIdMap[attr];
       if (!pvId && pvMap[attr]) {
         return _getPvs(attr);
@@ -173,6 +169,11 @@ angular.module('openspecimen')
         params.searchString = srchTerm
       }
 
+      if (allStatuses) {
+        params.activityStatus = 'all';
+      }
+
+      angular.extend(params, opts || {});
       return $http.get(url, {params: params}).then(
         function(result) {
           return transform(result.data, transformFn, null);

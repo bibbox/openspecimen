@@ -1,26 +1,68 @@
 angular.module('os.administrative.user.addedit', ['os.administrative.models'])
   .controller('UserAddEditCtrl', function(
-    $scope, $rootScope, $state, $stateParams, user, users,
-    User, Institute, AuthDomain, Util) {
+    $scope, $rootScope, $state, $stateParams, user, users, currentUser, editProfile, oldView,
+    User, Institute, AuthDomain, Util, TimeZone, LocationChangeListener, ItemsHolder, VueApp) {
 
     var instituteSites = {}, prevInstitute;
 
     function init() {
+      if (!oldView) {
+        var url = 'user-addedit';
+        if (editProfile) {
+          url = 'user-edit-profile/' + currentUser.id;
+        } else if (+$stateParams.userId > 0) {
+          url += '/' + $stateParams.userId;
+        } else {
+          url += '/-1';
+        }
+
+        if (users && users.length > 0) {
+          ItemsHolder.setItems('users', users);
+        }
+ 
+        VueApp.setVueView(url, {});
+        return;
+      }
+
       prevInstitute = user.instituteName;
 
       $scope.user = user;
       $scope.signedUp = false;
       loadPvs();
+
+      $scope.disabledFields = {fields: {}};
+
+      if (user.$$editProfile && user.type != 'SUPER') {
+        [
+          'firstName', 'lastName', 'emailAddress', 'domainName', 'loginName',
+          'instituteName', 'primarySite', 'type', 'manageForms'
+        ].forEach(function(f) { $scope.disabledFields.fields['user.' + f] = true; });
+      }
     }
 
     function loadPvs() {
       $scope.domains = [];
       AuthDomain.getDomainNames().then(
         function(domains) {
+          if (!currentUser && !ui.os.appProps.localAccountSignups) {
+            domains = domains.filter(function(d) { return d != 'openspecimen'; });
+          }
+
           $scope.domains = domains;
           if (!$scope.user.id && $scope.domains.length == 1) {
             $scope.user.domainName = $scope.domains[0];
           }
+        }
+      );
+
+      if (!currentUser) {
+        return;
+      }
+
+      $scope.timeZones = [];
+      TimeZone.query().then(
+        function(timeZones) {
+          $scope.timeZones = timeZones;
         }
       );
     }
@@ -51,7 +93,12 @@ angular.module('os.administrative.user.addedit', ['os.administrative.models'])
       var user = angular.copy($scope.user);
       user.$saveOrUpdate().then(
         function(savedUser) {
-          $state.go('user-detail.overview', {userId: savedUser.id});
+          if ($scope.user.$$editProfile) {
+            angular.extend(currentUser, savedUser);
+            $state.go('home', {}, {reload: true});
+          } else {
+            $state.go('user-detail.overview', {userId: savedUser.id});
+          }
         }
       );
     }
@@ -60,7 +107,8 @@ angular.module('os.administrative.user.addedit', ['os.administrative.models'])
       var userIds = users.map(function(user) { return user.id; });
       User.bulkUpdate({detail: $scope.user, ids: userIds}).then(
         function(savedUsers) {
-          $state.go('user-list');
+          // $state.go('user-list');
+          $scope.back();
         }
       );
     }
@@ -105,6 +153,7 @@ angular.module('os.administrative.user.addedit', ['os.administrative.models'])
         function(resp) {
           if (resp.status == 'ok') {
             $scope.signedUp = true;
+            $scope.approved = (resp.data.activityStatus == 'Active');
           }
         }
       )

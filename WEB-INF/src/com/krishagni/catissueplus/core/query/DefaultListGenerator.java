@@ -6,9 +6,10 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
-import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.BeanUtils;
@@ -67,6 +68,7 @@ public class DefaultListGenerator implements ListGenerator {
 		op.setFacets(Collections.singletonList(expr));
 		op.setSearchTerm(searchTerm);
 		op.setRestriction(getCriteria(cfg, null));
+		op.setDisableAccessChecks(true);
 
 		ResponseEvent<List<FacetDetail>> resp = querySvc.getFacetValues(new RequestEvent<>(op));
 		resp.throwErrorIfUnsuccessful();
@@ -175,8 +177,7 @@ public class DefaultListGenerator implements ListGenerator {
 			return StringUtils.EMPTY;
 		}
 
-		Map<String, Column> filtersMap = Utility.nullSafeStream(cfg.getFilters())
-			.collect(Collectors.toMap(Column::getExpr, column -> column));
+		Map<String, Column> filtersMap = Utility.toLinkedMap(cfg.getFilters(), Column::getExpr, column -> column);
 
 		List<String> invalidFilters = new ArrayList<>();
 		Map<String, Container> formsCache = new HashMap<>();
@@ -184,8 +185,12 @@ public class DefaultListGenerator implements ListGenerator {
 		for (Column criterion : searchCriteria) {
 			Column criterionCfg = filtersMap.get(criterion.getExpr());
 			if (criterionCfg == null) {
-				invalidFilters.add(criterion.getExpr());
-				continue;
+				if (cfg.getPrimaryColumn() == null || !criterion.getExpr().equals(cfg.getPrimaryColumn().getExpr())) {
+					invalidFilters.add(criterion.getExpr());
+					continue;
+				}
+
+				criterionCfg = cfg.getPrimaryColumn();
 			}
 
 			String criterionAql = getSearchCriterion(criterionCfg, criterion, formsCache);
@@ -200,7 +205,7 @@ public class DefaultListGenerator implements ListGenerator {
 			throw OpenSpecimenException.userError(ListError.INVALID_FILTERS, invalidFilters);
 		}
 
-		return aqls.stream().collect(Collectors.joining(" and "));
+		return String.join(" and ", aqls);
 	}
 
 	private String getSearchCriterion(Column criterionCfg, Column criterion, Map<String, Container> formsCache) {
@@ -233,6 +238,18 @@ public class DefaultListGenerator implements ListGenerator {
 			case DATE:
 			case DATE_INTERVAL:
 				return getRangeAql(criterion.getExpr(), criterion.getValues());
+
+			case BOOLEAN:
+				String inVals = criterion.getValues().stream()
+					.filter(Objects::nonNull)
+					.map(Object::toString)
+					.collect(Collectors.joining(", "));
+
+				if (StringUtils.isBlank(inVals)) {
+					return null;
+				}
+
+				return criterion.getExpr() + " in (" + inVals + ")";
 
 			default:
 				String searchType = criterionCfg.getSearchType();
@@ -357,6 +374,8 @@ public class DefaultListGenerator implements ListGenerator {
 		op.setRunType("Data");
 		op.setDrivingForm(StringUtils.isBlank(drivingForm) ? "Participant" : drivingForm);
 		op.setWideRowMode("OFF");
+		op.setDisableAccessChecks(true);
+		op.setCaseSensitive(Utility.isMySQL());
 
 		RequestEvent<ExecuteQueryEventOp> req = new RequestEvent<>(op);
 		ResponseEvent<QueryExecResult> resp = querySvc.executeQuery(req);
@@ -385,7 +404,9 @@ public class DefaultListGenerator implements ListGenerator {
 		}
 
 		ListDetail listDetail = new ListDetail();
+		listDetail.setIcons(Utility.stream(cfg.getIcons()).collect(Collectors.joining("\n")));
 		listDetail.setColumns(cfg.getColumns());
+		listDetail.setFixedColumns(cfg.getFixedColumns());
 		listDetail.setRows(rows);
 		return listDetail;
 	}

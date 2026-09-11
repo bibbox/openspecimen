@@ -1,24 +1,21 @@
 package com.krishagni.rbac.domain;
 
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 
-public class RoleAccessControl {
-	private Long id;
-	
+import org.hibernate.envers.Audited;
+
+import com.krishagni.catissueplus.core.biospecimen.domain.BaseEntity;
+
+@Audited
+public class RoleAccessControl extends BaseEntity {
 	private Role role;
 	
 	private Resource resource;
 	
-	private Set<ResourceInstanceOp> operations = new HashSet<ResourceInstanceOp>();
-
-	public Long getId() {
-		return id;
-	}
-
-	public void setId(Long id) {
-		this.id = id;
-	}
+	private Set<ResourceInstanceOp> operations = new HashSet<>();
 
 	public Role getRole() {
 		return role;
@@ -42,5 +39,26 @@ public class RoleAccessControl {
 
 	public void setOperations(Set<ResourceInstanceOp> operations) {
 		this.operations = operations;
-	}	
+	}
+
+	public void update(RoleAccessControl other) {
+		Map<Operation, ResourceInstanceOp> existingOpsMap = new HashMap<>();
+		for (ResourceInstanceOp op : getOperations()) {
+			existingOpsMap.put(op.getOperation(), op);
+		}
+
+		Set<ResourceInstanceOp> newOps = new HashSet<>();
+		for (ResourceInstanceOp otherOp : other.getOperations()) {
+			ResourceInstanceOp existingOp = existingOpsMap.remove(otherOp.getOperation());
+			if (existingOp == null) {
+				ResourceInstanceOp newOp = new ResourceInstanceOp();
+				newOp.setAccessControl(this);
+				newOp.setOperation(otherOp.getOperation());
+				newOps.add(newOp);
+			}
+		}
+
+		getOperations().removeAll(existingOpsMap.values());
+		getOperations().addAll(newOps);
+	}
 }

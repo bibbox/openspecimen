@@ -4,6 +4,7 @@ import java.util.Date;
 import java.util.Objects;
 
 import org.hibernate.envers.Audited;
+import org.hibernate.envers.NotAudited;
 import org.springframework.beans.BeanUtils;
 
 import com.krishagni.catissueplus.core.biospecimen.domain.BaseEntity;
@@ -19,6 +20,8 @@ public class StorageContainerPosition extends BaseEntity implements Comparable<S
 	private String posOne;
 	
 	private String posTwo;
+
+	private String formattedPosition;
 	
 	private StorageContainer container;
 	
@@ -31,6 +34,16 @@ public class StorageContainerPosition extends BaseEntity implements Comparable<S
 	private Date reservationTime;
 
 	private Boolean blocked;
+
+	private Specimen checkoutSpecimen;
+
+	private StorageContainer blockedForContainer;
+
+	private User checkoutBy;
+
+	private Date checkoutTime;
+
+	private String checkoutComments;
 
 	private transient boolean supressAccessChecks;
 
@@ -64,6 +77,15 @@ public class StorageContainerPosition extends BaseEntity implements Comparable<S
 
 	public void setPosTwo(String posTwo) {
 		this.posTwo = posTwo;
+	}
+
+	@NotAudited
+	public String getFormattedPosition() {
+		return formattedPosition;
+	}
+
+	public void setFormattedPosition(String formattedPosition) {
+		this.formattedPosition = formattedPosition;
 	}
 
 	public Integer getPosition() {
@@ -126,6 +148,50 @@ public class StorageContainerPosition extends BaseEntity implements Comparable<S
 		return blocked != null && blocked;
 	}
 
+	public Specimen getCheckoutSpecimen() {
+		return checkoutSpecimen;
+	}
+
+	public void setCheckoutSpecimen(Specimen checkoutSpecimen) {
+		this.checkoutSpecimen = checkoutSpecimen;
+	}
+
+	public StorageContainer getBlockedForContainer() {
+		return blockedForContainer;
+	}
+
+	public void setBlockedForContainer(StorageContainer blockedForContainer) {
+		this.blockedForContainer = blockedForContainer;
+	}
+
+	public User getCheckoutBy() {
+		return checkoutBy;
+	}
+
+	public void setCheckoutBy(User checkoutBy) {
+		this.checkoutBy = checkoutBy;
+	}
+
+	public Date getCheckoutTime() {
+		return checkoutTime;
+	}
+
+	public void setCheckoutTime(Date checkoutTime) {
+		this.checkoutTime = checkoutTime;
+	}
+
+	public String getCheckoutComments() {
+		return checkoutComments;
+	}
+
+	public void setCheckoutComments(String checkoutComments) {
+		this.checkoutComments = checkoutComments;
+	}
+
+	public boolean isHoldingLocation() {
+		return getContainer() != null && getContainer().isDistributionContainer();
+	}
+
 	public boolean isSupressAccessChecks() {
 		return supressAccessChecks;
 	}
@@ -154,13 +220,22 @@ public class StorageContainerPosition extends BaseEntity implements Comparable<S
 		// Therefore the hack is to only the new position and not remove it from old
 		// container
 		//
-		
 		boolean isContainerChanged = !getContainer().equals(other.getContainer());
 		BeanUtils.copyProperties(other, this, POS_UPDATE_IGN_PROPS);
+		updateFormattedPosition();
 		
 		if (isContainerChanged) { // The old position is not freed because hibernate deletes it 
 			occupy();
 		}
+	}
+
+	public void updateFormattedPosition() {
+		if (getContainer() == null || getContainer().isDimensionless() || !isSpecified() || getPosTwo() == null || getPosOne() == null) {
+			setFormattedPosition(null);
+			return;
+		}
+
+		setFormattedPosition(getContainer().usesLinearLabelingMode() ? String.valueOf(getPosition()) : (getPosTwo() + ", " + getPosOne()));
 	}
 	
 	public void occupy() {
@@ -169,6 +244,14 @@ public class StorageContainerPosition extends BaseEntity implements Comparable<S
 	
 	public void vacate() {
 		container.removePosition(this);
+		if (getBlockedForContainer() != null) {
+			setBlockedForContainer(null);
+		}
+
+		if (getCheckoutSpecimen() != null) {
+			getCheckoutSpecimen().setCheckoutPosition(null);
+			setCheckoutSpecimen(null);
+		}
 	}
 
 	public boolean equals(String row, String column, String reservationId) {
@@ -202,13 +285,8 @@ public class StorageContainerPosition extends BaseEntity implements Comparable<S
 		}
 
 		switch (getContainer().getPositionLabelingMode()) {
-			case LINEAR:
-				result.append(" (").append(getPosition()).append(")");
-				break;
-
-			case TWO_D:
-				result.append(" (").append(getPosTwo()).append(" x ").append(getPosOne()).append(")");
-				break;
+			case LINEAR -> result.append(" (").append(getPosition()).append(")");
+			case TWO_D -> result.append(" (").append(getPosTwo()).append(" x ").append(getPosOne()).append(")");
 		}
 
 		return result.toString();
@@ -230,11 +308,12 @@ public class StorageContainerPosition extends BaseEntity implements Comparable<S
 				Objects.equals(p1.getPosTwoOrdinal(), p2.getPosTwoOrdinal());
 		}
 	}
-
+	
 	private static final String[] POS_UPDATE_IGN_PROPS = new String[] {
-			"id",
-			"occupyingSpecimen",
-			"occupyingContainer"
+		"id",
+		"occupyingSpecimen",
+		"occupyingContainer",
+		"checkoutSpecimen"
 	};
 
 	private static final String NOT_STORED = "storage_container_not_stored";

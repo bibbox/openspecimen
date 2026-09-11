@@ -7,9 +7,10 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 
+import com.krishagni.catissueplus.core.administrative.domain.PermissibleValue;
 import com.krishagni.catissueplus.core.administrative.domain.Site;
 import com.krishagni.catissueplus.core.administrative.domain.User;
 import com.krishagni.catissueplus.core.common.domain.LabelPrintRule;
@@ -20,9 +21,9 @@ public class SpecimenLabelPrintRule extends LabelPrintRule {
 
 	private Site visitSite;
 
-	private String specimenClass;
+	private List<PermissibleValue> specimenClasses;
 	
-	private String specimenType;
+	private List<PermissibleValue> specimenTypes;
 
 	private String lineage;
 
@@ -47,20 +48,20 @@ public class SpecimenLabelPrintRule extends LabelPrintRule {
 		this.visitSite = visitSite;
 	}
 
-	public String getSpecimenClass() {
-		return specimenClass;
+	public List<PermissibleValue> getSpecimenClasses() {
+		return specimenClasses;
 	}
 
-	public void setSpecimenClass(String specimenClass) {
-		this.specimenClass = specimenClass;
+	public void setSpecimenClasses(List<PermissibleValue> specimenClasses) {
+		this.specimenClasses = specimenClasses;
 	}
 
-	public String getSpecimenType() {
-		return specimenType;
+	public List<PermissibleValue> getSpecimenTypes() {
+		return specimenTypes;
 	}
 
-	public void setSpecimenType(String specimenType) {
-		this.specimenType = specimenType;
+	public void setSpecimenTypes(List<PermissibleValue> specimenTypes) {
+		this.specimenTypes = specimenTypes;
 	}
 
 	public String getLineage() {
@@ -80,7 +81,7 @@ public class SpecimenLabelPrintRule extends LabelPrintRule {
 			return false;
 		}
 
-		if (CollectionUtils.isNotEmpty(cps) && !cps.stream().anyMatch(cp -> cp.equals(specimen.getCollectionProtocol()))) {
+		if (CollectionUtils.isNotEmpty(cps) && cps.stream().noneMatch(cp -> cp.equals(specimen.getCollectionProtocol()))) {
 			return false;
 		}
 
@@ -89,12 +90,15 @@ public class SpecimenLabelPrintRule extends LabelPrintRule {
 			return false;
 		}
 
-		if (StringUtils.isNotBlank(specimenClass) && !specimenClass.equals(specimen.getSpecimenClass())) {
-			return false;
-		}
-		
-		if (StringUtils.isNotBlank(specimenType) && !specimenType.equals(specimen.getSpecimenType())) {
-			return false;
+		if (CollectionUtils.isNotEmpty(specimenClasses) || CollectionUtils.isNotEmpty(specimenTypes)) {
+			// either one of - specimen classes or specimen types is configured
+			if (specimenClasses == null || !specimenClasses.contains(specimen.getSpecimenClass())) {
+				// input specimen class is not present in configured classes, if any
+				if (specimenTypes == null || !specimenTypes.contains(specimen.getSpecimenType())) {
+					//input specimen type is not present in configured types, if any
+					return false;
+				}
+			}
 		}
 
 		if (StringUtils.isNotBlank(lineage) && !lineage.equals(specimen.getLineage())) {
@@ -105,13 +109,13 @@ public class SpecimenLabelPrintRule extends LabelPrintRule {
 	}
 
 	@Override
-	protected Map<String, String> getDefMap(boolean ufn) {
-		Map<String, String> ruleDef = new HashMap<>();
+	protected Map<String, Object> getDefMap(boolean ufn) {
+		Map<String, Object> ruleDef = new HashMap<>();
 
 		ruleDef.put("cps", getCpList(ufn));
 		ruleDef.put("visitSite", getSite(ufn, getVisitSite()));
-		ruleDef.put("specimenClass", getSpecimenClass());
-		ruleDef.put("specimenType", getSpecimenType());
+		ruleDef.put("specimenClasses", getClassesList(ufn));
+		ruleDef.put("specimenTypes", getTypesList(ufn));
 		ruleDef.put("lineage", getLineage());
 		return ruleDef;
 	}
@@ -121,8 +125,8 @@ public class SpecimenLabelPrintRule extends LabelPrintRule {
 			.append(", cp = ").append(getCpList(true))
 			.append(", lineage = ").append(getLineage())
 			.append(", visit site = ").append(getSite(true, getVisitSite()))
-			.append(", specimen class = ").append(getSpecimenClass())
-			.append(", specimen type = ").append(getSpecimenType())
+			.append(", specimen classes = ").append(getClassesList(true))
+			.append(", specimen types = ").append(getTypesList(true))
 			.toString();
 	}
 
@@ -130,12 +134,24 @@ public class SpecimenLabelPrintRule extends LabelPrintRule {
 		return isWildCard(lineage) || Specimen.isValidLineage(lineage);
 	}
 
-	private String getCpList(boolean ufn) {
-		Function<CollectionProtocol, String> cpMapper = ufn ? (cp) -> cp.getShortTitle() : (cp) -> cp.getId().toString();
-		return Utility.nullSafeStream(getCps()).map(cpMapper).collect(Collectors.joining(","));
+	private List<String> getCpList(boolean ufn) {
+		Function<CollectionProtocol, String> cpMapper = ufn ? CollectionProtocol::getShortTitle : (cp) -> cp.getId().toString();
+		return Utility.nullSafeStream(getCps()).map(cpMapper).collect(Collectors.toList());
+	}
+
+	private List<String> getClassesList(boolean ufn) {
+		return Utility.nullSafeStream(getSpecimenClasses()).map(getPvMapper(ufn)).collect(Collectors.toList());
+	}
+
+	private List<String> getTypesList(boolean ufn) {
+		return Utility.nullSafeStream(getSpecimenTypes()).map(getPvMapper(ufn)).collect(Collectors.toList());
 	}
 
 	private String getSite(boolean ufn, Site site) {
 		return site != null ? (ufn ? site.getName() : site.getId().toString()) : null;
+	}
+
+	private Function<PermissibleValue, String> getPvMapper(boolean ufn) {
+		return ufn ? (pv) -> pv.getValue() : (pv) -> pv.getId().toString();
 	}
 }

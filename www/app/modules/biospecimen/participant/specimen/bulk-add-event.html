@@ -2,22 +2,25 @@
   <div os-page-header>
     <div class="os-page-header-content">
       <h3>
-        <span translate="specimens.bulk_events.add_edit">Create Bulk Event</span>
+        <span ng-show="!ctx.event" translate="specimens.bulk_events.add_edit">Create Bulk Event</span>
+        <span ng-show="!!ctx.event" translate="specimens.bulk_events.receive">Receive Specimens</span>
       </h3>
     </div>
   </div>
   
   <div class="container">
     <div os-wizard="eventWizard" type="classic">
-      <os-wizard-step title="{{'specimens.bulk_events.select_specimens' | translate}}" on-finish="passThrough()">
+      <os-wizard-step order="0" title="{{'specimens.bulk_events.select_specimens' | translate}}"
+        on-finish="validateSpecimens()">
         <div ng-include src="'participant/specimen/bulkevent-select-specimens.html'"></div>
       </os-wizard-step>
       
-      <os-wizard-step title="{{'specimens.bulk_events.options' | translate}}" on-finish="passThrough()">
+      <os-wizard-step order="1" title="{{'specimens.bulk_events.options' | translate}}" on-finish="passThrough()"
+        ng-if="ctx.allowEventSelect">
         <div ng-include src="'participant/specimen/bulkevent-options.html'"></div>
       </os-wizard-step>
 
-      <os-wizard-step title="{{'specimens.bulk_events.event_details' | translate}}" on-finish="passThrough()">
+      <os-wizard-step order="2" title="{{'specimens.bulk_events.event_details' | translate}}" on-finish="passThrough()">
         <div ng-include src="'participant/specimen/bulkevent-add-details.html'"></div>
       </os-wizard-step>
     </div>
@@ -34,7 +37,8 @@
       </div>
     </div>
 
-    <os-add-specimens on-add="addSpecimens(specimens)"
+    <os-add-specimens allow-visit-names="ctx.recvWf" scan-visit-names="ctx.recvWf" on-add="addSpecimens(specimens)"
+      filter-opts="ctx.spmnFilterOpts" error-opts="ctx.errorOpts"
       placeholder="{{'specimens.bulk_events.enter_specimen_label' | translate}}">
     </os-add-specimens>
 
@@ -71,7 +75,7 @@
           </td>
           <td class="col">
             <a ui-sref="specimen({specimenId: spmn.id})">
-              <os-specimen-desc specimen="spmn" detailed="true"></os-specimen-desc>
+              <os-specimen-desc specimen="spmn" detailed="true" show-req-label="true"></os-specimen-desc>
             </a>
           </td>
           <td class="col" ng-if="ctx.showVisit">
@@ -191,9 +195,11 @@
       </div>
     </span>
 
-    <div class="form-group" ng-if="ctx.mode == 'SINGLE' && !!ctx.opts.formDef">
-      <div class="os-entity-extn-form-fields">
-        <div id="de-form" class="os-extn-form" os-de-form ctrl="ctx.formCtrl" opts="ctx.opts">
+    <div class="row" ng-if="ctx.mode == 'SINGLE' && !!ctx.opts.formDef">
+      <div class="col-xs-12">
+        <div class="os-entity-extn-form-fields">
+          <div id="de-form" class="os-extn-form" os-de-form ctrl="ctx.formCtrl" opts="ctx.opts">
+          </div>
         </div>
       </div>
     </div>
@@ -207,10 +213,11 @@
     <div class="form-group" ng-if="ctx.mode == 'TABLE' && !!ctx.opts.tableData">
       <div class="col-xs-12">
         <div os-de-table opts="ctx.opts" ctrl="ctx.tabCtrl"></div>
+
+        <div class="os-divider"></div>
       </div>
     </div>
 
-    <div class="os-divider"></div>
 
     <div class="form-group right-btns">
       <div class="col-xs-offset-3 col-xs-9">
@@ -219,6 +226,9 @@
         </button>
         <button class="btn os-btn-secondary" ng-click="ctx.showForm = false; eventWizard.previous()">
           <span translate="common.buttons.previous">Previous</span>
+        </button>
+        <button ng-show="!ctx.event" class="btn btn-primary" os-form-submit="saveEvent(true)">
+          <span translate="specimens.bulk_events.save_n_more">Save and Add More</span>
         </button>
         <button class="btn btn-primary" os-form-submit="saveEvent()">
           <span translate="common.buttons.save">Save</span>

@@ -10,7 +10,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.hibernate.envers.Audited;
 import org.hibernate.envers.NotAudited;
@@ -20,18 +20,25 @@ import org.springframework.beans.factory.annotation.Qualifier;
 
 import com.krishagni.catissueplus.core.administrative.domain.Site;
 import com.krishagni.catissueplus.core.administrative.domain.User;
+import com.krishagni.catissueplus.core.biospecimen.domain.factory.CpErrorCode;
+import com.krishagni.catissueplus.core.biospecimen.domain.factory.CprErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.ParticipantErrorCode;
+import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
+import com.krishagni.catissueplus.core.common.access.AccessCtrlMgr;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.DependentEntityDetail;
 import com.krishagni.catissueplus.core.common.service.LabelGenerator;
 import com.krishagni.catissueplus.core.common.util.Status;
 import com.krishagni.catissueplus.core.common.util.Utility;
 import com.krishagni.catissueplus.core.de.services.impl.FormUtil;
+import com.krishagni.rbac.common.errors.RbacErrorCode;
 
 @Configurable
 @Audited
-public class CollectionProtocolRegistration extends BaseEntity {
+public class CollectionProtocolRegistration extends BaseExtensionEntity {
 	private static final String ENTITY_NAME = "collection_protocol_registration";
+
+	private static final String EXTN = "ParticipantExtension";
 	
 	private String ppid;
 
@@ -60,14 +67,17 @@ public class CollectionProtocolRegistration extends BaseEntity {
 	private Set<ConsentTierResponse> consentResponses = new HashSet<>();
 
 	private String barcode;
-
-	private Integer extensionRev;
 	
 	@Autowired
 	@Qualifier("ppidGenerator")
 	private LabelGenerator labelGenerator;
 
+	@Autowired
+	private DaoFactory daoFactory;
+
 	private transient boolean forceDelete;
+
+	private transient Boolean hasDeleteSpecimenRights;
 
 	public static String getEntityName() {
 		return ENTITY_NAME;
@@ -94,7 +104,15 @@ public class CollectionProtocolRegistration extends BaseEntity {
 	}
 
 	public void setExternalSubjectId(String externalSubjectId) {
-		this.externalSubjectId = externalSubjectId;
+		if (StringUtils.isBlank(externalSubjectId)) {
+			//
+			// this is done to avoid UQ violation because of ''
+			// For more details, refer to OPSMN-5348
+			//
+			this.externalSubjectId = null;
+		} else {
+			this.externalSubjectId = externalSubjectId;
+		}
 	}
 
 	public Site getSite() {
@@ -111,6 +129,9 @@ public class CollectionProtocolRegistration extends BaseEntity {
 
 	public void setParticipant(Participant participant) {
 		this.participant = participant;
+		if (participant != null) {
+			participant.setCpr(this);
+		}
 	}
 
 	public CollectionProtocol getCollectionProtocol() {
@@ -125,16 +146,40 @@ public class CollectionProtocolRegistration extends BaseEntity {
 		return getCollectionProtocol().getShortTitle();
 	}
 
-	public Integer getExtensionRev() {
-		if (participant != null && participant.getExtensionRev() != null) {
-			return (extensionRev == null ? 0 : extensionRev) + participant.getExtensionRev();
-		} else {
-			return extensionRev;
-		}
+	@Override
+	public String getEntityType() {
+		return EXTN;
 	}
 
-	public void setExtensionRev(Integer extensionRev) {
-		this.extensionRev = extensionRev;
+	@Override
+	public Long getRecordId(Long formId, Long formCtxtId) {
+		return daoFactory.getCprDao().getCustomFieldRecordId(getId(), formId, formCtxtId);
+	}
+
+    @Override
+    public Map<Long, Long> getRecordIds(Collection<Long> cprIds, Long formId, Long formCtxtId) {
+		return daoFactory.getCprDao().getCustomFieldRecordIds(cprIds, formId, formCtxtId);
+	}
+
+	@Override
+	public boolean saveOrUpdateRecordEntry(boolean insert, Long formId, Long formCtxtId, Long recordId) {
+		String status = getDataEntryStatus() != null ? getDataEntryStatus().name() : "COMPLETE";
+		if (insert) {
+			daoFactory.getCprDao().insertCustomFieldRecordId(getId(), formId, formCtxtId, recordId, status);
+		} else {
+			daoFactory.getCprDao().updateCustomFieldRecStatus(getId(), formId, recordId, status);
+		}
+
+		return true;
+	}
+
+	@Override
+	public Long getCpId() {
+		if (getCollectionProtocol() == null) {
+			throw OpenSpecimenException.userError(CpErrorCode.REQ_OR_INV);
+		}
+
+		return getCollectionProtocol().getId();
 	}
 
 	@NotAudited
@@ -247,6 +292,14 @@ public class CollectionProtocolRegistration extends BaseEntity {
 		this.forceDelete = forceDelete;
 	}
 
+	public Boolean getHasDeleteSpecimenRights() {
+		return hasDeleteSpecimenRights;
+	}
+
+	public void setHasDeleteSpecimenRights(Boolean hasDeleteSpecimenRights) {
+		this.hasDeleteSpecimenRights = hasDeleteSpecimenRights;
+	}
+
 	public boolean isDeleted() {
 		return Status.ACTIVITY_STATUS_DISABLED.getStatus().equals(getActivityStatus());
 	}
@@ -285,13 +338,25 @@ public class CollectionProtocolRegistration extends BaseEntity {
 		if (checkDependency) {
 			ensureNoActiveChildObjects(checkOnlyCollectedSpmns);
 		}
-		
+
+		Boolean hasDeleteVisitRights = null;
 		for (Visit visit : getVisits()) {
+			if (visit.isActive() && visit.isCompleted()) {
+				if (hasDeleteVisitRights == null) {
+					hasDeleteVisitRights = AccessCtrlMgr.getInstance().hasDeleteVisitRights(this);
+				}
+
+				if (!hasDeleteVisitRights) {
+					throw OpenSpecimenException.userError(RbacErrorCode.ACCESS_DENIED);
+				}
+			}
+
 			visit.delete(checkDependency);
 		}
 		
 		setBarcode(Utility.getDisabledValue(getBarcode(), 255));
 		setPpid(Utility.getDisabledValue(getPpid(), 255));
+		setExternalSubjectId(Utility.getDisabledValue(getExternalSubjectId(), 255));
 		setActivityStatus(Status.ACTIVITY_STATUS_DISABLED.getStatus());
 		FormUtil.getInstance().deleteRecords(getCollectionProtocol().getId(), Collections.singletonList("Participant"), getId());
 		FormUtil.getInstance().deleteRecords(getCollectionProtocol().getId(), Collections.singletonList("ParticipantExtension"), getParticipant().getId());
@@ -310,6 +375,10 @@ public class CollectionProtocolRegistration extends BaseEntity {
 	public void update(CollectionProtocolRegistration cpr) {
 		setForceDelete(cpr.isForceDelete());
 		setOpComments(cpr.getOpComments());
+		setDataEntryStatus(cpr.getDataEntryStatus());
+		if (getDataEntryStatus() == DataEntryStatus.DRAFT && !getCollectionProtocol().draftDataEntryEnabled()) {
+			throw OpenSpecimenException.userError(CprErrorCode.DRAFT_NOT_ALLOWED, getCollectionProtocol().getShortTitle());
+		}
 
 		updateActivityStatus(cpr.getActivityStatus());
 		if (!isActive()) {
@@ -331,6 +400,7 @@ public class CollectionProtocolRegistration extends BaseEntity {
 		setBarcode(cpr.getBarcode());
 		setExternalSubjectId(cpr.getExternalSubjectId());
 		setSite(cpr.getSite());
+		setExtension(cpr.getExtension());
 	}
 	
 	public void updateConsents(ConsentResponses consentResponses) {

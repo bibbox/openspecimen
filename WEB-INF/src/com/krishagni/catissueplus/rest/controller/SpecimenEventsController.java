@@ -1,8 +1,8 @@
 package com.krishagni.catissueplus.rest.controller;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -31,25 +31,14 @@ public class SpecimenEventsController {
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody
 	public List<Map<String, Object>> saveSpecimenEvents(
-			@PathVariable(value = "formId")
-			Long formId,
+		@PathVariable(value = "formId")
+		Long formId,
 			
-			@RequestBody
-			List<Map<String, Object>> valueMapList) {
+		@RequestBody
+		List<Map<String, Object>> valueMapList) {
 
 		List<FormData> formDataList = FormData.fromValueMap(formId, valueMapList);
-		ResponseEvent<List<FormData>> resp = specimenEventsSvc.saveSpecimenEvents(getRequest(formDataList));
-		resp.throwErrorIfUnsuccessful();
-		
-		List<Map<String, Object>> savedValueMapList = new ArrayList<Map<String, Object>>();
-		for (FormData data : resp.getPayload()) {
-			savedValueMapList.add(data.getFieldNameValueMap(data.isUsingUdn()));
-		}
-		
-		return savedValueMapList;
+		List<FormData> savedDataList = ResponseEvent.unwrap(specimenEventsSvc.saveSpecimenEvents(RequestEvent.wrap(formDataList)));
+		return savedDataList.stream().map(data -> data.getFieldNameValueMap(data.isUsingUdn())).collect(Collectors.toList());
 	}
-	
-	private <T> RequestEvent<T> getRequest(T payload) {
-		return new RequestEvent<T>(payload);
-	}	
 }

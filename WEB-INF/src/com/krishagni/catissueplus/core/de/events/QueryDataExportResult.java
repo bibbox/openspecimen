@@ -1,7 +1,13 @@
 package com.krishagni.catissueplus.core.de.events;
 
 
+import java.io.File;
 import java.util.concurrent.Future;
+
+import org.apache.commons.lang3.StringUtils;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.krishagni.catissueplus.core.common.util.ConfigUtil;
 
 public class QueryDataExportResult {
 	private String dataFile;
@@ -18,6 +24,16 @@ public class QueryDataExportResult {
 		this.dataFile = dataFile;
 	}
 
+	@JsonIgnore
+	public File getDataFileHandle() {
+		if (StringUtils.isBlank(dataFile)) {
+			return null;
+		}
+
+		File exportDir = new File(ConfigUtil.getInstance().getDataDir(), "query-exported-data");
+		return new File(exportDir, dataFile);
+	}
+
 	public boolean isCompleted() {
 		return completed;
 	}
@@ -26,6 +42,7 @@ public class QueryDataExportResult {
 		this.completed = completed;
 	}
 
+	@JsonIgnore
 	public Future<Boolean> getPromise() {
 		return promise;
 	}

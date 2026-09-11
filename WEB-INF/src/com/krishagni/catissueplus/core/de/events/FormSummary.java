@@ -1,13 +1,20 @@
 package com.krishagni.catissueplus.core.de.events;
 
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Date;
+import java.util.List;
+import java.util.stream.Collectors;
 
-import org.codehaus.jackson.map.annotate.JsonSerialize;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonInclude;
 
+import com.krishagni.catissueplus.core.administrative.events.UserGroupSummary;
 import com.krishagni.catissueplus.core.common.events.UserSummary;
+import com.krishagni.catissueplus.core.common.util.Utility;
 import com.krishagni.catissueplus.core.de.domain.Form;
 
-@JsonSerialize(include= JsonSerialize.Inclusion.NON_NULL)
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class FormSummary {
 	private Long formId;
 	
@@ -21,11 +28,25 @@ public class FormSummary {
 	
 	private Date modificationTime;
 	
-	private Integer cpCount;
+	private Integer associations;
 	
 	private boolean sysForm;
 
 	private String entityType;
+
+	private boolean multipleRecords;
+
+	private boolean notifEnabled;
+
+	private boolean dataInNotif;
+
+	private List<UserGroupSummary> notifUserGroups = new ArrayList<>();
+
+	private Long formCtxtId;
+
+	private Long cpId;
+
+	private Form dbForm;
 
 	public Long getFormId() {
 		return formId;
@@ -75,12 +96,12 @@ public class FormSummary {
 		this.modificationTime = modificationTime;
 	}
 
-	public Integer getCpCount() {
-		return cpCount;
+	public Integer getAssociations() {
+		return associations;
 	}
 
-	public void setCpCount(Integer cpCount) {
-		this.cpCount = cpCount;
+	public void setAssociations(Integer associations) {
+		this.associations = associations;
 	}
 
 	public boolean isSysForm() {
@@ -99,6 +120,63 @@ public class FormSummary {
 		this.entityType = entityType;
 	}
 
+	public boolean isMultipleRecords() {
+		return multipleRecords;
+	}
+
+	public void setMultipleRecords(boolean multipleRecords) {
+		this.multipleRecords = multipleRecords;
+	}
+
+	public boolean isNotifEnabled() {
+		return notifEnabled;
+	}
+
+	public void setNotifEnabled(boolean notifEnabled) {
+		this.notifEnabled = notifEnabled;
+	}
+
+	public boolean isDataInNotif() {
+		return dataInNotif;
+	}
+
+	public void setDataInNotif(boolean dataInNotif) {
+		this.dataInNotif = dataInNotif;
+	}
+
+	public List<UserGroupSummary> getNotifUserGroups() {
+		return notifUserGroups;
+	}
+
+	public void setNotifUserGroups(List<UserGroupSummary> notifUserGroups) {
+		this.notifUserGroups = notifUserGroups;
+	}
+
+	public Long getFormCtxtId() {
+		return formCtxtId;
+	}
+
+	public void setFormCtxtId(Long formCtxtId) {
+		this.formCtxtId = formCtxtId;
+	}
+
+	public Long getCpId() {
+		return cpId;
+	}
+
+	public void setCpId(Long cpId) {
+		this.cpId = cpId;
+	}
+
+	@JsonIgnore
+	public Form getDbForm() {
+		return dbForm;
+	}
+
+	public void setDbForm(Form dbForm) {
+		this.dbForm = dbForm;
+	}
+
 	public static FormSummary from(Form form) {
 		FormSummary result = new FormSummary();
 		result.setFormId(form.getId());
@@ -108,5 +186,9 @@ public class FormSummary {
 		result.setCreationTime(form.getCreationTime());
 		result.setModificationTime(form.getUpdateTime());
 		return result;
+	}
+
+	public static List<FormSummary> from(Collection<Form> forms) {
+		return Utility.nullSafeStream(forms).map(FormSummary::from).collect(Collectors.toList());
 	}
 }

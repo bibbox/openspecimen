@@ -6,10 +6,10 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
-
 import com.fasterxml.jackson.annotation.JsonProperty;
+
 import com.krishagni.catissueplus.core.common.access.SiteCpPair;
 import com.krishagni.catissueplus.core.common.events.AbstractListCriteria;
 
@@ -37,7 +37,11 @@ public class CprListCriteria extends AbstractListCriteria<CprListCriteria> {
 
 	private boolean useMrnSites;
 
+	List<String> empis;
+
 	private List<String> ppids;
+
+	private List<String> externalSubjectIds;
 
 	@Override
 	public CprListCriteria self() {
@@ -155,6 +159,7 @@ public class CprListCriteria extends AbstractListCriteria<CprListCriteria> {
 		return StringUtils.isNotBlank(name()) ||
 			StringUtils.isNotBlank(participantId()) ||
 			StringUtils.isNotBlank(uid()) ||
+			CollectionUtils.isNotEmpty(empis()) ||
 			dob() != null;
 	}
 
@@ -166,12 +171,33 @@ public class CprListCriteria extends AbstractListCriteria<CprListCriteria> {
 		return phiSiteCps().stream().map(SiteCpPair::getCpId).collect(Collectors.toSet());
 	}
 
+	@JsonProperty("empis")
+	public CprListCriteria empis(List<String> empis) {
+		this.empis = empis;
+		return self();
+	}
+
+	public List<String> empis() {
+		return empis;
+	}
+
 	public List<String> ppids() {
 		return ppids;
 	}
 
+	@JsonProperty("ppids")
 	public CprListCriteria ppids(List<String> ppids) {
 		this.ppids = ppids;
+		return self();
+	}
+
+	public List<String> externalSubjectIds() {
+		return externalSubjectIds;
+	}
+
+	@JsonProperty("externalSubjectIds")
+	public CprListCriteria externalSubjectIds(List<String> externalSubjectIds) {
+		this.externalSubjectIds = externalSubjectIds;
 		return self();
 	}
 }

@@ -6,20 +6,26 @@ import java.util.Map;
 
 import com.krishagni.catissueplus.core.administrative.domain.User;
 import com.krishagni.catissueplus.core.biospecimen.domain.BaseEntity;
+import com.krishagni.catissueplus.core.common.util.MessageUtil;
 
 public class ImportJob extends BaseEntity {
 	public enum Status {
 		COMPLETED,
 		FAILED,
 		QUEUED,
+		OFFLINE_QUEUED,
 		IN_PROGRESS,
 		STOPPED,
-		TXN_SIZE_EXCEEDED
+		TXN_SIZE_EXCEEDED,
+		TOO_LARGE,
+		LARGE_TXN_N_JOB,
+		CSV_COLUMNS_MISMATCH
 	}
 	
 	public enum Type {
 		CREATE,
-		UPDATE
+		UPDATE,
+		UPSERT
 	}
 	
 	public enum CsvType {
@@ -37,6 +43,8 @@ public class ImportJob extends BaseEntity {
 
 	private String timeFormat;
 
+	private String timeZone;
+
 	private String fieldSeparator;
 
 	private volatile Status status;
@@ -53,7 +61,11 @@ public class ImportJob extends BaseEntity {
 
 	private Boolean atomic;
 
-	private transient volatile  boolean stopRunning;
+	private String runByNode;
+
+	private String ipAddress;
+
+	private volatile Boolean stopRunning = Boolean.FALSE;
 	
 	private Map<String, String> params = new HashMap<>();
 	
@@ -97,6 +109,14 @@ public class ImportJob extends BaseEntity {
 		this.timeFormat = timeFormat;
 	}
 
+	public String getTimeZone() {
+		return timeZone;
+	}
+
+	public void setTimeZone(String timeZone) {
+		this.timeZone = timeZone;
+	}
+
 	public String getFieldSeparator() {
 		return fieldSeparator;
 	}
@@ -127,6 +147,10 @@ public class ImportJob extends BaseEntity {
 
 	public void setFailedRecords(Long failedRecords) {
 		this.failedRecords = failedRecords;
+	}
+
+	public Long getSuccessfulRecords() {
+		return totalRecords != null && failedRecords != null ? (totalRecords - failedRecords) : null;
 	}
 
 	public User getCreatedBy() {
@@ -161,6 +185,22 @@ public class ImportJob extends BaseEntity {
 		this.atomic = atomic;
 	}
 
+	public String getRunByNode() {
+		return runByNode;
+	}
+
+	public void setRunByNode(String runByNode) {
+		this.runByNode = runByNode;
+	}
+
+	public String getIpAddress() {
+		return ipAddress;
+	}
+
+	public void setIpAddress(String ipAddress) {
+		this.ipAddress = ipAddress;
+	}
+
 	public Map<String, String> getParams() {
 		return params;
 	}
@@ -169,19 +209,28 @@ public class ImportJob extends BaseEntity {
 		this.params = params;
 	}
 
+	public Boolean getStopRunning() {
+		return stopRunning;
+	}
+
+	public void setStopRunning(Boolean stopRunning) {
+		this.stopRunning = stopRunning;
+	}
+
+	public void stopRunning() {
+		stopRunning = true;
+	}
+
 	public boolean isAskedToStop() {
 		return stopRunning;
 	}
 
-	public void stop() {
-		this.stopRunning = true;
-		if (isQueued()) {
-			status = Status.STOPPED;
-		}
-	}
-
 	public boolean isQueued() {
 		return getStatus() == Status.QUEUED;
+	}
+
+	public boolean isOfflineQueued() {
+		return getStatus() == Status.OFFLINE_QUEUED;
 	}
 
 	public boolean isInProgress() {
@@ -194,5 +243,50 @@ public class ImportJob extends BaseEntity {
 
 	public boolean isFailed() {
 		return getStatus() == Status.FAILED;
+	}
+
+	public String getDisplayName() {
+		return new StringBuilder()
+			.append("#" + getId()).append(" ")
+			.append(getMsg("bulk_import_ops_" + getType().name())).append(" ")
+			.append(getMsg("bulk_import_entities_" + getName()))
+			.toString();
+	}
+
+	private String getMsg(String key, Object... params) {
+		return MessageUtil.getInstance().getMessage(key, params);
+	}
+
+	public String getEntityName() {
+		String entityName;
+
+		if (getName().equals("extensions")) {
+			entityName = getParams().get("formName") + " (" + getParams().get("entityType") + ")";
+		} else {
+			String formName = getParams() != null ? getParams().get("formName") : null;
+			String key = "bulk_import_entities_" + getName();
+			entityName = getMsg(key, formName);
+			if (entityName.equals(key)) {
+				entityName = getName();
+			}
+		}
+
+		return entityName;
+	}
+
+	public void param(String name, String value) {
+		if (params == null) {
+			params = new HashMap<>();
+		}
+
+		params.putIfAbsent(name, value);
+	}
+
+	public String param(String name) {
+		if (params == null) {
+			return null;
+		}
+
+		return params.get(name);
 	}
 }

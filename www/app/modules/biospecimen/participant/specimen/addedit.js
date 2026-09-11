@@ -1,9 +1,10 @@
 
 angular.module('os.biospecimen.specimen.addedit', [])
   .controller('AddEditSpecimenCtrl', function(
-    $scope, $state, $parse, cp, cpr, visit, specimen, extensionCtxt,
+    $scope, $state, $parse, userRole, cp, cpr, visit, specimen, extensionCtxt,
     aliquotQtyReq, barcodingEnabled, spmnBarcodesAutoGen, hasDict, sysDict,
-    cpDict, layout, onValueChangeCb, spmnReq, defSpmns, createDerived, imagingEnabled,
+    cpDict, layout, onValueChangeCb, spmnReq, defSpmns, spmnCollFields,
+    createDerived, imagingEnabled, requirements, additionalLabelAutoGen,
     Alerts, CpConfigSvc, PluginReg, Util, ParticipantSpecimensViewState,
     Specimen, CollectSpecimensSvc) {
 
@@ -13,20 +14,30 @@ angular.module('os.biospecimen.specimen.addedit', [])
       $scope.opts = {
         cp: cp, cpr: cpr, visit: visit, spmnReq: spmnReq,
         extensionCtxt: extensionCtxt, hasDict: hasDict,
-        sysDict: sysDict, cpDict: cpDict,
+        sysDict: sysDict, cpDict: cpDict, userRole: userRole,
+        additionalLabelAutoGen: additionalLabelAutoGen,
         barcodingEnabled: barcodingEnabled, spmnBarcodesAutoGen: spmnBarcodesAutoGen,
         editMode: !!specimen.id, reqId: specimen.reqId, aliquotQtyReq: aliquotQtyReq,
         layout: layout, onValueChange: onValueChangeCb, mdInput: false,
         hasInfo: PluginReg.getTmpls('specimen-addedit', 'info').length > 0,
-        createDerived: createDerived, imagingEnabled: imagingEnabled
+        createDerived: createDerived, imagingEnabled: imagingEnabled,
+        allSpmnUpdate: $scope.specimenAllowedOps.allUpdate,
+        storeSpmn: $scope.specimenAllowedOps.store,
+        spmnCollFields: spmnCollFields,
+        requirements: requirements,
+        inputCtxtsFn: getInputCtxts
       }
 
       CpConfigSvc.getCommonCfg(cp.id, 'addSpecimen').then(
         function(cfg) {
-          angular.extend($scope.opts, cfg || {});
+          cfg = angular.copy(cfg || {});
+          if (cfg.requirements) {
+            delete cfg.requirements;
+          }
+
+          angular.extend($scope.opts, cfg);
         }
       );
-
 
       if (!specimen.id && !specimen.reqId && defSpmns.length > 0) {
         inputCtxts = $scope.inputCtxts = getInputCtxts(defSpmns);
@@ -98,9 +109,12 @@ angular.module('os.biospecimen.specimen.addedit', [])
     }
 
     $scope.addCopyOfLast = function(reqAliquots) {
-      var lastCtrl = inputCtxts[inputCtxts.length - 1].form.ctrl;
+      var lastCtxt = inputCtxts[inputCtxts.length - 1];
 
-      var lastSpmn = lastCtrl.getSpecimens()[0];
+      var lastCtrl = lastCtxt.form.ctrl;
+
+      var lastSpmn = lastCtrl.getSpecimens(false, true)[0];
+
       if (!!lastSpmn) {
         var spmn = angular.copy(lastSpmn);
         var location = spmn.storageLocation;
@@ -118,7 +132,8 @@ angular.module('os.biospecimen.specimen.addedit', [])
           specimen: spmn,
           aliquots: aliquots,
           form: {},
-          open: true
+          open: true,
+          createChildren: lastCtrl.isCreateChildrenEnabled()
         });
       }
     }
@@ -242,6 +257,28 @@ angular.module('os.biospecimen.specimen.addedit', [])
       return result;
     }
 
+    function getDefValues(opts) {
+      var currentDate = new Date().getTime();
+      var defValues = {};
+      angular.forEach(opts.cpDict || opts.sysDict,
+        function(field) {
+          if (!field.name || !field.name.startsWith('specimen.')) {
+            return;
+          }
+
+          defValues[field.name] = field.defaultValue;
+          if (field.defaultValue == 'current_user') {
+            defValues[field.name] = $rootScope.currentUser;
+          } else if (field.defaultValue == 'current_date') {
+            defValues[field.name] = currentDate;
+          }
+        }
+      );
+
+      return defValues;
+    }
+
+
     return {
       restrict: 'E',
 
@@ -251,17 +288,18 @@ angular.module('os.biospecimen.specimen.addedit', [])
         opts    : '=',
         specimen: '=',
         aliquots: '=',
+        createChildren: '=',
         ctrl    : '='
       },
 
       controller: function($scope) {
-        this.getSpecimens = function(reqAliquots) {
+        this.getSpecimens = function(reqAliquots, includeChildren) {
           var formCtrl = $scope.deFormCtrl.ctrl;
           if (formCtrl && !formCtrl.validate()) {
             return null;
           }
 
-          var primarySpmn = $scope.inputSpmn;
+          var primarySpmn = angular.copy($scope.inputSpmn);
           if (formCtrl) {
             primarySpmn.extensionDetail = formCtrl.getFormData();
           }
@@ -286,7 +324,19 @@ angular.module('os.biospecimen.specimen.addedit', [])
 
             var tree = getAliquots($scope.opts, primarySpmn, types, typeSpecs);
             Array.prototype.push.apply(result, tree);
-          } else {
+          } else if (spmnCtx.createChildren) {
+            var spmns = [primarySpmn];
+            while(spmns.length > 0) {
+              var spmn = spmns[0];
+              spmn.selected = true;
+              spmn.hasChildren = spmn.isOpened = spmn.children && spmn.children.length > 0;
+
+              spmns.splice(0, 1);
+              Array.prototype.push.apply(spmns, spmn.children || []);
+            }
+
+            result = Specimen.flatten([primarySpmn]);
+          } else if (!includeChildren) {
             primarySpmn.children = [];
           }
 
@@ -296,15 +346,18 @@ angular.module('os.biospecimen.specimen.addedit', [])
         this.getAliquotSpec = function() {
           return ($scope.spmnCtx.createAliquots && $scope.spmnCtx.aliquots) || [];
         }
+
+        this.isCreateChildrenEnabled = function() {
+          return !!$scope.spmnCtx.createChildren;
+        }
       },
+
 
       link: function(scope, element, attrs, ctrl) {
         var opts = scope.opts, specimen = scope.specimen;
         scope.ctrl.ctrl = ctrl;
 
         var inputSpmn = scope.inputSpmn = specimen; //angular.copy(specimen);
-        delete inputSpmn.children;
-
         inputSpmn.cpId = inputSpmn.cpId || opts.cp.id;
         inputSpmn.visitId = opts.visit && opts.visit.id;
         inputSpmn.createdOn = inputSpmn.createdOn || new Date();
@@ -313,9 +366,11 @@ angular.module('os.biospecimen.specimen.addedit', [])
           inputSpmn.anatomicSite = inputSpmn.laterality = undefined;
         }
 
+        var oldStatus = inputSpmn.status || 'Pending';
+        var defValues = opts.defValues = opts.defValues || getDefValues(opts) || {};
         if (inputSpmn.status != 'Collected') {
           if (!inputSpmn.id) {
-            inputSpmn.status = 'Collected';
+            inputSpmn.status = defValues['specimen.status'] || 'Collected';
           }
 
           inputSpmn.availableQty = inputSpmn.initialQty;
@@ -332,15 +387,19 @@ angular.module('os.biospecimen.specimen.addedit', [])
         }
 
         var exObjs = ['specimen.lineage', 'specimen.parentLabel', 'specimen.events'];
-        if (!inputSpmn.id && !inputSpmn.reqId) {
+
+        if (!inputSpmn.id || oldStatus == 'Pending') {
           var ce = inputSpmn.collectionEvent = inputSpmn.collectionEvent || {};
           ce.user = (!ce.user || !ce.user.id) ? $rootScope.currentUser : ce.user;
-          ce.container = ce.container || 'Not Specified';
-          ce.procedure = ce.procedure || 'Not Specified';
+
+          ce.container = ce.container || defValues['specimen.collectionEvent.container'] || 'Not Specified';
+          ce.procedure = ce.procedure || defValues['specimen.collectionEvent.procedure'] || 'Not Specified';
 
           var re = inputSpmn.receivedEvent = inputSpmn.receivedEvent || {};
           re.user = (!re.user || !re.user.id) ? $rootScope.currentUser : re.user;
-          re.receivedQuality = re.receivedQuality || 'Acceptable';
+          re.receivedQuality = (opts.spmnCollFields && opts.spmnCollFields.defReceiveQuality) ||
+            defValues['specimen.receivedEvent.receivedQuality'] ||
+            re.receivedQuality || 'Acceptable';
         }
 
         if (inputSpmn.lineage != 'New') {
@@ -353,16 +412,18 @@ angular.module('os.biospecimen.specimen.addedit', [])
 
         var spmnCtx = scope.spmnCtx = {
           currentDate: new Date(),
-          obj: {specimen: inputSpmn, cpr: opts.cpr, visit: opts.visit, cp: opts.cp},
+          obj: {specimen: inputSpmn, cpr: opts.cpr, visit: opts.visit, cp: opts.cp, userRole: opts.userRole},
           opts: angular.extend({viewCtx: scope}, opts),
           inObjs: ['specimen'], exObjs: exObjs,
           isVirtual: inputSpmn.showVirtual(),
           manualSpecLabelReq: !!inputSpmn.label || !inputSpmn.labelFmt || opts.cp.manualSpecLabelEnabled,
           aliquots: scope.aliquots || [new Specimen({lineage: 'Aliquot'})],
-          createAliquots: (scope.aliquots || []).length > 0
+          createAliquots: (scope.aliquots || []).length > 0,
+          createChildren: !!scope.createChildren
         };
 
         scope.deFormCtrl = {};
+        opts.extensionCtxt.sdeMode = opts.hasDict;
         scope.extnOpts = ExtensionsUtil.getExtnOpts(inputSpmn, opts.extensionCtxt);
 
         if (!opts.hasDict) {
@@ -396,6 +457,25 @@ angular.module('os.biospecimen.specimen.addedit', [])
         scope.addIfLastAliquot = function(idx) {
           if (idx == (spmnCtx.aliquots.length - 1)) {
             scope.addAnotherAliquot();
+          }
+        }
+
+        scope.onReqSelect = function(req) {
+          if (!req.id) {
+            return;
+          }
+
+          var spmn = angular.extend(scope.inputSpmn, Specimen.toSpecimenAttrs(req));
+          spmn.availableQty = spmn.availableQty || spmn.initialQty;
+          if (spmn.collectionEvent) {
+            spmn.collectionEvent.user = spmn.collectionEvent.user || $rootScope.currentUser;
+            spmn.collectionEvent.time = spmn.collectionEvent.time || new Date();
+            spmn.collectionContainer = spmn.collectionEvent.container;
+          }
+
+          if (spmn.receivedEvent) {
+            spmn.receivedEvent.user = spmn.receivedEvent.user || $rootScope.currentUser;
+            spmn.receivedEvent.time = spmn.receivedEvent.time || new Date();
           }
         }
       }

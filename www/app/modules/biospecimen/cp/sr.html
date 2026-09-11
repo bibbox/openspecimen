@@ -35,6 +35,12 @@
         <span>{{childReq.labelPrintCopies | osNoValue}}</span>
       </div>
     </li>
+    <li class="item" ng-if="cp.barcodingEnabled || barcodingEnabled">
+      <strong class="key key-sm" translate="srs.pre_barcoded_tube">Pre-barcode Tube</strong>
+      <div class="value value-md">
+        <span>{{childReq.preBarcodedTube | osBoolValue: 'common.yes': 'common.no'}}</span>
+      </div>
+    </li>
     <li class="item">
       <strong class="key key-sm" translate="srs.specimen_class">Specimen Class</strong>
       <div class="value value-md">
@@ -71,12 +77,7 @@
     </li>
     <li class="item">
       <strong class="key key-sm" translate="srs.concentration">Concentration</strong>
-      <div class="value value-md">
-        <span>{{childReq.concentration | osNumberInScientificNotation}}</span>
-        <os-specimen-unit specimen-class="childReq.specimenClass" type="childReq.type"
-          measure="concentration" ng-if="!!childReq.concentration || childReq.concentration == 0">
-        </os-specimen-unit>
-      </div>
+      <os-spmn-measure-val value="childReq.concentration" measure="'concentration'" specimen="childReq"></os-spmn-measure-val>
     </li>
     <li class="item">
       <strong class="key key-sm" translate="srs.storage_type">Storage Type</strong>
@@ -91,7 +92,7 @@
         <span>&nbsp;</span>
       </div>
     </li>
-    <li class="item" ng-if="childReq.lineage == 'New'">
+    <li class="item" ng-if="childReq.lineage == 'New' || childReq.lineage == 'Derived'">
       <strong class="key key-sm" translate="srs.sort_order">Sort Order</strong>
       <div class="value value-md">
         <span>{{childReq.sortOrder | osNoValue}}</span>
@@ -122,6 +123,12 @@
       </div>
     </li>
   </ul>
+  <div ng-if="childReq.defaultCustomFieldValuesJson">
+    <div class="os-section" style="margin-left: 0.5rem;">
+      <h3 class="os-sub-section-title" translate="srs.default_custom_field_values"></h3>
+      <pre>{{childReq.defaultCustomFieldValuesJson}}</pre>
+    </div>
+  </div>
 
   <div class="os-divider"></div>
 

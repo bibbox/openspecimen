@@ -39,11 +39,20 @@ angular.module('os.administrative.order',
       .state('order-list', {
         url: '/orders?filters',
         templateUrl: 'modules/administrative/order/list.html',     
-        controller: 'OrderListCtrl',
-        parent: 'order-root'
+        controller: function(VueApp) {
+          VueApp.setVueView('orders/-1');
+        },
+        parent: 'signed-in'
       })
       .state('order-addedit', {
-        url: '/order-addedit/:orderId?requestId&specimenListId&allReservedSpmns&dpId',
+        url: '/order-addedit/:orderId',
+        template: '<div></div>',
+        controller: function($state, $window, VueApp) {
+          VueApp.setVueView($state.href($state.current.name, $state.params).substring(2));
+        }
+      })
+      /*.state('order-addedit', {
+        url: '/order-addedit/:orderId?requestId&specimenListId&allReservedSpmns&dpId&clearFromCart&clearCart',
         templateUrl: 'modules/administrative/order/addedit.html',
         controller: 'OrderAddEditCtrl',
         resolve: {
@@ -74,7 +83,9 @@ angular.module('os.administrative.order',
                   distributionProtocol: dp,
                   orderItems: [],
                   specimenList: specimenList,
-                  allReservedSpmns: allReservedSpmns
+                  allReservedSpmns: allReservedSpmns,
+                  clearListId: specimenList ? specimenList.id : $stateParams.clearFromCart,
+                  clearListMode: $stateParams.clearCart
                 });
               }
             );
@@ -134,7 +145,7 @@ angular.module('os.administrative.order',
           }
         },
         parent: 'order-root'
-      })
+      })*/
       .state('order-import', {
         url: '/orders-import',
         templateUrl: 'modules/common/import/add.html',
@@ -146,7 +157,7 @@ angular.module('os.administrative.order',
               objectType: 'distributionOrder',
               csvType: 'MULTIPLE_ROWS_PER_OBJ',
               title: 'orders.bulk_import',
-              onSuccess: {state: 'order-list'},
+              onSuccess: {state: 'order-import-jobs'},
               entityLabel: 'orders.dp',
               entitiesFn: function(searchTerm) {
                 var filterOpts = {activityStatus: 'Active', query: searchTerm, excludeExpiredDps: true};
@@ -174,7 +185,7 @@ angular.module('os.administrative.order',
               showImportType: false,
               importType: 'CREATE',
               title: 'orders.bulk_import',
-              onSuccess: {state: 'order-list'}
+              onSuccess: {state: 'order-import-jobs'}
             };
           }
         },
@@ -197,12 +208,9 @@ angular.module('os.administrative.order',
       })
       .state('order-detail', {
         url: '/orders/:orderId',
-        templateUrl: 'modules/administrative/order/detail.html',
-        controller: 'OrderDetailCtrl',
-        resolve: {
-          order: function($stateParams , DistributionOrder) {
-            return DistributionOrder.getById($stateParams.orderId);
-          }
+        template: '<div>New UI</div>',
+        controller: function($stateParams, VueApp) {
+          VueApp.setVueView('orders/' + $stateParams.orderId + '/detail/overview');
         },
         parent: 'order-root'
       })

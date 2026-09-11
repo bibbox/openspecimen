@@ -1,5 +1,5 @@
 angular.module("os.biospecimen.extensions")
-  .directive("osExtensionOverview", function(ExtensionsUtil) {
+  .directive("osExtensionOverview", function(ExtensionsUtil, Util) {
 
      function processAttrs(formId, recordId, prefix, attrs) {
        angular.forEach(attrs,
@@ -19,6 +19,11 @@ angular.module("os.biospecimen.extensions")
              if (attr.type == 'fileUpload') {
                attr.$$fileDownloadUrl = ExtensionsUtil.getFileDownloadUrl(
                  formId, recordId, prefix + attr.name, attr.value && attr.value.fileId);
+             } else if (attr.type == 'signature') {
+               attr.$$imageUrl = ExtensionsUtil.getFileDownloadUrl(
+                 formId, recordId, prefix + attr.name, attr.value);
+             } else if (attr.type == 'textArea' || attr.type == 'stringTextField') {
+               attr.displayValue = Util.linkify(attr.value);
              }
            }
          }

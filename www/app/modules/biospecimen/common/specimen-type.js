@@ -1,5 +1,9 @@
 angular.module('os.biospecimen.common')
-  .factory('SpecimenTypeUtil', function($q, PvManager) {
+  .factory('SpecimenTypeUtil', function($q, $http, ApiUrls, PvManager) {
+
+    var typeProps = undefined;
+
+    var typesQ = undefined;
 
     function transformer(pv) {
       return {specimenClass: pv.parentValue, type: pv.value};
@@ -7,6 +11,38 @@ angular.module('os.biospecimen.common')
 
     function loadSpecimenTypes() {
       return PvManager.loadPvsByParent('specimen-class', '', true, transformer, 1000);
+    }
+
+    function loadSpecimenTypesWithProps() {
+      if (typeProps) {
+        var q = $q.defer();
+        q.resolve(typeProps);
+        return q.promise;
+      }
+
+      if (!typesQ) {
+        var url = ApiUrls.getBaseUrl() + 'permissible-values';
+        var qp = {attribute: 'specimen_type', includeParentValue: true, includeProps: true, maxResults: 1000};
+        typesQ = $http.get(url, {params: qp});
+      }
+
+      return typesQ.then(
+        function(types) {
+          typeProps = {};
+
+          angular.forEach(types.data,
+            function(type) {
+              if (type.parentValue) {
+                typeProps[type.parentValue + ':' + type.value] = type;
+              } else {
+                typeProps[type.value + ':*'] = type;
+              }
+            }
+          );
+
+          return typeProps;
+        }
+      );
     }
 
     function loadLocalTypes(options) {
@@ -49,7 +85,9 @@ angular.module('os.biospecimen.common')
         );
       },
 
-      getSpecimenTypes: getSpecimenTypes
+      getSpecimenTypes: getSpecimenTypes,
+
+      getTypesWithProps: loadSpecimenTypesWithProps
     }
   })
   .directive('osSpecimenTypes', function($timeout, SpecimenTypeUtil, PvManager) {

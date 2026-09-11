@@ -1,7 +1,7 @@
 
 angular.module('os.biospecimen.specimen.addderivative', [])
   .controller('AddDerivativeCtrl', function(
-    $scope, $state, cp, specimen, cpr, visit, extensionCtxt, cpDict, derivedFields,
+    $scope, $state, userRole, cp, specimen, cpr, visit, extensionCtxt, cpDict, derivedFields,
     incrFreezeThawCycles, hasSde, hasDict, onValueChangeCb,
     Specimen, SpecimensHolder, SpecimenUtil, Container, ExtensionsUtil, Alerts) {
 
@@ -11,7 +11,7 @@ angular.module('os.biospecimen.specimen.addderivative', [])
       $scope.visit = visit;
 
       var ps = $scope.parentSpecimen = specimen;
-      delete ps.children;
+      ExtensionsUtil.createExtensionFieldMap(ps, true);
 
       var opts = {incrFreezeThawCycles: incrFreezeThawCycles};
       var derivative = $scope.derivative = SpecimenUtil.getNewDerivative($scope, opts);
@@ -19,8 +19,9 @@ angular.module('os.biospecimen.specimen.addderivative', [])
       derivative.parent = new Specimen(ps);
 
       if (hasSde) {
-        var groups = SpecimenUtil.sdeGroupSpecimens(cpDict, derivedFields || [], [derivative], {});
+        var groups = SpecimenUtil.sdeGroupSpecimens(cpDict, derivedFields || [], [derivative], {userRole: userRole});
         if (groups.length == 1 && !groups[0].noMatch) {
+          delete specimen.children;
           SpecimensHolder.setSpecimens([specimen]);
           $state.go('specimen-bulk-create-derivatives', {}, {location: 'replace'});
           return;
@@ -34,7 +35,7 @@ angular.module('os.biospecimen.specimen.addderivative', [])
 
       if (hasDict) {
         $scope.spmnCtx = {
-          obj: {specimen: $scope.derivative},
+          obj: {specimen: $scope.derivative, userRole: userRole},
           inObjs: ['specimen'], exObjs: exObjs,
           opts: {onValueChange: onValueChangeCb}
         }

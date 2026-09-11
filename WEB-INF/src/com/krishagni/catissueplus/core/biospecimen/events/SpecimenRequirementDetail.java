@@ -1,23 +1,28 @@
 package com.krishagni.catissueplus.core.biospecimen.events;
 
 import java.math.BigDecimal;
-import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
-import org.codehaus.jackson.annotate.JsonIgnore;
-
+import org.apache.commons.lang3.StringUtils;
 import com.fasterxml.jackson.annotation.JsonFilter;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
+import com.krishagni.catissueplus.core.administrative.domain.PermissibleValue;
 import com.krishagni.catissueplus.core.biospecimen.domain.AliquotSpecimensRequirement;
 import com.krishagni.catissueplus.core.biospecimen.domain.DerivedSpecimenRequirement;
 import com.krishagni.catissueplus.core.biospecimen.domain.SpecimenRequirement;
 import com.krishagni.catissueplus.core.common.events.UserSummary;
 import com.krishagni.catissueplus.core.common.util.NumUtil;
 import com.krishagni.catissueplus.core.common.util.Utility;
+import com.krishagni.catissueplus.core.de.events.ExtensionDetail;
 
 @JsonFilter("withoutId")
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class SpecimenRequirementDetail implements Comparable<SpecimenRequirementDetail> {
 	private Long id;
 	
@@ -42,6 +47,10 @@ public class SpecimenRequirementDetail implements Comparable<SpecimenRequirement
 	private BigDecimal initialQty;
 	
 	private BigDecimal concentration;
+
+	private String quantityUnit;
+
+	private String concentrationUnit;
 	
 	private UserSummary collector;
 	
@@ -58,15 +67,17 @@ public class SpecimenRequirementDetail implements Comparable<SpecimenRequirement
 	private Integer labelPrintCopies;
 	
 	private Integer sortOrder;
+
+	private Map<String, Object> defaultCustomFieldValues;
+
+	private boolean preBarcodedTube;
 	
 	private Long eventId;
+
+	private Long cpId;
 	
 	private List<SpecimenRequirementDetail> children;
 
-	private Long pooledSpecimenReqId;
-
-	private List<SpecimenRequirementDetail> specimensPool;
-	
 	private String cpShortTitle;
 	
 	private String eventLabel;
@@ -74,6 +85,14 @@ public class SpecimenRequirementDetail implements Comparable<SpecimenRequirement
 	private String parentSrCode;
 
 	private String activityStatus;
+
+	private ExtensionDetail extensionDetail;
+
+	private List<SrServiceDetail> services;
+
+	private String uid;
+
+	private String parentUid;
 
 	public Long getId() {
 		return id;
@@ -171,6 +190,22 @@ public class SpecimenRequirementDetail implements Comparable<SpecimenRequirement
 		this.concentration = concentration;
 	}
 
+	public String getQuantityUnit() {
+		return quantityUnit;
+	}
+
+	public void setQuantityUnit(String quantityUnit) {
+		this.quantityUnit = quantityUnit;
+	}
+
+	public String getConcentrationUnit() {
+		return concentrationUnit;
+	}
+
+	public void setConcentrationUnit(String concentrationUnit) {
+		this.concentrationUnit = concentrationUnit;
+	}
+
 	public UserSummary getCollector() {
 		return collector;
 	}
@@ -235,12 +270,53 @@ public class SpecimenRequirementDetail implements Comparable<SpecimenRequirement
 		this.sortOrder = sortOrder;
 	}
 
+	public Map<String, Object> getDefaultCustomFieldValues() {
+		return defaultCustomFieldValues;
+	}
+
+	public void setDefaultCustomFieldValues(Map<String, Object> defaultCustomFieldValues) {
+		this.defaultCustomFieldValues = defaultCustomFieldValues;
+	}
+	@JsonIgnore
+	public String getDefCustomFieldValuesJson() {
+		if (defaultCustomFieldValues == null) {
+			return null;
+		}
+
+		return Utility.mapToJson(defaultCustomFieldValues);
+	}
+
+	@JsonProperty
+	public void setDefCustomFieldValuesJson(String json) {
+		if (StringUtils.isBlank(json)) {
+			this.defaultCustomFieldValues = null;
+		} else {
+			this.defaultCustomFieldValues = Utility.jsonToMap(json);
+		}
+	}
+
+	public boolean isPreBarcodedTube() {
+		return preBarcodedTube;
+	}
+
+	public void setPreBarcodedTube(boolean preBarcodedTube) {
+		this.preBarcodedTube = preBarcodedTube;
+	}
+
 	public Long getEventId() {
 		return eventId;
 	}
 
 	public void setEventId(Long eventId) {
 		this.eventId = eventId;
+	}
+
+	public Long getCpId() {
+		return cpId;
+	}
+
+	public void setCpId(Long cpId) {
+		this.cpId = cpId;
 	}
 
 	public List<SpecimenRequirementDetail> getChildren() {
@@ -251,23 +327,6 @@ public class SpecimenRequirementDetail implements Comparable<SpecimenRequirement
 		this.children = children;
 	}
 
-	public Long getPooledSpecimenReqId() {
-		return pooledSpecimenReqId;
-	}
-
-	public void setPooledSpecimenReqId(Long pooledSpecimenReqId) {
-		this.pooledSpecimenReqId = pooledSpecimenReqId;
-	}
-
-	public List<SpecimenRequirementDetail> getSpecimensPool() {
-		return specimensPool;
-	}
-
-	public void setSpecimensPool(List<SpecimenRequirementDetail> specimensPool) {
-		this.specimensPool = specimensPool;
-	}
-	
-	@JsonIgnore
 	public String getCpShortTitle() {
 		return cpShortTitle;
 	}
@@ -276,7 +335,6 @@ public class SpecimenRequirementDetail implements Comparable<SpecimenRequirement
 		this.cpShortTitle = cpShortTitle;
 	}
 
-	@JsonIgnore
 	public String getEventLabel() {
 		return eventLabel;
 	}
@@ -284,8 +342,7 @@ public class SpecimenRequirementDetail implements Comparable<SpecimenRequirement
 	public void setEventLabel(String eventLabel) {
 		this.eventLabel = eventLabel;
 	}
-	
-	@JsonIgnore
+
 	public String getParentSrCode() {
 		return parentSrCode;
 	}
@@ -300,6 +357,38 @@ public class SpecimenRequirementDetail implements Comparable<SpecimenRequirement
 
 	public void setActivityStatus(String activityStatus) {
 		this.activityStatus = activityStatus;
+	}
+
+	public ExtensionDetail getExtensionDetail() {
+		return extensionDetail;
+	}
+
+	public void setExtensionDetail(ExtensionDetail extensionDetail) {
+		this.extensionDetail = extensionDetail;
+	}
+
+	public List<SrServiceDetail> getServices() {
+		return services;
+	}
+
+	public void setServices(List<SrServiceDetail> services) {
+		this.services = services;
+	}
+
+	public String getUid() {
+		return uid;
+	}
+
+	public void setUid(String uid) {
+		this.uid = uid;
+	}
+
+	public String getParentUid() {
+		return parentUid;
+	}
+
+	public void setParentUid(String parentUid) {
+		this.parentUid = parentUid;
 	}
 
 	@Override
@@ -320,8 +409,10 @@ public class SpecimenRequirementDetail implements Comparable<SpecimenRequirement
 		req.setLabelPrintCopies(getLabelPrintCopies());
 		req.setParentSrId(parentSrId);
 		req.setQtyPerAliquot(getInitialQty());
+		req.setSortOrder(getSortOrder());
 		req.setStorageType(getStorageType());
-		
+		req.setDefaultCustomFieldValues(getDefaultCustomFieldValues());
+		req.setPreBarcodedTube(isPreBarcodedTube());
 		return req;		
 	}
 	
@@ -339,7 +430,8 @@ public class SpecimenRequirementDetail implements Comparable<SpecimenRequirement
 		req.setType(getType());
 		req.setCode(getCode());
 		req.setPathology(getPathology());
-		
+		req.setDefaultCustomFieldValues(getDefaultCustomFieldValues());
+		req.setPreBarcodedTube(isPreBarcodedTube());
 		return req;
 	}
 	
@@ -353,35 +445,40 @@ public class SpecimenRequirementDetail implements Comparable<SpecimenRequirement
 		detail.setName(sr.getName());
 		detail.setCode(sr.getCode());
 		detail.setLineage(sr.getLineage());
-		detail.setSpecimenClass(sr.getSpecimenClass());
-		detail.setType(sr.getSpecimenType());
-		detail.setAnatomicSite(sr.getAnatomicSite());
-		detail.setLaterality(sr.getLaterality());
-		detail.setPathology(sr.getPathologyStatus());
+		detail.setSpecimenClass(PermissibleValue.getValue(sr.getSpecimenClass()));
+		detail.setType(PermissibleValue.getValue(sr.getSpecimenType()));
+		detail.setAnatomicSite(PermissibleValue.getValue(sr.getAnatomicSite()));
+		detail.setLaterality(PermissibleValue.getValue(sr.getLaterality()));
+		detail.setPathology(PermissibleValue.getValue(sr.getPathologyStatus()));
 		detail.setStorageType(sr.getStorageType());
 		detail.setInitialQty(sr.getInitialQuantity());
 		detail.setConcentration(sr.getConcentration());
 		detail.setCollector(sr.getCollector() == null ? null : UserSummary.from(sr.getCollector()));
-		detail.setCollectionProcedure(sr.getCollectionProcedure());
-		detail.setCollectionContainer(sr.getCollectionContainer());
+		detail.setCollectionProcedure(PermissibleValue.getValue(sr.getCollectionProcedure()));
+		detail.setCollectionContainer(PermissibleValue.getValue(sr.getCollectionContainer()));
 		detail.setReceiver(sr.getReceiver() == null ? null : UserSummary.from(sr.getReceiver()));
 		detail.setLabelFmt(sr.getLabelFormat());
 		detail.setLabelAutoPrintMode(sr.getLabelAutoPrintMode() == null ? null : sr.getLabelAutoPrintMode().name());
 		detail.setLabelPrintCopies(sr.getLabelPrintCopies());
 		detail.setSortOrder(sr.getSortOrder());
+		detail.setDefaultCustomFieldValues(sr.getDefaultCustomFieldValues());
+		detail.setPreBarcodedTube(sr.isPreBarcodedTube());
 		detail.setEventId(sr.getCollectionProtocolEvent().getId());
+		detail.setCpId(sr.getCollectionProtocol().getId());
+		detail.setCpShortTitle(sr.getCollectionProtocol().getShortTitle());
+		detail.setServices(SrServiceDetail.from(sr.getServices()));
 		detail.setActivityStatus(sr.getActivityStatus());
-		
+		if (sr.getId() != null) {
+			detail.setUid("sr_" + sr.getId());
+			if (sr.getParentSpecimenRequirement() != null) {
+				detail.setParentUid("sr_" + sr.getParentSpecimenRequirement().getId());
+			}
+		}
+
 		if (incChildren) {
 			detail.setChildren(from(sr.getChildSpecimenRequirements()));
 		}
 		
-		if (sr.getPooledSpecimenRequirement() != null) {
-			detail.setPooledSpecimenReqId(sr.getPooledSpecimenRequirement().getId());
-		} else {
-			detail.setSpecimensPool(from(sr.getOrderedSpecimenPoolReqs()));
-		}
-
 		return detail;
 	}
 	

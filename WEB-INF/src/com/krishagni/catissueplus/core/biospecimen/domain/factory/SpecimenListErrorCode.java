@@ -10,6 +10,8 @@ public enum SpecimenListErrorCode implements ErrorCode {
 	NAME_REQUIRED,
 	
 	DUP_NAME,
+
+	DEF_LIST_RENAME_NA,
 	
 	OWNER_REQUIRED,
 	
@@ -19,7 +21,23 @@ public enum SpecimenListErrorCode implements ErrorCode {
 	
 	INVALID_USERS_LIST,
 
-	EXCEEDS_REL_SORT_SIZE;
+	INVALID_GROUPS_LIST,
+
+	EXCEEDS_REL_SORT_SIZE,
+
+	INV_CART_SPECIMENS,
+
+	PICK_LIST_ID_REQ,
+
+	PICK_LIST_NAME_REQ,
+
+	PICK_LIST_NOT_FOUND,
+
+	ADD_RM_SPMNS_NA,
+
+	NO_SPACE_IN_BOX,
+
+	LTD_SPACE_IN_BOX;
 
 	@Override
 	public String code() {

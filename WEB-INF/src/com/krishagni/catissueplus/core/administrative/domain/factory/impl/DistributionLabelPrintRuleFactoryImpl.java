@@ -5,25 +5,30 @@ import java.util.List;
 import java.util.Map;
 
 import com.krishagni.catissueplus.core.administrative.domain.DistributionLabelPrintRule;
+import com.krishagni.catissueplus.core.administrative.domain.DistributionOrderItem;
 import com.krishagni.catissueplus.core.administrative.domain.DistributionProtocol;
 import com.krishagni.catissueplus.core.administrative.domain.factory.DistributionProtocolErrorCode;
 import com.krishagni.catissueplus.core.common.Pair;
 import com.krishagni.catissueplus.core.common.domain.LabelPrintRule;
 import com.krishagni.catissueplus.core.common.domain.factory.impl.AbstractLabelPrintRuleFactory;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
-import com.krishagni.catissueplus.core.common.util.Utility;
 
 public class DistributionLabelPrintRuleFactoryImpl extends AbstractLabelPrintRuleFactory {
-	@Override
-	public LabelPrintRule fromRuleDef(Map<String, String> ruleDef, boolean failOnError, OpenSpecimenException ose) {
-		DistributionLabelPrintRule rule = new DistributionLabelPrintRule();
 
+	@Override
+	public String getItemType() {
+		return DistributionOrderItem.getEntityName();
+	}
+
+	@Override
+	public LabelPrintRule fromRuleDef(Map<String, Object> ruleDef, boolean failOnError, OpenSpecimenException ose) {
+		DistributionLabelPrintRule rule = new DistributionLabelPrintRule();
 		setDps(ruleDef, failOnError, rule, ose);
 		return rule;
 	}
 
-	private void setDps(Map<String, String> ruleDef, boolean failOnError, DistributionLabelPrintRule rule, OpenSpecimenException ose) {
-		List<String> inputList = Utility.csvToStringList(ruleDef.get("dps"));
+	private void setDps(Map<String, Object> ruleDef, boolean failOnError, DistributionLabelPrintRule rule, OpenSpecimenException ose) {
+		List<String> inputList = objToList(ruleDef.get("dps"));
 		if (inputList.isEmpty()) {
 			return;
 		}

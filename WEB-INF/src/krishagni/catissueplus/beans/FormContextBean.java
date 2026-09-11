@@ -1,11 +1,19 @@
 package krishagni.catissueplus.beans;
 
 import java.util.Date;
+import java.util.HashSet;
+import java.util.Set;
 
+import org.hibernate.envers.Audited;
+import org.hibernate.envers.NotAudited;
+import org.hibernate.envers.RelationTargetAuditMode;
+
+import com.krishagni.catissueplus.core.administrative.domain.UserGroup;
+import com.krishagni.catissueplus.core.biospecimen.domain.BaseEntity;
 import com.krishagni.catissueplus.core.de.domain.Form;
 
-public class FormContextBean {
-	
+@Audited
+public class FormContextBean extends BaseEntity {
 	private Long identifier;
 	
 	private Long containerId;
@@ -19,6 +27,12 @@ public class FormContextBean {
 	private Integer sortOrder;
 	
 	private boolean multiRecord;
+
+	private boolean notifEnabled;
+
+	private boolean dataInNotif;
+
+	private Set<UserGroup> notifUserGroups = new HashSet<>();
 	
 	private boolean sysForm;
 	
@@ -32,6 +46,14 @@ public class FormContextBean {
 
 	public void setIdentifier(Long identifier) {
 		this.identifier = identifier;
+	}
+
+	public Long getId() {
+		return identifier;
+	}
+
+	public void setId(Long id) {
+		this.identifier = id;
 	}
 
 	public Long getContainerId() {
@@ -82,6 +104,30 @@ public class FormContextBean {
 		this.multiRecord = isMultiRecord;
 	}
 
+	public boolean isNotifEnabled() {
+		return notifEnabled;
+	}
+
+	public void setNotifEnabled(boolean notifEnabled) {
+		this.notifEnabled = notifEnabled;
+	}
+
+	public boolean isDataInNotif() {
+		return dataInNotif;
+	}
+
+	public void setDataInNotif(boolean dataInNotif) {
+		this.dataInNotif = dataInNotif;
+	}
+
+	public Set<UserGroup> getNotifUserGroups() {
+		return notifUserGroups;
+	}
+
+	public void setNotifUserGroups(Set<UserGroup> notifUserGroups) {
+		this.notifUserGroups = notifUserGroups;
+	}
+
 	public boolean isSysForm() {
 		return sysForm;
 	}
@@ -98,6 +144,7 @@ public class FormContextBean {
 		this.deletedOn = deletedOn;
 	}
 
+	@NotAudited
 	public Form getForm() {
 		return form;
 	}

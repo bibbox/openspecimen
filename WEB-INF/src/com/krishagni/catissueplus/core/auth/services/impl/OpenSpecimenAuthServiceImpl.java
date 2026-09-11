@@ -19,7 +19,11 @@ public class OpenSpecimenAuthServiceImpl implements AuthenticationService {
 	
 	@Autowired
 	private AuthenticationManager authManager;
-	
+
+	public OpenSpecimenAuthServiceImpl() {
+
+	}
+
 	public OpenSpecimenAuthServiceImpl(Map<String, String> props) {
 		
 	}
@@ -31,7 +35,7 @@ public class OpenSpecimenAuthServiceImpl implements AuthenticationService {
 				new UsernamePasswordAuthenticationToken(loginDetail.getLoginName(), loginDetail.getPassword());
 		
 			authManager.authenticate(authenticationToken);
-		} catch(AuthenticationException e) {
+		} catch (AuthenticationException e) {
 			throw OpenSpecimenException.userError(AuthErrorCode.INVALID_CREDENTIALS);
 		}
 	}

@@ -8,13 +8,21 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.apache.commons.lang3.StringUtils;
+import org.hibernate.envers.Audited;
+import org.hibernate.envers.NotAudited;
+
 import com.krishagni.catissueplus.core.administrative.domain.factory.SpecimenRequestErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.domain.BaseExtensionEntity;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
+import com.krishagni.catissueplus.core.biospecimen.domain.RequestManagerGroup;
+import com.krishagni.catissueplus.core.biospecimen.domain.SpecimenList;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
+import com.krishagni.catissueplus.core.common.service.impl.EventPublisher;
 import com.krishagni.catissueplus.core.common.util.AuthUtil;
 import com.krishagni.catissueplus.core.common.util.Status;
 
+@Audited
 public class SpecimenRequest extends BaseExtensionEntity {
 	private static final String ENTITY_NAME = "specimen_request";
 
@@ -52,6 +60,8 @@ public class SpecimenRequest extends BaseExtensionEntity {
 
 	private DistributionProtocol dp;
 
+	private RequestManagerGroup requestManagerGroup;
+
 	private Set<SpecimenRequestItem> items = new LinkedHashSet<>();
 
 	private String itemsCriteriaJson;
@@ -61,6 +71,8 @@ public class SpecimenRequest extends BaseExtensionEntity {
 	private String comments;
 
 	private Set<DistributionOrder> orders = new HashSet<>();
+
+	private SpecimenList cart;
 
 	public Long getCatalogId() {
 		return catalogId;
@@ -174,6 +186,14 @@ public class SpecimenRequest extends BaseExtensionEntity {
 		this.dp = dp;
 	}
 
+	public RequestManagerGroup getRequestManagerGroup() {
+		return requestManagerGroup;
+	}
+
+	public void setRequestManagerGroup(RequestManagerGroup requestManagerGroup) {
+		this.requestManagerGroup = requestManagerGroup;
+	}
+
 	public Set<SpecimenRequestItem> getItems() {
 		return items;
 	}
@@ -206,12 +226,22 @@ public class SpecimenRequest extends BaseExtensionEntity {
 		this.comments = comments;
 	}
 
+	@NotAudited
 	public Set<DistributionOrder> getOrders() {
 		return orders;
 	}
 
 	public void setOrders(Set<DistributionOrder> orders) {
 		this.orders = orders;
+	}
+
+	@NotAudited
+	public SpecimenList getCart() {
+		return cart;
+	}
+
+	public void setCart(SpecimenList cart) {
+		this.cart = cart;
 	}
 
 	@Override
@@ -234,7 +264,7 @@ public class SpecimenRequest extends BaseExtensionEntity {
 			return;
 		}
 
-		close("Automatic closure of request");
+		close("Automatic closure on request fulfillment.");
 	}
 
 	public void close(String comments) {
@@ -242,6 +272,37 @@ public class SpecimenRequest extends BaseExtensionEntity {
 		setDateOfProcessing(Calendar.getInstance().getTime());
 		setComments(comments);
 		setActivityStatus(Status.ACTIVITY_STATUS_CLOSED.getStatus());
+		EventPublisher.getInstance().publish(SpecimenRequestEvent.closed(this));
+	}
+
+	public void reopenIfNotFulfilled() {
+		if (!isClosed()) {
+			return;
+		}
+
+		boolean anyPending = getItems().stream().anyMatch(SpecimenRequestItem::isPending);
+		if (anyPending) {
+			reopen("Automatic reopening of request.");
+		}
+	}
+
+	public void reopen(String comments) {
+		if (!isClosed()) {
+			return;
+		}
+
+		setProcessedBy(null);
+		setDateOfProcessing(null);
+		setActivityStatus(Status.ACTIVITY_STATUS_ACTIVE.getStatus());
+
+		if (StringUtils.isNotBlank(comments)) {
+			comments = comments;
+			if (StringUtils.isNotBlank(getComments())) {
+				comments += "\n\n" + getComments();
+			}
+
+			setComments(comments);
+		}
 	}
 
 	public void delete() {
@@ -280,12 +341,12 @@ public class SpecimenRequest extends BaseExtensionEntity {
 		close(comments);
 	}
 
-	public void resetScreeningStatus() {
+	public void resetScreeningStatus(String comments) {
 		if (isApproved()) {
 			ensureReqIsNotUsedInOrder();
 		}
 
-		updateScreeningStatus(ScreeningStatus.PENDING, null, null, null);
+		updateScreeningStatus(ScreeningStatus.PENDING, null, null, comments);
 	}
 
 	public static String getEntityName() {
@@ -309,11 +370,18 @@ public class SpecimenRequest extends BaseExtensionEntity {
 		setScreenedBy(user);
 		setDateOfScreening(time);
 		setScreeningComments(comments);
+		if (inputStatus == ScreeningStatus.PENDING) {
+			setActivityStatus(Status.ACTIVITY_STATUS_ACTIVE.getStatus());
+		}
 	}
 
 	private void ensureReqIsNotUsedInOrder() {
-		if (!getOrders().isEmpty()) {
-			String names = getOrders().stream().map(DistributionOrder::getName).collect(Collectors.joining(", "));
+		Set<String> reqOrders = getOrders().stream()
+			.filter(o -> !Status.isDisabledStatus(o.getActivityStatus()))
+			.map(DistributionOrder::getName)
+			.collect(Collectors.toSet());
+		if (!reqOrders.isEmpty()) {
+			String names = StringUtils.join(reqOrders, ", ");
 			throw OpenSpecimenException.userError(SpecimenRequestErrorCode.USED_IN_ORDER, getId(), names);
 		}
 	}

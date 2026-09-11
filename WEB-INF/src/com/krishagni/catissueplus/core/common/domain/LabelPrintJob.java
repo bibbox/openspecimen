@@ -6,20 +6,20 @@ import java.util.Date;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 
 import com.krishagni.catissueplus.core.administrative.domain.User;
 import com.krishagni.catissueplus.core.biospecimen.domain.BaseEntity;
 import com.krishagni.catissueplus.core.common.util.AuthUtil;
 import com.krishagni.catissueplus.core.common.util.ConfigUtil;
+import com.krishagni.catissueplus.core.common.util.LogUtil;
 import com.krishagni.catissueplus.core.common.util.Utility;
 
 public class LabelPrintJob extends BaseEntity {
-	private static final Log logger = LogFactory.getLog(LabelPrintJob.class);
+	private static final LogUtil logger = LogUtil.getLogger(LabelPrintJob.class);
 
 	private String itemType;
 	
@@ -62,8 +62,12 @@ public class LabelPrintJob extends BaseEntity {
 	}
 
 	public void generateLabelsDataFile() {
-		boolean downloadPrintLabelsFile = ConfigUtil.getInstance().getBoolSetting(
-			"administrative", "download_labels_print_file", false);
+		boolean downloadPrintLabelsFile = Objects.requireNonNull(AuthUtil.getCurrentUser()).isDownloadLabelsPrintFile();
+		if (!downloadPrintLabelsFile) {
+			downloadPrintLabelsFile = ConfigUtil.getInstance().getBoolSetting(
+				"administrative", "download_labels_print_file", false);
+		}
+
 		if (!downloadPrintLabelsFile) {
 			return;
 		}

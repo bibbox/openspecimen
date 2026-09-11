@@ -1,7 +1,7 @@
 
 angular.module('os.biospecimen.specimen.addaliquots', [])
   .controller('AddAliquotsCtrl', function(
-    $scope, $rootScope, $state, $stateParams, specimen, cpr,
+    $scope, $rootScope, $state, $stateParams, userRole, specimen, cpr,
     visit, extensionCtxt, hasSde, hasDict, cpDict, onValueChangeCb, createDerived, aliquotFields, incrFreezeThawCycles,
     CollectSpecimensSvc, Specimen, SpecimenUtil, SpecimensHolder, ExtensionsUtil, Alerts) {
 
@@ -10,6 +10,7 @@ angular.module('os.biospecimen.specimen.addaliquots', [])
       $scope.cpr = cpr;
       $scope.visit = visit;
       var ps = $scope.parentSpecimen = specimen;
+      ExtensionsUtil.createExtensionFieldMap(ps, true);
 
       var freezeThawIncrStep = incrFreezeThawCycles ? 1 : 0;
       $scope.aliquotSpec = new Specimen({
@@ -42,7 +43,8 @@ angular.module('os.biospecimen.specimen.addaliquots', [])
       });
 
       if (hasSde) {
-        var groups = SpecimenUtil.sdeGroupSpecimens(cpDict, aliquotFields || [], [$scope.aliquotSpec], {});
+        var groups = SpecimenUtil.sdeGroupSpecimens(
+          cpDict, aliquotFields || [], [$scope.aliquotSpec], {userRole: userRole});
         if (groups.length == 1 && !groups[0].noMatch) {
           SpecimensHolder.setSpecimens([specimen]);
           $state.go('specimen-bulk-create-aliquots', {}, {location: 'replace'});
@@ -71,7 +73,7 @@ angular.module('os.biospecimen.specimen.addaliquots', [])
 
       if (hasDict) {
         $scope.spmnCtx = {
-          aobj: {cpr: cpr, visit: visit, specimen: $scope.aliquotSpec},
+          aobj: {cpr: cpr, visit: visit, specimen: $scope.aliquotSpec, userRole: userRole},
           ainObjs: ['specimen'], aexObjs: exObjs,
           aopts: {onValueChange: onValueChangeCb}
         }
@@ -105,7 +107,7 @@ angular.module('os.biospecimen.specimen.addaliquots', [])
 
     $scope.onChange = function(fieldName) {
       var ctx = $scope.spmnCtx;
-      if (ctx.aopts.$$sdeFormFields) {
+      if (ctx && ctx.aopts && ctx.aopts.$$sdeFormFields) {
         ctx.aopts.$$sdeFormFields.valueChanged(undefined, ctx.aobj, 'specimen.' + fieldName, undefined);
       }
     }

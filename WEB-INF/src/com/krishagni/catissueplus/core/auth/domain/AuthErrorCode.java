@@ -15,7 +15,31 @@ public enum AuthErrorCode implements ErrorCode {
 
 	PASSWD_EXPIRED,
 
-	SYSTEM_LOCKDOWN;
+	SYSTEM_LOCKDOWN,
+
+	NA_IP_ADDRESS,
+
+	IMP_TOKEN_INV,
+
+	IMP_TOKEN_EXP,
+
+	OTP_EXPIRED,
+
+	DOMAIN_LOGIN_DISABLED,
+
+	OS_DOMAIN_API_ONLY,
+
+	JWT_PARSE_ERROR,
+
+	JWT_UNKNOWN_ISSUER,
+
+	JWT_EXPIRED,
+
+	JWT_INV_AUD,
+
+	JWT_INV_AUD_BY_ISSUER,
+
+	INV_STATE;
 
 	@Override
 	public String code() {

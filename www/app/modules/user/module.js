@@ -20,12 +20,12 @@ angular.module('openspecimen')
       .state('login', {
         url: '/?logout&directVisit',
         templateUrl: 'modules/user/signin.html',
-        controller: 'LoginCtrl',
+        controller: function (VueApp) { VueApp.setVueView('home'); }, // 'LoginCtrl',
         parent: 'default-nav-buttons',
         data: {
           redirect: false
         },
-        resolve: {
+        resolve1: {
           defCatalogId: function($injector) {
             if (!$injector.has('scCatalog')) {
               return null;
@@ -47,7 +47,7 @@ angular.module('openspecimen')
         parent: 'default-nav-buttons'
       })
       .state('reset-password', {
-        url: '/reset-password',
+        url: '/reset-password?token&loginName',
         templateUrl: 'modules/user/reset-password.html',
         controller: 'ResetPasswordCtrl',
         parent: 'default-nav-buttons',
@@ -70,6 +70,15 @@ angular.module('openspecimen')
           },
           users: function() {
             return [];
+          },
+          currentUser: function() {
+            return null;
+          },
+          editProfile: function() {
+            return false;
+          },
+          oldView: function() {
+            return true;
           }
         },
         controller: 'UserAddEditCtrl',

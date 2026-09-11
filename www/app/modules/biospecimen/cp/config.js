@@ -1,6 +1,8 @@
 
 angular.module('openspecimen')
-  .factory('CpConfigSvc', function(CollectionProtocol, $q) {
+  .factory('CpConfigSvc', function(
+    $q, CollectionProtocol, CollectionProtocolRegistration, Visit, Specimen, Form, ExtensionsUtil) {
+
     var cpWorkflowsMap = {};
 
     var cpWorkflowsQ = {};
@@ -8,6 +10,8 @@ angular.module('openspecimen')
     var listCfgsMap = {};
 
     var summarySt = undefined;
+
+    var cpCustomFieldsQ = {};
     
     function getRegParticipantTmpl(cpId, cprId) {
       return getTmpl(cpId, cprId, 'registerParticipant', 'modules/biospecimen/participant/addedit.html');
@@ -164,6 +168,106 @@ angular.module('openspecimen')
       );
     }
 
+    function getBulkUpdateDictionary() {
+      return getWorkflowData(-1, 'bulk-update-dictionary', {}).then(
+        function(bud) {
+          return {cpId: -1, fields: bud.fields || []};
+        }
+      );
+    }
+
+    function getFormFields(extnCtxtQ, prefix) {
+      return extnCtxtQ.then(
+        function(ctxt) {
+          if (!ctxt) {
+            return [];
+          }
+
+          return Form.getDefinition(ctxt.formId).then(
+            function(formDef) {
+              return ExtensionsUtil.toSdeFields(prefix, ctxt.formId, formDef) || [];
+            }
+          );
+        }
+      );
+    }
+
+    //
+    // type is one of 'cpr.participant.extensionDetail.attrsMap',
+    // 'visit.extensionDetail.attrsMap', 'specimen.extensionDetail.attrsMap'
+    //
+    function hasCustomFields(fields, type) {
+      type = type || 'extensionDetail.attrsMap';
+      return fields.some(
+        function(field) {
+          return field.name && field.name.indexOf(type) >= 0;
+        }
+      );
+    }
+
+    function getCustomFields(cpId, type) {
+      cpCustomFieldsQ[cpId] = cpCustomFieldsQ[cpId] || {};
+      if (cpCustomFieldsQ[cpId][type]) {
+        return cpCustomFieldsQ[cpId][type];
+      }
+
+      if (type == 'cpr') {
+        var cprQ = cpCustomFieldsQ[cpId][type] = getFormFields(
+          CollectionProtocolRegistration.getExtensionCtxt({cpId: cpId}),
+          'cpr.participant.extensionDetail.attrsMap'
+        );
+        return cprQ;
+      } else if (type == 'visit') {
+        var visitQ = cpCustomFieldsQ[cpId][type] = getFormFields(
+          Visit.getExtensionCtxt({cpId: cpId}),
+          'visit.extensionDetail.attrsMap'
+        );
+        return visitQ;
+      } else if (type == 'specimen') {
+        var spmnQ = cpCustomFieldsQ[cpId][type] = getFormFields(
+          Specimen.getExtensionCtxt({cpId: cpId}),
+          'specimen.extensionDetail.attrsMap'
+        );
+        return spmnQ;
+      } else {
+        var q = $q.defer();
+        q.resolve([]);
+        return q.promise;
+      }
+    }
+
+    function addCustomFields(cpId, fields, type) {
+      type = type.split('.')[0];
+      return getCustomFields(cpId, type).then(
+        function(customFields) {
+          Array.prototype.push.apply(fields, customFields);
+          return fields;
+        }
+      );
+    };
+
+    function addCustomFieldsIfAbsent(cpId, fields) {
+      var types = ['cpr.participant', 'visit', 'specimen'];
+      var promises = [];
+      for (var i = 0; i < types.length; ++i) {
+        if (!hasCustomFields(fields, types[i] + '.extensionDetail.attrsMap')) {
+          promises.push(addCustomFields(cpId, fields, types[i]));
+        }
+      }
+
+      if (promises.length == 0) {
+        var d = $q.defer();
+        d.resolve([]);
+        promises.push(d.promise);
+      }
+
+      return $q.all(promises).then(function(result) { return result; });
+    }
+
+    function getEntityCustomFields(cpId, entity) {
+      return getCustomFields(cpId, entity);
+    }
+
     return {
       getRegParticipantTmpl: function(cpId, cprId) {
         if (cprId != -1) { //edit case
@@ -208,15 +312,52 @@ angular.module('openspecimen')
       getDictionary: function(cpId, defValue) {
         return getWorkflowData(cpId, 'dictionary').then(
           function(data) {
-            if (data.fields) {
-              return data.fields;
+            var fields = angular.copy(data.fields || []);
+            if (cpId == -1 || !cpId) {
+              return fields;
             }
 
+            if (fields && fields.length > 0) {
+              return addCustomFieldsIfAbsent(cpId, fields).then(function() { return fields; });
+            }
+         
             return getWorkflowData(-1, 'dictionary').then(
               function(sysDict) {
-                return sysDict.fields || defValue || [];
+                var fields = angular.copy(sysDict.fields || defValue || []);
+                if (fields.length == 0 || cpId == -1 || !cpId) {
+                  return fields;
+                }
+
+                return addCustomFieldsIfAbsent(cpId, fields).then(function() { return fields; });
               }
             );
+          }
+        );
+      },
+
+      getBulkUpdateDictionary: function(cpId) {
+        return getWorkflowData(cpId, 'dictionary', {}).then(
+          function(wfData) {
+            if (wfData.fields && wfData.fields.length > 0) {
+              if (cpId > 0) {
+                var fields = angular.copy(wfData.fields);
+                return addCustomFieldsIfAbsent(cpId, fields).then(function() { return {cpId: cpId, fields: fields} });
+              } else {
+                return {cpId: cpId, fields: wfData.fields};
+              }
+            } else if (cpId == -1) {
+              return getBulkUpdateDictionary();
+            } else {
+              return getWorkflowData(-1, 'dictionary', {}).then(
+                function(sysWfData) {
+                  if (sysWfData.fields && sysWfData.fields.length > 0) {
+                    return {cpId: -1, fields: sysWfData.fields};
+                  } else {
+                    return getBulkUpdateDictionary();
+                  }
+                }
+              );
+            }
           }
         );
       },
@@ -287,6 +428,23 @@ angular.module('openspecimen')
         );
       },
 
+      getSpecimenTreeCfg: function(cpId) {
+        return getWorkflowData(-1, 'specimenTree', {}).then(
+          function(sysTreeCfg) {
+            var result = angular.extend({}, sysTreeCfg);
+            if (cpId == -1) {
+              return result;
+            }
+
+            return getWorkflowData(cpId, 'specimenTree', {}).then(
+              function(cpTreeCfg) {
+                return angular.extend(result, cpTreeCfg);
+              }
+            );
+          }
+        );
+      },
+
       saveWorkflow: saveWorkflow,
 
       getCommonCfg: getCommonCfg,
@@ -295,6 +453,18 @@ angular.module('openspecimen')
 
       getValue: getValue,
 
-      setWorkflows: setWorkflows
+      setWorkflows: setWorkflows,
+
+      getCprCustomFields: function(cpId) {
+        return getEntityCustomFields(cpId, 'cpr');
+      },
+
+      getVisitCustomFields: function(cpId) {
+        return getEntityCustomFields(cpId, 'visit');
+      },
+
+      getSpecimenCustomFields: function(cpId) {
+        return getEntityCustomFields(cpId, 'specimen');
+      }
     }
   });

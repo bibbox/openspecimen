@@ -2,6 +2,7 @@ package com.krishagni.catissueplus.core.administrative.repository.impl;
 
 import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
@@ -10,43 +11,35 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import org.apache.commons.collections.CollectionUtils;
-import org.apache.commons.lang.StringUtils;
-import org.hibernate.Criteria;
-import org.hibernate.criterion.DetachedCriteria;
-import org.hibernate.criterion.Disjunction;
-import org.hibernate.criterion.MatchMode;
-import org.hibernate.criterion.Order;
-import org.hibernate.criterion.ProjectionList;
-import org.hibernate.criterion.Projections;
-import org.hibernate.criterion.Restrictions;
-import org.hibernate.criterion.Subqueries;
-import org.hibernate.sql.JoinType;
+import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.lang3.StringUtils;
 
 import com.krishagni.catissueplus.core.administrative.domain.DistributionOrder;
 import com.krishagni.catissueplus.core.administrative.domain.DistributionOrderItem;
 import com.krishagni.catissueplus.core.administrative.domain.Site;
+import com.krishagni.catissueplus.core.administrative.domain.factory.DistributionOrderErrorCode;
 import com.krishagni.catissueplus.core.administrative.events.DistributionOrderItemListCriteria;
 import com.krishagni.catissueplus.core.administrative.events.DistributionOrderListCriteria;
 import com.krishagni.catissueplus.core.administrative.events.DistributionOrderSummary;
 import com.krishagni.catissueplus.core.administrative.events.DistributionProtocolDetail;
 import com.krishagni.catissueplus.core.administrative.repository.DistributionOrderDao;
 import com.krishagni.catissueplus.core.common.access.SiteCpPair;
+import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.UserSummary;
 import com.krishagni.catissueplus.core.common.repository.AbstractDao;
+import com.krishagni.catissueplus.core.common.repository.Criteria;
+import com.krishagni.catissueplus.core.common.repository.Disjunction;
+import com.krishagni.catissueplus.core.common.repository.SubQuery;
 
 public class DistributionOrderDaoImpl extends AbstractDao<DistributionOrder> implements DistributionOrderDao {
 
-	@SuppressWarnings("unchecked")
 	@Override
 	public List<DistributionOrderSummary> getOrders(DistributionOrderListCriteria listCrit) {
-		Criteria query = getOrderListQuery(listCrit)
-			.setFirstResult(listCrit.startAt())
-			.setMaxResults(listCrit.maxResults())
-			.addOrder(Order.desc("id"));
+		Criteria<Object[]> query = getOrderListQuery(listCrit);
+		query.orderBy(query.desc("creationDate"));
 
 		addProjections(query, CollectionUtils.isNotEmpty(listCrit.sites()));
-		List<Object[]> rows = query.list();
+		List<Object[]> rows = query.list(listCrit.startAt(), listCrit.maxResults());
 		
 		List<DistributionOrderSummary> result = new ArrayList<>();
 		Map<Long, DistributionOrderSummary> doMap = new HashMap<>();
@@ -69,45 +62,36 @@ public class DistributionOrderDaoImpl extends AbstractDao<DistributionOrder> imp
 
 	@Override
 	public Long getOrdersCount(DistributionOrderListCriteria listCrit) {
-		Number count = (Number) getOrderListQuery(listCrit)
-				.setProjection(Projections.rowCount())
-				.uniqueResult();
-		return count.longValue();
+		return getOrderListQuery(listCrit).getCount("order.id");
 	}
 
 	@Override
-	@SuppressWarnings("unchecked")
 	public DistributionOrder getOrder(String name) {
 		List<DistributionOrder> result = getOrders(Collections.singletonList(name));
 		return result.isEmpty() ? null : result.iterator().next();
 	}
 
 	@Override
-	@SuppressWarnings("unchecked")
 	public List<DistributionOrder> getOrders(List<String> names) {
-		return getSessionFactory().getCurrentSession()
-				.getNamedQuery(GET_ORDERS_BY_NAME)
-				.setParameterList("names", names)
-				.list();
+		return getCurrentSession().createNamedQuery(GET_ORDERS_BY_NAME, DistributionOrder.class)
+			.setParameterList("names", names)
+			.list();
 	}
 
 	@Override
-	@SuppressWarnings("unchecked")
 	public List<DistributionOrder> getUnpickedOrders(Date distSince, int startAt, int maxOrders) {
-		return getCurrentSession().getNamedQuery(GET_UNPICKED_ORDERS)
-			.setDate("distEarlierThan", distSince)
+		return getCurrentSession().createNamedQuery(GET_UNPICKED_ORDERS, DistributionOrder.class)
+			.setParameter("distEarlierThan", distSince)
 			.setFirstResult(startAt)
 			.setMaxResults(maxOrders)
 			.list();
 	}
 
 	@Override
-	@SuppressWarnings("unchecked")
 	public List<DistributionOrderItem> getDistributedOrderItems(List<Long> specimenIds) {
-		return getSessionFactory().getCurrentSession()
-				.getNamedQuery(GET_DISTRIBUTED_ITEMS_BY_SPMN_IDS)
-				.setParameterList("ids", specimenIds)
-				.list();
+		return getCurrentSession().createNamedQuery(GET_DISTRIBUTED_ITEMS_BY_SPMN_IDS, DistributionOrderItem.class)
+			.setParameterList("ids", specimenIds)
+			.list();
 	}
 
 	@Override
@@ -121,61 +105,114 @@ public class DistributionOrderDaoImpl extends AbstractDao<DistributionOrder> imp
 	}
 
 	@Override
-	@SuppressWarnings("unchecked")
 	public List<DistributionOrderItem> getOrderItems(DistributionOrderItemListCriteria crit) {
-		Criteria query = getCurrentSession().createCriteria(DistributionOrderItem.class, "orderItem")
-			.createAlias("orderItem.order", "order")
-			.add(Restrictions.eq("order.id", crit.orderId()));
+		Criteria<DistributionOrderItem> query = Criteria.create(getCurrentSession(), DistributionOrderItem.class, "orderItem");
+		query.createAlias("orderItem.order", "order")
+			.add(query.eq("order.id", crit.orderId()));
 
 		if (crit.storedInContainers()) {
 			query.createAlias("orderItem.specimen", "specimen")
 				.createAlias("specimen.position", "spmnPos")
-				.add(Restrictions.isNotNull("spmnPos.id"))
-				.add(Restrictions.eq("orderItem.status", DistributionOrderItem.Status.DISTRIBUTED_AND_CLOSED));
+				.add(query.isNotNull("spmnPos.id"))
+				.add(query.eq("orderItem.status", DistributionOrderItem.Status.DISTRIBUTED_AND_CLOSED));
 		}
 
 		if (CollectionUtils.isNotEmpty(crit.ids())) {
-			query.add(Restrictions.in("orderItem.id", crit.ids()));
+			query.add(query.in("orderItem.id", crit.ids()));
 		}
 
-		return query.setFirstResult(crit.startAt())
-			.setMaxResults(crit.maxResults())
-			.addOrder(Order.asc("orderItem.id"))
-			.list();
+		return query.orderBy(query.asc("orderItem.id")).list(crit.startAt(), crit.maxResults());
+	}
+
+	@Override
+	public DistributionOrderItem getOrderItem(Long orderId, String spmnLabel) {
+		Criteria<DistributionOrderItem> query = Criteria.create(getCurrentSession(), DistributionOrderItem.class, "item")
+			.createAlias("item.order", "order")
+			.createAlias("item.specimen", "spmn");
+		return query.add(query.eq("order.id", orderId))
+			.add(query.eq("spmn.label", spmnLabel))
+			.uniqueResult();
 	}
 
 	@Override
 	public void saveOrUpdateOrderItem(DistributionOrderItem item) {
-		getCurrentSession().saveOrUpdate(item);
+		saveOrUpdate(sessionFactory, item, false);
 	}
 
-	@SuppressWarnings("unchecked")
-	private Criteria getOrderListQuery(DistributionOrderListCriteria crit) {
-		Criteria query = getCurrentSession().createCriteria(DistributionOrder.class)
-			.createAlias("distributionProtocol", "dp")
-			.createAlias("requester", "user")
-			.createAlias("site", "site", JoinType.LEFT_OUTER_JOIN);
+	@Override
+	public void deleteOrderItem(DistributionOrderItem item) {
+		getCurrentSession().remove(item);
+	}
+
+	@Override
+	public Long getCustomFieldRecordId(Long orderId, Long formId, Long formCtxtId) {
+		return getCurrentSession().createNamedQuery(GET_CUSTOM_FIELD_RECORD_ID, Long.class)
+			.setParameter("orderId", orderId)
+			.setParameter("formId", formId)
+			.setParameter("formCtxtId", formCtxtId)
+			.uniqueResult();
+	}
+
+	@Override
+	public Map<Long, Long> getCustomFieldRecordIds(Collection<Long> orderIds, Long formId, Long formCtxtId) {
+		List<Object[]> rows = getCurrentSession().createNamedQuery(GET_CUSTOM_FIELD_RECORD_IDS, Object[].class)
+			.setParameterList("orderIds", orderIds)
+			.setParameter("formId", formId)
+			.setParameter("formCtxtId", formCtxtId)
+			.list();
+
+		Map<Long, Long> result = new HashMap<>();
+		for (Object[] row : rows) {
+			result.put((Long) row[0], (Long) row[1]);
+		}
+
+		return result;
+	}
+
+	@Override
+	public int insertCustomFieldRecordId(Long orderId, Long formId, Long formCtxtId, Long recordId) {
+		int rows = getCurrentSession().createNamedMutationQuery(INSERT_CUSTOM_FIELD_RECORD)
+			.setParameter("orderId", orderId)
+			.setParameter("formId", formId)
+			.setParameter("formCtxtId", formCtxtId)
+			.setParameter("recordId", recordId)
+			.executeUpdate();
+
+		getCurrentSession().createNamedMutationQuery(INSERT_CUSTOM_FIELD_REC_STATUS)
+			.setParameter("orderId", orderId)
+			.setParameter("formId", formId)
+			.setParameter("recordId", recordId)
+			.executeUpdate();
+
+		return rows;
+	}
+
+	private Criteria<Object[]> getOrderListQuery(DistributionOrderListCriteria crit) {
+		Criteria<Object[]> query = createCriteria(DistributionOrder.class, Object[].class, "order")
+			.join("order.distributionProtocol", "dp")
+			.join("order.requester", "user")
+			.leftJoin("order.site", "site");
 		
 		//
 		// Add search restrictions
 		//
-		MatchMode matchMode = crit.exactMatch() ? MatchMode.EXACT : MatchMode.ANYWHERE;
-		applyIdsFilter(query, "id", crit.ids());
+		applyIdsFilter(query, "order.id", crit.ids());
 		addSitesRestriction(query, crit);
-		addNameRestriction(query, crit, matchMode);
-		addDpRestriction(query, crit, matchMode);
-		addRequestorRestriction(query, crit, matchMode);
+		addNameRestriction(query, crit);
+		addDpRestriction(query, crit);
+		addRequestorRestriction(query, crit);
 		addRequestRestriction(query, crit);
 		addExecutionDtRestriction(query, crit);
-		addReceivingSiteRestriction(query, crit, matchMode);
-		addReceivingInstRestriction(query, crit, matchMode);
+		addReceivingSiteRestriction(query, crit);
+		addReceivingInstRestriction(query, crit);
+		addStatusRestriction(query, crit);
 		return query;
 	}
 
 	//
 	// Restrict by accessible distributing sites
 	//
-	private void addSitesRestriction(Criteria query, DistributionOrderListCriteria crit) {
+	private void addSitesRestriction(Criteria<?> query, DistributionOrderListCriteria crit) {
 		if (CollectionUtils.isEmpty(crit.sites())) {
 			return;
 		}
@@ -190,76 +227,77 @@ public class DistributionOrderDaoImpl extends AbstractDao<DistributionOrder> imp
 			}
 		}
 
-		query.createAlias("dp.distributingSites", "distSites")
-			.createAlias("distSites.site", "distSite", JoinType.LEFT_OUTER_JOIN)
-			.createAlias("distSites.institute", "distInst")
-			.createAlias("distInst.sites", "instSite");
+		query.join("dp.distributingSites", "distSites")
+			.join("distSites.institute", "distInst")
+			.join("distInst.sites", "instSite")
+			.leftJoin("distSites.site", "distSite");
 
-		Disjunction instituteConds = Restrictions.disjunction();
+		Disjunction instituteConds = query.disjunction();
 		if (!siteIds.isEmpty()) {
-			instituteConds.add(Restrictions.in("instSite.id", siteIds));
+			instituteConds.add(query.in("instSite.id", siteIds));
 		}
 
 		if (!instituteIds.isEmpty()) {
-			instituteConds.add(Restrictions.in("distInst.id", instituteIds));
+			instituteConds.add(query.in("distInst.id", instituteIds));
 		}
 
-		Disjunction siteConds = Restrictions.disjunction();
+		Disjunction siteConds = query.disjunction();
 		if (!siteIds.isEmpty()) {
-			siteConds.add(Restrictions.in("distSite.id", siteIds));
+			siteConds.add(query.in("distSite.id", siteIds));
 		}
 
 		if (!instituteIds.isEmpty()) {
-			DetachedCriteria instituteSites = DetachedCriteria.forClass(Site.class)
-				.add(Restrictions.in("institute.id", instituteIds))
-				.setProjection(Projections.property("id"));
-			siteConds.add(Subqueries.propertyIn("distSite.id", instituteSites));
+			SubQuery<Long> instituteSites = query.createSubQuery(Site.class, "site")
+				.join("site.institute", "institute")
+				.select("site.id");
+			instituteSites.add(instituteSites.in("institute.id", instituteIds));
+			siteConds.add(query.in("distSite.id", instituteSites));
 		}
 
-		query.add(Restrictions.or(
-			Restrictions.and(Restrictions.isNull("distSites.site"), instituteConds),
-			Restrictions.and(Restrictions.isNotNull("distSites.site"), siteConds)
+		query.add(query.or(
+			query.and(query.isNull("distSites.site"), instituteConds.getRestriction()),
+			query.and(query.isNotNull("distSites.site"), siteConds.getRestriction())
 		));
 	}
 	
-	private void addNameRestriction(Criteria query, DistributionOrderListCriteria crit, MatchMode mode) {
+	private void addNameRestriction(Criteria<?> query, DistributionOrderListCriteria crit) {
 		if (StringUtils.isBlank(crit.query())) {
 			return;
 		}
 		
-		query.add(Restrictions.ilike("name", crit.query(), mode));
+		query.add(query.ilike("order.name", crit.query()));
 	}
 	
-	private void addDpRestriction(Criteria query, DistributionOrderListCriteria crit, MatchMode mode) {
+	private void addDpRestriction(Criteria<?> query, DistributionOrderListCriteria crit) {
 		if (crit.dpId() != null) {
-			query.add(Restrictions.eq("dp.id", crit.dpId()));
+			query.add(query.eq("dp.id", crit.dpId()));
 		} else if (StringUtils.isNotBlank(crit.dpShortTitle())) {
-			query.add(Restrictions.ilike("dp.shortTitle", crit.dpShortTitle(), mode));
+			query.add(query.ilike("dp.shortTitle", crit.dpShortTitle()));
 		}		
 	}
 	
-	private void addRequestorRestriction(Criteria query, DistributionOrderListCriteria crit, MatchMode mode) {
+	private void addRequestorRestriction(Criteria<?> query, DistributionOrderListCriteria crit) {
 		if (crit.requestorId() != null) {
-			query.add(Restrictions.eq("user.id", crit.requestorId()));
+			query.add(query.eq("user.id", crit.requestorId()));
 		} else if (StringUtils.isNotBlank(crit.requestor())) {
 			query.add(
-				Restrictions.disjunction()
-					.add(Restrictions.ilike("user.firstName", crit.requestor(), mode))
-					.add(Restrictions.ilike("user.lastName", crit.requestor(), mode))
+				query.disjunction()
+					.add(query.ilike("user.firstName", crit.requestor()))
+					.add(query.ilike("user.lastName", crit.requestor()))
 			);
 		}	
 	}
 
-	private void addRequestRestriction(Criteria query, DistributionOrderListCriteria crit) {
+	private void addRequestRestriction(Criteria<?> query, DistributionOrderListCriteria crit) {
 		if (crit.requestId() == null) {
 			return;
 		}
 
-		query.createAlias("request", "request")
-			.add(Restrictions.eq("request.id", crit.requestId()));
+		query.join("order.request", "request")
+			.add(query.eq("request.id", crit.requestId()));
 	}
 
-	private void addExecutionDtRestriction(Criteria query, DistributionOrderListCriteria crit) {
+	private void addExecutionDtRestriction(Criteria<?> query, DistributionOrderListCriteria crit) {
 		if (crit.executionDate() == null) {
 			return;
 		}
@@ -278,48 +316,44 @@ public class DistributionOrderDaoImpl extends AbstractDao<DistributionOrder> imp
 		to.set(Calendar.SECOND, 59);
 		to.set(Calendar.MILLISECOND, 999);
 						
-		query.add(Restrictions.between("executionDate", from.getTime(), to.getTime()));
+		query.add(query.between("order.executionDate", from.getTime(), to.getTime()));
 	}
 
-	private void addReceivingSiteRestriction(Criteria query, DistributionOrderListCriteria crit, MatchMode mode) {
+	private void addReceivingSiteRestriction(Criteria<?> query, DistributionOrderListCriteria crit) {
 		if (StringUtils.isBlank(crit.receivingSite())) {
 			return;
 		}
 		
-		query.add(Restrictions.ilike("site.name", crit.receivingSite(), mode));
+		query.add(query.ilike("site.name", crit.receivingSite()));
 	}
 	
-	private void addReceivingInstRestriction(Criteria query, DistributionOrderListCriteria crit, MatchMode mode) {
+	private void addReceivingInstRestriction(Criteria<?> query, DistributionOrderListCriteria crit) {
 		if (StringUtils.isBlank(crit.receivingInstitute())) {
 			return;
 		}
 		
-		query.createAlias("site.institute", "institute")
-			.add(Restrictions.ilike("institute.name", crit.receivingInstitute(), mode));
+		query.join("site.institute", "institute")
+			.add(query.ilike("institute.name", crit.receivingInstitute()));
+	}
+
+	private void addStatusRestriction(Criteria<?> query, DistributionOrderListCriteria crit) {
+		if (StringUtils.isBlank(crit.status())) {
+			return;
+		}
+
+		try {
+			query.add(query.eq("order.status", DistributionOrder.Status.valueOf(crit.status())));
+		} catch (Exception e) {
+			throw OpenSpecimenException.userError(DistributionOrderErrorCode.INVALID_STATUS, crit.status());
+		}
 	}
 	
-	private void addProjections(Criteria query, boolean isDistinct) {
-		ProjectionList projs = Projections.projectionList();
-		if (isDistinct) {
-			//added as duplicate entries come due to distributing site lists
-			query.setProjection(Projections.distinct(projs));
-		} else {
-			query.setProjection(projs);
-		}
-		
-		projs.add(Projections.property("id"));
-		projs.add(Projections.property("name"));
-		projs.add(Projections.property("creationDate"));
-		projs.add(Projections.property("executionDate"));
-		projs.add(Projections.property("status"));
-		projs.add(Projections.property("dp.id"));
-		projs.add(Projections.property("dp.shortTitle"));
-		projs.add(Projections.property("site.id"));
-		projs.add(Projections.property("site.name"));
-		projs.add(Projections.property("user.id"));
-		projs.add(Projections.property("user.firstName"));
-		projs.add(Projections.property("user.lastName"));
-		projs.add(Projections.property("user.emailAddress"));
+	private void addProjections(Criteria<?> query, boolean isDistinct) {
+		query.select(
+			"order.id", "order.name", "order.creationDate", "order.executionDate", "order.status",
+			"dp.id", "dp.shortTitle", "site.id", "site.name",
+			"user.id", "user.firstName", "user.lastName", "user.emailAddress"
+		).distinct(isDistinct);
 	}
 	
 	private DistributionOrderSummary getDoSummary(Object[] row) {
@@ -358,7 +392,7 @@ public class DistributionOrderDaoImpl extends AbstractDao<DistributionOrder> imp
 			return;
 		}
 
-		List<Object[]> rows = getCurrentSession().getNamedQuery(query)
+		List<Object[]> rows = createNamedQuery(query, Object[].class)
 			.setParameterList("orderIds", doMap.keySet())
 			.list();
 
@@ -379,4 +413,12 @@ public class DistributionOrderDaoImpl extends AbstractDao<DistributionOrder> imp
 	private static final String GET_ORDER_ITEMS_COUNT = FQN + ".getOrderItemsCount";
 
 	private static final String GET_ORDER_LIST_ITEMS_COUNT = FQN + ".getListItemsCount";
+
+	private static final String GET_CUSTOM_FIELD_RECORD_ID = FQN + ".getCustomFieldRecordId";
+
+	private static final String GET_CUSTOM_FIELD_RECORD_IDS = FQN + "..getCustomFieldRecordIds";
+
+	private static final String INSERT_CUSTOM_FIELD_RECORD = FQN + ".insertCustomFieldRecord";
+
+	private static final String INSERT_CUSTOM_FIELD_REC_STATUS = FQN + ".insertCustomFieldRecordStatus";
 }

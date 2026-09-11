@@ -4,7 +4,7 @@ package com.krishagni.catissueplus.core.common.errors;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.hibernate.JDBCException;
@@ -37,6 +37,7 @@ public class OpenSpecimenException extends RuntimeException {
 	}
 	
 	public OpenSpecimenException(Long exceptionId, Throwable t) {
+		super(t);
 		this.exceptionId = exceptionId;
 		this.errorType = ErrorType.SYSTEM_ERROR;
 		this.exception = t;
@@ -128,6 +129,10 @@ public class OpenSpecimenException extends RuntimeException {
 
 	public void setExceptionId(Long exceptionId) {
 		this.exceptionId = exceptionId;
+	}
+
+	public static OpenSpecimenException unauthorized() {
+		return new OpenSpecimenException(ErrorType.UNAUTHORIZED);
 	}
 
 	public static OpenSpecimenException userError(ErrorCode error, Object ... params) {		

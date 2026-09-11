@@ -45,17 +45,20 @@ public class ScheduledQueryTask implements ScheduledTask {
 
 		ExecuteQueryEventOp op = new ExecuteQueryEventOp();
 		op.setCpId(query.getCpId());
+		op.setCpGroupId(query.getCpGroupId());
 		op.setDrivingForm(query.getDrivingForm());
 		op.setAql(query.getAql());
 		op.setWideRowMode(query.getWideRowMode());
 		op.setSavedQueryId(query.getId());
 		op.setOutputColumnExprs(query.isOutputColumnExprs());
+		op.setCaseSensitive(query.isCaseSensitive());
 		op.setSynchronous(true);
+		op.setUseReportingDataSource(true);
 
-		QueryService.ExportProcessor processor = new DefaultQueryExportProcessor(query.getCpId()) {
+		QueryService.ExportProcessor processor = new DefaultQueryExportProcessor(query.getCpId(), query.getCpGroupId()) {
 			@Override
 			public String filename() {
-				return "scheduled_query_" + query.getId() + "_" + jobRun.getId() + ".csv";
+				return "scheduled_query_" + query.getId() + "_" + jobRun.getId() + ".csv.zip";
 			}
 		};
 

@@ -1,12 +1,15 @@
 
 package com.krishagni.catissueplus.core.biospecimen.repository;
 
+import java.util.List;
 import java.util.Set;
 
 import com.krishagni.catissueplus.core.common.access.SiteCpPair;
 import com.krishagni.catissueplus.core.common.events.AbstractListCriteria;
 
 public class CpListCriteria extends AbstractListCriteria<CpListCriteria> {
+
+	private List<String> shortTitles;
 	
 	private String title;
 
@@ -15,14 +18,31 @@ public class CpListCriteria extends AbstractListCriteria<CpListCriteria> {
 	private Long piId;
 	
 	private String repositoryName;
+
+	private Long instituteId;
+
+	private Long groupId;
 	
 	private boolean includePi;
+
+	private boolean includeWfInheritance;
+
+	private boolean onlyParticipantConsentCps;
 
 	private Set<SiteCpPair> siteCps;
 	
 	@Override
 	public CpListCriteria self() {
 		return this;
+	}
+
+	public List<String> shortTitles() {
+		return shortTitles;
+	}
+
+	public CpListCriteria shortTitles(List<String> shortTitles) {
+		this.shortTitles = shortTitles;
+		return self();
 	}
 	
 	public String title() {
@@ -60,6 +80,24 @@ public class CpListCriteria extends AbstractListCriteria<CpListCriteria> {
 		this.repositoryName = repositoryName;
 		return self();
 	}
+
+	public Long instituteId() {
+		return instituteId;
+	}
+
+	public CpListCriteria instituteId(Long instituteId) {
+		this.instituteId = instituteId;
+		return self();
+	}
+
+	public Long groupId() {
+		return groupId;
+	}
+
+	public CpListCriteria groupId(Long groupId) {
+		this.groupId = groupId;
+		return self();
+	}
 	
 	public boolean includePi() {
 		return includePi;
@@ -67,6 +105,24 @@ public class CpListCriteria extends AbstractListCriteria<CpListCriteria> {
 	
 	public CpListCriteria includePi(boolean includePi) {
 		this.includePi = includePi;
+		return self();
+	}
+
+	public boolean includeWfInheritance() {
+		return includeWfInheritance;
+	}
+
+	public CpListCriteria includeWfInheritance(boolean includeWfInheritance) {
+		this.includeWfInheritance = includeWfInheritance;
+		return self();
+	}
+
+	public boolean onlyParticipantConsentCps() {
+		return onlyParticipantConsentCps;
+	}
+
+	public CpListCriteria onlyParticipantConsentCps(boolean onlyParticipantConsentCps) {
+		this.onlyParticipantConsentCps = onlyParticipantConsentCps;
 		return self();
 	}
 

@@ -5,7 +5,7 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletResponse;
 
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -20,6 +20,7 @@ import com.krishagni.catissueplus.core.common.errors.CommonErrorCode;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.util.AuthUtil;
 import com.krishagni.catissueplus.core.common.util.ConfigUtil;
+import com.krishagni.catissueplus.core.common.util.Utility;
 
 public abstract class AbstractLabelPrinter {
 
@@ -41,6 +42,7 @@ public abstract class AbstractLabelPrinter {
 			throw OpenSpecimenException.userError(CommonErrorCode.FILE_NOT_FOUND, result.getName());
 		}
 
+		filename = Utility.stripWs(filename);
 		if (StringUtils.isBlank(filename)) {
 			filename = result.getName();
 		}

@@ -1,14 +1,14 @@
 package com.krishagni.catissueplus.rest.controller;
 
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.IOException;
-import java.io.InputStream;
+import java.text.SimpleDateFormat;
+import java.util.Calendar;
 import java.util.Collections;
 import java.util.List;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,9 +21,9 @@ import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.ResponseStatus;
-
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
 import com.krishagni.catissueplus.core.common.events.ResponseEvent;
@@ -37,8 +37,6 @@ import com.krishagni.catissueplus.core.de.events.QueryDataExportResult;
 import com.krishagni.catissueplus.core.de.events.QueryExecResult;
 import com.krishagni.catissueplus.core.de.services.QueryService;
 import com.krishagni.catissueplus.core.de.services.SavedQueryErrorCode;
-
-import edu.common.dynamicextensions.nutility.IoUtil;
 
 @Controller
 @RequestMapping("/query")
@@ -54,6 +52,7 @@ public class QueryController {
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody	
 	public QueryExecResult executeQuery(@RequestBody ExecuteQueryEventOp opDetail) {
+		opDetail.setUseReportingDataSource(true);
 		return response(querySvc.executeQuery(request(opDetail)));
 	}
 
@@ -68,6 +67,7 @@ public class QueryController {
 			ExecuteSavedQueryOp opDetail) {
 
 		opDetail.setSavedQueryId(queryId);
+		opDetail.setUseReportingDataSource(true);
 		return response(querySvc.executeSavedQuery(request(opDetail)));
 	}
 
@@ -91,40 +91,41 @@ public class QueryController {
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody
 	public QueryDataExportResult exportQueryData(@RequestBody ExecuteQueryEventOp opDetail) {
+		opDetail.setUseReportingDataSource(true);
 		return response(querySvc.exportQueryData(request(opDetail)));
 	}	
 	
 	@RequestMapping(method = RequestMethod.GET, value="/export")
 	@ResponseStatus(HttpStatus.OK)
 	public void downloadExportDataFile(
-			@RequestParam(value = "fileId", required = true) 
-			String fileId,
+		@RequestParam(value = "fileId")
+		String fileId,
 			
-			@RequestParam(value = "filename", required = false, defaultValue = "QueryResults.csv")
-			String filename,
+		@RequestParam(value = "filename", required = false, defaultValue = "QueryResults.zip")
+		String filename,
 			
-			HttpServletResponse response) {
-		
-		File file = response(querySvc.getExportDataFile(request(fileId)));
+		HttpServletResponse response) {
 
-		response.setContentType(Utility.getContentType(filename));
-		response.setHeader("Content-Disposition", "attachment;filename=" + filename);
-
-		InputStream in = null;
-		try {
-			in = new FileInputStream(file);
-			IoUtil.copy(in, response.getOutputStream());
-		} catch (IOException e) {
-			throw new RuntimeException("Error sending file", e);
-		} finally {
-			IoUtil.close(in);
+		fileId = Utility.cleanPath(Utility.stripWs(fileId));
+		filename = Utility.cleanPath(Utility.stripWs(filename));
+		if (!filename.endsWith(".zip")) {
+			filename += ".zip";
 		}
+
+		if (filename.equals("QueryResults.zip") || filename.equals("QueryResults.csv.zip")) {
+			SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMdd_HHmmss");
+			filename = "QueryResults_" + sdf.format(Calendar.getInstance().getTime()) + filename.substring(filename.indexOf("."));
+		}
+
+		File file = response(querySvc.getExportDataFile(request(fileId)));
+		Utility.sendToClient(response, filename, file);
 	}
 
 	@RequestMapping(method = RequestMethod.POST, value="/facet-values")
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody
 	public List<FacetDetail> getFacetValues(@RequestBody GetFacetValuesOp op) {
+		op.setUseReportingDataSource(true);
 		return response(querySvc.getFacetValues(request(op)));
 	}
 

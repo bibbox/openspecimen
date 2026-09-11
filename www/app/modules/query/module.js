@@ -24,9 +24,22 @@ angular.module('os.query',
      .state('query-root', {
        url: '/queries',
        template: '<div ui-view></div>',
-       controller: function($scope, queryGlobal, QueryUtil) {
-         $scope.jobCreateOpts = {resource: 'ScheduledJob', operations: ['Create']};
+       controller: function($scope, queryGlobal, QueryUtil, AuthorizationService) {
          $scope.queryGlobal = queryGlobal;
+
+         var permOpts = $scope.permOpts = {
+           create: {resource: 'Query', operations: ['Create']},
+           update: {resource: 'Query', operations: ['Update']},
+           delete: {resource: 'Query', operations: ['Delete']},
+           exim:   {resource: 'Query', operations: ['Export Import']}
+         };
+
+         permOpts.createAllowed = AuthorizationService.isAllowed(permOpts.create);
+         permOpts.updateAllowed = AuthorizationService.isAllowed(permOpts.update);
+         permOpts.deleteAllowed = AuthorizationService.isAllowed(permOpts.delete);
+         permOpts.eximAllowed   = AuthorizationService.isAllowed(permOpts.exim);
+         permOpts.createJobAllowed = AuthorizationService.isAllowed({resource: 'ScheduledJob', operations: ['Create']});
+
          QueryUtil.initOpsDesc();
        },
        resolve: {
@@ -38,7 +51,7 @@ angular.module('os.query',
        parent: 'signed-in'
      })
      .state('query-list', {
-       url: '/list?folderId&filters',
+       url: '/list?filters',
        templateUrl: 'modules/query/list.html',
        controller: 'QueryListCtrl',
        resolve: {
@@ -48,14 +61,6 @@ angular.module('os.query',
                return resp.allFolders;
              }
            );
-         },
-
-         folder: function($stateParams, folders) {
-           if (!!$stateParams.folderId) {
-             return folders.find(function(folder) { return folder.id == $stateParams.folderId; });
-           }
-
-           return undefined;
          }
        },
        parent: 'query-root'
@@ -100,6 +105,12 @@ angular.module('os.query',
        url: '/query-audit-logs',
        templateUrl: 'modules/query/audit-logs.html',
        controller: 'QueryAuditLogsCtrl',
+       parent: 'signed-in'
+     })
+     .state('export-query-audit-logs', {
+       url: '/export-query-audit-logs',
+       templateUrl: 'modules/query/export-audit-logs.html',
+       controller: 'QueryAuditLogsExportCtrl',
        parent: 'signed-in'
      });
   }).run(function(UrlResolver) {

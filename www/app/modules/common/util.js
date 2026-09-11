@@ -11,6 +11,12 @@ angular.module('openspecimen')
       'js', 'json', 'pdf', 'png', 'tif', 'tiff', 'txt', 'xls', 'xlsx', 'xml', 'zip'
     ];
 
+    var httpsRe = /(\b(https?|ftp):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/gim;
+
+    var wwwRe   = /(^|[^\/])(www\.[\S]+(\b|$))/gim;
+
+    var mailRe  = /(([a-zA-Z0-9\-\_\.])+@[a-zA-Z\_]+?(\.[a-zA-Z]+)+)/gim;
+
     function clear(input) {
       input.splice(0, input.length);
     };
@@ -55,7 +61,7 @@ angular.module('openspecimen')
           function() {
             var filters = angular.copy(newVal);
 
-            excludeParams = excludeParams || ['includeStats', 'maxResults'];
+            excludeParams = excludeParams || ['includeStats', 'maxResults', 'max'];
             angular.forEach(excludeParams, function(param) { delete filters[param]; });
 
             angular.forEach(filters,
@@ -229,7 +235,10 @@ angular.module('openspecimen')
               filename += '.csv';
             }
 
-            downloadFile(ApiUrls.getBaseUrl() + 'query/export?fileId=' + result.dataFile + '&filename=' + filename);
+            downloadFile(ApiUrls.getBaseUrl() + 'query/export' +
+              '?fileId=' + result.dataFile +
+              '&filename=' + encodeURIComponent(filename)
+            );
           } else if (result.dataFile) {
             Alerts.info(msgClass + '.report_will_be_emailed');
           }
@@ -378,6 +387,56 @@ angular.module('openspecimen')
       );
 
       return mi.result;
+    }
+
+    function showErrorMsg(resp) {
+      $modal.open({
+        templateUrl: 'modules/common/show-error-messages.html',
+        controller: function($scope, $modalInstance) {
+          var ctx = $scope.errCtx = {};
+          if (resp.status == 0) {
+            ctx.fixedMsg = 'common.server_connect_error';
+          } else if (resp.status == 401) {
+            ctx.fixedMsg = 'common.auth_error';
+          } else if (resp.status / 100 == 5) {
+            if (resp.data instanceof Array) {
+              ctx.apiMsg = resp.data.map(function(err) { return err.message + " (" + err.code + ")"; });
+            } else {
+              ctx.fixedMsg = 'common.server_error';
+            }
+          } else if (resp.status / 100 == 4) {
+            if (resp.data instanceof Array) {
+              ctx.apiMsg = resp.data.map(function(err) { return err.message + " (" + err.code + ")"; });
+            } else {
+              ctx.fixedMsg = 'common.ui_error';
+            }
+          } else {
+            ctx.fixedMsg = resp.msg;
+            ctx.input = resp.args;
+          }
+
+          $scope.done = function() {
+            $modalInstance.close(true);
+          }
+
+          $scope.cancel = function() {
+            $modalInstance.dismiss('cancel');
+          }
+
+          $scope.copyToClipboard = function() {
+            var text;
+            if (ctx.fixedMsg) {
+              text = $translate.instant(ctx.fixedMsg, ctx.input);
+            } else if (ctx.apiMsg) {
+              text = ctx.apiMsg.join('\n');
+            }
+
+            if (copyToClipboard(text || 'Nothing to copy')) {
+              Alerts.success('common.error_msg_copied');
+            }
+          }
+        }
+      });
     }
 
     function validateItems(items, itemLabels, labelProp) {
@@ -543,6 +602,10 @@ angular.module('openspecimen')
           function(e) {
             return parsedExpr(e);
           }
+        ).filter(
+          function(e) {
+            return !!e;
+          }
         ).join(separator);
       },
 
@@ -649,6 +712,18 @@ angular.module('openspecimen')
       return $filter('date')(date, format);
     }
 
+    function linkify(text, linkText) {
+      if (!text || typeof text != 'string') {
+        return text;
+      }
+
+      var httpsText = linkText || '$1';
+      var wwwText = linkText || '$2';
+      return text.replace(httpsRe, '<a href="$1" target="_blank">' + httpsText + '</a>')
+        .replace(wwwRe, '$1<a href="http://$2" target="_blank">' + wwwText + '</a>')
+        .replace(mailRe, '<a href="mailto:$1">' + httpsText + '</a>');
+    }
+
     return {
       clear: clear,
 
@@ -686,6 +761,8 @@ angular.module('openspecimen')
 
       showConfirm: showConfirm,
 
+      showErrorMsg: showErrorMsg,
+
       validateItems: validateItems,
 
       showItemsValidationResult: showItemsValidationResult,
@@ -705,6 +782,8 @@ angular.module('openspecimen')
         return $filter('date')(input, fmt);
       },
 
-      formatDate: formatDate
+      formatDate: formatDate,
+
+      linkify: linkify
     };
   });

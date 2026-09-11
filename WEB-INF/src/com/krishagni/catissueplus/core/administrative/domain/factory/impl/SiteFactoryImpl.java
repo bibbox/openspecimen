@@ -7,9 +7,10 @@ import static com.krishagni.catissueplus.core.common.service.PvValidator.isValid
 import java.util.HashSet;
 import java.util.Set;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 
 import com.krishagni.catissueplus.core.administrative.domain.Institute;
+import com.krishagni.catissueplus.core.administrative.domain.PermissibleValue;
 import com.krishagni.catissueplus.core.administrative.domain.Site;
 import com.krishagni.catissueplus.core.administrative.domain.User;
 import com.krishagni.catissueplus.core.administrative.domain.factory.InstituteErrorCode;
@@ -177,13 +178,14 @@ public class SiteFactoryImpl implements SiteFactory {
 			ose.addError(SiteErrorCode.TYPE_REQUIRED);
 			return;
 		}
-		
-		if (!isValid(SITE_TYPE, siteType)) {
+
+		PermissibleValue typePv = daoFactory.getPermissibleValueDao().getPv(SITE_TYPE, siteType);
+		if (typePv == null) {
 			ose.addError(SiteErrorCode.INVALID_TYPE);
 			return;
 		}
 		
-		site.setType(siteType);
+		site.setType(typePv);
 	}
 	
 	private void setType(SiteDetail detail, Site existing, Site site, OpenSpecimenException ose) {

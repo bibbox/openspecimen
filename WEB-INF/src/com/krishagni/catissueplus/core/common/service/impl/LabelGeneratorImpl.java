@@ -3,12 +3,13 @@ package com.krishagni.catissueplus.core.common.service.impl;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 
 import com.krishagni.catissueplus.core.common.Pair;
 import com.krishagni.catissueplus.core.common.domain.LabelTmplToken;
 import com.krishagni.catissueplus.core.common.domain.LabelTmplTokenRegistrar;
 import com.krishagni.catissueplus.core.common.service.LabelGenerator;
+import com.krishagni.catissueplus.core.common.util.Utility;
 
 public class LabelGeneratorImpl implements LabelGenerator {
 	private LabelTmplTokenRegistrar tokenRegistrar;
@@ -17,11 +18,6 @@ public class LabelGeneratorImpl implements LabelGenerator {
 	// %token1%-%token2%
 	//
 	private Pattern labelPattern = Pattern.compile("%(.+?)%");
-
-	//
-	// %token1(arg1)
-	//
-	private Pattern fnTokenPattern = Pattern.compile("(.+?)\\((.+?)\\)");
 
 	public LabelTmplTokenRegistrar getTokenRegistrar() {
 		return tokenRegistrar;
@@ -89,7 +85,7 @@ public class LabelGeneratorImpl implements LabelGenerator {
 		}
 
 		if (nextFreeTextAppend) {
-			result.append(labelTmpl.substring(lastIdx, labelTmpl.length()));
+			result.append(labelTmpl.substring(lastIdx));
 		}
 
 		return result.toString();
@@ -158,18 +154,25 @@ public class LabelGeneratorImpl implements LabelGenerator {
 		return true;		
 	}
 
+	//
+	// input is of type: token(arg1, arg2, ... argn) or token
+	//
+	//
 	private Pair<String, String[]> getTokenNameArgs(String input) {
-		String tokenName = null;
-		String[] args = null;
+		input = input.trim();
 
-		Matcher fnMatcher = fnTokenPattern.matcher(input);
-		if (fnMatcher.matches()) {
-			tokenName = fnMatcher.group(1);
-			args = fnMatcher.group(2).split(",");
-		} else {
-			tokenName = input;
+		int openIdx = input.indexOf('(');
+		if (openIdx == -1) {
+			return Pair.make(input, null);
 		}
 
+		int closeIdx = input.lastIndexOf(')');
+		if (closeIdx == -1 || openIdx > closeIdx) {
+			return Pair.make(input, null);
+		}
+
+		String tokenName = input.substring(0, openIdx);
+		String[] args = Utility.csvToStringList(input.substring(openIdx + 1, closeIdx)).toArray(new String[0]);
 		return Pair.make(tokenName, args);
 	}
 }

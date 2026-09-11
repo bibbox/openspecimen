@@ -4,7 +4,8 @@
     "http://hibernate.sourceforge.net/hibernate-mapping-3.0.dtd">
 
 <hibernate-mapping auto-import="false">
-  <class name="com.krishagni.catissueplus.core.administrative.domain.PermissibleValue" table="CATISSUE_PERMISSIBLE_VALUE">
+  <class name="com.krishagni.catissueplus.core.administrative.domain.PermissibleValue" table="CATISSUE_PERMISSIBLE_VALUE"
+    entity-name="com.krishagni.catissueplus.core.administrative.domain.PermissibleValue">
 	
     <id name="id" column="IDENTIFIER">
       <generator class="native">
@@ -27,15 +28,17 @@
       <one-to-many class="com.krishagni.catissueplus.core.administrative.domain.PermissibleValue"/>
     </set>
 
-    <map name="props" table="OS_PV_PROPS" lazy="false" batch-size="25">
+    <map name="props" table="OS_PV_PROPS" lazy="true" batch-size="25">
       <key column="PV_ID"/>
       <map-key column="NAME" type="string"/>
       <element column="VALUE" type="string" not-null="true"/>
     </map>
 
+    <property name="activityStatus" column="ACTIVITY_STATUS"/>
+
     <query name="getSpecimenClasses">
       select
-        pv.value
+        pv
       from
         com.krishagni.catissueplus.core.administrative.domain.PermissibleValue pv
       where
@@ -65,30 +68,11 @@
         cpv.value = :type
     </query>
 
-    <query name="getByConceptCode">
-      from
+    <query name="deleteByAttribute">
+      delete from
         com.krishagni.catissueplus.core.administrative.domain.PermissibleValue pv
       where
-        pv.attribute = :attribute and
-        pv.conceptCode = :conceptCode
-    </query>
-
-    <query name="getByValue">
-      from
-        com.krishagni.catissueplus.core.administrative.domain.PermissibleValue pv
-      where
-        pv.attribute = :attribute and
-        pv.value = :value
-    </query>
-
-    <query name="getByPropertyKeyValue">
-      from
-        com.krishagni.catissueplus.core.administrative.domain.PermissibleValue pv
-        join pv.props props
-      where
-        pv.attribute = :attribute and
-        index(props) = :key and
-        :value in elements(props)
+        pv.attribute = :attribute
     </query>
   </class>
 </hibernate-mapping>

@@ -17,7 +17,7 @@
         <udn>id</udn>
         <caption>#getMessage("specimen_identifier")</caption>
         <column>IDENTIFIER</column>
-        <recordUrl>#/object-state-params-resolver?stateName=specimen-detail.overview&amp;objectName=specimen&amp;key=id&amp;value={{$value}}</recordUrl>
+        <recordUrl>#/object-state-params-resolver?stateName=ParticipantsListItemSpecimenDetail.Overview&amp;objectName=specimen&amp;key=id&amp;value={{$value}}</recordUrl>
       </numberField>
     </row>
 
@@ -41,7 +41,7 @@
         <udn>label</udn>
         <caption>#getMessage("specimen_label")</caption>
         <column>LABEL</column>
-        <recordUrl>#/object-state-params-resolver?stateName=specimen-detail.overview&amp;objectName=specimen&amp;key=id&amp;value={{$specimenId}}</recordUrl>
+        <recordUrl>#/object-state-params-resolver?stateName=ParticipantsListItemSpecimenDetail.Overview&amp;objectName=specimen&amp;key=id&amp;value={{$specimenId}}</recordUrl>
       </textField>
     </row>
 
@@ -59,14 +59,55 @@
             <udn>parentId</udn>
             <caption>#getMessage("specimen_parent_specimen_id")</caption>
             <column>IDENTIFIER</column>
-            <recordUrl>#/object-state-params-resolver?stateName=specimen-detail.overview&amp;objectName=specimen&amp;key=id&amp;value={{$value}}</recordUrl>
+            <recordUrl>#/object-state-params-resolver?stateName=ParticipantsListItemSpecimenDetail.Overview&amp;objectName=specimen&amp;key=id&amp;value={{$value}}</recordUrl>
           </textField>
           <textField>
             <name>parentLabel</name>
             <udn>parentLabel</udn>
             <caption>#getMessage("specimen_parent_specimen_label")</caption>
             <column>LABEL</column>
-            <recordUrl>#/object-state-params-resolver?stateName=specimen-detail.overview&amp;objectName=specimen&amp;key=id&amp;value={{$parentSpecimenId}}</recordUrl>
+            <recordUrl>#/object-state-params-resolver?stateName=ParticipantsListItemSpecimenDetail.Overview&amp;objectName=specimen&amp;key=id&amp;value={{$parentSpecimenId}}</recordUrl>
+          </textField>
+          <textField>
+            <name>parentBarcode</name>
+            <udn>parentBarcode</udn>
+            <caption>#getMessage("specimen_parent_specimen_barcode")</caption>
+            <column>BARCODE</column>
+            <recordUrl>#/object-state-params-resolver?stateName=ParticipantsListItemSpecimenDetail.Overview&amp;objectName=specimen&amp;key=id&amp;value={{$parentSpecimenId}}</recordUrl>
+          </textField>
+        </row>
+      </subForm>
+    </row>
+
+    <row>
+      <subForm>
+        <name>primarySpecimen</name>
+        <udn>primarySpecimen</udn>
+        <caption>#getMessage("specimen_primary_specimen")</caption>
+        <table>CATISSUE_SPECIMEN</table>
+        <foreignKey>IDENTIFIER</foreignKey>
+        <parentKey>PRIMARY_SPECIMEN_ID</parentKey>
+        <row>
+          <textField>
+            <name>primaryId</name>
+            <udn>primaryId</udn>
+            <caption>#getMessage("specimen_primary_specimen_id")</caption>
+            <column>IDENTIFIER</column>
+            <recordUrl>#/object-state-params-resolver?stateName=ParticipantsListItemSpecimenDetail.Overview&amp;objectName=specimen&amp;key=id&amp;value={{$value}}</recordUrl>
+          </textField>
+          <textField>
+            <name>primaryLabel</name>
+            <udn>primaryLabel</udn>
+            <caption>#getMessage("specimen_primary_specimen_label")</caption>
+            <column>LABEL</column>
+            <recordUrl>#/object-state-params-resolver?stateName=ParticipantsListItemSpecimenDetail.Overview&amp;objectName=specimen&amp;key=id&amp;value={{$primarySpecimenId}}</recordUrl>
+          </textField>
+          <textField>
+            <name>primaryBarcode</name>
+            <udn>primaryBarcode</udn>
+            <caption>#getMessage("specimen_primary_specimen_barcode")</caption>
+            <column>BARCODE</column>
+            <recordUrl>#/object-state-params-resolver?stateName=ParticipantsListItemSpecimenDetail.Overview&amp;objectName=specimen&amp;key=id&amp;value={{$primarySpecimenId}}</recordUrl>
           </textField>
         </row>
       </subForm>
@@ -78,94 +119,71 @@
         <udn>barcode</udn>
         <caption>#getMessage("specimen_barcode")</caption>
         <column>BARCODE</column>
+        <recordUrl>#/object-state-params-resolver?stateName=ParticipantsListItemSpecimenDetail.Overview&amp;objectName=specimen&amp;key=id&amp;value={{$specimenId}}</recordUrl>
       </textField>
     </row>
 
     <row>
-      <dropDown>
+      <textField>
+        <name>additionalLabel</name>
+        <udn>additionalLabel</udn>
+        <caption>#getMessage("specimen_additional_label")</caption>
+        <column>ADDITIONAL_LABEL</column>
+        <recordUrl>#/object-state-params-resolver?stateName=ParticipantsListItemSpecimenDetail.Overview&amp;objectName=specimen&amp;key=id&amp;value={{$specimenId}}</recordUrl>
+      </textField>
+    </row>
+
+    <row>
+      <pvField>
         <name>class</name>
         <udn>class</udn>
         <caption>#getMessage("specimen_class")</caption>
-        <column>SPECIMEN_CLASS</column>
-        <options>
-          <sql>
-            select
-              value
-            from
-              catissue_permissible_value
-            where
-              public_id = 'specimen_type' and
-              parent_identifier is null
-            order by value
-          </sql>
-        </options>
-      </dropDown>
+        <column>SPECIMEN_CLASS_ID</column>
+        <attribute>specimen_type</attribute>
+        <rootValue>true</rootValue>
+      </pvField>
     </row>
 
     <row>
-      <dropDown>
+      <pvField>
         <name>type</name>
         <udn>type</udn>
         <caption>#getMessage("specimen_type")</caption>
-        <column>SPECIMEN_TYPE</column>
-        <options>
-          <sql>
-            select
-              distinct value
-            from
-              catissue_permissible_value
-            where
-              public_id = 'specimen_type' and
-              parent_identifier is not null
-            order by value
-          </sql>
-        </options>
-      </dropDown>
+        <column>SPECIMEN_TYPE_ID</column>
+        <attribute>specimen_type</attribute>
+        <leafValue>true</leafValue>
+      </pvField>
     </row>
 
     <row>
-      <dropDown>
+      <pvField>
         <name>tissueSite</name>
         <udn>tissueSite</udn>
         <caption>#getMessage("specimen_anatomic_site")</caption>
-        <column>TISSUE_SITE</column>
-        <options>
-          <sql>
-            select 
-              pv.value 
-            from 
-              catissue_permissible_value pv 
-            where 
-              pv.public_id = 'anatomic_site'
-            order by
-              value
-          </sql>
-        </options>
-      </dropDown>
+        <column>ANATOMIC_SITE_ID</column>
+        <attribute>anatomic_site</attribute>
+        <leafValue>true</leafValue>
+      </pvField>
     </row>
 
     <row>
-      <dropDown>
+      <pvField>
         <name>tissueSide</name>
         <udn>tissueSide</udn>
         <caption>#getMessage("specimen_laterality")</caption>
-        <column>TISSUE_SIDE</column>
-        <options>
-          <sql>select value from catissue_permissible_value where public_id = 'laterality' order by value</sql>
-        </options>
-      </dropDown>
+        <column>LATERALITY_ID</column>
+        <attribute>laterality</attribute>
+      </pvField>
     </row>
 
     <row>
-      <dropDown>
+      <pvField>
         <name>pathologicalStatus</name>
         <udn>pathologicalStatus</udn>
         <caption>#getMessage("specimen_pathological_status")</caption>
-        <column>PATHOLOGICAL_STATUS</column>
-        <options>
-          <sql>select value from catissue_permissible_value where public_id = 'pathology_status' order by value</sql>
-        </options>
-      </dropDown>
+        <column>PATHOLOGICAL_STATUS_ID</column>
+        <attribute>pathology_status</attribute>
+      </pvField>
     </row>
 
     <row>
@@ -174,6 +192,7 @@
         <udn>createdOn</udn>
         <caption>#getMessage("specimen_created_on")</caption>
         <column>CREATED_ON</column>
+        <format>MM-dd-yyyy HH:mm</format>
       </datePicker>
     </row>
 
@@ -227,19 +246,44 @@
     </row>
 
     <row>
-      <listBox>
+      <subForm>
+        <name>units</name>
+        <udn>units</udn>
+        <caption>#getMessage("specimen_units")</caption>
+        <table>OS_QUERY_SPMN_UNITS</table>
+        <foreignKey>UNIT_KEY</foreignKey>
+        <parentKey>UNIT_KEY</parentKey>
+        <primaryKey>UNIT_KEY</primaryKey>
+        <row>
+          <pvField>
+            <name>quantityUnit</name>
+            <udn>quantityUnit</udn>
+            <caption>#getMessage("specimen_quantity_unit")</caption>
+            <column>QUANTITY_UNIT_ID</column>
+            <attribute>specimen_unit</attribute>
+          </pvField>
+          <pvField>
+            <name>concentrationUnit</name>
+            <udn>concentrationUnit</udn>
+            <caption>#getMessage("specimen_concentration_unit")</caption>
+            <column>CONC_UNIT_ID</column>
+            <attribute>specimen_unit</attribute>
+          </pvField>
+        </row>
+      </subForm>
+    </row>
+
+    <row>
+      <pvField>
         <name>biohazards</name>
         <udn>biohazards</udn>
         <caption>#getMessage("specimen_biohazard")</caption>
-        <multiSelect>true</multiSelect>
-        <table>OS_SPECIMEN_BIOHAZARDS</table>
-        <column>BIOHAZARD</column>
-        <foreignKey>SPECIMEN_ID</foreignKey>
-        <parentKey>IDENTIFIER</parentKey>
-        <options>
-          <sql>select value from catissue_permissible_value where public_id = 'specimen_biohazard' order by value</sql>
-        </options>
-      </listBox>
+        <multiple>true</multiple>
+        <collectionTable>OS_SPECIMEN_BIOHAZARDS</collectionTable>
+        <collectionKey>SPECIMEN_ID</collectionKey>
+        <column>BIOHAZARD_ID</column>
+        <attribute>specimen_biohazard</attribute>
+      </pvField>
     </row>
 
     <row>
@@ -271,6 +315,24 @@
     </row>
 
     <row>
+      <dropDown>
+        <name>availabilityStatus</name>
+        <udn>availabilityStatus</udn>
+        <caption>#getMessage("specimen_availability_status")</caption>
+        <column>AVAILABILITY_STATUS</column>
+        <options>
+          <option><value>Available</value></option>
+          <option><value>Pending</value></option>
+          <option><value>Not Collected</value></option>
+          <option><value>Missed Collection</value></option>
+          <option><value>Reserved</value></option>
+          <option><value>Distributed</value></option>
+          <option><value>Closed</value></option>
+        </options>
+      </dropDown>
+    </row>
+
+    <row>
       <textField>
         <name>comments</name>
         <udn>comments</udn>
@@ -293,25 +355,33 @@
         <name>specimenPosition</name>
         <udn>specimenPosition</udn>
         <caption>#getMessage("specimen_spec_position")</caption>
-        <table>OS_SPECIMEN_POSITIONS_VIEW</table>
-        <foreignKey>SPECIMEN_ID</foreignKey>
+        <table>OS_CONTAINER_POSITIONS</table>
+        <foreignKey>OCCUPYING_SPECIMEN_ID</foreignKey>
         <parentKey>IDENTIFIER</parentKey>
-        <primaryKey>SPECIMEN_ID</primaryKey>
+        <primaryKey>IDENTIFIER</primaryKey>
         <row>
-          <textField>
-            <name>containerName</name>
-            <udn>containerName</udn>
-            <caption>#getMessage("specimen_spec_position_container_name")</caption>
-            <column>CONTAINER_NAME</column>
-            <recordUrl>#/object-state-params-resolver?stateName=container-detail.locations&amp;objectName=storage_container&amp;key=name&amp;value={{$value}}</recordUrl>
-          </textField>              
+          <numberField>
+            <name>positionId</name>
+            <udn>positionId</udn>
+            <caption>#getMessage("specimen_spec_position_id")</caption>
+            <column>IDENTIFIER</column>
+            <hidden>true</hidden>
+          </numberField>
+
+          <numberField>
+            <name>containerId</name>
+            <udn>containerId</udn>
+            <caption>Container ID</caption>
+            <column>STORAGE_CONTAINER_ID</column>
+            <hidden>true</hidden>
+          </numberField>
 
           <textField>
             <name>positionDimensionTwoString</name>
             <udn>positionDimensionTwoString</udn>
             <caption>#getMessage("specimen_spec_position_container_row")</caption>
             <column>POS_TWO_STR</column>
-          </textField>              
+          </textField>
 
           <textField>
             <name>positionDimensionOneString</name>
@@ -319,6 +389,20 @@
             <caption>#getMessage("specimen_spec_position_container_column")</caption>
             <column>POS_ONE_STR</column>
           </textField>
+
+          <numberField>
+            <name>rowOrdinal</name>
+            <udn>rowOrdinal</udn>
+            <caption>#getMessage("specimen_spec_position_row_ordinal")</caption>
+            <column>POS_TWO</column>
+          </numberField>
+
+          <numberField>
+            <name>columnOrdinal</name>
+            <udn>columnOrdinal</udn>
+            <caption>#getMessage("specimen_spec_position_col_ordinal")</caption>
+            <column>POS_ONE</column>
+          </numberField>
 
           <textField>
             <name>formattedPos</name>
@@ -329,12 +413,90 @@
         </row>
         <row>
           <subForm>
+            <name>container</name>
+            <udn>container</udn>
+            <caption>#getMessage("storage_container_details")</caption>
+            <table>OS_STORAGE_CONTAINERS</table>
+            <foreignKey>IDENTIFIER</foreignKey>
+            <parentKey>STORAGE_CONTAINER_ID</parentKey>
+            <primaryKey>IDENTIFIER</primaryKey>
+            <row>
+              <numberField>
+                <name>id</name>
+                <udn>id</udn>
+                <caption>Container ID</caption>
+                <column>IDENTIFIER</column>
+                <hidden>true</hidden>
+              </numberField>
+
+              <textField>
+                <name>name</name>
+                <udn>name</udn>
+                <caption>#getMessage("specimen_spec_position_container_name")</caption>
+                <column>NAME</column>
+                <recordUrl>#/object-state-params-resolver?stateName=ContainerDetail.Locations&amp;objectName=storage_container&amp;key=name&amp;value={{$value}}</recordUrl>
+              </textField>
+
+              <textField>
+                <name>displayName</name>
+                <udn>displayName</udn>
+                <caption>#getMessage("specimen_spec_position_container_display_name")</caption>
+                <column>DISPLAY_NAME</column>
+              </textField>
+
+              <textField>
+                <name>barcode</name>
+                <udn>barcode</udn>
+                <caption>#getMessage("specimen_spec_position_container_barcode")</caption>
+                <column>BARCODE</column>
+                <recordUrl>#/object-state-params-resolver?stateName=ContainerDetail.Locations&amp;objectName=storage_container&amp;key=barcode&amp;value={{$value}}</recordUrl>
+              </textField>
+
+              <siteField>
+                <name>site</name>
+                <udn>site</udn>
+                <caption>#getMessage("specimen_spec_position_container_site")</caption>
+                <column>SITE_ID</column>
+                <recordUrl>#/object-state-params-resolver?stateName=SitesListItemDetail.Overview&amp;objectName=site&amp;key=name&amp;value={{$value}}</recordUrl>
+              </siteField>
+            </row>
+            <row>
+              <subForm>
+                <name>type</name>
+                <udn>type</udn>
+                <caption>#getMessage("container_type")</caption>
+                <table>OS_CONTAINER_TYPES</table>
+                <foreignKey>IDENTIFIER</foreignKey>
+                <parentKey>TYPE_ID</parentKey>
+                <primaryKey>IDENTIFIER</primaryKey>
+                <row>
+                  <textField>
+                    <name>name</name>
+                    <udn>name</udn>
+                    <caption>#getMessage("specimen_spec_position_container_type_name")</caption>
+                    <column>NAME</column>
+                  </textField>
+
+                  <numberField>
+                    <name>rate</name>
+                    <udn>rate</udn>
+                    <caption>#getMessage("specimen_spec_position_container_type_rate")</caption>
+                    <column>RATE</column>
+                    <noOfDigitsAfterDecimal>2</noOfDigitsAfterDecimal>
+                  </numberField>
+                </row>
+              </subForm>
+            </row>
+          </subForm>
+        </row>
+        <row>
+          <subForm>
             <name>containerHierarchy</name>
             <udn>containerHierarchy</udn>
             <caption>#getMessage("specimen_spec_position_container_hierarchy")</caption>
             <table>OS_CONTAINER_HIERARCHY_VIEW</table>
             <foreignKey>CONTAINER_ID</foreignKey>
-            <parentKey>CONTAINER_IDENTIFIER</parentKey>
+            <parentKey>STORAGE_CONTAINER_ID</parentKey>
             <primaryKey>CONTAINER_ID</primaryKey>
             <row>
               <textField>
@@ -354,7 +516,7 @@
             <caption>#getMessage("specimen_spec_position_container_ancestors")</caption>
             <table>OS_CONTAINER_ANCESTORS_VIEW</table>
             <foreignKey>CONTAINER_ID</foreignKey>
-            <parentKey>CONTAINER_IDENTIFIER</parentKey>
+            <parentKey>STORAGE_CONTAINER_ID</parentKey>
             <primaryKey>CONTAINER_ID</primaryKey>
             <row>
               <textField>
@@ -362,7 +524,7 @@
                 <udn>root_container_name</udn>
                 <caption>#getMessage("specimen_spec_position_container_root_name")</caption>
                 <column>FREEZER</column>
-                <recordUrl>#/object-state-params-resolver?stateName=container-detail.overview&amp;objectName=storage_container&amp;key=name&amp;value={{$value}}</recordUrl>
+                <recordUrl>#/object-state-params-resolver?stateName=ContainerDetail.Overview&amp;objectName=storage_container&amp;key=name&amp;value={{$value}}</recordUrl>
               </textField>
             </row>
           </subForm>
@@ -375,7 +537,7 @@
             <caption>#getMessage("specimen_spec_position_container_all_ancestors")</caption>
             <table>OS_CONTAINERS_HIERARCHY</table>
             <foreignKey>DESCENDENT_ID</foreignKey>
-            <parentKey>CONTAINER_IDENTIFIER</parentKey>
+            <parentKey>STORAGE_CONTAINER_ID</parentKey>
             <pathLink>true</pathLink>
             <row>
               <numberField>
@@ -422,6 +584,7 @@
         <udn>creationTime</udn>
         <caption>#getMessage("common_creation_time")</caption>
         <column>CREATION_TIME</column>
+        <format>MM-dd-yyyy HH:mm</format>
       </datePicker>
     </row>
 
@@ -440,6 +603,7 @@
         <udn>updateTime</udn>
         <caption>#getMessage("common_update_time")</caption>
         <column>UPDATE_TIME</column>
+        <format>MM-dd-yyyy HH:mm</format>
       </datePicker>
     </row>
 
@@ -480,65 +644,98 @@
 
     <row>
       <subForm>
-        <name>spmnCollRecvDetails</name>
-        <udn>spmnCollRecvDetails</udn>
-        <caption>#getMessage("specimen_coll_recv_details")</caption>
-        <table>OS_SPMN_COLL_RECV_DETAILS_VIEW</table>
-        <primaryKey>SPECIMEN_ID</primaryKey>
+        <name>ancestorReqs</name>
+        <udn>ancestorReqs</udn>
+        <caption>#getMessage("specimen_ancestor_requirements")</caption>
+        <table>OS_ANCESTOR_SPMN_REQS_VIEW</table>
         <foreignKey>SPECIMEN_ID</foreignKey>
         <parentKey>IDENTIFIER</parentKey>
         <row>
-          <dropDown>
+          <textField>
+            <name>name</name>
+            <udn>name</udn>
+            <caption>#getMessage("specimen_ancestor_req_name")</caption>
+            <column>REQ_LABEL</column>
+          </textField>
+          <textField>
+            <name>code</name>
+            <udn>code</udn>
+            <caption>#getMessage("specimen_ancestor_req_code")</caption>
+            <column>REQ_CODE</column>
+          </textField>
+        </row>
+      </subForm>
+    </row>
+
+    <row>
+      <subForm>
+        <name>spmnCollRecvDetails</name>
+        <udn>spmnCollRecvDetails</udn>
+        <caption>#getMessage("specimen_coll_recv_details")</caption>
+        <table>OS_SPMN_COLL_RECV_DETAILS</table>
+        <primaryKey>PRIMARY_SPECIMEN_ID</primaryKey>
+        <foreignKey>PRIMARY_SPECIMEN_ID</foreignKey>
+        <parentKey>PRIMARY_SPECIMEN_ID</parentKey>
+        <row>
+          <pvField>
             <name>collContainer</name>
             <udn>collContainer</udn>
             <caption>#getMessage("specimen_collection_container")</caption>
-            <column>COLL_CONTAINER</column>
-            <options>
-              <sql>select value from catissue_permissible_value where public_id = 'collection_container' order by value</sql>
-            </options>
-          </dropDown>
-          <dropDown>
+            <column>COLLECTION_CONTAINER_ID</column>
+            <attribute>collection_container</attribute>
+          </pvField>
+          <pvField>
             <name>collProcedure</name>
             <udn>collProcedure</udn>
             <caption>#getMessage("specimen_collection_procedure")</caption>
-            <column>COLL_PROCEDURE</column>
-            <options>
-              <sql>select value from catissue_permissible_value where public_id = 'collection_procedure' order by value</sql>
-            </options>
-          </dropDown>
+            <column>COLLECTION_PROCEDURE_ID</column>
+            <attribute>collection_procedure</attribute>
+          </pvField>
           <userField>
             <name>collector</name>
             <udn>collector</udn>
             <caption>#getMessage("specimen_collector")</caption>
-            <column>COLLECTOR_ID</column>
+            <column>COLLECTION_USER_ID</column>
           </userField>
           <datePicker>
             <name>collTime</name>
             <udn>collTime</udn>
             <caption>#getMessage("specimen_collection_date")</caption>
-            <column>COLL_TIME</column>
+            <column>COLLECTION_TIME</column>
+            <format>MM-dd-yyyy HH:mm</format>
           </datePicker>
-          <dropDown>
+          <textField>
+            <name>collComments</name>
+            <udn>collComments</udn>
+            <caption>#getMessage("specimen_collection_comments")</caption>
+            <column>COLLECTION_COMMENTS</column>
+          </textField>
+          <pvField>
             <name>recvQuality</name>
             <udn>recvQuality</udn>
             <caption>#getMessage("specimen_received_quality")</caption>
-            <column>RECV_QUALITY</column>
-            <options>
-              <sql>select value from catissue_permissible_value where public_id = 'receive_quality' order by value</sql>
-            </options>
-          </dropDown>
+            <column>RECEIVED_QUALITY_ID</column>
+            <attribute>receive_quality</attribute>
+          </pvField>
           <userField>
             <name>receiver</name>
             <udn>receiver</udn>
             <caption>#getMessage("specimen_receiver")</caption>
-            <column>RECEIVER_ID</column>
+            <column>RECEIVED_USER_ID</column>
           </userField>
           <datePicker>
             <name>recvTime</name>
             <udn>recvTime</udn>
             <caption>#getMessage("specimen_received_date")</caption>
-            <column>RECV_TIME</column>
+            <column>RECEIVED_TIME</column>
+            <format>MM-dd-yyyy HH:mm</format>
           </datePicker>
+          <textField>
+            <name>recvComments</name>
+            <udn>recvComments</udn>
+            <caption>#getMessage("specimen_received_comments")</caption>
+            <column>RECEIVED_COMMENTS</column>
+          </textField>
         </row>
       </subForm>
     </row>
@@ -574,7 +771,7 @@
                 <udn>primarySite</udn>
                 <caption>#getMessage("specimen_collector_primary_site")</caption>
                 <column>PRIMARY_SITE_ID</column>
-                <recordUrl>#/object-state-params-resolver?stateName=site-detail.overview&amp;objectName=site&amp;key=name&amp;value={{$value}}</recordUrl>
+                <recordUrl>#/object-state-params-resolver?stateName=SitesListItemDetail.Overview&amp;objectName=site&amp;key=name&amp;value={{$value}}</recordUrl>
               </siteField>
             </row>
             <row>
@@ -618,8 +815,8 @@
           <numberField>
             <name>aliquotSequence</name>
             <udn>aliquotSequence</udn>
-            <caption>#getMessage("specimen_aliquot_sequence")</caption>
-            <column>ALIQUOT_SEQ</column>
+            <caption>#getMessage("specimen_sequence")</caption>
+            <column>SPECIMEN_SEQ</column>
           </numberField>
         </row>
       </subForm>
@@ -652,7 +849,7 @@
             <options>
               <sql>select short_title from catissue_distribution_protocol where activity_status != 'Disabled' order by short_title</sql>
             </options>
-            <recordUrl>#/object-state-params-resolver?stateName=dp-detail.overview&amp;objectName=distribution_protocol&amp;key=shortTitle&amp;value={{$value}}</recordUrl>
+            <recordUrl>#/object-state-params-resolver?stateName=DpsListItemDetail.Overview&amp;objectName=distribution_protocol&amp;key=shortTitle&amp;value={{$value}}</recordUrl>
           </dropDown>
         </row>
 
@@ -683,7 +880,7 @@
             <udn>id</udn>
             <caption>#getMessage("specimen_request_id")</caption>
             <column>REQUEST_ID</column>
-            <recordUrl>#/object-state-params-resolver?stateName=sc-req-detail.overview&amp;objectName=specimen_request&amp;key=id&amp;value={{$value}}</recordUrl>
+            <recordUrl>#/object-state-params-resolver?stateName=DistrbutionRequestViewRedirect&amp;objectName=specimen_request&amp;key=id&amp;value={{$value}}</recordUrl>
           </numberField>
         </row>
 
@@ -808,7 +1005,7 @@
             <udn>name</udn>
             <caption>#getMessage("specimen_distribution_name")</caption>
             <column>NAME</column>
-            <recordUrl>#/object-state-params-resolver?stateName=order-detail.overview&amp;objectName=distribution_order&amp;key=name&amp;value={{$value}}</recordUrl>
+            <recordUrl>#/object-state-params-resolver?stateName=OrdersListItemDetail.Overview&amp;objectName=distribution_order&amp;key=name&amp;value={{$value}}</recordUrl>
           </textField>  
         </row>
 
@@ -839,7 +1036,7 @@
                 <options>
                   <sql>select short_title from catissue_distribution_protocol where activity_status != 'Disabled' order by short_title</sql>
                 </options>
-                <recordUrl>#/object-state-params-resolver?stateName=dp-detail.overview&amp;objectName=distribution_protocol&amp;key=shortTitle&amp;value={{$value}}</recordUrl>
+                <recordUrl>#/object-state-params-resolver?stateName=DpsListItemDetail.Overview&amp;objectName=distribution_protocol&amp;key=shortTitle&amp;value={{$value}}</recordUrl>
               </dropDown>
 
               <textField>
@@ -880,7 +1077,7 @@
                     <udn>primarySite</udn>
                     <caption>#getMessage("specimen_order_dp_pi_primary_site")</caption>
                     <column>PRIMARY_SITE_ID</column>
-                    <recordUrl>#/object-state-params-resolver?stateName=site-detail.overview&amp;objectName=site&amp;key=name&amp;value={{$value}}</recordUrl>
+                    <recordUrl>#/object-state-params-resolver?stateName=SitesListItemDetail.Overview&amp;objectName=site&amp;key=name&amp;value={{$value}}</recordUrl>
                   </siteField>
                 </row>
 
@@ -906,7 +1103,7 @@
             <udn>site</udn>
             <caption>#getMessage("specimen_order_site")</caption>
             <column>SITE_ID</column>
-            <recordUrl>#/object-state-params-resolver?stateName=site-detail.overview&amp;objectName=site&amp;key=name&amp;value={{$value}}</recordUrl>
+            <recordUrl>#/object-state-params-resolver?stateName=SitesListItemDetail.Overview&amp;objectName=site&amp;key=name&amp;value={{$value}}</recordUrl>
           </siteField>
         </row>
 
@@ -953,7 +1150,7 @@
             <udn>executionDate</udn>
             <caption>#getMessage("specimen_order_execution_date")</caption>
             <column>EXECUTION_DATE</column>
-            <format>MM-dd-yyyy</format>
+            <format>MM-dd-yyyy HH:mm</format>
           </datePicker>
         </row>
 
@@ -994,6 +1191,15 @@
           </numberField>
         </row>
 
+        <row>
+          <textField>
+            <name>specimenLocation</name>
+            <udn>specimenLocation</udn>
+            <caption>#getMessage("specimen_distribution_location")</caption>
+            <column>SPECIMEN_LOCATION</column>
+          </textField>
+        </row>
+
         $querySvc.insertCustomQueryForms('order')
 
         <row>
@@ -1001,7 +1207,7 @@
             <name>customFields</name>
             <udn>customFields</udn>
             <caption>#getMessage("specimen_order_extensions")</caption>
-            <table>OS_ORDERS_CUSTOM_FIELDS_VIEW</table>
+            <table>OS_ORDER_CUST_FIELDS</table>
             <foreignKey>ORDER_ID</foreignKey>
             <parentKey>ORDER_ID</parentKey>
             <customFieldsInfo>false:OrderExtension:-1</customFieldsInfo>
@@ -1038,7 +1244,7 @@
             <udn>name</udn>
             <caption>#getMessage("specimen_shipment_name")</caption>
             <column>SHIPMENT_NAME</column>
-            <recordUrl>#/object-state-params-resolver?stateName=shipment-detail.overview&amp;objectName=shipment&amp;key=name&amp;value={{$value}}</recordUrl>
+            <recordUrl>#/object-state-params-resolver?stateName=ShipmentsListItemDetail.Overview&amp;objectName=shipment&amp;key=name&amp;value={{$value}}</recordUrl>
           </textField>
         </row>
 
@@ -1053,6 +1259,54 @@
               <option><value>CONTAINER</value></option>
             </options>
           </dropDown>
+        </row>
+
+        <row>
+          <booleanCheckBox>
+            <name>request</name>
+            <udn>request</udn>
+            <caption>#getMessage("specimen_shipment_request")</caption>
+            <column>REQUEST</column>
+          </booleanCheckBox>
+        </row>
+
+        <row>
+          <pvField>
+            <name>requestStatus</name>
+            <udn>requestStatus</udn>
+            <caption>#getMessage("specimen_shipment_request_status")</caption>
+            <column>REQUEST_STATUS</column>
+            <attribute>shipment_request_status</attribute>
+            <leafValue>true</leafValue>
+          </pvField>
+        </row>
+
+        <row>
+          <userField>
+            <name>requester</name>
+            <udn>requester</udn>
+            <caption>#getMessage("specimen_shipment_requester")</caption>
+            <column>REQUESTER_ID</column>
+          </userField>
+        </row>
+
+        <row>
+          <datePicker>
+            <name>requestDate</name>
+            <udn>requestDate</udn>
+            <caption>#getMessage("specimen_shipment_request_date")</caption>
+            <column>REQUEST_DATE</column>
+            <format>MM-dd-yyyy HH:mm</format>
+          </datePicker>
+        </row>
+
+        <row>
+          <textField>
+            <name>requesterComments</name>
+            <udn>requesterComments</udn>
+            <caption>#getMessage("specimen_shipment_requester_comments")</caption>
+            <column>REQUESTER_COMMENTS</column>
+          </textField>
         </row>
 
         <row>
@@ -1088,7 +1342,7 @@
             <udn>sendingSite</udn>
             <caption>#getMessage("specimen_shipment_sending_site")</caption>
             <column>SENDING_SITE_ID</column>
-            <recordUrl>#/object-state-params-resolver?stateName=site-detail.overview&amp;objectName=site&amp;key=name&amp;value={{$value}}</recordUrl>
+            <recordUrl>#/object-state-params-resolver?stateName=SitesListItemDetail.Overview&amp;objectName=site&amp;key=name&amp;value={{$value}}</recordUrl>
           </siteField>
         </row>
 
@@ -1107,7 +1361,7 @@
             <udn>shippedDate</udn>
             <caption>#getMessage("specimen_shipment_shipped_date")</caption>
             <column>SHIPPED_DATE</column>
-            <format>MM-dd-yyyy</format>
+            <format>MM-dd-yyyy HH:mm</format>
           </datePicker>
         </row>
 
@@ -1126,7 +1380,7 @@
             <udn>receivingSite</udn>
             <caption>#getMessage("specimen_shipment_recv_site")</caption>
             <column>RECEIVING_SITE_ID</column>
-            <recordUrl>#/object-state-params-resolver?stateName=site-detail.overview&amp;objectName=site&amp;key=name&amp;value={{$value}}</recordUrl>
+            <recordUrl>#/object-state-params-resolver?stateName=SitesListItemDetail.Overview&amp;objectName=site&amp;key=name&amp;value={{$value}}</recordUrl>
           </siteField>
         </row>
 
@@ -1145,7 +1399,7 @@
             <udn>receivedDate</udn>
             <caption>#getMessage("specimen_shipment_received_date")</caption>
             <column>RECEIVED_DATE</column>
-            <format>MM-dd-yyyy</format>
+            <format>MM-dd-yyyy HH:mm</format>
           </datePicker>
         </row>
 
@@ -1159,15 +1413,22 @@
         </row>
 
         <row>
-          <dropDown>
+          <pvField>
             <name>receivedQuality</name>
             <udn>receivedQuality</udn>
             <caption>#getMessage("specimen_shipment_recv_quality")</caption>
-            <column>RECEIVED_QUALITY</column>
-            <options>
-              <sql>select value from catissue_permissible_value where public_id = 'shipment_item_received_quality' order by value</sql>
-            </options>
-          </dropDown>
+            <column>RECEIVED_QUALITY_ID</column>
+            <attribute>shipment_item_received_quality</attribute>
+          </pvField>
+        </row>
+
+        <row>
+          <numberField>
+            <name>containerItemId</name>
+            <udn>containerItemId</udn>
+            <caption>#getMessage("specimen_shipment_container_id")</caption>
+            <column>SHIPMENT_CONTAINER_ID</column>
+          </numberField>
         </row>
 
         <row>
@@ -1197,6 +1458,7 @@
             <caption>#getMessage("specimen_shipment_status")</caption>
             <column>STATUS</column>
             <options>
+              <option><value>Requested</value></option>
               <option><value>Pending</value></option>
               <option><value>Shipped</value></option>
               <option><value>Received</value></option>
@@ -1214,7 +1476,7 @@
         <table>OS_SPECIMEN_CARTS_VIEW</table>
         <foreignKey>SPECIMEN_ID</foreignKey>
         <parentKey>IDENTIFIER</parentKey>
-        <primaryKey>SPECIMEN_ID</primaryKey>
+        <primaryKey>ITEM_ID</primaryKey>
 
         <row>
           <textField>
@@ -1238,10 +1500,356 @@
 
     <row>
       <subForm>
+        <name>services</name>
+        <udn>services</udn>
+        <caption>#getMessage("specimen_services")</caption>
+        <table>OS_SPECIMEN_LAB_SVC_RATES_VIEW</table>
+        <foreignKey>SPECIMEN_ID</foreignKey>
+        <parentKey>IDENTIFIER</parentKey>
+        <primaryKey>SPECIMEN_SERVICE_ID</primaryKey>
+        <row>
+          <textField>
+            <name>code</name>
+            <udn>code</udn>
+            <caption>#getMessage("specimen_service_code")</caption>
+            <column>CODE</column>
+          </textField>
+          <textField>
+            <name>description</name>
+            <udn>description</udn>
+            <caption>#getMessage("specimen_service_description")</caption>
+            <column>DESCRIPTION</column>
+          </textField>
+          <datePicker>
+            <name>serviceDate</name>
+            <udn>serviceDate</udn>
+            <caption>#getMessage("specimen_service_date")</caption>
+            <column>SERVICE_DATE</column>
+            <format>MM-dd-yyyy HH:mm</format>
+          </datePicker>
+          <userField>
+            <name>servicedBy</name>
+            <udn>servicedBy</udn>
+            <caption>#getMessage("specimen_serviced_by")</caption>
+            <column>SERVICED_BY</column>
+          </userField>
+          <textField>
+            <name>comments</name>
+            <udn>comments</udn>
+            <caption>#getMessage("specimen_service_comments")</caption>
+            <column>COMMENTS</column>
+          </textField>
+          <textField>
+            <name>currency</name>
+            <udn>currency</udn>
+            <caption>#getMessage("specimen_service_rate_currency")</caption>
+            <column>CURRENCY</column>
+          </textField>
+          <numberField>
+            <name>rate</name>
+            <udn>rate</udn>
+            <caption>#getMessage("specimen_service_rate")</caption>
+            <column>RATE</column>
+            <noOfDigitsAfterDecimal>2</noOfDigitsAfterDecimal>
+          </numberField>
+        </row>
+      </subForm>
+    </row>
+
+    <row>
+      <subForm>
+        <name>checkoutPosition</name>
+        <udn>checkoutPosition</udn>
+        <caption>#getMessage("specimen_checkout_details")</caption>
+        <table>OS_CONTAINER_POSITIONS</table>
+        <foreignKey>CHECKOUT_SPECIMEN_ID</foreignKey>
+        <parentKey>IDENTIFIER</parentKey>
+        <primaryKey>IDENTIFIER</primaryKey>
+        <row>
+          <numberField>
+            <name>positionId</name>
+            <udn>positionId</udn>
+            <caption>#getMessage("specimen_spec_position_id")</caption>
+            <column>IDENTIFIER</column>
+            <hidden>true</hidden>
+          </numberField>
+
+          <numberField>
+            <name>containerId</name>
+            <udn>containerId</udn>
+            <caption>Container ID</caption>
+            <column>STORAGE_CONTAINER_ID</column>
+            <hidden>true</hidden>
+          </numberField>
+
+          <textField>
+            <name>rowY</name>
+            <udn>rowY</udn>
+            <caption>#getMessage("specimen_spec_position_container_row")</caption>
+            <column>POS_TWO_STR</column>
+          </textField>
+
+          <textField>
+            <name>colX</name>
+            <udn>colX</udn>
+            <caption>#getMessage("specimen_spec_position_container_column")</caption>
+            <column>POS_ONE_STR</column>
+          </textField>
+
+          <numberField>
+            <name>rowOrdinal</name>
+            <udn>rowOrdinal</udn>
+            <caption>#getMessage("specimen_spec_position_row_ordinal")</caption>
+            <column>POS_TWO</column>
+          </numberField>
+
+          <numberField>
+            <name>columnOrdinal</name>
+            <udn>columnOrdinal</udn>
+            <caption>#getMessage("specimen_spec_position_col_ordinal")</caption>
+            <column>POS_ONE</column>
+          </numberField>
+
+          <textField>
+            <name>formattedPos</name>
+            <udn>formattedPos</udn>
+            <caption>#getMessage("specimen_spec_position_formatted_pos")</caption>
+            <column>FORMATTED_POSITION</column>
+          </textField>
+        </row>
+        <row>
+          <subForm>
+            <name>container</name>
+            <udn>container</udn>
+            <caption>#getMessage("storage_container_details")</caption>
+            <table>OS_STORAGE_CONTAINERS</table>
+            <foreignKey>IDENTIFIER</foreignKey>
+            <parentKey>STORAGE_CONTAINER_ID</parentKey>
+            <primaryKey>IDENTIFIER</primaryKey>
+            <row>
+              <numberField>
+                <name>id</name>
+                <udn>id</udn>
+                <caption>Container ID</caption>
+                <column>IDENTIFIER</column>
+                <hidden>true</hidden>
+              </numberField>
+
+              <textField>
+                <name>name</name>
+                <udn>name</udn>
+                <caption>#getMessage("specimen_spec_position_container_name")</caption>
+                <column>NAME</column>
+                <recordUrl>#/object-state-params-resolver?stateName=ContainerDetail.Locations&amp;objectName=storage_container&amp;key=name&amp;value={{$value}}</recordUrl>
+              </textField>
+
+              <textField>
+                <name>displayName</name>
+                <udn>displayName</udn>
+                <caption>#getMessage("specimen_spec_position_container_display_name")</caption>
+                <column>DISPLAY_NAME</column>
+              </textField>
+
+              <textField>
+                <name>barcode</name>
+                <udn>barcode</udn>
+                <caption>#getMessage("specimen_spec_position_container_barcode")</caption>
+                <column>BARCODE</column>
+                <recordUrl>#/object-state-params-resolver?stateName=ContainerDetail.Locations&amp;objectName=storage_container&amp;key=barcode&amp;value={{$value}}</recordUrl>
+              </textField>
+
+              <siteField>
+                <name>site</name>
+                <udn>site</udn>
+                <caption>#getMessage("specimen_spec_position_container_site")</caption>
+                <column>SITE_ID</column>
+                <recordUrl>#/object-state-params-resolver?stateName=SitesListItemDetail.Overview&amp;objectName=site&amp;key=name&amp;value={{$value}}</recordUrl>
+              </siteField>
+            </row>
+            <row>
+              <subForm>
+                <name>type</name>
+                <udn>type</udn>
+                <caption>#getMessage("container_type")</caption>
+                <table>OS_CONTAINER_TYPES</table>
+                <foreignKey>IDENTIFIER</foreignKey>
+                <parentKey>TYPE_ID</parentKey>
+                <primaryKey>IDENTIFIER</primaryKey>
+                <row>
+                  <textField>
+                    <name>name</name>
+                    <udn>name</udn>
+                    <caption>#getMessage("specimen_spec_position_container_type_name")</caption>
+                    <column>NAME</column>
+                  </textField>
+
+                  <numberField>
+                    <name>rate</name>
+                    <udn>rate</udn>
+                    <caption>#getMessage("specimen_spec_position_container_type_rate")</caption>
+                    <column>RATE</column>
+                    <noOfDigitsAfterDecimal>2</noOfDigitsAfterDecimal>
+                  </numberField>
+                </row>
+              </subForm>
+            </row>
+          </subForm>
+        </row>
+        <row>
+          <subForm>
+            <name>containerHierarchy</name>
+            <udn>containerHierarchy</udn>
+            <caption>#getMessage("specimen_spec_position_container_hierarchy")</caption>
+            <table>OS_CONTAINER_HIERARCHY_VIEW</table>
+            <foreignKey>CONTAINER_ID</foreignKey>
+            <parentKey>STORAGE_CONTAINER_ID</parentKey>
+            <primaryKey>CONTAINER_ID</primaryKey>
+            <row>
+              <textField>
+                <name>hierarchy</name>
+                <udn>hierarchy</udn>
+                <caption>#getMessage("specimen_spec_position_container_hierarchy")</caption>
+                <column>HIERARCHY</column>
+              </textField>
+            </row>
+          </subForm>
+        </row>
+        <row>
+          <subForm>
+            <name>ancestors</name>
+            <udn>ancestors</udn>
+            <caption>#getMessage("specimen_spec_position_container_ancestors")</caption>
+            <table>OS_CONTAINER_ANCESTORS_VIEW</table>
+            <foreignKey>CONTAINER_ID</foreignKey>
+            <parentKey>STORAGE_CONTAINER_ID</parentKey>
+            <primaryKey>CONTAINER_ID</primaryKey>
+            <row>
+              <textField>
+                <name>root_container_name</name>
+                <udn>root_container_name</udn>
+                <caption>#getMessage("specimen_spec_position_container_root_name")</caption>
+                <column>FREEZER</column>
+                <recordUrl>#/object-state-params-resolver?stateName=ContainerDetail.Overview&amp;objectName=storage_container&amp;key=name&amp;value={{$value}}</recordUrl>
+              </textField>
+            </row>
+          </subForm>
+        </row>
+        <row>
+          <subForm>
+            <name>allAncestors</name>
+            <udn>allAncestors</udn>
+            <caption>#getMessage("specimen_spec_position_container_all_ancestors")</caption>
+            <table>OS_CONTAINERS_HIERARCHY</table>
+            <foreignKey>DESCENDENT_ID</foreignKey>
+            <parentKey>STORAGE_CONTAINER_ID</parentKey>
+            <pathLink>true</pathLink>
+            <row>
+              <numberField>
+                <name>ancestorId</name>
+                <udn>ancestorId</udn>
+                <caption>#getMessage("specimen_spec_position_container_ancestor_id")</caption>
+                <column>ANCESTOR_ID</column>
+              </numberField>
+            </row>
+          </subForm>
+        </row>
+        <row>
+          <userField>
+            <name>checkoutBy</name>
+            <udn>checkoutBy</udn>
+            <caption>#getMessage("specimen_checkout_by")</caption>
+            <column>CHECKOUT_BY</column>
+          </userField>
+          <datePicker>
+            <name>checkoutTime</name>
+            <udn>checkoutTime</udn>
+            <caption>#getMessage("specimen_checkout_time")</caption>
+            <column>CHECKOUT_TIME</column>
+            <format>MM-dd-yyyy HH:mm</format>
+          </datePicker>
+          <textField>
+            <name>checkoutComments</name>
+            <udn>checkoutComments</udn>
+            <caption>#getMessage("specimen_checkout_comments")</caption>
+            <column>CHECKOUT_COMMENTS</column>
+          </textField>
+        </row>
+      </subForm>
+    </row>
+    <row>
+      <subForm>
+        <name>pickedSpecimens</name>
+        <udn>pickedSpecimens</udn>
+        <caption>#getMessage("pick_list_specimens")</caption>
+        <table>OS_PICKED_SPECIMENS</table>
+        <foreignKey>SPECIMEN_ID</foreignKey>
+        <parentKey>IDENTIFIER</parentKey>
+        <primaryKey>IDENTIFIER</primaryKey>
+        <hidden>true</hidden>
+        <row>
+          <numberField>
+            <name>pickListItemId</name>
+            <udn>pickListItemId</udn>
+            <caption>#getMessage("pick_list_specimen_id")</caption>
+            <column>IDENTIFIER</column>
+          </numberField>
+          <numberField>
+            <name>pickListId</name>
+            <udn>pickListId</udn>
+            <caption>#getMessage("pick_list_id")</caption>
+            <column>PICK_LIST_ID</column>
+          </numberField>
+          <subForm>
+            <name>pickedBy</name>
+            <udn>pickedBy</udn>
+            <caption>#getMessage("pick_list_specimen_picked_by")</caption>
+            <table>CATISSUE_USER</table>
+            <foreignKey>IDENTIFIER</foreignKey>
+            <parentKey>UPDATED_BY</parentKey>
+            <primaryKey>IDENTIFIER</primaryKey>
+            <row>
+              <numberField>
+                <name>userId</name>
+                <udn>userId</udn>
+                <caption>#getMessage("user_identifier")</caption>
+                <column>IDENTIFIER</column>
+              </numberField>
+              <textField>
+                <name>firstName</name>
+                <udn>firstName</udn>
+                <caption>#getMessage("user_first_name")</caption>
+                <column>FIRST_NAME</column>
+              </textField>
+              <textField>
+                <name>lastName</name>
+                <udn>lastName</udn>
+                <caption>#getMessage("user_last_name")</caption>
+                <column>LAST_NAME</column>
+              </textField>
+              <textField>
+                <name>emailAddress</name>
+                <udn>emailAddress</udn>
+                <caption>#getMessage("user_email")</caption>
+                <column>EMAIL_ADDRESS</column>
+              </textField>
+            </row>
+          </subForm>
+          <datePicker>
+            <name>pickupTime</name>
+            <udn>pickupTime</udn>
+            <caption>#getMessage("pick_list_specimen_pickup_time")</caption>
+            <column>UPDATE_TIME</column>
+            <format>MM-dd-yyyy HH:mm</format>
+          </datePicker>
+        </row>
+      </subForm>
+    </row>
+    <row>
+      <subForm>
         <name>extensions</name>
         <udn>extensions</udn>
         <caption>#getMessage("specimen_extensions")</caption>
-        <table>SPECIMEN_EXTN_RECORDS_VIEW</table>
+        <table>OS_SPMN_EXTN_RECS</table>
         <foreignKey>SPECIMEN_ID</foreignKey>
         <parentKey>IDENTIFIER</parentKey>
         <pathLink>true</pathLink>
@@ -1263,7 +1871,7 @@
             <name>participant</name>
             <udn>participant</udn>
             <caption>#getMessage("participant")</caption>
-            <table>CPR_VIEW</table>
+            <table>OS_CPR_RECS</table>
             <foreignKey>CPR_ID</foreignKey>
             <parentKey>COLLECTION_PROTOCOL_REG_ID</parentKey>
             <pathLink>true</pathLink>
@@ -1277,8 +1885,8 @@
         <name>customFields</name>
         <udn>customFields</udn>
         <caption>#getMessage("specimen_field_extensions")</caption>
-        <table>OS_SPEC_CUST_FIELD_EXTNS_VIEW</table>
-        <foreignKey>SPEC_ID</foreignKey>
+        <table>OS_SPMN_CUST_FIELDS</table>
+        <foreignKey>SPECIMEN_ID</foreignKey>
         <parentKey>IDENTIFIER</parentKey>
         <pathLink>true</pathLink>
         <extnFkCol>RECORD_ID</extnFkCol>

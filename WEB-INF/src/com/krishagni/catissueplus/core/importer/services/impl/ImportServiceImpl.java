@@ -7,38 +7,55 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.file.Files;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
+import java.util.Collections;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.TimeZone;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 import java.util.zip.ZipFile;
 
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
-import org.apache.commons.lang.StringUtils;
-import org.apache.commons.lang.exception.ExceptionUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.hibernate.Hibernate;
+import org.springframework.beans.factory.InitializingBean;
 import org.springframework.context.ApplicationListener;
 import org.springframework.context.event.ContextRefreshedEvent;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.TransactionCallback;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import com.krishagni.catissueplus.core.administrative.domain.User;
 import com.krishagni.catissueplus.core.administrative.events.MergedObject;
+import com.krishagni.catissueplus.core.audit.repository.RevisionsListCriteria;
+import com.krishagni.catissueplus.core.audit.services.AuditService;
+import com.krishagni.catissueplus.core.biospecimen.events.FileDetail;
 import com.krishagni.catissueplus.core.common.PlusTransactional;
+import com.krishagni.catissueplus.core.common.access.AccessCtrlMgr;
+import com.krishagni.catissueplus.core.common.errors.CommonErrorCode;
 import com.krishagni.catissueplus.core.common.errors.ErrorType;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
@@ -51,6 +68,7 @@ import com.krishagni.catissueplus.core.common.util.CsvFileReader;
 import com.krishagni.catissueplus.core.common.util.CsvFileWriter;
 import com.krishagni.catissueplus.core.common.util.CsvWriter;
 import com.krishagni.catissueplus.core.common.util.EmailUtil;
+import com.krishagni.catissueplus.core.common.util.LogUtil;
 import com.krishagni.catissueplus.core.common.util.MessageUtil;
 import com.krishagni.catissueplus.core.common.util.SessionUtil;
 import com.krishagni.catissueplus.core.common.util.Utility;
@@ -73,16 +91,23 @@ import com.krishagni.catissueplus.core.importer.services.ObjectImporterFactory;
 import com.krishagni.catissueplus.core.importer.services.ObjectImporterLifecycle;
 import com.krishagni.catissueplus.core.importer.services.ObjectReader;
 import com.krishagni.catissueplus.core.importer.services.ObjectSchemaFactory;
+import com.krishagni.catissueplus.core.init.AppProperties;
+import com.krishagni.rbac.common.errors.RbacErrorCode;
 
 import edu.common.dynamicextensions.query.cachestore.LinkedEhCacheMap;
-import edu.common.dynamicextensions.util.ZipUtility;
 
-public class ImportServiceImpl implements ImportService, ApplicationListener<ContextRefreshedEvent> {
-	private static final Log logger = LogFactory.getLog(ImportServiceImpl.class);
+public class ImportServiceImpl implements ImportService, ApplicationListener<ContextRefreshedEvent>, InitializingBean {
+	private static final LogUtil logger = LogUtil.getLogger(ImportServiceImpl.class);
 
 	private static final int MAX_RECS_PER_TXN = 5000;
 
+	private static final int ONLINE_IMPORT_LIMIT = 1000;
+
 	private static final String CFG_MAX_TXN_SIZE = "import_max_records_per_txn";
+
+	private static final String CFG_ONLINE_IMPORT_LIMIT = "online_import_job_size_limit";
+
+	private static final SimpleDateFormat DATE_FMT = new SimpleDateFormat("yyyyMMddHHmmssSSS");
 
 	private ConfigurationService cfgSvc;
 
@@ -91,14 +116,14 @@ public class ImportServiceImpl implements ImportService, ApplicationListener<Con
 	private ObjectSchemaFactory schemaFactory;
 	
 	private ObjectImporterFactory importerFactory;
+
+	private AuditService auditService;
 	
 	private TransactionTemplate txTmpl;
 
 	private TransactionTemplate newTxTmpl;
 
 	private BlockingQueue<ImportJob> queuedJobs = new LinkedBlockingQueue<>();
-
-	private volatile ImportJob currentJob = null;
 
 	private volatile long lastRefreshTime = 0;
 
@@ -116,6 +141,10 @@ public class ImportServiceImpl implements ImportService, ApplicationListener<Con
 
 	public void setImporterFactory(ObjectImporterFactory importerFactory) {
 		this.importerFactory = importerFactory;
+	}
+
+	public void setAuditService(AuditService auditService) {
+		this.auditService = auditService;
 	}
 
 	public void setTransactionManager(PlatformTransactionManager transactionManager) {
@@ -176,10 +205,15 @@ public class ImportServiceImpl implements ImportService, ApplicationListener<Con
 	}
 		
 	@Override
+	@PlusTransactional
 	public ResponseEvent<String> uploadImportJobFile(RequestEvent<InputStream> req) {
 		OutputStream out = null;
 		
 		try {
+			if (!AccessCtrlMgr.getInstance().isBulkImportAllowed()) {
+				return ResponseEvent.userError(RbacErrorCode.ACCESS_DENIED);
+			}
+
 			//
 			// 1. Ensure import directory is present
 			//
@@ -217,12 +251,28 @@ public class ImportServiceImpl implements ImportService, ApplicationListener<Con
 				inputFile = inflateAndGetInputCsvFile(inputFile, detail.getInputFileId());
 			}
 
+			if (detail.isValidateColumns()) {
+				List<String> unmatchedColumns = getUnmatchedColumns(inputFile, detail);
+				if (!unmatchedColumns.isEmpty()) {
+					return ResponseEvent.response(ImportJobDetail.columnsMismatch(unmatchedColumns));
+				}
+			}
+
 			//
 			// Ensure transaction size is well within configured limits
 			//
 			int inputRecordsCnt = CsvFileReader.getRowsCount(inputFile, true);
+			Status status = null;
+			if (!detail.isOfflineQueue() && inputRecordsCnt > getOnlineImportJobLimit()) {
+				status = Status.TOO_LARGE;
+			}
+
 			if (detail.isAtomic() && inputRecordsCnt > getMaxRecsPerTxn()) {
-				return ResponseEvent.response(ImportJobDetail.txnSizeExceeded(inputRecordsCnt));
+				status = (status == null) ? Status.TXN_SIZE_EXCEEDED : Status.LARGE_TXN_N_JOB;
+			}
+
+			if (status != null) {
+				return ResponseEvent.response(ImportJobDetail.status(status, inputRecordsCnt));
 			}
 
 			job = createImportJob(detail);
@@ -233,7 +283,10 @@ public class ImportServiceImpl implements ImportService, ApplicationListener<Con
 			createJobDir(job.getId());
 			moveToJobDir(inputFile, job.getId());
 
-			queuedJobs.offer(job);
+			if (!job.isOfflineQueued()) {
+				queuedJobs.offer(job);
+			}
+
 			return ResponseEvent.response(ImportJobDetail.from(job));
 		} catch (CsvException csve) {
 			return ResponseEvent.userError(ImportJobErrorCode.RECORD_PARSE_ERROR, csve.getLocalizedMessage());
@@ -244,39 +297,42 @@ public class ImportServiceImpl implements ImportService, ApplicationListener<Con
 		}
 	}
 
+	private List<String> getUnmatchedColumns(String inputFile, ImportDetail detail) {
+		ObjectSchema schema = schemaFactory.getSchema(detail.getObjectType(), detail.getObjectParams());
+		if (schema == null) {
+			throw OpenSpecimenException.userError(ImportJobErrorCode.OBJ_SCHEMA_NOT_FOUND, detail.getObjectType());
+		}
+
+		ObjectReader reader = null;
+		try {
+			reader = new ObjectReader(inputFile, schema, detail.getDateFormat(), detail.getTimeFormat(), detail.getFieldSeparator());
+			return reader.getUnmatchedColumns();
+		} finally {
+			IOUtils.closeQuietly(reader);
+		}
+	}
+
 	@Override
+	@PlusTransactional
 	public ResponseEvent<ImportJobDetail> stopJob(RequestEvent<Long> req) {
 		try {
 			Long jobId = req.getPayload();
+			ImportJob job = importJobDao.getJobForUpdate(jobId);
+			ensureAccess(job);
 
-			ImportJob toRemove = null;
-			for (ImportJob job : queuedJobs) {
-				if (job.getId().equals(jobId)) {
-					toRemove = job;
-					break;
-				}
-			}
-
-			if (toRemove == null && currentJob != null && currentJob.getId().equals(jobId)) {
-				toRemove = currentJob;
-			}
-
-			if (toRemove == null || (!toRemove.isQueued() && !toRemove.isInProgress())) {
+			if (!job.isInProgress() && !job.isQueued()) {
 				return ResponseEvent.userError(ImportJobErrorCode.NOT_IN_PROGRESS, req.getPayload());
 			}
 
-			ensureAccess(toRemove);
-			toRemove.stop();
-			queuedJobs.remove(toRemove);
-
-			for (int i = 0; i < 5; ++i) {
-				TimeUnit.SECONDS.sleep(1);
-				if (!toRemove.isQueued() && !toRemove.isInProgress()) {
-					break;
-				}
+			if (job.isQueued()) {
+				queuedJobs.removeIf(qj -> qj.equals(job));
+				job.setStatus(Status.STOPPED);
+			} else {
+				job.stopRunning();
 			}
 
-			return ResponseEvent.response(ImportJobDetail.from(toRemove));
+			importJobDao.saveOrUpdate(job);
+			return ResponseEvent.response(ImportJobDetail.from(job));
 		} catch (OpenSpecimenException ose) {
 			return ResponseEvent.error(ose);
 		} catch (Exception e) {
@@ -309,19 +365,50 @@ public class ImportServiceImpl implements ImportService, ApplicationListener<Con
 		try {
 			FileRecordsDetail detail = req.getPayload();
 
-			ObjectSchema.Record schemaRec = new ObjectSchema.Record();
-			schemaRec.setFields(detail.getFields());
+			ObjectSchema schema = null;
+			if (detail.getFields() != null && !detail.getFields().isEmpty()) {
+				ObjectSchema.Record schemaRec = new ObjectSchema.Record();
+				schemaRec.setFields(detail.getFields());
 
-			ObjectSchema schema = new ObjectSchema();
-			schema.setRecord(schemaRec);
+				schema = new ObjectSchema();
+				schema.setRecord(schemaRec);
+			} else if (StringUtils.isNotBlank(detail.getSchema()) ){
+				schema = schemaFactory.getSchema(detail.getSchema(), detail.getParams());
+				if (schema == null) {
+					throw OpenSpecimenException.userError(ImportJobErrorCode.OBJ_SCHEMA_NOT_FOUND, detail.getSchema());
+				}
+			} else {
+				throw OpenSpecimenException.userError(CommonErrorCode.INVALID_INPUT, "Schema name or fields list is required.");
+			}
+
+			Map<String, String> params = detail.getParams();
+			if (params == null) {
+				params = new HashMap<>();
+			}
+
+			String dateFormat = ConfigUtil.getInstance().getDeDateFmt();
+			if (StringUtils.isNotBlank(params.get("dateFormat"))) {
+				dateFormat = params.get("dateFormat");
+			}
+
+			String timeFormat = ConfigUtil.getInstance().getTimeFmt();
+			if (StringUtils.isNotBlank(params.get("timeFormat"))) {
+				timeFormat = params.get("timeFormat");
+			}
+
+			String tz = null;
+			if (StringUtils.isNotBlank(params.get("timeZone"))) {
+				tz = params.get("timeZone");
+			}
+
+			String separator = null;
+			if (StringUtils.isNotBlank(params.get("fieldSeparator"))) {
+				separator = params.get("fieldSeparator");
+			}
 
 			file = new File(getFilePath(detail.getFileId()));
-			reader = new ObjectReader(
-				file.getAbsolutePath(),
-				schema,
-				ConfigUtil.getInstance().getDeDateFmt(),
-				ConfigUtil.getInstance().getTimeFmt());
-
+			reader = new ObjectReader(file.getAbsolutePath(), schema, dateFormat, timeFormat, separator);
+			reader.setTimeZone(tz);
 			List<Map<String, Object>> records = new ArrayList<>();
 			Map<String, Object> record = null;
 			while ((record = (Map<String, Object>)reader.next()) != null) {
@@ -335,10 +422,110 @@ public class ImportServiceImpl implements ImportService, ApplicationListener<Con
 			return ResponseEvent.serverError(e);
 		} finally {
 			IOUtils.closeQuietly(reader);
-			if (file != null) {
-				file.delete();
+//			if (file != null) {
+//				file.delete();
+//			}
+		}
+	}
+
+	@Override
+	@PlusTransactional
+	public ResponseEvent<Integer> scheduleImportJobs(RequestEvent<FileDetail> req) {
+		File workDir = null;
+
+		try {
+			if (!AuthUtil.isAdmin()) {
+				return ResponseEvent.userError(RbacErrorCode.ADMIN_RIGHTS_REQUIRED);
+			}
+
+			workDir = new File(getImportDir(), UUID.randomUUID().toString());
+			workDir.mkdirs();
+
+			FileDetail input = req.getPayload();
+			File importFile = new File(workDir, input.getFilename());
+			if (!importFile.getCanonicalPath().startsWith(workDir.getCanonicalPath())) {
+				return ResponseEvent.userError(CommonErrorCode.INVALID_INPUT, "Path traversal attempt");
+			}
+
+			try (OutputStream out = new FileOutputStream(importFile)) {
+				IOUtils.copy(input.getFileIn(), out);
+			}
+
+			List<File> files = Collections.emptyList();
+			if (isZipFile(importFile)) {
+				File inflateDir = new File(workDir, "inflated");
+				try (InputStream zipIn = new FileInputStream(importFile)) {
+					Utility.inflateZip(zipIn, inflateDir.getAbsolutePath());
+				}
+
+				TreeMap<Date, File> sortedFiles = new TreeMap<>();
+				for (File csv : inflateDir.listFiles()) {
+					Date tstmp = getTimestamp(csv);
+					if (tstmp == null) {
+						return ResponseEvent.userError(ImportJobErrorCode.INV_FILENAME, csv.getName());
+					}
+
+					sortedFiles.put(tstmp, csv);
+				}
+
+				files = new ArrayList<>(sortedFiles.values());
+			} else {
+				Date tstmp = getTimestamp(importFile);
+				if (tstmp == null) {
+					return ResponseEvent.userError(ImportJobErrorCode.INV_FILENAME, importFile.getName());
+				}
+
+				files = Collections.singletonList(importFile);
+			}
+
+			File scheduledDir = new File(getDataDir(), "scheduled-bulk-import");
+			for (File file : files) {
+				FileUtils.moveFileToDirectory(file, scheduledDir, true);
+			}
+
+			return ResponseEvent.response(files.size());
+		} catch (OpenSpecimenException ose) {
+			return ResponseEvent.error(ose);
+		} catch (Exception e) {
+			return ResponseEvent.serverError(e);
+		} finally {
+			if (workDir != null) {
+				try {
+					FileUtils.deleteDirectory(workDir);
+				} catch (Exception e) {
+					logger.error("Error deleting the directory: " + workDir.getAbsolutePath());
+				}
 			}
 		}
+	}
+
+	@Override
+	@PlusTransactional
+	public ImportJob saveJob(String entity, String op, Date startTime, Map<String, String> params) {
+		ImportJob job = new ImportJob();
+		job.setName(entity);
+		job.setType(Type.valueOf(op));
+		job.setCsvtype(ImportJob.CsvType.SINGLE_ROW_PER_OBJ);
+		job.setStatus(ImportJob.Status.COMPLETED);
+		job.setTotalRecords(1L);
+		job.setFailedRecords(0L);
+		job.setCreatedBy(AuthUtil.getCurrentUser());
+		job.setCreationTime(startTime);
+		job.setEndTime(Calendar.getInstance().getTime());
+		job.setAtomic(true);
+		job.setIpAddress(AuthUtil.getRemoteAddr());
+		job.param("noReport", Boolean.TRUE.toString());
+		if (params != null) {
+			job.getParams().putAll(params);
+		}
+
+		importJobDao.saveOrUpdate(job, true);
+		return job;
+	}
+
+	@Override
+	public void queueJob(ImportJob job) {
+		queuedJobs.offer(job);
 	}
 
 	@Override
@@ -350,23 +537,36 @@ public class ImportServiceImpl implements ImportService, ApplicationListener<Con
 		}
 
 		Executors.newSingleThreadExecutor().submit(() -> {
-			try {
-				while ((System.currentTimeMillis() - lastRefreshTime) < 60 * 1000) {
-					Thread.sleep(10 * 1000);
-				}
+			while (true) {
+				try {
+					while ((System.currentTimeMillis() - lastRefreshTime) < 60 * 1000) {
+						Thread.sleep(10 * 1000);
+					}
 
-				logger.info("Starting bulk import jobs scheduler");
-				runImportJobScheduler();
-			} catch (Exception e) {
-				logger.fatal("Bulk import jobs scheduler thread got killed", e);
+					logger.info("Starting bulk import jobs scheduler");
+					runImportJobScheduler();
+				} catch (Throwable t) {
+					logger.error("Bulk import jobs thread stopped. Restarting the thread after 60 seconds.", t);
+				} finally {
+					lastRefreshTime = System.currentTimeMillis();
+				}
 			}
 		});
 	}
 
+	@Override
+	public void afterPropertiesSet() throws Exception {
+		auditService.registerExporter(this::exportJobsReport);
+	}
+
 	private boolean isZipFile(String zipFilename) {
+		return isZipFile(new File(zipFilename));
+	}
+
+	private boolean isZipFile(File file) {
 		ZipFile zipFile = null;
 		try {
-			zipFile = new ZipFile(zipFilename);
+			zipFile = new ZipFile(file);
 			return true;
 		} catch (Exception e) {
 			return false;
@@ -381,10 +581,9 @@ public class ImportServiceImpl implements ImportService, ApplicationListener<Con
 		try {
 			in = new FileInputStream(zipFile);
 
-			File zipDirFile = new File(getImportDir() + File.separator + "inflated-" + fileId);
-			ZipUtility.extractZipToDestination(in, zipDirFile.getAbsolutePath());
-
-			inputFile = Arrays.stream(zipDirFile.listFiles())
+			File zipDirFile = Utility.getFile(getImportDir(), "inflated-" + fileId);
+			Utility.inflateZip(in, zipDirFile.getAbsolutePath());
+			inputFile = Arrays.stream(Objects.requireNonNull(zipDirFile.listFiles()))
 				.filter(f -> !f.isDirectory() && f.getName().endsWith(".csv"))
 				.map(File::getAbsolutePath)
 				.findFirst()
@@ -404,6 +603,10 @@ public class ImportServiceImpl implements ImportService, ApplicationListener<Con
 
 	private int getMaxRecsPerTxn() {
 		return ConfigUtil.getInstance().getIntSetting("common", CFG_MAX_TXN_SIZE, MAX_RECS_PER_TXN);
+	}
+
+	private int getOnlineImportJobLimit() {
+		return ConfigUtil.getInstance().getIntSetting("common", CFG_ONLINE_IMPORT_LIMIT, ONLINE_IMPORT_LIMIT);
 	}
 
 	private ImportJob getImportJob(Long jobId) {
@@ -432,8 +635,8 @@ public class ImportServiceImpl implements ImportService, ApplicationListener<Con
 		return getDataDir() + File.separator + "bulk-import";
 	}
 	
-	private String getFilePath(String fileId) { 
-		 return getImportDir() + File.separator + fileId;
+	private String getFilePath(String fileId) {
+		return Utility.getFile(getImportDir(), fileId).getAbsolutePath();
 	}
 	
 	private String getJobsDir() {
@@ -487,14 +690,17 @@ public class ImportServiceImpl implements ImportService, ApplicationListener<Con
 		job.setCreatedBy(AuthUtil.getCurrentUser());
 		job.setCreationTime(Calendar.getInstance().getTime());
 		job.setName(detail.getObjectType());
-		job.setStatus(Status.QUEUED);
+		job.setStatus(detail.isOfflineQueue() ? Status.OFFLINE_QUEUED : Status.QUEUED);
 		job.setAtomic(detail.isAtomic());
 		job.setParams(detail.getObjectParams());
 		job.setFieldSeparator(detail.getFieldSeparator());
+		job.setRunByNode("none");
+		job.setIpAddress(AuthUtil.getRemoteAddr());
 
 		setImportType(detail, job, ose);
 		setCsvType(detail, job, ose);
 		setDateAndTimeFormat(detail, job, ose);
+		setTimeZone(detail, job, ose);
 		ose.checkAndThrow();
 
 		importJobDao.saveOrUpdate(job, true);
@@ -533,6 +739,25 @@ public class ImportServiceImpl implements ImportService, ApplicationListener<Con
 		job.setTimeFormat(timeFormat);
 	}
 
+	private void setTimeZone(ImportDetail detail, ImportJob job, OpenSpecimenException ose) {
+		String timeZone = detail.getTimeZone();
+		if (StringUtils.isNotBlank(timeZone)) {
+			try {
+				TimeZone tz = TimeZone.getTimeZone(timeZone);
+			} catch (Exception e) {
+				ose.addError(CommonErrorCode.INVALID_TZ, timeZone);
+				return;
+			}
+		} else {
+			TimeZone tz = AuthUtil.getUserTimeZone();
+			if (tz != null) {
+				timeZone = tz.getID();
+			}
+		}
+
+		job.setTimeZone(timeZone);
+	}
+
 	private void runImportJobScheduler() {
 		try {
 			int failedJobs = markInProgressJobsAsFailed();
@@ -542,13 +767,28 @@ public class ImportServiceImpl implements ImportService, ApplicationListener<Con
 
 			while (true) {
 				logger.info("Probing for queued bulk import jobs");
-				ImportJob job = queuedJobs.take();
+				ImportJob job = queuedJobs.poll(15, TimeUnit.MINUTES);
+				if (job == null) {
+					//
+					// to load the jobs, if any, that were queued on the dead nodes
+					//
+					loadJobQueue();
+					continue;
+				} else if (job.isStopped()) {
+					continue;
+				}
 
 				try {
+					if (!acquireLock(job)) {
+						continue;
+					}
+
 					logger.info("Picked import job " + job.getId() + " for processing");
 					new ImporterTask(job).run();
 				} catch (Throwable t) {
 					logger.error("Error running the job " + job.getId() + " to completion", t);
+				} finally {
+					releaseRunLock();
 				}
 			}
 		} catch (Throwable t) {
@@ -558,7 +798,7 @@ public class ImportServiceImpl implements ImportService, ApplicationListener<Con
 
 	@PlusTransactional
 	private int markInProgressJobsAsFailed() {
-		return importJobDao.markInProgressJobsAsFailed();
+		return importJobDao.markInProgressJobsAsFailed(AppProperties.getInstance().getNodeName());
 	}
 
 	@PlusTransactional
@@ -583,12 +823,300 @@ public class ImportServiceImpl implements ImportService, ApplicationListener<Con
 				queuedJobs.offer(job);
 			});
 
-			endOfJobs = (queuedJobs.size() < 100);
-			startAt += queuedJobs.size();
+			endOfJobs = (jobs.size() < 100);
+			startAt += jobs.size();
 		}
 
 		logger.info("Loaded " + startAt + " bulk import jobs in queue from previous incarnation");
 	}
+
+	private boolean acquireLock(ImportJob job) {
+		logger.info("Attempting to acquire lock on the job: " + job.getId());
+		if (!acquireJobLock(job)) {
+			logger.info("Failed to acquire lock on the job: " + job.getId());
+			return false;
+		}
+
+		logger.info("Acquired lock on the job: " + job.getId());
+
+		while (true) {
+			try {
+				logger.info("Attempting to acquire import job run lock... ");
+				if (acquireRunLock()) {
+					break;
+				}
+
+				logger.info("Failed to acquire import job run lock. Will try again in 60 seconds!");
+				TimeUnit.SECONDS.sleep(60);
+			} catch (Exception e) {
+				releaseJobLock(job);
+				logger.info("Error when acquiring run lock.", e);
+				throw OpenSpecimenException.serverError(e);
+			}
+		}
+
+		logger.info("Acquired import job run lock");
+		return true;
+	}
+
+	private boolean acquireJobLock(ImportJob job) {
+		return newTxTmpl.execute(
+			status -> {
+				String thisNode = AppProperties.getInstance().getNodeName();
+				ImportJob dbJob = importJobDao.getJobForUpdate(job.getId());
+				String activeNode = dbJob.getRunByNode();
+				logger.info("Lock on the job " + job.getId() + " is held by " + activeNode);
+
+				if ("none".equals(activeNode) && !"none".equals(thisNode)) {
+					dbJob.setRunByNode(thisNode);
+					importJobDao.saveOrUpdate(dbJob);
+					setJobRunBy(job, thisNode);
+					return true;
+				} else {
+					return thisNode.equals(activeNode);
+				}
+			}
+		);
+	}
+
+	private boolean releaseJobLock(ImportJob job) {
+		return newTxTmpl.execute(
+			status -> {
+				String thisNode = AppProperties.getInstance().getNodeName();
+				ImportJob dbJob = importJobDao.getJobForUpdate(job.getId());
+				String activeNode = dbJob.getRunByNode();
+				if (!thisNode.equals(activeNode)) {
+					return false;
+				}
+
+				dbJob.setRunByNode("none");
+				importJobDao.saveOrUpdate(dbJob);
+				setJobRunBy(job, "none");
+				return true;
+			}
+		);
+	}
+
+	private void setJobRunBy(ImportJob job, String node) {
+		TransactionSynchronizationManager.registerSynchronization(
+			new TransactionSynchronization() {
+				@Override
+				public void afterCommit() {
+					job.setRunByNode(node);
+				}
+			}
+		);
+	}
+
+	private boolean acquireRunLock() {
+		return Boolean.TRUE.equals(newTxTmpl.execute(
+			status -> {
+				String thisNode = AppProperties.getInstance().getNodeName();
+				String activeNode = importJobDao.getActiveImportRunnerNode();
+				logger.info("Run lock is held by " + activeNode);
+
+				if ("none".equals(activeNode) && !"none".equals(thisNode)) {
+					return importJobDao.setActiveImportRunnerNode(thisNode);
+				} else {
+					return thisNode.equals(activeNode);
+				}
+			}
+		));
+	}
+
+	private boolean releaseRunLock() {
+		return Boolean.TRUE.equals(newTxTmpl.execute(
+			status -> {
+				String thisNode = AppProperties.getInstance().getNodeName();
+				String activeNode = importJobDao.getActiveImportRunnerNode();
+				if (!thisNode.equals(activeNode)) {
+					return false;
+				}
+
+				return importJobDao.setActiveImportRunnerNode("none");
+			}
+		));
+	}
+
+	private Date getTimestamp(File file) {
+		String filename = file.getName();
+		String[] tokens = filename.split("_");
+
+		if (tokens.length < 3) {
+			logger.info(String.format("Filename '%s' is not in correct format", filename));
+			return null;
+		}
+
+		String timestampStr = tokens[2];
+		if ("extensions".equals(tokens[0]) && tokens.length == 5) {
+			timestampStr = tokens[4];
+		}
+
+		try {
+			return DATE_FMT.parse(timestampStr);
+		} catch (ParseException e) {
+			logger.error("Appended timestamp in filename is not in correct format: " + timestampStr, e);
+		}
+
+		return null;
+	}
+
+	//
+	// activity report
+	//
+	private File exportJobsReport(String baseDir, User exportedBy, Date exportedOn, List<User> users, RevisionsListCriteria crit) {
+		if (!crit.includeReport("query_exim")) {
+			return null;
+		}
+
+		File auditDir = new File(ConfigUtil.getInstance().getDataDir(), "audit");
+		File result = new File(auditDir, baseDir);
+		if (!result.exists()) {
+			result.mkdirs();
+		}
+
+		String ts = new SimpleDateFormat("yyyyMMdd_HHmm").format(exportedOn);
+		File outputFile = new File(result, "os_import_jobs_" + ts + ".csv");
+		return exportJobsReport(exportedBy, exportedOn, users, crit, outputFile);
+	}
+
+	private File exportJobsReport(User exportedBy, Date exportedOn, List<User> users, RevisionsListCriteria crit, File outputFile) {
+		ListImportJobsCriteria jobsListCriteria = new ListImportJobsCriteria()
+			.fromDate(crit.startDate())
+			.toDate(crit.endDate())
+			.userIds(Utility.nullSafeStream(users).map(User::getId).collect(Collectors.toList()));
+
+		OutputStream fout = null;
+		CsvWriter csvWriter = null;
+
+		try {
+			fout      = Files.newOutputStream(outputFile.toPath());
+			csvWriter = CsvFileWriter.createCsvFileWriter(fout);
+
+			Map<String, String> headers = new LinkedHashMap<String, String>() {{
+				put(msg("common_server_url"), ConfigUtil.getInstance().getAppUrl());
+				put(msg("common_server_env"), ConfigUtil.getInstance().getDeployEnv());
+				put(msg("audit_rev_exported_by"), exportedBy.formattedName(true));
+				put(msg("audit_rev_exported_on"), Utility.getDateTimeString(exportedOn));
+
+				if (CollectionUtils.isNotEmpty(users)) {
+					String userNames = users.stream().map(u -> u.formattedName(true)).collect(Collectors.joining(", "));
+					put(msg("audit_rev_audited_users"), userNames);
+				}
+
+				if (jobsListCriteria.fromDate() != null) {
+					put(msg("audit_rev_start_date"), Utility.getDateTimeString(jobsListCriteria.fromDate()));
+				}
+
+				if (jobsListCriteria.toDate() != null) {
+					put(msg("audit_rev_end_date"),   Utility.getDateTimeString(jobsListCriteria.toDate()));
+				}
+
+				put("", "");
+			}};
+
+			Utility.writeKeyValuesToCsv(fout, headers);
+
+			jobsListCriteria.startAt(0).maxResults(100);
+			writeJobDetailToCsv(jobsListCriteria, csvWriter);
+
+			return outputFile;
+		} catch (Exception e) {
+			throw OpenSpecimenException.serverError(e);
+		} finally {
+			IOUtils.closeQuietly(csvWriter);
+			IOUtils.closeQuietly(fout);
+		}
+	}
+
+	private void writeJobDetailToCsv(ListImportJobsCriteria crit, CsvWriter csvWriter) {
+		csvWriter.writeNext(new String[1]);
+		csvWriter.writeNext(getAuditLogReportHeaders());
+
+		int count = 0;
+		boolean endOfRecords = false;
+		while (!endOfRecords) {
+			List<ImportJob> jobs = importJobDao.getImportJobs(crit);
+			crit.startAt(crit.startAt() + jobs.size());
+			endOfRecords = jobs.size() < 100;
+
+			for (ImportJob job : jobs) {
+				csvWriter.writeNext(getAuditLogReportData(job));
+				++count;
+				if (count % 25 == 0) {
+					csvWriter.flush();
+				}
+			}
+		}
+
+		csvWriter.flush();
+	}
+
+	private String[] getAuditLogReportHeaders() {
+		return new String[] {
+			msg("audit_rev_id"),
+			msg("audit_rev_tstmp"),
+			msg("audit_rev_user"),
+			msg("audit_rev_user_email"),
+			msg("audit_rev_domain"),
+			msg("audit_rev_user_login"),
+			msg("audit_rev_institute"),
+			msg("audit_rev_ip_address"),
+			msg("audit_rev_entity_op"),
+			msg("audit_rev_entity_name"),
+			msg("audit_rev_exec_time"),
+			msg("audit_rev_total_records"),
+			msg("audit_rev_successful_records"),
+			msg("audit_rev_failed_records"),
+			msg("audit_rev_status"),
+			msg("audit_rev_other_params")
+		};
+	}
+
+	private String[] getAuditLogReportData(ImportJob job) {
+		String timeToFinish = "";
+		if (job.getEndTime() != null) {
+			timeToFinish = String.valueOf((job.getEndTime().getTime()  - job.getCreationTime().getTime()) / 1000);
+		}
+
+		String type = "audit_op_insert";
+		if (job.getType() == Type.UPDATE) {
+			type = "audit_op_update";
+		} else if (job.getType() == Type.UPSERT) {
+			type = "audit_op_upsert";
+		}
+
+		User user = job.getCreatedBy();
+		Map<String, Object> params = new HashMap<>(job.getParams());
+		params.put("atomic", job.getAtomic());
+		params.put("dateFormat", job.getDateFormat());
+		params.put("timeFormat", job.getTimeFormat());
+		params.put("timeZone", job.getTimeZone());
+		params.put("fieldSeparator", job.getFieldSeparator());
+		return new String[] {
+			job.getId().toString(),
+			Utility.getDateTimeString(job.getCreationTime()),
+			user.formattedName(),
+			user.getEmailAddress(),
+			user.getAuthDomain().getName(),
+			user.getLoginName(),
+			user.getInstitute() != null ? user.getInstitute().getName() : "",
+			job.getIpAddress() != null ? job.getIpAddress() : "",
+			msg(type),
+			job.getEntityName(),
+			timeToFinish,
+			job.getTotalRecords() != null ? job.getTotalRecords().toString() : "",
+			job.getSuccessfulRecords() != null ? job.getSuccessfulRecords().toString() : "",
+			job.getFailedRecords() != null ? job.getFailedRecords().toString() : "",
+			msg("bulk_import_statuses_" + job.getStatus()),
+			Utility.mapToJson(params, true)
+		};
+	}
+
+	private String msg(String key) {
+		return MessageUtil.getInstance().getMessage(key);
+	}
+
 
 	private class ImporterTask implements Runnable {
 		private ImportJob job;
@@ -610,16 +1138,19 @@ public class ImportServiceImpl implements ImportService, ApplicationListener<Con
 			CsvWriter csvWriter = null;
 
 			try {
-				currentJob = job;
-
-				AuthUtil.setCurrentUser(job.getCreatedBy());
+				AuthUtil.setCurrentUser(job.getCreatedBy(), job.getIpAddress());
 				ImporterContextHolder.getInstance().newContext();
 				saveJob(totalRecords, failedRecords, Status.IN_PROGRESS);
+				if (job.isStopped()) {
+					return;
+				}
 
 				ObjectSchema schema = schemaFactory.getSchema(job.getName(), job.getParams());
 				String filePath = getJobDir(job.getId()) + File.separator + "input.csv";
 				csvWriter = getOutputCsvWriter(schema, job);
 				objReader = new ObjectReader(filePath, schema, job.getDateFormat(), job.getTimeFormat(), job.getFieldSeparator());
+				objReader.setTimeZone(job.getTimeZone());
+				objReader.setIgnoreId(job.getType() == Type.CREATE);
 
 				List<String> columnNames = objReader.getCsvColumnNames();
 				columnNames.add("OS_IMPORT_STATUS");
@@ -644,12 +1175,11 @@ public class ImportServiceImpl implements ImportService, ApplicationListener<Con
 
 				if (csvWriter != null) {
 					csvWriter.writeNext(errorLine);
-					csvWriter.writeNext(new String[] { ExceptionUtils.getFullStackTrace(t) });
+					csvWriter.writeNext(new String[] { ExceptionUtils.getStackTrace(t) });
 				}
 			} finally {
 				ImporterContextHolder.getInstance().clearContext();
 				AuthUtil.clearCurrentUser();
-				currentJob = null;
 
 				IOUtils.closeQuietly(objReader);
 				closeQuietly(csvWriter);
@@ -703,22 +1233,21 @@ public class ImportServiceImpl implements ImportService, ApplicationListener<Con
 		}
 
 		private boolean processSingleRowPerObj(ObjectReader objReader, CsvWriter csvWriter, ObjectImporter<Object, Object> importer) {
-			boolean stopped = false;
-			while (!job.isAskedToStop() || !(stopped = true)) {
+			while (!job.isStopped()) {
 				String errMsg = null;
 				try {
 					Object object = objReader.next();
 					if (object == null) {
 						break;
 					}
-	
+
 					errMsg = importObject(importer, object, job.getParams());
 				} catch (OpenSpecimenException ose) {
 					errMsg = ose.getMessage();
 				}
-				
+
 				++totalRecords;
-				
+
 				List<String> row = objReader.getCsvRow();
 				if (StringUtils.isNotBlank(errMsg)) {
 					row.add("FAIL");
@@ -728,14 +1257,14 @@ public class ImportServiceImpl implements ImportService, ApplicationListener<Con
 					row.add("SUCCESS");
 					row.add("");
 				}
-				
+
 				csvWriter.writeNext(row.toArray(new String[0]));
 				if (totalRecords % 25 == 0) {
 					saveJob(totalRecords, failedRecords, Status.IN_PROGRESS);
 				}
 			}
 
-			return stopped;
+			return job.isStopped();
 		}
 
 		private boolean processMultipleRowsPerObj(ObjectReader objReader, CsvWriter csvWriter, ObjectImporter<Object, Object> importer) {
@@ -778,9 +1307,8 @@ public class ImportServiceImpl implements ImportService, ApplicationListener<Con
 				objectsMap.put(key, mergedObj);
 			}
 
-			boolean stopped = false;
 			Iterator<MergedObject> mergedObjIter = objectsMap.iterator();
-			while (mergedObjIter.hasNext() && (!job.isAskedToStop() || !(stopped = true))) {
+			while (mergedObjIter.hasNext() && !job.isStopped()) {
 				MergedObject mergedObj = mergedObjIter.next();
 				if (!mergedObj.isErrorneous()) {
 					String errMsg = null;
@@ -815,14 +1343,16 @@ public class ImportServiceImpl implements ImportService, ApplicationListener<Con
 			}
 
 			objectsMap.clear();
-			return stopped;
+			return job.isStopped();
 		}
 		
 		private String importObject(final ObjectImporter<Object, Object> importer, Object object, Map<String, String> params) {
 			try {
 				ImportObjectDetail<Object> detail = new ImportObjectDetail<>();
 				detail.setId(job.getId().toString());
+				detail.setObjectName(job.getName());
 				detail.setCreate(job.getType() == Type.CREATE);
+				detail.setType(job.getType().name());
 				detail.setObject(object);
 				detail.setParams(params);
 				detail.setUploadedFilesDir(getFilesDirPath(job.getId()));
@@ -843,9 +1373,9 @@ public class ImportServiceImpl implements ImportService, ApplicationListener<Con
 
 				if (atomic) {
 					//
-					// Let's give a clean session for every object to be imported
+					// Flush the session including any DB errors encountered by the last row
 					//
-					clearSession();
+					flushSession();
 				}
 
 				if (resp.isSuccessful()) {
@@ -854,11 +1384,20 @@ public class ImportServiceImpl implements ImportService, ApplicationListener<Con
 					return resp.getError().getMessage();
 				}
 			} catch (Exception e) {
-				if (StringUtils.isBlank(e.getMessage())) {
-					return "Internal Server Error";
-				} else {
-					return e.getMessage();
+				String msg   = ExceptionUtils.getMessage(e);
+				String rcMsg = ExceptionUtils.getRootCauseMessage(e);
+				if (StringUtils.isBlank(msg)) {
+					msg = rcMsg;
+				} else if (StringUtils.isNotBlank(rcMsg)) {
+					msg += "; Exception: " + rcMsg;
 				}
+
+				if (StringUtils.isBlank(msg)) {
+					msg = "Internal Server Error: Despite our best efforts, we could not find the root cause of the error. " +
+						  "Please check the log files";
+				}
+
+				return msg;
 			}
 		}
 
@@ -892,21 +1431,33 @@ public class ImportServiceImpl implements ImportService, ApplicationListener<Con
 			}
 		}
 
-		private void saveJob(long totalRecords, long failedRecords, Status status) {
-			job.setTotalRecords(totalRecords);
-			job.setFailedRecords(failedRecords);
-			job.setStatus(status);
+		private Status saveJob(long totalRecords, long failedRecords, Status status) {
+			return newTxTmpl.execute(txnStatus -> {
+				ImportJob dbJob = importJobDao.getJobForUpdate(job.getId());
+				dbJob.setTotalRecords(totalRecords);
+				dbJob.setFailedRecords(failedRecords);
 
-			if (status != Status.IN_PROGRESS) {
-				job.setEndTime(Calendar.getInstance().getTime());
-			}
-
-			newTxTmpl.execute(new TransactionCallback<Void>() {
-				@Override
-				public Void doInTransaction(TransactionStatus status) {
-					importJobDao.saveOrUpdate(job);
-					return null;
+				if (status != Status.IN_PROGRESS) {
+					// either completed or failed
+					dbJob.setStatus(status);
+				} else if (dbJob.isAskedToStop() || dbJob.isStopped()) {
+					// in progress job has been asked to stop
+					dbJob.setStatus(Status.STOPPED);
+				} else {
+					// in progress job
+					dbJob.setStatus(status);
 				}
+
+				if (!dbJob.isInProgress()) {
+					dbJob.setEndTime(Calendar.getInstance().getTime());
+				}
+
+				job.setTotalRecords(dbJob.getTotalRecords());
+				job.setFailedRecords(dbJob.getFailedRecords());
+				job.setStatus(dbJob.getStatus());
+				job.setEndTime(dbJob.getEndTime());
+				importJobDao.saveOrUpdate(dbJob);
+				return dbJob.getStatus();
 			});
 		}
 
@@ -935,8 +1486,8 @@ public class ImportServiceImpl implements ImportService, ApplicationListener<Con
 
 		private void sendJobStatusNotification() {
 			try {
-				String entityName = getEntityName();
-				String op = getMsg("bulk_import_ops_" + job.getType());
+				String entityName = MessageUtil.getInstance().getMessage(job.getEntityName(), job.getEntityName(), null);
+				String op = msg("bulk_import_ops_" + job.getType());
 				String [] subjParams = new String[] {
 					job.getId().toString(),
 					op,
@@ -947,7 +1498,7 @@ public class ImportServiceImpl implements ImportService, ApplicationListener<Con
 				props.put("job", job);
 				props.put("entityName", entityName);
 				props.put("op", op);
-				props.put("status", getMsg("bulk_import_statuses_" + job.getStatus()));
+				props.put("status", msg("bulk_import_statuses_" + job.getStatus()));
 				props.put("atomic", atomic);
 				props.put("$subject", subjParams);
 				props.put("ccAdmin", isCopyNotifToAdminEnabled());
@@ -959,28 +1510,12 @@ public class ImportServiceImpl implements ImportService, ApplicationListener<Con
 			}
 		}
 
-		private String getEntityName() {
-			String entityName;
-
-			if (job.getName().equals(EXTENSIONS)) {
-				entityName = job.getParams().get("formName") + " (" + job.getParams().get("entityType") + ")";
-			} else {
-				entityName = getMsg("bulk_import_entities_" + job.getName());
-			}
-
-			return entityName;
-		}
-
-		private void clearSession() {
-			SessionUtil.getInstance().clearSession();
+		private void flushSession() {
+			SessionUtil.getInstance().flush();
 		}
 
 		private boolean isCopyNotifToAdminEnabled() {
 			return ConfigUtil.getInstance().getBoolSetting("notifications", "cc_import_emails_to_admin", false);
-		}
-
-		private String getMsg(String key, Object ... params) {
-			return MessageUtil.getInstance().getMessage(key, params);
 		}
 
 		private static final String JOB_STATUS_EMAIL_TMPL = "import_job_status_notif";

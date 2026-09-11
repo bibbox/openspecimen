@@ -9,20 +9,22 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Configurable;
 
 import com.krishagni.catissueplus.core.administrative.domain.User;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
 import com.krishagni.catissueplus.core.biospecimen.domain.CpReportSettings;
+import com.krishagni.catissueplus.core.biospecimen.events.CollectionProtocolDetail;
 import com.krishagni.catissueplus.core.biospecimen.services.CollectionProtocolService;
 import com.krishagni.catissueplus.core.biospecimen.services.CollectionProtocolService.DataSource;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
 import com.krishagni.catissueplus.core.common.events.ResponseEvent;
 import com.krishagni.catissueplus.core.common.service.EmailService;
 import com.krishagni.catissueplus.core.common.util.ConfigUtil;
+import com.krishagni.catissueplus.core.common.util.LogUtil;
+import com.krishagni.catissueplus.core.common.util.Utility;
 import com.krishagni.catissueplus.core.de.events.ExecuteQueryEventOp;
 import com.krishagni.catissueplus.core.de.events.QueryDataExportResult;
 import com.krishagni.catissueplus.core.de.events.QueryExecResult;
@@ -32,7 +34,7 @@ import edu.common.dynamicextensions.query.WideRowMode;
 
 @Configurable
 public class CpReportGenerator {
-	private static final Log logger = LogFactory.getLog(CpReportGenerator.class);
+	private static final LogUtil logger = LogUtil.getLogger(CpReportGenerator.class);
 
 	private static final String RPTS_DIR = "cp-reports";
 
@@ -77,7 +79,7 @@ public class CpReportGenerator {
 		Map<String, Object> emailCtxt = new HashMap<>();
 		emailCtxt.putAll(getMetrics(cp, sysSettings, rptSettings));
 		emailCtxt.put("dataFile", getDataFile(cp, sysSettings, rptSettings));
-		emailCtxt.put("cp", cp); // introduced in v4.0
+		emailCtxt.put("cp", CollectionProtocolDetail.from(cp)); // introduced in v4.0
 		emailCtxt.put("cpId", cp.getId()); // retaining this for backward compatibility
 		emailCtxt.put("cpShortTitle", cp.getShortTitle()); // retaining this for backward compatibility
 		emailCtxt.put("$subject", new String[] { cp.getShortTitle() });
@@ -90,7 +92,7 @@ public class CpReportGenerator {
 	}
 
 	public File getDataFile(Long cpId, String fileId) {
-		return new File(getReportsDir(), cpId + "-" + fileId);
+		return Utility.getFile(getReportsDir(), cpId + "-" + fileId);
 	}
 
 	private Map<String, Object> getMetrics(CollectionProtocol cp, CpReportSettings sysSettings, CpReportSettings rptSettings)
@@ -120,7 +122,7 @@ public class CpReportGenerator {
 		if (StringUtils.isBlank(type) || type.equalsIgnoreCase("AQL")) {
 			source = new CpAqlDataSource();
 		} else {
-			source = (CollectionProtocolService.DataSource) Class.forName(type).newInstance();
+			source = (CollectionProtocolService.DataSource) BeanUtils.instantiateClass(Class.forName(type));
 		}
 
 		return source.getMetric(cp, metricCfg);
@@ -138,7 +140,7 @@ public class CpReportGenerator {
 			if (type.equals("AQL")) {
 				dataFile = new CpAqlDataSource().getDataFile(cp, cpSettings.getDataCfg());
 			} else {
-				DataSource ds = (DataSource) Class.forName(type).newInstance();
+				DataSource ds = (DataSource) BeanUtils.instantiateClass(Class.forName(type));
 				dataFile = ds.getDataFile(cp, cpSettings.getDataCfg());
 			}
 		} else {
@@ -167,13 +169,13 @@ public class CpReportGenerator {
 	}
 
 	private String moveFileToReportsDir(CollectionProtocol cp, File file) {
-		String extn = ".csv";
+		String extn = ".csv.zip";
 		int extnStartIdx = file.getName().lastIndexOf('.');
 		if (extnStartIdx != -1) {
 			extn = file.getName().substring(extnStartIdx);
 		}
 
-		String fileId = UUID.randomUUID().toString() + extn;
+		String fileId = UUID.randomUUID() + extn;
 		file.renameTo(new File(getReportsDir(), cp.getId() + "-" + fileId));
 		return fileId;
 	}
@@ -202,6 +204,7 @@ public class CpReportGenerator {
 			op.setCpId(cp.getId());
 			op.setWideRowMode(WideRowMode.OFF.name());
 			op.setAql(aql);
+			op.setDisableAccessChecks(true);
 
 			String drivingForm = (String)input.get("drivingForm");
 			op.setDrivingForm(StringUtils.isBlank(drivingForm) ? "Participant" : drivingForm);

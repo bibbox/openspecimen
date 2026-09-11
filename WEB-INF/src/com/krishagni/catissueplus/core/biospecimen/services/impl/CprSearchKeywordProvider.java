@@ -1,13 +1,14 @@
 package com.krishagni.catissueplus.core.biospecimen.services.impl;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
-import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.hibernate.event.spi.PostDeleteEvent;
 import org.hibernate.event.spi.PostInsertEvent;
@@ -33,6 +34,9 @@ public class CprSearchKeywordProvider extends AbstractSearchEntityKeywordProvide
 
 		Set<Long> entityIds = getEntityIds(cpr);
 		List<SearchEntityKeyword> keywords = createKeywords(entityIds, "ppid", null, cpr.getPpid(), 0);
+		if (StringUtils.isNotBlank(cpr.getExternalSubjectId())) {
+			keywords.addAll(createKeywords(entityIds, "externalSubjectId", null, cpr.getExternalSubjectId(), 0));
+		}
 
 		if (StringUtils.isNotBlank(participant.getFirstName())) {
 			keywords.addAll(createKeywords(entityIds, "firstName", null, participant.getFirstName(), 0));
@@ -72,28 +76,41 @@ public class CprSearchKeywordProvider extends AbstractSearchEntityKeywordProvide
 
 		CollectionProtocolRegistration cpr = (CollectionProtocolRegistration) event.getEntity();
 		if (!cpr.isDeleted()) {
-			Object oldParticipant = getObject("participant", event.getPersister(), event.getOldState());
-			Object newParticipant = getObject("participant", event.getPersister(), event.getState());
+			Participant oldParticipant = (Participant) getObject("participant", event.getPersister(), event.getOldState());
+			Participant newParticipant = (Participant) getObject("participant", event.getPersister(), event.getState());
 			if (Objects.equals(oldParticipant, newParticipant)) {
 				return keywords;
 			}
 
-			List<SearchEntityKeyword> toDelete = getParticipantKeywords(cpr, (Participant) oldParticipant);
+			List<SearchEntityKeyword> toDelete = getParticipantKeywords(cpr, oldParticipant);
 			toDelete.forEach(k -> k.setStatus(0));
 			keywords.addAll(toDelete);
+			oldParticipant.addKwAddedCprId(cpr.getId());
 
-			List<SearchEntityKeyword> toAdd = getParticipantKeywords(cpr, (Participant) newParticipant);
+			List<SearchEntityKeyword> toAdd = getParticipantKeywords(cpr, newParticipant);
 			keywords.addAll(toAdd);
+			newParticipant.addKwAddedCprId(cpr.getId());
 			return keywords;
 		}
 
 		Participant participant = cpr.getParticipant();
+		if (participant == null) {
+			String[] propertyNames = event.getPersister().getPropertyNames();
+			for (int i = 0; i < propertyNames.length; ++i) {
+				if (propertyNames[i].equals("participant")) {
+					participant = (Participant) event.getOldState()[i];
+					break;
+				}
+			}
+		}
+
 		if (participant == null || participant.isDeleted()) {
 			return keywords;
 		}
 
 		keywords.addAll(getParticipantKeywords(cpr, participant));
 		keywords.forEach(keyword -> keyword.setStatus(0));
+		participant.addKwAddedCprId(cpr.getId());
 		return keywords;
 	}
 
@@ -109,7 +126,7 @@ public class CprSearchKeywordProvider extends AbstractSearchEntityKeywordProvide
 
 	@Override
 	public List<String> getKeywordProps() {
-		return Collections.singletonList("ppid");
+		return Arrays.asList("ppid", "externalSubjectId");
 	}
 
 	@Override

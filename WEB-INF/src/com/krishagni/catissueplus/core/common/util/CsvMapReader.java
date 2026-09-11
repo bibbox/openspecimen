@@ -9,13 +9,13 @@ import java.util.HashMap;
 import java.util.Map;
 
 import org.apache.commons.io.IOUtils;
-import org.apache.commons.lang.StringUtils;
-import org.apache.log4j.Logger;
+import org.apache.commons.lang3.StringUtils;
 
-import au.com.bytecode.opencsv.CSVReader;
 
 import com.krishagni.catissueplus.core.common.errors.CommonErrorCode;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
+
+import au.com.bytecode.opencsv.CSVReader;
 
 public class CsvMapReader {
 
@@ -76,5 +76,5 @@ public class CsvMapReader {
 		return result;
 	}
 	
-	private static final Logger logger = Logger.getLogger(CsvMapReader.class);
+	private static final LogUtil logger = LogUtil.getLogger(CsvMapReader.class);
 }

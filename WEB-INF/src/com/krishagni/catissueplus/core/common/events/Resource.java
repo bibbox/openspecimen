@@ -1,6 +1,6 @@
 package com.krishagni.catissueplus.core.common.events;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 
 public enum Resource {
 	CP("CollectionProtocol"),
@@ -8,8 +8,14 @@ public enum Resource {
 	PARTICIPANT("ParticipantPhi"),
 	
 	PARTICIPANT_DEID("ParticipantDeid"),
+
+	CONSENT("Consent"),
+
+	VISIT("Visit"),
 	
-	VISIT_N_SPECIMEN("VisitAndSpecimen"),
+	SPECIMEN("Specimen"),
+
+	PRIMARY_SPECIMEN("PrimarySpecimen"),
 	
 	SURGICAL_PATHOLOGY_REPORT("SurgicalPathologyReport"),
 	
@@ -23,7 +29,12 @@ public enum Resource {
 
 	SCHEDULED_JOB("ScheduledJob"),
 	
-	SHIPPING_N_TRACKING("ShippingAndTracking")
+	SHIPPING_N_TRACKING("ShippingAndTracking"),
+
+	QUERY("Query"),
+
+	PRINT_RULE("PrintRule")
+
 	;
 
 	private final String name;

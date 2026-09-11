@@ -9,9 +9,12 @@ import java.util.Map;
 import com.krishagni.catissueplus.core.administrative.events.SiteSummary;
 import com.krishagni.catissueplus.core.biospecimen.domain.AliquotSpecimensRequirement;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
+import com.krishagni.catissueplus.core.biospecimen.domain.CpWorkflowConfig;
 import com.krishagni.catissueplus.core.biospecimen.domain.DerivedSpecimenRequirement;
 import com.krishagni.catissueplus.core.biospecimen.events.CollectionProtocolDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.CollectionProtocolEventDetail;
+import com.krishagni.catissueplus.core.biospecimen.events.CollectionProtocolPublishDetail;
+import com.krishagni.catissueplus.core.biospecimen.events.CollectionProtocolRegistrationDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.CollectionProtocolSummary;
 import com.krishagni.catissueplus.core.biospecimen.events.ConsentTierDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.ConsentTierOp;
@@ -20,18 +23,17 @@ import com.krishagni.catissueplus.core.biospecimen.events.CopyCpeOpDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.CpQueryCriteria;
 import com.krishagni.catissueplus.core.biospecimen.events.CpReportSettingsDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.CpWorkflowCfgDetail;
-import com.krishagni.catissueplus.core.biospecimen.events.CprSummary;
 import com.krishagni.catissueplus.core.biospecimen.events.FileDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.MergeCpDetail;
-import com.krishagni.catissueplus.core.biospecimen.events.SpecimenPoolRequirements;
 import com.krishagni.catissueplus.core.biospecimen.events.SpecimenRequirementDetail;
 import com.krishagni.catissueplus.core.biospecimen.repository.CpListCriteria;
+import com.krishagni.catissueplus.core.biospecimen.repository.CpPublishEventListCriteria;
 import com.krishagni.catissueplus.core.biospecimen.repository.CprListCriteria;
-import com.krishagni.catissueplus.core.common.Pair;
 import com.krishagni.catissueplus.core.common.Tuple;
 import com.krishagni.catissueplus.core.common.events.BulkDeleteEntityOp;
 import com.krishagni.catissueplus.core.common.events.BulkDeleteEntityResp;
 import com.krishagni.catissueplus.core.common.events.DependentEntityDetail;
+import com.krishagni.catissueplus.core.common.events.EntityQueryCriteria;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
 import com.krishagni.catissueplus.core.common.events.ResponseEvent;
 import com.krishagni.catissueplus.core.query.ListConfig;
@@ -43,11 +45,15 @@ public interface CollectionProtocolService {
 
 	public ResponseEvent<Long> getProtocolsCount(RequestEvent<CpListCriteria> req);
 
+	ResponseEvent<List<Map<String, Object>>> getCpsAndGroups(RequestEvent<String> req);
+
 	public ResponseEvent<CollectionProtocolDetail> getCollectionProtocol(RequestEvent<CpQueryCriteria> req);
+
+	public ResponseEvent<String> getCollectionProtocolDefinition(RequestEvent<CpQueryCriteria> req);
 
 	ResponseEvent<List<SiteSummary>> getSites(RequestEvent<CpQueryCriteria> req);
 
-	public ResponseEvent<List<CprSummary>> getRegisteredParticipants(RequestEvent<CprListCriteria> req);
+	ResponseEvent<List<CollectionProtocolRegistrationDetail>> getRegisteredParticipants(RequestEvent<CprListCriteria> req);
 
 	public ResponseEvent<Long> getRegisteredParticipantsCount(RequestEvent<CprListCriteria> req);
 
@@ -60,6 +66,8 @@ public interface CollectionProtocolService {
 	public ResponseEvent<MergeCpDetail> mergeCollectionProtocols(RequestEvent<MergeCpDetail> req);
 
 	public ResponseEvent<CollectionProtocolDetail> updateConsentsWaived(RequestEvent<CollectionProtocolDetail> req);
+
+	ResponseEvent<CollectionProtocolDetail> updateConsentsSource(RequestEvent<CollectionProtocolDetail> req);
 
 	public ResponseEvent<CollectionProtocolDetail> importCollectionProtocol(RequestEvent<CollectionProtocolDetail> req);
 
@@ -85,7 +93,7 @@ public interface CollectionProtocolService {
 	//
 	// Events API
 	//
-	public ResponseEvent<List<CollectionProtocolEventDetail>> getProtocolEvents(RequestEvent<Long> req);
+	public ResponseEvent<List<CollectionProtocolEventDetail>> getProtocolEvents(RequestEvent<EntityQueryCriteria> req);
 
 	public ResponseEvent<CollectionProtocolEventDetail> getProtocolEvent(RequestEvent<Long> req);
 
@@ -105,8 +113,6 @@ public interface CollectionProtocolService {
 	public ResponseEvent<SpecimenRequirementDetail> getSpecimenRequirement(RequestEvent<Long> req);
 
 	public ResponseEvent<SpecimenRequirementDetail> addSpecimenRequirement(RequestEvent<SpecimenRequirementDetail> req);
-
-	public ResponseEvent<List<SpecimenRequirementDetail>> addSpecimenPoolReqs(RequestEvent<SpecimenPoolRequirements> req);
 
 	public ResponseEvent<List<SpecimenRequirementDetail>> createAliquots(RequestEvent<AliquotSpecimensRequirement> req);
 
@@ -139,6 +145,19 @@ public interface CollectionProtocolService {
 	public ResponseEvent<CpWorkflowCfgDetail> getWorkflows(RequestEvent<Long> req);
 
 	public ResponseEvent<CpWorkflowCfgDetail> saveWorkflows(RequestEvent<CpWorkflowCfgDetail> req);
+
+	public CpWorkflowConfig saveWorkflows(CollectionProtocol cp, CpWorkflowCfgDetail input);
+
+	public ResponseEvent<CpWorkflowCfgDetail> inheritGroupWorkflows(RequestEvent<Long> req);
+
+	//
+	// Publish APIs
+	//
+	public ResponseEvent<List<CollectionProtocolPublishDetail>> getPublishEvents(RequestEvent<CpPublishEventListCriteria> req);
+
+	public ResponseEvent<CollectionProtocolPublishDetail> publish(RequestEvent<CollectionProtocolPublishDetail> req);
+
+	public ResponseEvent<String> getPublishedVersion(RequestEvent<EntityQueryCriteria> req);
 
 	//
 	// For UI work
@@ -179,6 +198,11 @@ public interface CollectionProtocolService {
 	public ResponseEvent<Integer> getListSize(RequestEvent<Map<String, Object>> req);
 
 	public ResponseEvent<Collection<Object>> getListExprValues(RequestEvent<Map<String, Object>> req);
+
+	//
+	// Labelling
+	//
+	boolean toggleStarredCp(Long cpId, boolean starred);
 
 	interface DataSource {
 		public Object getMetric(CollectionProtocol cp, Map<String, Object> input);

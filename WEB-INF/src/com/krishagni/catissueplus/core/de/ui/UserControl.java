@@ -4,6 +4,9 @@ import java.io.Writer;
 import java.util.Map;
 import java.util.Properties;
 
+import com.krishagni.catissueplus.core.common.util.AuthUtil;
+import com.krishagni.catissueplus.core.common.util.Utility;
+
 import edu.common.dynamicextensions.domain.nui.AbstractLookupControl;
 
 public class UserControl extends AbstractLookupControl {
@@ -21,7 +24,7 @@ public class UserControl extends AbstractLookupControl {
 	}
 
 	@Override
-	public void getProps(Map<String, Object> props) {
+	protected void getLookupProps(Map<String, Object> props) {
 		props.put("apiUrl", "rest/ng/users");
 		props.put("dataType", getDataType());
 	}
@@ -43,6 +46,24 @@ public class UserControl extends AbstractLookupControl {
 	@Override
 	public String getAltKeyColumn() {		
 		return ALT_KEY;
+	}
+
+	@Override
+	public String getValueColumn() {
+		if (!Utility.isExportOp()) {
+			return super.getValueColumn();
+		}
+
+		return ALT_KEY;
+	}
+
+	@Override
+	public Long fromString(String value) {
+		if ("current_user".equals(value)) {
+			return AuthUtil.getCurrentUser() != null ? AuthUtil.getCurrentUser().getId() : null;
+		}
+
+		return super.fromString(value);
 	}
 	
 	private static Properties initPvSourceProps() {

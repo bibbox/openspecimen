@@ -1,6 +1,6 @@
 angular.module('os.biospecimen.specimen')
   .factory('SpecimenUtil', function(
-    $modal, $q, $parse, $location,
+    $modal, $q, $parse, $location, $translate,
     ParticipantSpecimensViewState, Specimen, PvManager, Alerts, Util) {
 
     var URL_LEN_LIMIT = 8192; // 8 KB
@@ -131,7 +131,7 @@ angular.module('os.biospecimen.specimen')
       return Specimen.save(specimensToSave).then(
         function(result) {
           if (closeParent) {
-            scope.parentSpecimen.children.push(result[0].children[0]);
+            scope.parentSpecimen.children = result[0].children;
             scope.parentSpecimen.activityStatus = 'Closed';
           } else {
             scope.parentSpecimen.children.push(result[0]);
@@ -227,28 +227,13 @@ angular.module('os.biospecimen.specimen')
     function getSpecimens(labels, filterOpts, errorOpts) {
       filterOpts = filterOpts || {};
       filterOpts.label = labels;
+      filterOpts.maxResults = 1000;
 
-      if (getUrlLength(filterOpts) >= URL_LEN_LIMIT) {
-        Alerts.error("specimens.too_many_specimens");
-        return deferred(undefined);
-      }
-
-      return Specimen.query(filterOpts).then(
+      return Specimen.search(filterOpts).then(
         function(specimens) {
           return resolveSpecimens(labels, filterOpts.barcode, specimens, errorOpts);
         }
       );
-    }
-
-    function getUrlLength(filterOpts) {
-      var url = Specimen.url();
-      if (url.indexOf('http') != 0) {
-        var viewUrl = $location.absUrl();
-        url = viewUrl.substr(0, viewUrl.indexOf('#')) + url;
-      }
-
-      url += jQuery.param(filterOpts);
-      return url.length;
     }
 
     function deferred(resp) {
@@ -276,10 +261,15 @@ angular.module('os.biospecimen.specimen')
     function resolveSpecimens1(labels, attr, specimens, errorOpts) {
       var specimensMap = {};
       angular.forEach(specimens, function(spmn) {
-        if (!specimensMap[spmn[attr]]) {
-          specimensMap[spmn[attr]] = [spmn];
+        var key = spmn[attr];
+        if (key) {
+          key = key.toLowerCase();
+        }
+
+        if (!specimensMap[key]) {
+          specimensMap[key] = [spmn];
         } else {
-          specimensMap[spmn[attr]].push(spmn);
+          specimensMap[key].push(spmn);
         }
       });
 
@@ -291,7 +281,7 @@ angular.module('os.biospecimen.specimen')
 
       angular.forEach(labels, function(label) {
         var labelInfo = {label: label};
-        var spmns = specimensMap[label];
+        var spmns = specimensMap[label.toLowerCase()];
         if (!spmns) {
           notFoundLabels.push(label);
           return;
@@ -308,12 +298,26 @@ angular.module('os.biospecimen.specimen')
       });
 
       if (notFoundLabels.length != 0) {
-        showError(notFoundLabels, errorOpts);
-        return deferred(undefined);
+        return showError(notFoundLabels, errorOpts).then(
+          function() {
+            return resolveSpecimens2(labelsInfo, dupLabels, attr, specimens);
+          },
+          function() {
+            return {specimens: specimens, error: true};
+          }
+        );
+
+        if (resp.error) {
+          return deferred(resp);
+        }
       }
 
+      return resolveSpecimens2(labelsInfo, dupLabels, attr, specimens);
+    }
+
+    function resolveSpecimens2(labelsInfo, dupLabels, attr, specimens) {
       if (dupLabels.length == 0) {
-        return deferred(specimens);
+        return deferred({specimens: specimens});
       }
 
       return $modal.open({
@@ -334,21 +338,17 @@ angular.module('os.biospecimen.specimen')
           // therefore any updates/selection done in modal are visible in labelsInfo
           // list as well
           //
-          return labelsInfo.map(
-            function(labelInfo) {
-              return labelInfo.selected;
-            }
-          );
+          return { specimens: labelsInfo.map(function(labelInfo) { return labelInfo.selected; }) };
         }
       );
     }
 
     function showError(notFoundLabels, errorOpts) {
-      errorOpts = errorOpts || {};
-      errorOpts.code = errorOpts.code || 'specimens.specimen_not_found';
-      errorOpts.params = errorOpts.params || {};
-      errorOpts.params.label = notFoundLabels.join(', ');
-      Alerts.error(errorOpts.code, errorOpts.params);
+      return Util.showConfirm({
+        title: 'specimens.not_found',
+        confirmMsg: 'specimens.proceed_with_not_found',
+        input: {notFoundLabels: notFoundLabels.join(', ')}
+      });
     }
 
     function showInsufficientQtyWarning(opts) {
@@ -432,13 +432,21 @@ angular.module('os.biospecimen.specimen')
           hcfa = angular.isDefined(hcfa) && (hcfa === 'true' || hcfa === true);
 
           result.push({
+            hideTable: group.hideTable == true,
             multiple: true,
             title: group.title,
             fields: { table: group.fields },
             baseFields: baseFields,
             input: selectedSpmns,
             lastRow: angular.copy(selectedSpmns[selectedSpmns.length - 1]),
-            opts: angular.extend({static: true, enableCofrc: cofrc, cofrc: cofrc, hideCopyFirstToAll: hcfa}, otherOpts || {})
+            opts: angular.extend(
+              {
+                static: true,
+                enableCofrc: cofrc,
+                cofrc: cofrc,
+                hideCopyFirstToAll: hcfa
+              }, otherOpts || {}
+            )
           });
         }
       }
@@ -511,15 +519,46 @@ angular.module('os.biospecimen.specimen')
       }
 
       var expr = $parse(prop);
-      if (angular.isObject(value)) {
-        value = angular.copy(value);
-      }
-
       angular.forEach(descendants,
         function(descendant) {
+          if (angular.isObject(value)) {
+            value = angular.copy(value);
+          }
+
           expr.assign(descendant, value);
         }
       );
+    }
+
+    function getStatusCss(spmn) {
+      var availStatus = spmn.availabilityStatus;
+      if (!availStatus) {
+        availStatus = spmn && spmn.hidden && spmn.hidden.availabilityStatus;
+      }
+
+      availStatus = availStatus || 'Pending';
+      var status = '';
+
+      if (availStatus == 'Available') {
+        status = 'collected';
+      } else if (availStatus == 'Distributed') {
+        status = 'distributed';
+      } else if (availStatus == 'Reserved') {
+        status = 'reserved';
+      } else if (availStatus == 'Closed') {
+        status = 'closed';
+      } else if (availStatus == 'Missed Collection') {
+        status = 'missed';
+      } else if (availStatus == 'Not Collected') {
+        status = 'not-collected';
+      } else if (!availStatus || availStatus == 'Pending') {
+        status = 'pending';
+      }
+
+      return {
+        css: 'os-status-' + status,
+        tooltip: $translate.instant('specimens.tree_node_statuses.' + status)
+      };
     }
 
     return {
@@ -543,7 +582,9 @@ angular.module('os.biospecimen.specimen')
 
       sdeGroupSpecimens: sdeGroupSpecimens,
 
-      sdeGroupSetChildrenValue: sdeGroupSetChildrenValue
+      sdeGroupSetChildrenValue: sdeGroupSetChildrenValue,
+
+      getStatusCss: getStatusCss
     };
   })
   .controller('ResolveSpecimensCtrl', function($scope, $modalInstance, labels, attr, Alerts) {

@@ -52,7 +52,13 @@ public enum VisitErrorCode implements ErrorCode {
 
 	PRINT_ERROR,
 
-	INVALID_LOOKUP_FLOW;
+	INVALID_LOOKUP_FLOW,
+
+	NAME_FMT_NOT_SPECIFIED,
+
+	CREATE_DISABLED_NA,
+
+	SPR_TEXT_NA;
 	
 	public String code() {
 		return "VISIT_" + this.name();

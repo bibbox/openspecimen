@@ -35,7 +35,11 @@ public enum ScheduledJobErrorCode implements ErrorCode {
 	
 	INVALID_TASK_IMPL_FQN,
 
-	QUERY_REQ;
+	QUERY_REQ,
+
+	OP_NOT_ALLOWED,
+
+	EXT_TASK_FORBIDDEN;
 	
 	@Override
 	public String code() {

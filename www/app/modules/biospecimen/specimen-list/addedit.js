@@ -13,9 +13,10 @@ angular.module('os.biospecimen.specimenlist.addedit', ['os.biospecimen.models'])
         useBarcode: false
       };
 
-      if (SpecimensHolder.getSpecimens() != undefined) {
+      var inputSpmns = SpecimensHolder.getSpecimens();
+      if (inputSpmns instanceof Array && inputSpmns.length > 0) {
         $scope.isQueryOrSpecimenPage =  true;
-        $scope.input.specimenIds = SpecimensHolder.getSpecimens().map(function(spmn) { return spmn.id; });
+        $scope.input.specimenIds = inputSpmns.map(function(spmn) { return spmn.id; });
         SpecimensHolder.setSpecimens(undefined);
       }
 
@@ -32,19 +33,19 @@ angular.module('os.biospecimen.specimenlist.addedit', ['os.biospecimen.models'])
         return specimenList.$saveOrUpdate();
       }
 
-      var filterOpts = {};
+      var filterOpts = {exactMatch: true};
       if (!!$scope.input.useBarcode) {
         filterOpts.barcode = labels;
         labels = undefined;
       }
 
       return SpecimenUtil.getSpecimens(labels, filterOpts).then(
-        function(specimens) {
-          if (!specimens) {
+        function(result) {
+          if (!result || !result.specimens) {
             return undefined;
           }
 
-          specimenList.specimenIds = specimens.map(function(spmn) { return spmn.id; });
+          specimenList.specimenIds = result.specimens.map(function(spmn) { return spmn.id; });
           return specimenList.$saveOrUpdate();
         }
       );
@@ -65,6 +66,7 @@ angular.module('os.biospecimen.specimenlist.addedit', ['os.biospecimen.models'])
         name: $scope.list.name,
         description: $scope.list.description,
         sharedWith: sharedWith,
+        sharedWithGroups: $scope.list.sharedWithGroups,
         specimenIds: $scope.input.specimenIds || []
       });
 

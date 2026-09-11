@@ -1,10 +1,13 @@
 package com.krishagni.catissueplus.core.biospecimen.domain;
 
+import java.beans.PropertyDescriptor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
 import java.util.LinkedHashSet;
@@ -14,18 +17,31 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
-import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.ClassUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.hibernate.envers.NotAudited;
-import org.hibernate.proxy.HibernateProxyHelper;
+import org.hibernate.proxy.HibernateProxy;
+import org.hibernate.proxy.LazyInitializer;
 import org.springframework.beans.BeanWrapper;
 import org.springframework.beans.PropertyAccessorFactory;
 
 import com.krishagni.catissueplus.core.administrative.domain.User;
+import com.krishagni.catissueplus.core.common.util.LogUtil;
+import com.krishagni.catissueplus.core.common.util.Status;
+import com.krishagni.catissueplus.core.common.util.Utility;
 
-public class BaseEntity {
+public class BaseEntity implements Identifiable<Long> {
+
+	private static final LogUtil logger = LogUtil.getLogger(BaseEntity.class);
+
 	private static final Map<String, Set<String>> entityProperties = new ConcurrentHashMap<>();
+
+	private static final Map<String, Boolean> entityNameProperties = new ConcurrentHashMap<>();
+
+	public enum DataEntryStatus {
+		DRAFT, COMPLETE;
+	}
 
 	protected Long id;
 
@@ -36,6 +52,8 @@ public class BaseEntity {
 	protected User updater;
 
 	protected Date updateTime;
+
+	protected DataEntryStatus dataEntryStatus;
 	
 	protected transient List<Runnable> onSaveProcs;
 
@@ -81,6 +99,14 @@ public class BaseEntity {
 		this.updateTime = updateTime;
 	}
 
+	public DataEntryStatus getDataEntryStatus() {
+		return dataEntryStatus;
+	}
+
+	public void setDataEntryStatus(DataEntryStatus dataEntryStatus) {
+		this.dataEntryStatus = dataEntryStatus;
+	}
+
 	public BaseEntity getRoot() {
 		return null;
 	}
@@ -121,8 +147,7 @@ public class BaseEntity {
 			return true;
 		}
 
-		if (obj == null	|| 
-			getClass() != HibernateProxyHelper.getClassWithoutInitializingProxy(obj)) {
+		if (obj == null	|| getClass() != getClassWithoutInitializingProxy(obj)) {
 			return false;
 		}
 
@@ -177,8 +202,19 @@ public class BaseEntity {
 		return Collections.emptySet();
 	}
 
+	protected Class getClassWithoutInitializingProxy(Object obj) {
+		if (obj instanceof HibernateProxy) {
+			HibernateProxy proxy = (HibernateProxy) obj;
+			LazyInitializer li = proxy.getHibernateLazyInitializer();
+			return li.getPersistentClass();
+		} else {
+			return obj.getClass();
+		}
+	}
+
 	private Set<String> getProperties() {
-		Set<String> properties = entityProperties.get(getClass().getName());
+		Class<?> klass = getClassWithoutInitializingProxy(this);
+		Set<String> properties = entityProperties.get(klass.getName());
 		if (properties != null) {
 			return properties;
 		}
@@ -206,7 +242,7 @@ public class BaseEntity {
 				properties.add(name);
 			}
 
-			entityProperties.put(getClass().getName(), properties);
+			entityProperties.put(klass.getName(), properties);
 			return properties;
 		} catch (Exception e) {
 			throw new RuntimeException("Error querying entity properties", e);
@@ -233,8 +269,8 @@ public class BaseEntity {
 			Object value = bean.getPropertyValue(prop);
 			result = toObjectString(value);
 		} catch (Exception e) {
-			e.printStackTrace();
 			result = "Error - " + e.getMessage();
+			logger.error("Encountered error when obtaining the value of the property " + prop + " on bean", e);
 		}
 
 		return result;
@@ -246,15 +282,17 @@ public class BaseEntity {
 		if (isSimpleType(obj)) {
 			result = obj.toString();
 		} else if (obj instanceof BigDecimal) {
-			result = ((BigDecimal) obj).setScale(6, BigDecimal.ROUND_HALF_UP).toString();
+			result = ((BigDecimal) obj).setScale(6, RoundingMode.HALF_UP).toString();
 		} else if (obj instanceof Number) {
 			result = obj.toString();
 		} else if (obj instanceof Iterable) {
 			result = toCollectionString((Iterable) obj);
 		} else if (isAssignableFrom(BaseEntity.class, obj)) {
-			result = "{id=" + getObjId(obj) + "}";
+			result = getObjId(obj);
+		} else if (obj instanceof Map) {
+			result = Utility.mapToJson((Map) obj);
 		} else if (obj != null) {
-			result = "Unknown object type: " + obj.getClass().getName();
+			result = getObjId(obj);
 		}
 
 		return result;
@@ -275,6 +313,10 @@ public class BaseEntity {
 		try {
 			StringBuilder collStr = new StringBuilder();
 			for (Object element : collection) {
+				if (isDeleted(element)) {
+					continue;
+				}
+
 				collStr.append(toObjectString(element)).append(",");
 			}
 
@@ -284,22 +326,74 @@ public class BaseEntity {
 
 			return collStr.length() > 0 ? "[" + collStr.toString() + "]" : null;
 		} catch (Exception e) {
-			e.printStackTrace();
+			logger.error("Error converting the collection of elements to string", e);
 			return null;
 		}
+	}
+
+	private boolean isDeleted(Object obj) {
+		if (!isAssignableFrom(BaseEntity.class, obj)) {
+			return false;
+		}
+
+		try {
+			Object status = PropertyAccessorFactory.forBeanPropertyAccess(obj).getPropertyValue("activityStatus");
+			return status != null && status.toString().equals(Status.ACTIVITY_STATUS_DISABLED.getStatus());
+		} catch (Exception e) {
+		}
+
+		return false;
 	}
 
 	private boolean isAssignableFrom(Class<?> superClass, Object value) {
 		return value != null && superClass.isAssignableFrom(value.getClass());
 	}
 
-	private Object getObjId(Object value) {
-		try {
-			Object id = PropertyAccessorFactory.forBeanPropertyAccess(value).getPropertyValue("id");
-			return id == null ? StringUtils.EMPTY : id;
-		} catch (Exception e) {
-			e.getMessage();
-			return e.getMessage();
+	private String getObjId(Object value) {
+		if (value == null) {
+			return StringUtils.EMPTY;
 		}
+
+		BeanWrapper bean = PropertyAccessorFactory.forBeanPropertyAccess(value);
+		String id = null, name = null;
+		try {
+			Object idObj = bean.getPropertyValue("id");
+			id = idObj == null ? StringUtils.EMPTY : idObj.toString();
+		} catch (Exception e) {
+			if (isAssignableFrom(BaseEntity.class, value)) {
+				id = "Unknown property: " + value.getClass().getName() + ".id: " + e.getMessage();
+			}
+		}
+
+		try {
+			String className = getClassWithoutInitializingProxy(value).getName();
+			if (!entityNameProperties.containsKey(className)) {
+				PropertyDescriptor[] descriptors = bean.getPropertyDescriptors();
+				entityNameProperties.put(className, Arrays.stream(descriptors).anyMatch(d -> d.getName().equals("name")));
+			}
+
+			if (entityNameProperties.get(className)) {
+				Object nameObj = bean.getPropertyValue("name");
+				name = nameObj == null ? StringUtils.EMPTY : nameObj.toString();
+			}
+		} catch (Exception e) {
+			// name = "Unknown property: " + value.getClass().getName() + ".name: " + e.getMessage();
+		}
+
+		String result = "{";
+		if (id != null) {
+			result += "id=" + id;
+		}
+
+		if (name != null) {
+			if (id != null) {
+				result += ", ";
+			}
+
+			result += "name=" + name;
+		}
+
+		result += "}";
+		return result;
 	}
 }

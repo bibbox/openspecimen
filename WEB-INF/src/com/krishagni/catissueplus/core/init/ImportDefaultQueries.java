@@ -8,8 +8,6 @@ import java.util.Map;
 import java.util.Set;
 
 import org.apache.commons.io.IOUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
@@ -25,6 +23,7 @@ import com.krishagni.catissueplus.core.common.events.RequestEvent;
 import com.krishagni.catissueplus.core.common.events.ResponseEvent;
 import com.krishagni.catissueplus.core.common.service.ConfigurationService;
 import com.krishagni.catissueplus.core.common.util.AuthUtil;
+import com.krishagni.catissueplus.core.common.util.LogUtil;
 import com.krishagni.catissueplus.core.common.util.Utility;
 import com.krishagni.catissueplus.core.de.domain.QueryFolder;
 import com.krishagni.catissueplus.core.de.domain.SavedQuery;
@@ -32,7 +31,7 @@ import com.krishagni.catissueplus.core.de.repository.DaoFactory;
 
 public class ImportDefaultQueries implements InitializingBean {
 
-	private static Log LOGGER = LogFactory.getLog(ImportDefaultQueries.class);
+	private static final LogUtil LOGGER = LogUtil.getLogger(ImportDefaultQueries.class);
 
 	private PlatformTransactionManager txnMgr;
 
@@ -93,13 +92,15 @@ public class ImportDefaultQueries implements InitializingBean {
 			
 			if (result == null) {
 				SavedQuery query = insertQuery(filename, content, newDigest);
-				if(query != null){
+				if(query.getId() != null){
 					queries.add(query);
 
 					if (resource.getFilename().equals(DISTRIBUTION_REPORT_QUERY)) {
 						configureDistributionReportQuery(query);
 					} else if (resource.getFilename().equals(SHIPMENT_REPORT_QUERY)) {
 						configureShipmentReportQuery(query);
+					} else if (resource.getFilename().equals(CONTAINER_SHIPMENT_REPORT_QUERY)) {
+						configureContainerShipmentReportQuery(query);
 					} else if (resource.getFilename().equals(SPECIMEN_KIT_REPORT_QUERY)) {
 						configureKitReportQuery(query);
 					} else if (resource.getFilename().equals(CONTAINER_SPECIMENS_REPORT_QUERY)) {
@@ -182,6 +183,10 @@ public class ImportDefaultQueries implements InitializingBean {
 		saveDefaultQuerySetting(query, "common", "shipment_export_report");
 	}
 
+	private void configureContainerShipmentReportQuery(SavedQuery query) {
+		saveDefaultQuerySetting(query, "common", "shipment_container_report");
+	}
+
 	private void configureKitReportQuery(SavedQuery query) {
 		saveDefaultQuerySetting(query, "common", "specimen_kit_export_report");
 	}
@@ -223,6 +228,8 @@ public class ImportDefaultQueries implements InitializingBean {
 	private static final String DISTRIBUTION_REPORT_QUERY = "DistributionReport.json";
 
 	private static final String SHIPMENT_REPORT_QUERY = "ShipmentReport.json";
+
+	private static final String CONTAINER_SHIPMENT_REPORT_QUERY = "ContainerShipmentReport.json";
 
 	private static final String SPECIMEN_KIT_REPORT_QUERY = "SpecimenKitReport.json";
 

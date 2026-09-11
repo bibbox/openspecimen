@@ -6,15 +6,17 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Arrays;
+import java.util.Calendar;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 import org.apache.commons.io.IOUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,16 +30,14 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.multipart.MultipartFile;
-
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.ser.FilterProvider;
-import com.fasterxml.jackson.databind.ser.impl.SimpleBeanPropertyFilter;
-import com.fasterxml.jackson.databind.ser.impl.SimpleFilterProvider;
+
 import com.krishagni.catissueplus.core.administrative.events.SiteSummary;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
 import com.krishagni.catissueplus.core.biospecimen.events.CollectionProtocolDetail;
+import com.krishagni.catissueplus.core.biospecimen.events.CollectionProtocolPublishDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.CollectionProtocolSummary;
 import com.krishagni.catissueplus.core.biospecimen.events.ConsentTierDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.ConsentTierOp;
@@ -46,10 +46,11 @@ import com.krishagni.catissueplus.core.biospecimen.events.CopyCpOpDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.CpQueryCriteria;
 import com.krishagni.catissueplus.core.biospecimen.events.CpReportSettingsDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.CpWorkflowCfgDetail;
-import com.krishagni.catissueplus.core.biospecimen.events.CpWorkflowCfgDetail.WorkflowDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.FileDetail;
 import com.krishagni.catissueplus.core.biospecimen.events.MergeCpDetail;
+import com.krishagni.catissueplus.core.biospecimen.events.WorkflowDetail;
 import com.krishagni.catissueplus.core.biospecimen.repository.CpListCriteria;
+import com.krishagni.catissueplus.core.biospecimen.repository.CpPublishEventListCriteria;
 import com.krishagni.catissueplus.core.biospecimen.services.CollectionProtocolService;
 import com.krishagni.catissueplus.core.common.errors.CommonErrorCode;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
@@ -57,6 +58,7 @@ import com.krishagni.catissueplus.core.common.events.BulkDeleteEntityOp;
 import com.krishagni.catissueplus.core.common.events.BulkDeleteEntityResp;
 import com.krishagni.catissueplus.core.common.events.DependentEntityDetail;
 import com.krishagni.catissueplus.core.common.events.EntityDeleteResp;
+import com.krishagni.catissueplus.core.common.events.EntityQueryCriteria;
 import com.krishagni.catissueplus.core.common.events.Operation;
 import com.krishagni.catissueplus.core.common.events.RequestEvent;
 import com.krishagni.catissueplus.core.common.events.Resource;
@@ -64,6 +66,8 @@ import com.krishagni.catissueplus.core.common.events.ResponseEvent;
 import com.krishagni.catissueplus.core.common.util.Utility;
 import com.krishagni.catissueplus.core.de.events.FormSummary;
 import com.krishagni.catissueplus.core.de.services.FormService;
+import com.krishagni.catissueplus.core.exporter.services.ExportService;
+import com.krishagni.catissueplus.core.importer.services.ImportService;
 import com.krishagni.catissueplus.core.query.Column;
 import com.krishagni.catissueplus.core.query.ListConfig;
 import com.krishagni.catissueplus.core.query.ListDetail;
@@ -87,6 +91,12 @@ public class CollectionProtocolsController {
 	@Autowired
 	private HttpServletRequest httpServletRequest;
 
+	@Autowired
+	private ImportService importSvc;
+
+	@Autowired
+	private ExportService exportSvc;
+
 	@RequestMapping(method = RequestMethod.GET)
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody
@@ -105,15 +115,36 @@ public class CollectionProtocolsController {
 			
 			@RequestParam(value = "repositoryName", required = false)
 			String repositoryName,
+
+			@RequestParam(value = "instituteId", required = false)
+			Long instituteId,
+
+			@RequestParam(value = "groupId", required = false)
+			Long groupId,
 			
 			@RequestParam(value = "startAt", required = false, defaultValue = "0") 
 			int startAt,
 			
 			@RequestParam(value = "maxResults", required = false, defaultValue = "100")
 			int maxResults,
-			
+
+			@RequestParam(value = "includePi", required = false, defaultValue = "false")
+			boolean includePi,
+
+			@RequestParam(value = "includeWfInheritance", required = false, defaultValue = "false")
+			boolean includeWfInheritance,
+
+			@RequestParam(value = "includeStats", required = false, defaultValue = "false")
+			boolean includeStats,
+
 			@RequestParam(value = "detailedList", required = false, defaultValue = "false") 
-			boolean detailedList) {
+			boolean detailedList,
+
+			@RequestParam(value = "orderByStarred", required = false, defaultValue = "false")
+			boolean orderByStarred,
+
+			@RequestParam(value = "onlyParticipantConsentCps", required = false, defaultValue = "false")
+			boolean onlyParticipantConsentCps) {
 		
 		CpListCriteria crit = new CpListCriteria()
 			.query(searchStr)
@@ -121,8 +152,13 @@ public class CollectionProtocolsController {
 			.irbId(irbId)
 			.piId(piId)
 			.repositoryName(repositoryName)
-			.includePi(detailedList)
-			.includeStat(detailedList)
+			.instituteId(instituteId)
+			.includePi(includePi || detailedList)
+			.includeWfInheritance(includeWfInheritance)
+			.includeStat(includeStats || detailedList)
+			.orderByStarred(orderByStarred)
+			.onlyParticipantConsentCps(onlyParticipantConsentCps)
+			.groupId(groupId)
 			.startAt(startAt)
 			.maxResults(maxResults);
 
@@ -148,18 +184,37 @@ public class CollectionProtocolsController {
 			Long piId,
 			
 			@RequestParam(value = "repositoryName", required = false)
-			String repositoryName) {
+			String repositoryName,
+
+			@RequestParam(value = "instituteId", required = false)
+			Long instituteId,
+
+			@RequestParam(value = "groupId", required = false)
+			Long groupId,
+
+			@RequestParam(value = "onlyParticipantConsentCps", required = false, defaultValue = "false")
+			boolean onlyParticipantConsentCps) {
 		
 		CpListCriteria crit = new CpListCriteria()
 			.query(searchStr)
 			.title(title)
 			.irbId(irbId)
 			.piId(piId)
-			.repositoryName(repositoryName);
+			.repositoryName(repositoryName)
+			.instituteId(instituteId)
+			.groupId(groupId)
+			.onlyParticipantConsentCps(onlyParticipantConsentCps);
 		
 		ResponseEvent<Long> resp = cpSvc.getProtocolsCount(request(crit));
 		resp.throwErrorIfUnsuccessful();
 		return Collections.singletonMap("count", resp.getPayload());
+	}
+
+	@RequestMapping(method = RequestMethod.GET, value = "/cps-n-groups")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public List<Map<String, Object>> getCpsAndGroups(@RequestParam(value = "query", required = false)  String query) {
+		return ResponseEvent.unwrap(cpSvc.getCpsAndGroups(RequestEvent.wrap(query)));
 	}
 
 	@RequestMapping(method = RequestMethod.GET, value = "/{id}")
@@ -189,31 +244,30 @@ public class CollectionProtocolsController {
 	@RequestMapping(method = RequestMethod.GET, value = "/{id}/definition")
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody
-	public void getCpDefFile(@PathVariable("id") Long cpId, HttpServletResponse response) 
+	public void getCpDefFile(
+		@PathVariable("id")
+		Long cpId,
+
+		@RequestParam(value = "includeIds", required = false, defaultValue = "false")
+		boolean includeIds,
+
+		HttpServletResponse httpResp)
 	throws JsonProcessingException {
+		Date startTime = Calendar.getInstance().getTime();
 		CpQueryCriteria crit = new CpQueryCriteria();
 		crit.setId(cpId);
 		crit.setFullObject(true);
-		
-		ResponseEvent<CollectionProtocolDetail> resp = cpSvc.getCollectionProtocol(request(crit));
-		resp.throwErrorIfUnsuccessful();
-		
-		CollectionProtocolDetail cp = resp.getPayload();
-		cp.setSopDocumentName(null);
-		cp.setSopDocumentUrl(null);
+		crit.param("includeIds", includeIds);
 
-		ObjectMapper mapper = new ObjectMapper();
-		FilterProvider filters = new SimpleFilterProvider()
-			.addFilter("withoutId", SimpleBeanPropertyFilter.serializeAllExcept("id", "statementId"));
-		String def = mapper.writer(filters).withDefaultPrettyPrinter().writeValueAsString(cp);
-		
-		response.setContentType("application/json");
-		response.setHeader("Content-Disposition", "attachment;filename=CpDef_" + cpId + ".json");
-			
+		String def = ResponseEvent.unwrap(cpSvc.getCollectionProtocolDefinition(RequestEvent.wrap(crit)));
 		InputStream in = null;
 		try {
 			in = new ByteArrayInputStream(def.getBytes());
-			IoUtil.copy(in, response.getOutputStream());
+
+			httpResp.setContentType("application/json");
+			httpResp.setHeader("Content-Disposition", "attachment;filename=CpDef_" + cpId + ".json");
+			IoUtil.copy(in, httpResp.getOutputStream());
+			exportSvc.saveJob("cpJson", startTime, Collections.singletonMap("cpId", cpId.toString()));
 		} catch (IOException e) {
 			throw new RuntimeException("Error sending file", e);
 		} finally {
@@ -224,12 +278,14 @@ public class CollectionProtocolsController {
 	@RequestMapping(method = RequestMethod.POST, value="/definition")
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody		
-	public CollectionProtocolDetail importCpDef(@PathVariable("file") MultipartFile file) 
+	public CollectionProtocolDetail importCpDef(@RequestParam("file") MultipartFile file)
 	throws IOException {
+		Date startTime = Calendar.getInstance().getTime();
 		CollectionProtocolDetail cp = new ObjectMapper().readValue(file.getBytes(), CollectionProtocolDetail.class);
 		ResponseEvent<CollectionProtocolDetail> resp = cpSvc.importCollectionProtocol(new RequestEvent<>(cp));
 		resp.throwErrorIfUnsuccessful();
-		
+
+		importSvc.saveJob("cpJson", "CREATE", startTime, Collections.singletonMap("cpId", resp.getPayload().getId().toString()));
 		return resp.getPayload();
 	}
 	
@@ -249,7 +305,7 @@ public class CollectionProtocolsController {
 	@RequestMapping(method = RequestMethod.POST, value="/sop-documents")
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody
-	public String uploadSopDocument(@PathVariable("file") MultipartFile file)
+	public String uploadSopDocument(@RequestParam("file") MultipartFile file)
 	throws IOException {
 		InputStream in = null;
 		try {
@@ -307,20 +363,28 @@ public class CollectionProtocolsController {
 	@RequestMapping(method = RequestMethod.PUT, value = "/{id}/consents-waived")
 	@ResponseBody
 	@ResponseStatus(HttpStatus.OK)
-	public CollectionProtocolDetail updateConsentsWaived(@PathVariable Long id, @RequestBody Map<String, String> props) {
+	public CollectionProtocolDetail updateConsentsWaived(@PathVariable("id") Long id, @RequestBody Map<String, String> props) {
 		CollectionProtocolDetail cp = new  CollectionProtocolDetail();
 		cp.setId(id);
-		cp.setConsentsWaived(Boolean.valueOf(props.get("consentsWaived")));
-		
-		ResponseEvent<CollectionProtocolDetail> resp = cpSvc.updateConsentsWaived(request(cp));
-		resp.throwErrorIfUnsuccessful();
-		return resp.getPayload();
+		cp.setConsentsWaived(Boolean.parseBoolean(props.get("consentsWaived")));
+		return response(cpSvc.updateConsentsWaived(request(cp)));
 	}
-	
+
+	@RequestMapping(method = RequestMethod.PUT, value = "/{id}/consents-source")
+	@ResponseBody
+	@ResponseStatus(HttpStatus.OK)
+	public CollectionProtocolDetail updateConsentsSource(@PathVariable("id") Long id, @RequestBody CollectionProtocolSummary source) {
+		CollectionProtocolDetail cp = new  CollectionProtocolDetail();
+		cp.setId(id);
+		cp.setConsentsSource(source);
+		return response(cpSvc.updateConsentsSource(request(cp)));
+	}
+
+
 	@RequestMapping(method = RequestMethod.GET, value="/{id}/dependent-entities")
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody
-	public List<DependentEntityDetail> getCpDependentEntities(@PathVariable Long id) {
+	public List<DependentEntityDetail> getCpDependentEntities(@PathVariable("id") Long id) {
 		ResponseEvent<List<DependentEntityDetail>> resp = cpSvc.getCpDependentEntities(request(id));
 		resp.throwErrorIfUnsuccessful();
 		return resp.getPayload();
@@ -330,7 +394,7 @@ public class CollectionProtocolsController {
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody
 	public EntityDeleteResp<CollectionProtocolDetail> deleteCollectionProtocol(
-			@PathVariable
+			@PathVariable("id")
 			Long id,
 
 			@RequestParam(value = "forceDelete", required = false, defaultValue = "false")
@@ -377,9 +441,7 @@ public class CollectionProtocolsController {
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody
 	public List<ConsentTierDetail> getConsentTiers(@PathVariable("id") Long cpId) {
-		ResponseEvent<List<ConsentTierDetail>> resp = cpSvc.getConsentTiers(request(cpId));
-		resp.throwErrorIfUnsuccessful();		
-		return resp.getPayload();
+		return response(cpSvc.getConsentTiers(request(cpId)));
 	}
 	
 	@RequestMapping(method = RequestMethod.POST, value="/{id}/consent-tiers")
@@ -461,6 +523,7 @@ public class CollectionProtocolsController {
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody
 	public void getWorkflowCfg(@PathVariable("id") Long cpId, HttpServletResponse httpResp) {
+		Date startTime = Calendar.getInstance().getTime();
 		ResponseEvent<CpWorkflowCfgDetail> resp = cpSvc.getWorkflows(new RequestEvent<>(cpId));
 		resp.throwErrorIfUnsuccessful();
 
@@ -476,6 +539,7 @@ public class CollectionProtocolsController {
 				.writeValueAsString(resp.getPayload().getWorkflows().values());
 			in = new ByteArrayInputStream(workflowsJson.getBytes());
 			Utility.sendToClient(httpResp, filename, "application/json", in);
+			exportSvc.saveJob("cpWf", startTime, Collections.singletonMap("cpId", cpId.toString()));
 		} catch (Exception e) {
 			throw OpenSpecimenException.userError(CommonErrorCode.FILE_SEND_ERROR, e.getMessage());
 		} finally {
@@ -493,9 +557,10 @@ public class CollectionProtocolsController {
 	@RequestMapping(method = RequestMethod.POST, value="/{id}/workflows-file")
 	@ResponseStatus(HttpStatus.OK)
 	@ResponseBody
-	public CpWorkflowCfgDetail saveWorkflowCfg(@PathVariable("id") Long cpId, @PathVariable("file") MultipartFile file) {
+	public CpWorkflowCfgDetail saveWorkflowCfg(@PathVariable("id") Long cpId, @RequestParam("file") MultipartFile file) {
 		List<WorkflowDetail> workflows;
 
+		Date startTime = Calendar.getInstance().getTime();
 		try {
 			ObjectMapper mapper = new ObjectMapper();
 			workflows = mapper.readValue(file.getInputStream(), new TypeReference<List<WorkflowDetail>>() {});
@@ -503,7 +568,9 @@ public class CollectionProtocolsController {
 			throw OpenSpecimenException.userError(CommonErrorCode.INVALID_REQUEST, e.getMessage());
 		}
 
-		return saveWorkflows(cpId, workflows, false);
+		CpWorkflowCfgDetail result = saveWorkflows(cpId, workflows, false);
+		importSvc.saveJob("cpWf", "UPDATE", startTime, Collections.singletonMap("cpId", cpId.toString()));
+		return result;
 	}
 
 	@RequestMapping(method = RequestMethod.PATCH, value="/{id}/workflows")
@@ -511,6 +578,13 @@ public class CollectionProtocolsController {
 	@ResponseBody
 	public CpWorkflowCfgDetail patchWorkflowCfg(@PathVariable("id") Long cpId, @RequestBody List<WorkflowDetail> workflows) {
 		return saveWorkflows(cpId, workflows, true);
+	}
+
+	@RequestMapping(method = RequestMethod.POST, value="/{id}/workflows/inherit")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public CpWorkflowCfgDetail inheritGroupWorkflowCfg(@PathVariable("id") Long cpId) {
+		return response(cpSvc.inheritGroupWorkflows(request(cpId)));
 	}
 
 	//
@@ -597,7 +671,74 @@ public class CollectionProtocolsController {
 			extn = file.getName().substring(extnStartIdx);
 		}
 
-		Utility.sendToClient(httpResp, "CpReport" + extn, file);
+		String filename = "CpReport_" + Utility.format(Calendar.getInstance().getTime(), "yyyyMMdd_HHmmss") + extn;
+		Utility.sendToClient(httpResp, filename, file);
+	}
+
+	//
+	// Publish APIs
+	//
+
+	@RequestMapping(method = RequestMethod.GET, value = "/{id}/published-events")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public List<CollectionProtocolPublishDetail> getPublishedEvents(
+		@PathVariable("id")
+		Long cpId,
+
+		@RequestParam(value = "startAt", required = false, defaultValue = "0")
+		int startAt,
+
+		@RequestParam(value = "maxResults", required = false, defaultValue = "100")
+		int maxResults
+	) {
+		CpPublishEventListCriteria crit = new CpPublishEventListCriteria();
+		crit.cpId(cpId).startAt(startAt).maxResults(maxResults);
+		return ResponseEvent.unwrap(cpSvc.getPublishEvents(RequestEvent.wrap(crit)));
+	}
+
+	@RequestMapping(method = RequestMethod.POST, value = "/{id}/published-events")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public CollectionProtocolPublishDetail publish(
+		@PathVariable("id")
+		Long cpId,
+
+		@RequestBody
+		CollectionProtocolPublishDetail input) {
+
+		input.setCpId(cpId);
+		return ResponseEvent.unwrap(cpSvc.publish(RequestEvent.wrap(input)));
+	}
+
+	@RequestMapping(method = RequestMethod.GET, value = "/{id}/published-versions/{versionId}")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public void getPublishedVersion(
+		@PathVariable("id")
+		Long cpId,
+
+		@PathVariable(value = "versionId")
+		Long versionId,
+
+		HttpServletResponse httpResp)
+	throws JsonProcessingException {
+		EntityQueryCriteria crit = new EntityQueryCriteria(versionId);
+		crit.setParams(Collections.singletonMap("cpId", cpId));
+
+		String def = ResponseEvent.unwrap(cpSvc.getPublishedVersion(RequestEvent.wrap(crit)));
+		InputStream in = null;
+		try {
+			in = new ByteArrayInputStream(def.getBytes());
+
+			httpResp.setContentType("application/json");
+			httpResp.setHeader("Content-Disposition", "attachment;filename=CpDef_" + cpId + ".json");
+			IoUtil.copy(in, httpResp.getOutputStream());
+		} catch (IOException e) {
+			throw new RuntimeException("Error sending file", e);
+		} finally {
+			IoUtil.close(in);
+		}
 	}
 
 	//
@@ -771,6 +912,20 @@ public class CollectionProtocolsController {
 		ResponseEvent<Integer> resp = cpSvc.getListSize(request(listReq));
 		resp.throwErrorIfUnsuccessful();
 		return Collections.singletonMap("size", resp.getPayload());
+	}
+
+	@RequestMapping(method = RequestMethod.POST, value = "/{id}/labels")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public Map<String, Boolean> addLabel(@PathVariable("id") Long cpId) {
+		return Collections.singletonMap("status", cpSvc.toggleStarredCp(cpId, true));
+	}
+
+	@RequestMapping(method = RequestMethod.DELETE, value = "/{id}/labels")
+	@ResponseStatus(HttpStatus.OK)
+	@ResponseBody
+	public Map<String, Boolean> removeLabel(@PathVariable("id") Long cpId) {
+		return Collections.singletonMap("status", cpSvc.toggleStarredCp(cpId, false));
 	}
 
 	private ConsentTierDetail performConsentTierOp(OP op, Long cpId, ConsentTierDetail consentTier) {

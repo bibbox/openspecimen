@@ -1,7 +1,9 @@
 package com.krishagni.catissueplus.core.de.events;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
+import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
@@ -18,9 +20,11 @@ public class FormFieldSummary {
 	
 	private List<FormFieldSummary> subFields;
 	
-	private Properties lookupProps;
+	private Map<String, Object> lookupProps;
 
 	private Boolean flatten;
+
+	private Boolean multiple;
 	
 	public String getName() {
 		return name;
@@ -62,12 +66,17 @@ public class FormFieldSummary {
 		this.subFields = subFields;
 	}
 
-	public Properties getLookupProps() {
+	public Map<String, Object> getLookupProps() {
 		return lookupProps;
 	}
 
-	public void setLookupProps(Properties lookupProps) {
+	public void setLookupProps(Map<String, Object> lookupProps) {
 		this.lookupProps = lookupProps;
+	}
+
+	public void setLookupProps(Properties lookupProps) {
+		this.lookupProps = lookupProps.entrySet().stream()
+			.collect(Collectors.toMap(e -> e.getKey().toString(), Map.Entry::getValue));
 	}
 
 	public Boolean getFlatten() {
@@ -76,5 +85,13 @@ public class FormFieldSummary {
 
 	public void setFlatten(boolean flatten) {
 		this.flatten = flatten;
+	}
+
+	public Boolean getMultiple() {
+		return multiple;
+	}
+
+	public void setMultiple(boolean multiple) {
+		this.multiple = multiple;
 	}
 }

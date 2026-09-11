@@ -1,29 +1,44 @@
 package com.krishagni.catissueplus.core.administrative.domain;
 
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections4.CollectionUtils;
 import org.hibernate.envers.Audited;
 import org.hibernate.envers.NotAudited;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Configurable;
 
 import com.krishagni.catissueplus.core.administrative.domain.factory.DistributionOrderErrorCode;
 import com.krishagni.catissueplus.core.administrative.domain.factory.SpecimenRequestErrorCode;
+import com.krishagni.catissueplus.core.administrative.events.DistributionOrderItemListCriteria;
 import com.krishagni.catissueplus.core.biospecimen.domain.BaseExtensionEntity;
 import com.krishagni.catissueplus.core.biospecimen.domain.SpecimenList;
+import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
+import com.krishagni.catissueplus.core.common.OpenSpecimenAppCtxProvider;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.util.Utility;
 
 @Audited
+@Configurable
 public class DistributionOrder extends BaseExtensionEntity {
 	public enum Status { 
 		PENDING,
 		EXECUTED
 	}
+
+	public enum ClearListMode {
+		ALL,
+		DISTRIBUTED,
+		NONE
+	};
 	
 	private static final String ENTITY_NAME = "distribution_order";
 
@@ -58,13 +73,22 @@ public class DistributionOrder extends BaseExtensionEntity {
 	private SpecimenList specimenList;
 
 	private Boolean allReservedSpecimens;
-	
+
+	private Long clearListId;
+
+	private ClearListMode clearListMode;
+
+	private Boolean checkoutSpecimens;
+
+	@Autowired
+	private DaoFactory daoFactory;
+
 	public static String getEntityName() {
 		return ENTITY_NAME;
 	}
 
 	public static String getExtnEntityType() { return EXTN; }
-	
+
 	public String getName() {
 		return name;
 	}
@@ -204,6 +228,30 @@ public class DistributionOrder extends BaseExtensionEntity {
 		return Boolean.TRUE.equals(allReservedSpecimens);
 	}
 
+	public Long getClearListId() {
+		return clearListId;
+	}
+
+	public void setClearListId(Long clearListId) {
+		this.clearListId = clearListId;
+	}
+
+	public ClearListMode getClearListMode() {
+		return clearListMode;
+	}
+
+	public void setClearListMode(ClearListMode clearListMode) {
+		this.clearListMode = clearListMode;
+	}
+
+	public Boolean getCheckoutSpecimens() {
+		return checkoutSpecimens;
+	}
+
+	public void setCheckoutSpecimens(Boolean checkoutSpecimens) {
+		this.checkoutSpecimens = checkoutSpecimens;
+	}
+
 	public Institute getInstitute() {
 		return requester.getInstitute();
 	}
@@ -220,7 +268,12 @@ public class DistributionOrder extends BaseExtensionEntity {
 		setComments(newOrder.getComments());
 		setExtension(newOrder.getExtension());
 		setSpecimenList(newOrder.getSpecimenList());
+		setClearListId(newOrder.getClearListId());
+		setClearListMode(newOrder.getClearListMode());
 		setAllReservedSpecimens(newOrder.getAllReservedSpecimens());
+		if (!isOrderExecuted()) {
+			setCheckoutSpecimens(newOrder.getCheckoutSpecimens());
+		}
 
 		updateRequest(newOrder);
 		updateOrderItems(newOrder);
@@ -257,12 +310,67 @@ public class DistributionOrder extends BaseExtensionEntity {
 	}
 
 	public void delete() {
-		if (isOrderExecuted()) {
-			throw OpenSpecimenException.userError(DistributionOrderErrorCode.CANT_DELETE_EXEC_ORDER, getName());
-		}
-
 		setName(Utility.getDisabledValue(getName(), 255));
 		setActivityStatus(com.krishagni.catissueplus.core.common.util.Status.ACTIVITY_STATUS_DISABLED.getStatus());
+
+		Map<Long, SpecimenRequestItem> reqItemsMap = Collections.emptyMap();
+		if (getRequest() != null) {
+			reqItemsMap = getRequest().getSpecimenIdRequestItemMap();
+		}
+
+		DaoFactory daoFactory = OpenSpecimenAppCtxProvider.getBean("biospecimenDaoFactory");
+		DistributionOrderItemListCriteria crit = new DistributionOrderItemListCriteria().orderId(getId()).maxResults(50);
+		int startAt = 0;
+		boolean endOfItems = false;
+		while (!endOfItems) {
+			List<DistributionOrderItem> items = daoFactory.getDistributionOrderDao().getOrderItems(crit.startAt(startAt));
+			for (DistributionOrderItem item : items) {
+				item.setRequestItem(reqItemsMap.get(item.getSpecimen().getId()));
+				item.undoDistribution();
+			}
+
+			endOfItems = items.size() < 50;
+			startAt += items.size();
+		}
+
+		if (getRequest() != null) {
+			getRequest().reopenIfNotFulfilled();
+		}
+	}
+
+	public List<DistributionOrderItem> deleteItems(List<Long> itemIds) {
+		Map<Long, SpecimenRequestItem> reqItemsMap = Collections.emptyMap();
+		if (getRequest() != null) {
+			reqItemsMap = getRequest().getSpecimenIdRequestItemMap();
+		}
+
+		DaoFactory daoFactory = OpenSpecimenAppCtxProvider.getBean("biospecimenDaoFactory");
+		DistributionOrderItemListCriteria crit = new DistributionOrderItemListCriteria().orderId(getId());
+		int itemIdx = 0;
+		List<DistributionOrderItem> deletedItems = new ArrayList<>();
+		while (itemIdx < itemIds.size()) {
+			crit.ids(itemIds.subList(itemIdx, Math.min(itemIdx + 50, itemIds.size())));
+			itemIdx += 50;
+
+			List<DistributionOrderItem> items = daoFactory.getDistributionOrderDao().getOrderItems(crit);
+			for (DistributionOrderItem item : items) {
+				if (isOrderExecuted()) {
+					item.setRequestItem(reqItemsMap.get(item.getSpecimen().getId()));
+					item.undoDistribution();
+				}
+
+				daoFactory.getDistributionOrderDao().deleteOrderItem(item);
+				if (deletedItems.size() < 100) {
+					deletedItems.add(item);
+				}
+			}
+		}
+
+		if (getRequest() != null) {
+			getRequest().reopenIfNotFulfilled();
+		}
+
+		return deletedItems;
 	}
 
 	public boolean isOrderExecuted() {
@@ -282,6 +390,25 @@ public class DistributionOrder extends BaseExtensionEntity {
 	@Override
 	public Long getEntityId() {
 		return getDistributionProtocol().getId();
+	}
+
+	@Override
+	public Long getRecordId(Long formId, Long formCtxtId) {
+		return daoFactory.getDistributionOrderDao().getCustomFieldRecordId(getId(), formId, formCtxtId);
+	}
+
+	@Override
+	public boolean saveOrUpdateRecordEntry(boolean insert, Long formId, Long formCtxtId, Long recordId) {
+		if (insert) {
+			daoFactory.getDistributionOrderDao().insertCustomFieldRecordId(getId(), formId, formCtxtId, recordId);
+		}
+
+		return true;
+	}
+
+	@Override
+	public Map<Long, Long> getRecordIds(Collection<Long> orderIds, Long formId, Long formCtxtId) {
+		return daoFactory.getDistributionOrderDao().getCustomFieldRecordIds(orderIds, formId, formCtxtId);
 	}
 
 	private void updateRequest(DistributionOrder other) {

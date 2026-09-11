@@ -9,7 +9,9 @@ import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
 public class ContainerStoreListItem extends BaseEntity {
 	public enum Status {
 		PENDING,
+
 		STORED,
+
 		RETRIEVED
 	}
 
@@ -22,6 +24,8 @@ public class ContainerStoreListItem extends BaseEntity {
 	private Date ackTime = Calendar.getInstance().getTime();
 
 	private String error;
+
+	private String comments;
 
 	public ContainerStoreList getStoreList() {
 		return storeList;
@@ -61,5 +65,13 @@ public class ContainerStoreListItem extends BaseEntity {
 
 	public void setError(String error) {
 		this.error = error;
+	}
+
+	public String getComments() {
+		return comments;
+	}
+
+	public void setComments(String comments) {
+		this.comments = comments;
 	}
 }

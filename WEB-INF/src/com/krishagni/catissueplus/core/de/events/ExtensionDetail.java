@@ -1,20 +1,30 @@
 package com.krishagni.catissueplus.core.de.events;
 
 import java.io.Serializable;
+import java.text.SimpleDateFormat;
+import java.time.Instant;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import org.apache.commons.collections.CollectionUtils;
-import org.codehaus.jackson.annotate.JsonIgnore;
-import org.codehaus.jackson.annotate.JsonProperty;
+import org.apache.commons.collections4.CollectionUtils;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
+import com.krishagni.catissueplus.core.biospecimen.domain.BaseEntity;
+import com.krishagni.catissueplus.core.common.util.LogUtil;
+import com.krishagni.catissueplus.core.common.util.Utility;
 import com.krishagni.catissueplus.core.de.domain.DeObject;
 import com.krishagni.catissueplus.core.de.domain.DeObject.Attr;
+import com.krishagni.catissueplus.core.exporter.services.impl.ExporterContextHolder;
 
 public class ExtensionDetail implements Serializable {
+	private static final LogUtil logger = LogUtil.getLogger(ExtensionDetail.class);
+
 	private Long id;
 	
 	private Long objectId;
@@ -22,10 +32,14 @@ public class ExtensionDetail implements Serializable {
 	private Long formId;
 
 	private String formCaption;
+
+	private String dataEntryStatus;
 	
 	private List<AttrDetail> attrs = new ArrayList<>();
 
 	private Map<String, Object> attrsMap;
+
+	private boolean useUdn;
 	
 	public Long getId() {
 		return id;
@@ -59,6 +73,14 @@ public class ExtensionDetail implements Serializable {
 		this.formCaption = formCaption;
 	}
 
+	public String getDataEntryStatus() {
+		return dataEntryStatus;
+	}
+
+	public void setDataEntryStatus(String dataEntryStatus) {
+		this.dataEntryStatus = dataEntryStatus;
+	}
+
 	public List<AttrDetail> getAttrs() {
 		return attrs;
 	}
@@ -90,9 +112,64 @@ public class ExtensionDetail implements Serializable {
 
 		return attrsMap;
 	}
-	
+
+	@JsonIgnore
+	public AttrDetail getAttr(String name) {
+		return Utility.nullSafeStream(attrs).filter(a -> a.getName().equals(name))
+			.findFirst().orElse(null);
+	}
+
+	@JsonIgnore
+	public Object getAttrValue(String name) {
+		AttrDetail attr = getAttr(name);
+		if (attr == null || attr.getValue() == null) {
+			return null;
+		}
+
+		if ("datePicker".equals(attr.getType())) {
+			if (attr.getValue() instanceof String valueStr) {
+				try {
+					long time = Long.parseLong(valueStr);
+					return new Date(time);
+				} catch (Exception e) {
+					try {
+						// let's assume the input is in ISO format - yyyy-MM-dd'T'HH:mm:ss.SSSZ
+						return Date.from(Instant.from(DateTimeFormatter.ISO_INSTANT.parse(valueStr)));
+					} catch (Exception e1) {
+						try {
+							// let's assume the input is in ISO format - yyyy-MM-dd
+							return new SimpleDateFormat("yyyy-MM-dd").parse(valueStr);
+						} catch (Exception e2) {
+							logger.error("Error converting the value " + attr.getValue() + " to date object. Error: " + e.getMessage(), e);
+							logger.error("Error converting the value " + attr.getValue() + " to date object. Error: " + e1.getMessage(), e1);
+							logger.error("Error converting the value " + attr.getValue() + " to date object. Error: " + e2.getMessage(), e2);
+						}
+					}
+				}
+			} else if (attr.getValue() instanceof Number) {
+				return new Date(((Number) attr.getValue()).longValue());
+			}
+		}
+
+		return attr.getValue();
+	}
+
+	@JsonIgnore
+	public Object getAttrDisplayValue(String name) {
+		AttrDetail attr = getAttr(name);
+		return attr != null ? attr.getDisplayValue() : null;
+	}
+
+	public boolean isUseUdn() {
+		return useUdn;
+	}
+
+	public void setUseUdn(boolean useUdn) {
+		this.useUdn = useUdn;
+	}
+
 	public static ExtensionDetail from(DeObject extension) {
-		return from(extension, true);
+		return from(extension, false);
 	}
 
 	public static ExtensionDetail from(DeObject extension, boolean excludePhi) {
@@ -109,6 +186,7 @@ public class ExtensionDetail implements Serializable {
 		detail.setObjectId(extension.getObjectId());
 		detail.setFormId(extension.getFormId());
 		detail.setFormCaption(extension.getFormCaption());
+		detail.setDataEntryStatus(extension.getDataEntryStatus() != null ? extension.getDataEntryStatus().name() : BaseEntity.DataEntryStatus.COMPLETE.name());
 		detail.setAttrs(AttrDetail.from(extension.getAttrs(), excludePhi));	
 		return detail;
 	}
@@ -129,7 +207,9 @@ public class ExtensionDetail implements Serializable {
 							.map(ExtensionDetail::getAttrsMap).collect(Collectors.toList());
 					attrsMap.put(attr.getName(), sfAttrsMap);
 				}
-			} else if ("fileUpload".equals(attr.getType()) || attr.getValue() instanceof List) {
+			} else if ("fileUpload".equals(attr.getType()) || attr.getValue() instanceof List || "booleanCheckbox".equals(attr.getType())) {
+				attrsMap.put(attr.getName(), attr.getValue());
+			} else if ("datePicker".equals(attr.getType()) && ExporterContextHolder.getInstance().isExportOp()) {
 				attrsMap.put(attr.getName(), attr.getValue());
 			} else {
 				Object value = attr.getDisplayValue();
@@ -155,6 +235,8 @@ public class ExtensionDetail implements Serializable {
 		private String type;
 
 		private String displayValue;
+
+		private String codedValue;
 
 		public String getName() {
 			return name;
@@ -204,6 +286,10 @@ public class ExtensionDetail implements Serializable {
 			this.displayValue = displayValue;
 		}
 
+		public void setCodedValue(String codedValue) {
+			this.codedValue = codedValue;
+		}
+
 		@SuppressWarnings({"unchecked" })
 		public static AttrDetail from(Attr attr, boolean excludePhi) {
 			AttrDetail detail = new AttrDetail();
@@ -211,6 +297,7 @@ public class ExtensionDetail implements Serializable {
 			detail.setUdn(attr.getUdn());
 			detail.setCaption(attr.getCaption());
 			detail.setType(attr.getType());
+			detail.setCodedValue(attr.getCodedValue());
 
 			if (attr.isSubForm()) {
 				if (attr.isOneToOne()) {
@@ -222,8 +309,8 @@ public class ExtensionDetail implements Serializable {
 					}
 				}
 			} else if (excludePhi && attr.isPhi()) {
-				detail.setValue("###");
-				detail.setDisplayValue("###");
+//				detail.setValue("###");
+//				detail.setDisplayValue("###");
 			} else {
 				detail.setValue(attr.getValue());
 				detail.setDisplayValue(attr.getDisplayValue());

@@ -4,25 +4,33 @@
  "http://hibernate.sourceforge.net/hibernate-mapping-3.0.dtd"> 
 
 <hibernate-mapping>
-  <class name="com.krishagni.catissueplus.core.de.domain.QueryAuditLog" table="CATISSUE_QUERY_AUDIT_LOGS">
+  <class name="com.krishagni.catissueplus.core.de.domain.QueryAuditLog" table="CATISSUE_QUERY_AUDIT_LOGS"
+    entity-name="com.krishagni.catissueplus.core.de.domain.QueryAuditLog">
+
     <id name="id" column="IDENTIFIER">
       <generator class="native">
         <param name="sequence">CATISSUE_QUERY_AUDIT_LOGS_SEQ</param>
       </generator>
     </id>
 
-    <many-to-one name="query" column="QUERY_ID"/>
+    <many-to-one name="query" column="QUERY_ID" />
 
-    <many-to-one name="runBy" column="RUN_BY"/>
+    <many-to-one name="runBy" column="RUN_BY" />
 
-    <property name="timeOfExecution" column="TIME_OF_EXEC" type="timestamp"/>
+    <property name="ipAddress" column="IP_ADDRESS" />
+
+    <property name="timeOfExecution" column="TIME_OF_EXEC" />
      
-    <property name="timeToFinish" column="TIME_TO_FINISH" type="long"/>
+    <property name="timeToFinish" column="TIME_TO_FINISH" />
      
-    <property name="runType" column="RUN_TYPE" type="string"/>
+    <property name="runType" column="RUN_TYPE" />
      
-    <property name="recordCount" column="RECORD_COUNT" type="long"/>
+    <property name="recordCount" column="RECORD_COUNT" />
       
-    <property name="sql" column="QUERY_SQL"/>
+    <property name="sql" column="QUERY_SQL" />
+
+    <property name="aql" column="AQL" />
+
+    <property name="error" column="ERROR_MESSAGE" />
   </class>
 </hibernate-mapping>

@@ -1,32 +1,22 @@
 package com.krishagni.rbac.domain;
 
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
-import org.hibernate.proxy.HibernateProxyHelper;
+import org.hibernate.envers.Audited;
 
-import com.krishagni.catissueplus.core.common.CollectionUpdater;
+import com.krishagni.catissueplus.core.biospecimen.domain.BaseEntity;
 
-public class Role {
-	private Long id;
-
+@Audited
+public class Role extends BaseEntity {
 	private String name;
 
 	private String description;
 	
-	private Role parentRole;
-	
-	private Set<RoleAccessControl> acl = new HashSet<RoleAccessControl>();
-	
-	private Set<Role> childRoles = new HashSet<Role>();
-	
-	public Long getId() {
-		return id;
-	}
-
-	public void setId(Long id) {
-		this.id = id;
-	}
+	private Set<RoleAccessControl> acl = new HashSet<>();
 
 	public String getName() {
 		return name;
@@ -44,14 +34,6 @@ public class Role {
 		this.description = description;
 	}
 
-	public Role getParentRole() {
-		return parentRole;
-	}
-
-	public void setParentRole(Role parentRole) {
-		this.parentRole = parentRole;
-	}
-
 	public Set<RoleAccessControl> getAcl() {
 		return acl;
 	}
@@ -59,85 +41,42 @@ public class Role {
 	public void setAcl(Set<RoleAccessControl> acl) {
 		this.acl = acl;
 	}
-	
-	public Set<Role> getChildRoles() {
-		return childRoles;
-	}
 
-	public void setChildRoles(Set<Role> childRoles) {
-		this.childRoles = childRoles;
+	public void addAcl(RoleAccessControl rac) {
+		RoleAccessControl newAcl = new RoleAccessControl();
+		newAcl.setRole(this);
+		newAcl.setResource(rac.getResource());
+		newAcl.setOperations(rac.getOperations().stream().map(op -> {
+			ResourceInstanceOp newOp = new ResourceInstanceOp();
+			newOp.setAccessControl(newAcl);
+			newOp.setOperation(op.getOperation());
+			return newOp;
+		}).collect(Collectors.toSet()));
+
+		acl.add(newAcl);
 	}
 
 	public void updateRole(Role other) {
 		setName(other.getName());
 		setDescription(other.getDescription());
-		setParentRole(other.getParentRole());
-		updateChildRoles(other);
 		updateAcl(other);
 	}
-	
-	public boolean isDescendentOf(Role other) {
-		if (id == null || other.getId() == null) {
-			return false;
-		}
 
-		Role role = this;
-		while (role != null) {
-			if (other.getId().equals(role.getId())) {
-				return true;
-			}
-
-			role = role.getParentRole();
-		}
-
-		return false;
-	}
-
-	
-	@Override
-	public int hashCode() {
-		return 31 * 1 + ((name == null) ? 0 : name.hashCode());
-	}
-
-	@Override
-	public boolean equals(Object obj) {
-		if (this == obj) {
-			return true;
-		}
-		
-		if (obj == null) {
-			return false;
-		}
-		
-		if (getClass() != HibernateProxyHelper.getClassWithoutInitializingProxy(obj)) {
-			return false;
-		}
-		
-		Role other = (Role) obj;
-		if (name != null && name.equals(other.getName())) {
-			return true;
-		} 
-		
-		return false;
-	}
-	
-	private void updateChildRoles(Role other) {
-		for (Role child : this.getChildRoles()) {
-			if (!other.getChildRoles().contains(child)) {
-				child.setParentRole(null);
-			}
-		}
-
-		CollectionUpdater.update(getChildRoles(), other.getChildRoles());
-		for (Role childRole: getChildRoles()) {
-			childRole.setParentRole(this);
-		}
-	}
-	
 	private void updateAcl(Role other) {
-		CollectionUpdater.update(getAcl(), other.getAcl());
+		Map<Resource, RoleAccessControl> existingAclMap = new HashMap<>();
 		for (RoleAccessControl rac : getAcl()) {
-			rac.setRole(this);
+			existingAclMap.put(rac.getResource(), rac);
 		}
+
+		for (RoleAccessControl otherRac : other.getAcl()) {
+			RoleAccessControl existing = existingAclMap.remove(otherRac.getResource());
+			if (existing == null) {
+				addAcl(otherRac);
+			} else {
+				existing.update(otherRac);
+			}
+		}
+
+		getAcl().removeAll(existingAclMap.values());
 	}
 }

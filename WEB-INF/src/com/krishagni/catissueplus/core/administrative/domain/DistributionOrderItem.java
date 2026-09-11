@@ -32,6 +32,8 @@ public class DistributionOrderItem extends BaseEntity {
 	private BigDecimal quantity;
 	
 	private Specimen specimen;
+
+	private String specimenLocation;
 	
 	private Status status;
 
@@ -54,7 +56,6 @@ public class DistributionOrderItem extends BaseEntity {
 	private BigDecimal cost;
 
 	private String label;
-
 	private transient SpecimenRequestItem requestItem;
 
 	private transient boolean printLabel;
@@ -86,7 +87,15 @@ public class DistributionOrderItem extends BaseEntity {
 	public void setSpecimen(Specimen specimen) {
 		this.specimen = specimen;
 	}
-	
+
+	public String getSpecimenLocation() {
+		return specimenLocation;
+	}
+
+	public void setSpecimenLocation(String specimenLocation) {
+		this.specimenLocation = specimenLocation;
+	}
+
 	public Status getStatus() {
 		return status;
 	}
@@ -203,6 +212,10 @@ public class DistributionOrderItem extends BaseEntity {
 			requestItem.throwErrorIfFulfilled();
 		}
 
+		if (specimen.getPosition() != null) {
+			setSpecimenLocation(specimen.getPosition().toString());
+		}
+
 		specimen.distribute(this);
 
 		if (requestItem != null) {
@@ -213,6 +226,14 @@ public class DistributionOrderItem extends BaseEntity {
 		if (StringUtils.isNotBlank(labelFmt)) {
 			setLabel(labelGenerator.generateLabel(labelFmt, this));
 		}
+	}
+
+	public void undoDistribution() {
+		if (requestItem != null) {
+			requestItem.undoProcessing();
+		}
+
+		specimen.undoDistribution(this);
 	}
 
 	public void returnSpecimen() {

@@ -4,13 +4,22 @@
     "http://hibernate.sourceforge.net/hibernate-mapping-3.0.dtd">
 
 <hibernate-mapping auto-import="false">
-  <class name="com.krishagni.catissueplus.core.administrative.domain.Shipment" table="OS_SHIPMENTS">
+  <class name="com.krishagni.catissueplus.core.administrative.domain.Shipment" table="OS_SHIPMENTS"
+    entity-name="com.krishagni.catissueplus.core.administrative.domain.Shipment">
     
     <id name="id" column="IDENTIFIER">
       <generator class="native">
         <param name="sequence">OS_SHIPMENTS_SEQ</param>
       </generator>
     </id>
+
+    <property name="request" column="REQUEST" not-null="true" />
+
+    <many-to-one name="requester" column="REQUESTER_ID" />
+
+    <property name="requestDate" column="REQUEST_DATE" />
+
+    <property name="requesterComments" column="REQUESTER_COMMENTS" />
     
     <property name="name" column="NAME"/>
 
@@ -49,6 +58,8 @@
         <param name="type">12</param>
       </type>
     </property>
+
+    <many-to-one name="requestStatus" column="REQUEST_STATUS" lazy="false" fetch="join" />
     
     <property name="activityStatus" column="ACTIVITY_STATUS"/>
     
@@ -66,6 +77,8 @@
       <key column="SHIPMENT_ID"/>
       <many-to-many class="com.krishagni.catissueplus.core.administrative.domain.User" column="USER_ID"/>
     </set>
+
+    <many-to-one name="cart" column="CART_ID" />
 
     <filter name="activeEntity"/>
     
@@ -135,6 +148,33 @@
         sc.shipment_id = :shipmentId
       group by
         sc.container_id
+    </sql-query>
+
+    <sql-query name="deleteSpecimenShipmentEvents">
+      delete from
+        catissue_form_record_entry
+      where
+        identifier in (
+          select
+            t.identifier
+          from (
+            select
+              re.identifier as identifier
+            from
+              catissue_form_record_entry re
+              inner join catissue_form_context fc on fc.identifier = re.form_ctxt_id
+              inner join dyextn_containers f on f.identifier = fc.container_id
+              inner join os_shipment_specimens ss on ss.identifier = re.record_id and ss.specimen_id = re.object_id
+              inner join os_shipments s on s.identifier = ss.shipment_id
+            where
+              s.identifier = :shipmentId and
+              f.name in ('SpecimenShipmentShippedEvent', 'SpecimenShipmentReceivedEvent')
+          ) t
+        )
+    </sql-query>
+
+    <sql-query name="removeShipmentCart">
+      update os_shipments set cart_id = null where cart_id = :cartId
     </sql-query>
   </class>
 </hibernate-mapping>

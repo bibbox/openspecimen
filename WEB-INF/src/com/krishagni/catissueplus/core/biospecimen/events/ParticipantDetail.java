@@ -2,27 +2,26 @@
 package com.krishagni.catissueplus.core.biospecimen.events;
 
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import org.apache.commons.collections.CollectionUtils;
-
+import org.apache.commons.collections4.CollectionUtils;
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+
+import com.krishagni.catissueplus.core.administrative.domain.PermissibleValue;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocolRegistration;
 import com.krishagni.catissueplus.core.biospecimen.domain.Participant;
 import com.krishagni.catissueplus.core.common.AttributeModifiedSupport;
 import com.krishagni.catissueplus.core.common.ListenAttributeChanges;
 import com.krishagni.catissueplus.core.de.events.ExtensionDetail;
 
-@JsonSerialize(include = JsonSerialize.Inclusion.NON_NULL)
 @ListenAttributeChanges
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class ParticipantDetail extends AttributeModifiedSupport {
 	private static final SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
 
@@ -35,6 +34,16 @@ public class ParticipantDetail extends AttributeModifiedSupport {
 	private String lastName;
 	
 	private String middleName;
+
+	private String emailAddress;
+
+	private Boolean emailOptIn;
+
+	private String phoneNumber;
+
+	private Boolean textOptIn;
+
+	private Boolean textOptInConsent;
 
 	private Date birthDate;
 
@@ -73,6 +82,8 @@ public class ParticipantDetail extends AttributeModifiedSupport {
 
 	// Used for CP based custom fields
 	private Long cpId = -1L;
+
+	private String dataEntryStatus;
 
 	//
 	// Used in matching API to decide whether to populate registration
@@ -124,6 +135,46 @@ public class ParticipantDetail extends AttributeModifiedSupport {
 
 	public void setMiddleName(String middleName) {
 		this.middleName = middleName;
+	}
+
+	public String getEmailAddress() {
+		return emailAddress;
+	}
+
+	public void setEmailAddress(String emailAddress) {
+		this.emailAddress = emailAddress;
+	}
+
+	public Boolean getEmailOptIn() {
+		return emailOptIn;
+	}
+
+	public void setEmailOptIn(Boolean emailOptIn) {
+		this.emailOptIn = emailOptIn;
+	}
+
+	public String getPhoneNumber() {
+		return phoneNumber;
+	}
+
+	public void setPhoneNumber(String phoneNumber) {
+		this.phoneNumber = phoneNumber;
+	}
+
+	public Boolean getTextOptIn() {
+		return textOptIn;
+	}
+
+	public void setTextOptIn(Boolean textOptIn) {
+		this.textOptIn = textOptIn;
+	}
+
+	public Boolean getTextOptInConsent() {
+		return textOptInConsent;
+	}
+
+	public void setTextOptInConsent(Boolean textOptInConsent) {
+		this.textOptInConsent = textOptInConsent;
 	}
 
 	public Date getBirthDate() {
@@ -294,6 +345,14 @@ public class ParticipantDetail extends AttributeModifiedSupport {
 		this.cpId = cpId;
 	}
 
+	public String getDataEntryStatus() {
+		return dataEntryStatus;
+	}
+
+	public void setDataEntryStatus(String dataEntryStatus) {
+		this.dataEntryStatus = dataEntryStatus;
+	}
+
 	public boolean isForceDelete() {
 		return forceDelete;
 	}
@@ -315,36 +374,41 @@ public class ParticipantDetail extends AttributeModifiedSupport {
 	}
 
 	public static ParticipantDetail from(Participant participant, boolean excludePhi, List<CollectionProtocolRegistration> cprs) {
+		if (participant == null) {
+			return null;
+		}
+
 		ParticipantDetail result = new ParticipantDetail();
 		result.setId(participant.getId());
 		result.setSource(participant.getSource());
 		result.setFirstName(excludePhi ? "###" : participant.getFirstName());
 		result.setLastName(excludePhi ? "###" : participant.getLastName());
 		result.setMiddleName(excludePhi ? "###" : participant.getMiddleName());
+		result.setEmailAddress(excludePhi ? "###" : participant.getEmailAddress());
+		result.setEmailOptIn(participant.isEmailOptIn());
+		result.setPhoneNumber(excludePhi ? "###" : participant.getPhoneNumber());
+		result.setTextOptIn(participant.isTextOptIn());
+		result.setTextOptInConsent(participant.getTextOptInConsent());
 		result.setActivityStatus(participant.getActivityStatus());
 		result.setBirthDate(excludePhi ? null : participant.getBirthDate());
 		result.setDeathDate(excludePhi ? null : participant.getDeathDate());
-		result.setEthnicities(new HashSet<>(participant.getEthnicities()));
-		result.setGender(participant.getGender());
+		result.setEthnicities(PermissibleValue.toValueSet(participant.getEthnicities()));
+		result.setGender(PermissibleValue.getValue(participant.getGender()));
 		result.setEmpi(excludePhi ? "###" : participant.getEmpi());
 		result.setPmis(PmiDetail.from(participant.getPmisOrderedById(), excludePhi));
-		result.setRaces(new HashSet<>(participant.getRaces()));
+		result.setRaces(PermissibleValue.toValueSet(participant.getRaces()));
 		result.setSexGenotype(participant.getSexGenotype());
 		result.setUid(excludePhi ? "###" : participant.getUid());
-		result.setVitalStatus(participant.getVitalStatus());
+		result.setVitalStatus(PermissibleValue.getValue(participant.getVitalStatus()));
 		result.setPhiAccess(!excludePhi);
 		result.setRegisteredCps(getCprSummaries(cprs));
-		result.setExtensionDetail(ExtensionDetail.from(participant.getExtension(), excludePhi));
 		return result;
 	}
 	
 	public static List<ParticipantDetail> from(List<Participant> participants, boolean excludePhi) {
-		List<ParticipantDetail> result = new ArrayList<>();
-		for (Participant participant : participants) {
-			result.add(ParticipantDetail.from(participant, excludePhi));
-		}
-		
-		return result;
+		return participants.stream()
+			.map(participant -> ParticipantDetail.from(participant, excludePhi))
+			.collect(Collectors.toList());
 	}
 	
 	public static Set<CprSummary> getCprSummaries(List<CollectionProtocolRegistration> cprs) {
@@ -362,6 +426,7 @@ public class ParticipantDetail extends AttributeModifiedSupport {
 		cprSummary.setCprId(cpr.getId());
 		cprSummary.setPpid(cpr.getPpid());
 		cprSummary.setRegistrationDate(cpr.getRegistrationDate());
+		cprSummary.setSite(cpr.getSite() != null ? cpr.getSite().getName() : null);
 		return cprSummary;
 	}
 }

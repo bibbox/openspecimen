@@ -20,6 +20,8 @@
         <span class="fa fa-trash"></span>
         <span translate="dp.menu_options.delete">Delete</span>
       </button>
+
+      <os-plugin-hooks view-name="'dp-overview'" sec-name="'more-menu'"></os-plugin-hooks>
     </div>
   </div>
 
@@ -111,6 +113,18 @@
           <strong class="key key-sm" translate="dp.email_notifs">Email Notifications</strong>
           <span class="value value-md">
             {{distributionProtocol.disableEmailNotifs | osBoolValue: 'common.disabled': 'common.enabled'}}
+          </span>
+        </li>
+
+        <li class="item">
+          <strong class="key key-sm" translate="dp.order_attachment">Attachment Type</strong>
+          <span class="value value-md">
+            <span ng-show="!distributionProtocol.attachmentType">
+              {{distributionProtocol.attachmentType | osNoValue}}
+            </span>
+            <span ng-show="distributionProtocol.attachmentType">
+              {{'dp.attachment_types.' + distributionProtocol.attachmentType | translate}}
+            </span>
           </span>
         </li>
 

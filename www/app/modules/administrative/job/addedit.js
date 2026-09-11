@@ -5,6 +5,7 @@ angular.module('os.administrative.job.addedit', ['os.administrative.models'])
     var defSavedQueries = undefined;
 
     function init() {
+      job.$$editAllowed = !job.id || currentUser.admin || currentUser.id == job.createdBy.id;
       job.startDate = job.startDate || new Date();
       job.rtArgsProvided = job.rtArgsProvided || false;
 
@@ -22,7 +23,7 @@ angular.module('os.administrative.job.addedit', ['os.administrative.models'])
         {name: 'THURSDAY'}, {name: 'FRIDAY'}, {name: 'SATURDAY'}
       ];
 
-      $translate('job.week_days.SUNDAY').then(
+      $translate('jobs.week_days.SUNDAY').then(
         function(wd) {
           angular.forEach(weekDays,
             function(wd) {
@@ -52,7 +53,10 @@ angular.module('os.administrative.job.addedit', ['os.administrative.models'])
     }
 
     function onQueryTypeSelect() {
-      job.runAs = currentUser;
+      if (!job.id && !job.runAs) {
+        job.runAs = currentUser;
+      }
+
       loadSavedQueries();
     }
 

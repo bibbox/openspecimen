@@ -1,12 +1,13 @@
 package com.krishagni.catissueplus.core.administrative.domain.factory.impl;
 
-import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
-import org.apache.commons.collections.CollectionUtils;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 
 import com.krishagni.catissueplus.core.administrative.domain.ScheduledJob;
 import com.krishagni.catissueplus.core.administrative.domain.ScheduledJob.DayOfWeek;
@@ -56,6 +57,7 @@ public class ScheduledJobFactoryImpl implements ScheduledJobFactory {
 		setSavedQuery(detail, job, ose);
 		setRunAs(detail, job, ose);
 		setRecipients(detail, job, ose);
+		setSharedWith(detail, job, ose);
 		
 		job.setRtArgsProvided(detail.getRtArgsProvided());
 		job.setRtArgsHelpText(detail.getRtArgsHelpText());
@@ -238,22 +240,12 @@ public class ScheduledJobFactoryImpl implements ScheduledJobFactory {
 		job.setType(type);
 		
 		if (type == Type.EXTERNAL) {
-			setCommand(detail, job, ose);
+			ose.addError(ScheduledJobErrorCode.EXT_TASK_FORBIDDEN);
 		} else {
 			setTaskImplFqn(detail, job, ose);
 		}
 	}
-	
-	private void setCommand(ScheduledJobDetail detail, ScheduledJob job, OpenSpecimenException ose) {
-		String command = detail.getCommand();
-		if (StringUtils.isBlank(command)) {
-			ose.addError(ScheduledJobErrorCode.EXTERNAL_COMMAND_REQUIRED);
-			return;
-		}
-		
-		job.setCommand(command);
-	}
-	
+
 	private void setTaskImplFqn(ScheduledJobDetail detail, ScheduledJob job, OpenSpecimenException ose) {
 		if (job.getType() == Type.QUERY) {
 			job.setTaskImplfqn(ScheduledQueryTask.class.getName());
@@ -316,42 +308,30 @@ public class ScheduledJobFactoryImpl implements ScheduledJobFactory {
 	}
 	
 	private void setRecipients(ScheduledJobDetail detail, ScheduledJob job, OpenSpecimenException ose) {
-		if (CollectionUtils.isEmpty(detail.getRecipients())) {
-			return; 
-		}
-		
-		List<Long> userIds = new ArrayList<Long>();
-		for (UserSummary user : detail.getRecipients()) {
-			userIds.add(user.getId());
-		}
-		
-		List<User> recipients = daoFactory.getUserDao().getUsersByIds(userIds);
-		if (recipients.size() != userIds.size()) {
-			ose.addError(UserErrorCode.NOT_FOUND);
-			return;
-		}
-		
-		job.setRecipients(new HashSet<User>(recipients));
+		job.setRecipients(getUsers(detail.getRecipients(), ose));
+	}
+
+	private void setSharedWith(ScheduledJobDetail detail, ScheduledJob job, OpenSpecimenException ose) {
+		job.setSharedWith(getUsers(detail.getSharedWith(), ose));
 	}
 	
-	private User getUser(UserSummary userSummary) {
-		User user = null;
-		Long userId = null;
-		String loginName = null;
-		String domain = null;
-
-		if (userSummary != null) {
-			userId = userSummary.getId();
-			loginName = userSummary.getLoginName();
-			domain = userSummary.getDomain();
+	private Set<User> getUsers(List<UserSummary> inputList, OpenSpecimenException ose) {
+		if (inputList == null) {
+			return Collections.emptySet();
 		}
 
-		if (userId != null) {
-			user = daoFactory.getUserDao().getById(userSummary.getId());
-		} else if (StringUtils.isNotBlank(loginName) && StringUtils.isNotBlank(domain)) {
-			user = daoFactory.getUserDao().getUser(userSummary.getLoginName(),	userSummary.getDomain());
+		Set<Long> userIds = inputList.stream().map(UserSummary::getId).collect(Collectors.toSet());
+		if (userIds.isEmpty()) {
+			return Collections.emptySet();
 		}
 
-		return user;
+		List<User> users = daoFactory.getUserDao().getUsersByIds(userIds);
+		if (users.size() != userIds.size()) {
+			users.forEach(u -> userIds.remove(u.getId()));
+			ose.addError(UserErrorCode.ONE_OR_MORE_NOT_FOUND, userIds);
+			return null;
+		}
+
+		return new HashSet<>(users);
 	}
 }

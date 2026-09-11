@@ -8,6 +8,8 @@ import java.util.Map;
 
 import com.krishagni.catissueplus.core.administrative.domain.StorageContainer;
 import com.krishagni.catissueplus.core.administrative.domain.StorageContainerPosition;
+import com.krishagni.catissueplus.core.administrative.events.ContainerTransferEventDetail;
+import com.krishagni.catissueplus.core.administrative.events.FindPlacesCriteria;
 import com.krishagni.catissueplus.core.administrative.events.StorageContainerSummary;
 import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
 import com.krishagni.catissueplus.core.biospecimen.repository.SpecimenListCriteria;
@@ -20,6 +22,8 @@ public interface StorageContainerDao extends Dao<StorageContainer> {
 	StorageContainer getByName(String name);
 	
 	StorageContainer getByBarcode(String barcode);
+
+	List<StorageContainerPosition> getMissingSpecimens(Long containerId, List<Long> specimenIds);
 	
 	void delete(StorageContainerPosition position);
 
@@ -64,5 +68,24 @@ public interface StorageContainerDao extends Dao<StorageContainer> {
 	Map<Long, List<Long>> getDescendantContainerIds(Collection<Long> containerIds);
 
 	List<StorageContainer> getShippedContainers(Collection<Long> containerIds);
+
+	List<StorageContainerSummary> getUtilisations(Collection<Long> containerIds);
+
+	//
+	// Returns map of container ID and {occupied positions, free positions} tuples.
+	//
+	Map<Long, int[]> getUtilisationStats(Collection<Long> containerIds);
+
+	List<ContainerTransferEventDetail> getTransferEvents(ContainerReportCriteria crit);
+
+	List<StorageContainerSummary> fetchReportDetails(List<Long> containerIds);
+
+	List<StorageContainer> getAutomatedFreezers();
+
+	StorageContainer getAutomatedFreezer(String propName, String propValue);
+
+	Long getRootContainerId(Long containerId);
+
+	List<StorageContainerSummary> findEmptyPlaces(FindPlacesCriteria crit);
 }
 	

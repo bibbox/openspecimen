@@ -1,5 +1,5 @@
 #if( $jobRun.logFilePath )
-  #set ($url = "$appUrl/#/file-download?downloadUrl=$appUrl/rest/ng/scheduled-jobs/$job.id/runs/$jobRun.id/result-file")
+  #set ($url = "$appUrl/ui-app/#/download-file?downloadUrl=$appUrl/rest/ng/scheduled-jobs/$job.id/runs/$jobRun.id/result-file")
 #else
   #set ($url = "")
 #end
@@ -36,7 +36,7 @@
                 </table>
               </td>
             </tr>
-            #if ( $url )
+            #if ( $url != "")
             <tr>
               <td style="border-collapse:collapse;padding: 10px 0px;">
                 <table cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;color:#333">
@@ -62,6 +62,6 @@
       <td>
         #parse( $footer )
       </td>
-    <tr>
+    </tr>
   </tbody>
 </table>

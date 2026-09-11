@@ -2,18 +2,13 @@ package com.krishagni.catissueplus.core.init;
 
 import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Date;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
-import org.apache.commons.collections.CollectionUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.apache.commons.collections4.CollectionUtils;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -21,16 +16,19 @@ import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionTemplate;
 
+
+import com.krishagni.catissueplus.core.administrative.domain.PermissibleValue;
 import com.krishagni.catissueplus.core.administrative.domain.StorageContainer;
 import com.krishagni.catissueplus.core.administrative.domain.StorageContainerPosition;
 import com.krishagni.catissueplus.core.biospecimen.domain.CollectionProtocol;
 import com.krishagni.catissueplus.core.biospecimen.domain.Specimen;
 import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
+import com.krishagni.catissueplus.core.common.util.LogUtil;
 
 public class MigrateContainerRestrictions implements InitializingBean {
 
-	private static Log LOGGER = LogFactory.getLog(MigrateContainerRestrictions.class);
+	private static final LogUtil LOGGER = LogUtil.getLogger(MigrateContainerRestrictions.class);
 
 	private PlatformTransactionManager txnMgr;
 
@@ -38,7 +36,7 @@ public class MigrateContainerRestrictions implements InitializingBean {
 
 	private JdbcTemplate jdbcTemplate;
 
-	private Map<String, Set<String>> specimenTypes = new HashMap<String, Set<String>>();
+	private List<PermissibleValue> specimenClasses;
 
 	public void setTxnMgr(PlatformTransactionManager txnMgr) {
 		this.txnMgr = txnMgr;
@@ -123,9 +121,13 @@ public class MigrateContainerRestrictions implements InitializingBean {
 			@Override
 			public Void doInTransaction(TransactionStatus status) {				
 				try {
-					for (String specimenClass : specimenClasses) {
-						specimenTypes.put(specimenClass, getTypes(specimenClass));
+					specimenClasses = daoFactory.getPermissibleValueDao().getSpecimenClasses();
+					for (PermissibleValue classPv : specimenClasses) {
+						for (PermissibleValue typePv : classPv.getChildren()) {
+							typePv.getValue(); // eager loading
+						}
 					}
+
 					return null;
 				} catch (Throwable t) {
 					status.setRollbackOnly();
@@ -145,7 +147,7 @@ public class MigrateContainerRestrictions implements InitializingBean {
 		LOGGER.info(
 				"Migrating restrictions for container with ID: " + container.getId() + 
 				" with name : " +container.getName());
-		Set<String> specimenTypeRestrictions = getTypeRestrictions(container.getId());
+		Set<PermissibleValue> specimenTypeRestrictions = getTypeRestrictions(container.getId());
 		container.getAllowedSpecimenTypes().addAll(specimenTypeRestrictions);
 		
 		Set<String> allowedCps = getCpRestrictions(container.getId()); 		
@@ -186,7 +188,7 @@ public class MigrateContainerRestrictions implements InitializingBean {
 			container.getAllowedCps().addAll(cntnr.getAllowedCps());			
 		}
 		
-		Set<String> specimenClassRestrictions = getClassRestrictions(container.getAllowedSpecimenTypes());
+		Set<PermissibleValue> specimenClassRestrictions = getClassRestrictions(container.getAllowedSpecimenTypes());
 		container.getAllowedSpecimenClasses().addAll(specimenClassRestrictions);
 		setComputedRestrictions(container);
 		LOGGER.info("Migration completed for container with name : " + container.getName());
@@ -232,9 +234,12 @@ public class MigrateContainerRestrictions implements InitializingBean {
 	}
 
 	private void clearDuplicateTypes(StorageContainer container) {
-		if(CollectionUtils.isNotEmpty(container.getAllowedSpecimenClasses())){
-			List<String> types = daoFactory.getPermissibleValueDao().getSpecimenTypes(container.getAllowedSpecimenClasses());
-			container.getAllowedSpecimenTypes().removeAll(types);
+		if (CollectionUtils.isEmpty(container.getAllowedSpecimenClasses())) {
+			return;
+		}
+
+		for (PermissibleValue classPv : container.getAllowedSpecimenClasses()) {
+			container.getAllowedSpecimenTypes().removeAll(classPv.getChildren());
 		}
 	}
 	
@@ -243,28 +248,24 @@ public class MigrateContainerRestrictions implements InitializingBean {
 		LOGGER.info("Disabled container with id : " + container.getId() + " in catissue_container table");		
 	}
 	
-	private Set<String> getTypes(String specimenClass) {
-		List<String> types = daoFactory.getPermissibleValueDao().getSpecimenTypes(Arrays.asList(specimenClass));
-		return new HashSet<String>(types);
-	}
-	
-	private Set<String> getTypeRestrictions(Long contId) {
+	private Set<PermissibleValue> getTypeRestrictions(Long contId) {
 		List<String> result = jdbcTemplate.queryForList(GET_TYPE_RESTRICTION_SQL, String.class, contId);
-		return new HashSet<String>(result);
+		List<PermissibleValue> typePvs = daoFactory.getPermissibleValueDao()
+			.getPvs("specimen_type", null, result, true);
+		return new HashSet<>(typePvs);
 	}
 
 	private Set<String> getCpRestrictions(Long contId) {
 		List<String> result = jdbcTemplate.queryForList(GET_CP_RESTRICTION_SQL, String.class, contId);
-		return new HashSet<String>(result);
+		return new HashSet<>(result);
 	}
 	
-	private Set<String> getClassRestrictions(Set<String> specimenTypeRestrictions) {
-		Set<String> classRestrictions = new HashSet<String>();
-
-		for (String specimenClass : specimenClasses) {
-			if (specimenTypeRestrictions.containsAll(specimenTypes.get(specimenClass))) {
+	private Set<PermissibleValue> getClassRestrictions(Set<PermissibleValue> specimenTypeRestrictions) {
+		Set<PermissibleValue> classRestrictions = new HashSet<>();
+		for (PermissibleValue specimenClass : specimenClasses) {
+			if (specimenTypeRestrictions.containsAll(specimenClass.getChildren())) {
 				classRestrictions.add(specimenClass);
-				specimenTypeRestrictions.removeAll(specimenTypes.get(specimenClass));
+				specimenTypeRestrictions.removeAll(specimenClass.getChildren());
 			}
 		}
 		
@@ -275,8 +276,8 @@ public class MigrateContainerRestrictions implements InitializingBean {
 		container.getCompAllowedSpecimenClasses().addAll(container.computeAllowedSpecimenClasses());
 		container.getCompAllowedSpecimenTypes().addAll(container.computeAllowedSpecimenTypes());
 		
-		for (String allowedClass : container.getAllowedSpecimenClasses()) {
-			container.getCompAllowedSpecimenTypes().removeAll(specimenTypes.get(allowedClass));
+		for (PermissibleValue allowedClass : container.getAllowedSpecimenClasses()) {
+			container.getCompAllowedSpecimenTypes().removeAll(allowedClass.getChildren());
 		}
 		
 		container.getCompAllowedCps().addAll(container.computeAllowedCps());
@@ -286,8 +287,6 @@ public class MigrateContainerRestrictions implements InitializingBean {
 		return CollectionUtils.isEqualCollection(c1, c2);
 	}
 	
-	private static final String[] specimenClasses = new String[]{"Tissue", "Fluid", "Cell", "Molecular"};
-
 	private static final String GET_PRIMARY_CONTAINER_IDS =
 			"select " +
 					"cc.identifier " +

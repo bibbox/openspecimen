@@ -1,5 +1,6 @@
 package com.krishagni.catissueplus.core.administrative.domain;
 
+import java.math.BigDecimal;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -14,6 +15,7 @@ import com.krishagni.catissueplus.core.biospecimen.domain.BaseEntity;
 import com.krishagni.catissueplus.core.biospecimen.repository.DaoFactory;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.DependentEntityDetail;
+import com.krishagni.catissueplus.core.common.util.ConfigUtil;
 import com.krishagni.catissueplus.core.common.util.Status;
 import com.krishagni.catissueplus.core.common.util.Utility;
 
@@ -26,9 +28,9 @@ public class ContainerType extends BaseEntity {
 
 	private String nameFormat;
 
-	private int noOfColumns;
+	private Integer noOfColumns;
 	
-	private int noOfRows;
+	private Integer noOfRows;
 
 	private StorageContainer.PositionLabelingMode positionLabelingMode = StorageContainer.PositionLabelingMode.TWO_D;
 
@@ -39,8 +41,12 @@ public class ContainerType extends BaseEntity {
 	private String rowLabelingScheme;
 	
 	private Double temperature;
+
+	private BigDecimal rate;
 	
 	private boolean storeSpecimenEnabled;
+
+	private Long capacity;
 	
 	private ContainerType canHold;
 	
@@ -73,20 +79,24 @@ public class ContainerType extends BaseEntity {
 		this.nameFormat = nameFormat;
 	}
 
-	public int getNoOfColumns() {
+	public Integer getNoOfColumns() {
 		return noOfColumns;
 	}
 
-	public void setNoOfColumns(int noOfColumns) {
+	public void setNoOfColumns(Integer noOfColumns) {
 		this.noOfColumns = noOfColumns;
 	}
 
-	public int getNoOfRows() {
+	public Integer getNoOfRows() {
 		return noOfRows;
 	}
 
-	public void setNoOfRows(int noOfRows) {
+	public void setNoOfRows(Integer noOfRows) {
 		this.noOfRows = noOfRows;
+	}
+
+	public boolean isDimensionless() {
+		return noOfRows == null && noOfColumns == null;
 	}
 
 	public StorageContainer.PositionLabelingMode getPositionLabelingMode() {
@@ -128,6 +138,14 @@ public class ContainerType extends BaseEntity {
 	public void setTemperature(Double temperature) {
 		this.temperature = temperature;
 	}
+
+	public BigDecimal getRate() {
+		return rate;
+	}
+
+	public void setRate(BigDecimal rate) {
+		this.rate = rate;
+	}
 	
 	public boolean isStoreSpecimenEnabled() {
 		return storeSpecimenEnabled;
@@ -135,6 +153,14 @@ public class ContainerType extends BaseEntity {
 
 	public void setStoreSpecimenEnabled(boolean storeSpecimenEnabled) {
 		this.storeSpecimenEnabled = storeSpecimenEnabled;
+	}
+
+	public Long getCapacity() {
+		return capacity;
+	}
+
+	public void setCapacity(Long capacity) {
+		this.capacity = capacity;
 	}
 
 	public ContainerType getCanHold() {
@@ -182,10 +208,12 @@ public class ContainerType extends BaseEntity {
 		setColumnLabelingScheme(containerType.getColumnLabelingScheme());
 		setRowLabelingScheme(containerType.getRowLabelingScheme());
 		setTemperature(containerType.getTemperature());
+		setRate(containerType.getRate());
 		setStoreSpecimenEnabled(containerType.isStoreSpecimenEnabled());
 		setActivityStatus(containerType.getActivityStatus());
-		
 		updateCanHold(containerType.getCanHold());
+
+		ensureCapacityWithinLimits();
 	}
 	
 	public List<DependentEntityDetail> getDependentEntities() {
@@ -200,6 +228,18 @@ public class ContainerType extends BaseEntity {
 
 		setName(Utility.getDisabledValue(getName(), 64));
 		setActivityStatus(Status.ACTIVITY_STATUS_DISABLED.getStatus());
+	}
+
+	public void ensureCapacityWithinLimits() {
+		int maxAllowedSize = ConfigUtil.getInstance().getIntSetting("administrative", "max_container_capacity", 225);
+		if (isDimensionless() || getNoOfRows() == null || getNoOfColumns() == null) {
+			return;
+		}
+
+		int currentCapacity = getNoOfRows() * getNoOfColumns();
+		if (currentCapacity > maxAllowedSize) {
+			throw OpenSpecimenException.userError(ContainerTypeErrorCode.EXCEED_CAPACITY_LMT, currentCapacity, maxAllowedSize);
+		}
 	}
 
 	private void updateCanHold(ContainerType canHold) {

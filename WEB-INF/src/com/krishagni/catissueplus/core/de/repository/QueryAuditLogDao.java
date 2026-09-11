@@ -1,13 +1,21 @@
 package com.krishagni.catissueplus.core.de.repository;
 
+import java.util.Date;
 import java.util.List;
 
 import com.krishagni.catissueplus.core.common.repository.Dao;
 import com.krishagni.catissueplus.core.de.domain.QueryAuditLog;
-import com.krishagni.catissueplus.core.de.events.ListQueryAuditLogsCriteria;
+import com.krishagni.catissueplus.core.de.events.QueryAuditLogDigest;
+import com.krishagni.catissueplus.core.de.events.QueryAuditLogsListCriteria;
 
 public interface QueryAuditLogDao extends Dao<QueryAuditLog>{
-	Long getLogsCount(ListQueryAuditLogsCriteria crit);
+	Long getLogsCount(QueryAuditLogsListCriteria crit);
 
-	List<QueryAuditLog> getLogs(ListQueryAuditLogsCriteria crit);
+	List<QueryAuditLog> getLogs(QueryAuditLogsListCriteria crit);
+
+	QueryAuditLogDigest getDigest(Date startDate, Date endDate);
+
+	List<Long> getSuccessfulRuntimes(Date startDate, Date endDate);
+
+	int deleteLogsOlderThan(int olderThanDays, int maxRows);
 }

@@ -6,23 +6,29 @@ import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.UUID;
 
 import org.apache.commons.io.IOUtils;
 import org.springframework.context.MessageSource;
-
 import com.itextpdf.text.Chunk;
 import com.itextpdf.text.Document;
 import com.itextpdf.text.Element;
 import com.itextpdf.text.Font;
 import com.itextpdf.text.Font.FontFamily;
 import com.itextpdf.text.Paragraph;
+import com.itextpdf.text.pdf.ColumnText;
 import com.itextpdf.text.pdf.PdfPCell;
 import com.itextpdf.text.pdf.PdfPTable;
+import com.itextpdf.text.pdf.PdfPageEventHelper;
 import com.itextpdf.text.pdf.PdfWriter;
+
+import com.krishagni.catissueplus.core.administrative.domain.PermissibleValue;
+import com.krishagni.catissueplus.core.biospecimen.domain.Participant;
 import com.krishagni.catissueplus.core.biospecimen.domain.Visit;
 import com.krishagni.catissueplus.core.biospecimen.services.SprPdfGenerator;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.util.AuthUtil;
+import com.krishagni.catissueplus.core.common.util.ConfigUtil;
 import com.krishagni.catissueplus.core.common.util.Utility;
 
 public class SprText2PdfGenerator implements SprPdfGenerator {
@@ -38,10 +44,30 @@ public class SprText2PdfGenerator implements SprPdfGenerator {
 		FileOutputStream out = null;
 		Document document = new Document();
 		try {
-			File sprReport = File.createTempFile("spr-report", ".pdf");
+			File sprReport = new File(ConfigUtil.getInstance().getTempDir(), "spr-report-" + UUID.randomUUID() + ".pdf");
 			out= new FileOutputStream(sprReport);
 			
-			PdfWriter.getInstance(document, out);
+			PdfWriter pdfWriter = PdfWriter.getInstance(document, out);
+			pdfWriter.setPageEvent(new PdfPageEventHelper() {
+				@Override
+				public void onStartPage(PdfWriter writer, Document document) {
+					String restricted = getMessage("spr_restricted");
+					Paragraph paragraph = new Paragraph(restricted);
+					paragraph.getFont().setSize(10);
+
+					float xOffset = pdfWriter.getPageSize().getWidth() / 2;
+					float yOffset = pdfWriter.getPageSize().getTop() - 25;
+					ColumnText.showTextAligned(
+						writer.getDirectContent(),
+						Element.ALIGN_CENTER,
+						paragraph,
+						xOffset,
+						yOffset,
+						0
+					);
+				}
+			});
+
 			document.open();
 			document.addTitle(getMessage("spr_title"));
 			
@@ -61,8 +87,7 @@ public class SprText2PdfGenerator implements SprPdfGenerator {
 		
 			String fileText = Utility.getFileText(file);
 			document.add(new Paragraph(fileText, getFont(8,false)));
-			
-			
+
 			Chunk endReport = getChunk(getMessage("spr_end_of_report"), 6, false, true);
 			Paragraph footer = new Paragraph();
 			footer.setAlignment(Element.ALIGN_CENTER);
@@ -85,9 +110,11 @@ public class SprText2PdfGenerator implements SprPdfGenerator {
 		header.setWidthPercentage(100);
 		header.setSpacingAfter(4f);
 
+		Participant participant = visit.getRegistration().getParticipant();
+
 		Map<String, String> headerInfo = new LinkedHashMap<String, String>();
 		headerInfo.put(getMessage("spr_protocol_name"), visit.getCollectionProtocol().getShortTitle());
-		headerInfo.put(getMessage("spr_gender"), visit.getRegistration().getParticipant().getGender());
+		headerInfo.put(getMessage("spr_gender"), PermissibleValue.getValue(participant.getGender()));
 		headerInfo.put(getMessage("spr_printed_by"),
 				AuthUtil.getCurrentUser().getLastName() + ", " + AuthUtil.getCurrentUser().getFirstName());
 		headerInfo.put(getMessage("spr_visit_name"), visit.getName());
@@ -103,7 +130,7 @@ public class SprText2PdfGenerator implements SprPdfGenerator {
 
 		headerInfo.put(getMessage("spr_printed_on_date"), Utility.getDateString(new Date()));
 		headerInfo.put(getMessage("spr_participant_race"), 
-				Utility.stringListToCsv(visit.getRegistration().getParticipant().getRaces(), false));
+				Utility.stringListToCsv(PermissibleValue.toValueList(participant.getRaces()), false));
 		headerInfo.put(getMessage("spr_visit_date"), Utility.getYear(visit.getVisitDate()).toString());
 		
 		for (Map.Entry<String, String> entry : headerInfo.entrySet()) {

@@ -4,12 +4,16 @@ import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
-import org.apache.commons.collections.CollectionUtils;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.BeanUtils;
 
 import com.krishagni.catissueplus.core.administrative.domain.User;
+import com.krishagni.catissueplus.core.administrative.domain.UserGroup;
+import com.krishagni.catissueplus.core.administrative.events.UserGroupSummary;
 import com.krishagni.catissueplus.core.biospecimen.domain.SpecimenList;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.SpecimenListErrorCode;
 import com.krishagni.catissueplus.core.biospecimen.domain.factory.SpecimenListFactory;
@@ -19,6 +23,7 @@ import com.krishagni.catissueplus.core.common.errors.ErrorType;
 import com.krishagni.catissueplus.core.common.errors.OpenSpecimenException;
 import com.krishagni.catissueplus.core.common.events.UserSummary;
 import com.krishagni.catissueplus.core.common.util.MessageUtil;
+import com.krishagni.catissueplus.core.common.util.Utility;
 
 public class SpecimenListFactoryImpl implements SpecimenListFactory {
 	private DaoFactory daoFactory;
@@ -58,6 +63,7 @@ public class SpecimenListFactoryImpl implements SpecimenListFactory {
 		SpecimenList specimenList = new SpecimenList();
 		specimenList.setOwner(user);
 		specimenList.setName(SpecimenList.getDefaultListName(user));
+		specimenList.setDefaultCart(true);
 		specimenList.setDescription(MessageUtil.getInstance().getMessage("specimen_list_default_list_desc"));
 		specimenList.setCreatedOn(Calendar.getInstance().getTime());
 		specimenList.setLastUpdatedOn(specimenList.getCreatedOn());
@@ -72,8 +78,12 @@ public class SpecimenListFactoryImpl implements SpecimenListFactory {
 		setOwner(details, specimenList, partial , ose);
 		setName(details, specimenList, partial , ose);
 		setDescription(details, specimenList, partial, ose);
+		setDigestNotifsEnabled(details, specimenList, partial, ose);
 		setSharedUsers(details, specimenList, partial, ose);
+		setSharedGroups(details, specimenList, partial, ose);
 
+		specimenList.setSourceEntityType(details.getSourceEntityType());
+		specimenList.setSourceEntityId(details.getSourceEntityId());
 		specimenList.setCreatedOn(Calendar.getInstance().getTime());
 		specimenList.setLastUpdatedOn(specimenList.getCreatedOn());
 	}
@@ -118,6 +128,14 @@ public class SpecimenListFactoryImpl implements SpecimenListFactory {
 		specimenList.setDescription(details.getDescription());
 	}
 
+	private void setDigestNotifsEnabled(SpecimenListDetail input, SpecimenList list, boolean partial, OpenSpecimenException ose) {
+		if (partial && !input.isAttrModified("sendDigestNotifs")) {
+			return;
+		}
+
+		list.setSendDigestNotifs(input.getSendDigestNotifs());
+	}
+
 	private void setSharedUsers(SpecimenListDetail details, SpecimenList specimenList, boolean partial, OpenSpecimenException ose) {
 		if (partial && !details.isAttrModified("sharedWith")) {
 			return;
@@ -126,11 +144,12 @@ public class SpecimenListFactoryImpl implements SpecimenListFactory {
 		Long userId = details.getOwner() != null ? details.getOwner().getId() : null;
 		
 		List<Long> userIds = new ArrayList<Long>();
-		if (!CollectionUtils.isEmpty(details.getSharedWith())) {
+		if (CollectionUtils.isNotEmpty(details.getSharedWith())) {
 			for (UserSummary user : details.getSharedWith()) {
 				if (user.getId().equals(userId)) {
 					continue;
 				}
+
 				userIds.add(user.getId());
 			}
 		}
@@ -144,6 +163,25 @@ public class SpecimenListFactoryImpl implements SpecimenListFactory {
 			}
 		} else {
 			specimenList.getSharedWith().clear();
+		}
+	}
+
+	private void setSharedGroups(SpecimenListDetail details, SpecimenList specimenList, boolean partial, OpenSpecimenException ose) {
+		if (partial && !details.isAttrModified("sharedWithGroups")) {
+			return;
+		}
+
+		Set<Long> groupIds = Utility.nullSafeStream(details.getSharedWithGroups())
+			.map(UserGroupSummary::getId).collect(Collectors.toSet());
+		if (CollectionUtils.isNotEmpty(groupIds)) {
+			List<UserGroup> sharedGroups = daoFactory.getUserGroupDao().getByIds(groupIds);
+			if (sharedGroups.size() != groupIds.size()) {
+				ose.addError(SpecimenListErrorCode.INVALID_GROUPS_LIST);
+			} else {
+				specimenList.setSharedWithGroups(new HashSet<>(sharedGroups));
+			}
+		} else {
+			specimenList.getSharedWithGroups().clear();
 		}
 	}
 }

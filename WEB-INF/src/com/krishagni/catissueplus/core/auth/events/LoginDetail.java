@@ -5,6 +5,8 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class LoginDetail {
+	private String emailAddress;
+
 	private String loginName;
 
 	private String password;
@@ -18,8 +20,18 @@ public class LoginDetail {
 	private String apiUrl;
 	
 	private String requestMethod;
-	
+
+	private String deviceDetails;
+
 	private Map<String, String> props = new HashMap<>();
+
+	public String getEmailAddress() {
+		return emailAddress;
+	}
+
+	public void setEmailAddress(String emailAddress) {
+		this.emailAddress = emailAddress;
+	}
 
 	public String getLoginName() {
 		return loginName;
@@ -75,6 +87,14 @@ public class LoginDetail {
 
 	public void setRequestMethod(String requestMethod) {
 		this.requestMethod = requestMethod;
+	}
+
+	public String getDeviceDetails() {
+		return deviceDetails;
+	}
+
+	public void setDeviceDetails(String deviceDetails) {
+		this.deviceDetails = deviceDetails;
 	}
 
 	public Map<String, String> getProps() {

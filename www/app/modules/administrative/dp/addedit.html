@@ -130,6 +130,16 @@
       </div>
 
       <div class="form-group">
+        <label class="control-label col-xs-3" translate="dp.order_attachment">Order Attachment</label>
+        <div class="col-xs-6">
+          <os-select name="attachmentType" ng-model="distributionProtocol.attachmentType"
+            list="attachmentTypes" display-prop="caption" select-prop="name"
+            placeholder="{{'dp.order_attachment' | translate}}">
+          </os-select>
+        </div>
+      </div>
+
+      <div class="form-group">
         <div class="col-xs-offset-3 col-xs-6 os-text-checkbox">
           <div class="checkbox">
             <os-checkbox ng-model="distributionProtocol.disableEmailNotifs"></os-checkbox>

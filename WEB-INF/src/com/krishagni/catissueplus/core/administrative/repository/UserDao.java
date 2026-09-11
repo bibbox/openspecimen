@@ -10,8 +10,10 @@ import com.krishagni.catissueplus.core.administrative.domain.ForgotPasswordToken
 import com.krishagni.catissueplus.core.administrative.domain.Password;
 import com.krishagni.catissueplus.core.administrative.domain.User;
 import com.krishagni.catissueplus.core.administrative.domain.UserUiState;
+import com.krishagni.catissueplus.core.common.Pair;
 import com.krishagni.catissueplus.core.common.events.DependentEntityDetail;
 import com.krishagni.catissueplus.core.common.repository.Dao;
+import com.krishagni.catissueplus.core.de.events.FormCtxtSummary;
 
 public interface UserDao extends Dao<User> {
 	List<User> getUsers(UserListCriteria criteria);
@@ -24,11 +26,15 @@ public interface UserDao extends Dao<User> {
 	
 	User getUser(String loginName, String domain);
 
+	User getUser(String loginName, Long domainId);
+
 	List<User> getUsers(Collection<String> loginNames, String domain);
 	
 	User getSystemUser();
 	
 	User getUserByEmailAddress(String emailAddress);
+
+	List<User> getUsersByEmailAddress(Collection<String> emailAddresses);
 	
 	Boolean isUniqueLoginName(String loginName, String domainName);
 	
@@ -45,19 +51,31 @@ public interface UserDao extends Dao<User> {
 	void deleteFpToken(ForgotPasswordToken token);
 
 	List<String> getActiveUsersEmailIds(Date startDate, Date endDate);
+
+	Password getLatestPassword(Long userId);
 	
 	List<Password> getPasswordsUpdatedBefore(Date updateDate);
+
+	List<Password> getPasswords(Date fromDate, Date toDate, Long lastId, List<User> updatedBy);
 	
 	List<User> getInactiveUsers(Date lastLoginTime);
+
+	Map<Long, Date> getLatestLoginTime(List<Long> userIds);
 	
 	int updateStatus(List<User> users, String status);
 
 	List<User> getSuperAndInstituteAdmins(String instituteName);
 
-	void saveUiState(UserUiState state);
+	void saveUiState(boolean update, UserUiState state);
 
 	UserUiState getState(Long userId);
 
-	// [{emailId, type}, {'abc@localhost', 'SUPER'}]
-	Map<String, String> getEmailIdUserTypes(Collection<String> emailIds);
+	// [{emailId, {dnd, status}}, {'abc@localhost', {true, 'Archived'}}]
+	Map<String, Pair<Boolean, String>> getEmailIdStatuses(Collection<String> emailIds);
+
+	List<FormCtxtSummary> getForms(String entityType, Long userId);
+
+	List<Map<String, Object>> getFormRecords(Long instituteId, Long formId, List<String> emailIds, int startAt, int maxResults);
+
+	List<Map<String, Object>> getFormRecords(String entityType, Long instituteId, Long formId, List<String> emailIds, int startAt, int maxResults);
 }

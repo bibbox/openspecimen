@@ -43,7 +43,9 @@ public enum DistributionProtocolErrorCode implements ErrorCode {
 
 	INV_OI_LABEL_FMT,
 
-	INV_DPS;
+	INV_DPS,
+
+	INV_ATTACH_TYPE;
 
 	@Override
 	public String code() {
